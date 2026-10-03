@@ -80,6 +80,10 @@ wait_for "route: $CAP .*Engine B|capture check: $CAP" 120
 sleep 5
 measure "T2 Engine B single processed copy (expect ~T1; double audio would be louder)"
 eq sessions; wait_for "routes:" 60
+log "T2b orchestral amplifier must not touch a centred source"
+eq tuners --ef space 1 --ef instruments 1; wait_for "tuners vocal" 30; sleep 4
+measure "T2b Engine B with space+instruments at max (expect = T2: centre untouched)"
+eq tuners; sleep 2
 
 log "T3 blocked app (capture opt-out)"
 tone $CAP --ez stop true; sleep 2
@@ -109,6 +113,11 @@ log "T7 headphone tuning from AutoEq (network)"
 $A logcat -c; eq tune --es query "'Sennheiser HD 650'" --es source oratory1990; wait_for "tune: " 120; sleep 5
 measure "T7 HD 650 -> Harman tuning (expect T0 + response@1k)"
 eq bass --es preset Off
+
+log "T8 vocal tuner on system effects"
+$A logcat -c; eq tuners --ef intimacy 1 --ef warmth 1 --ef smooth 1; wait_for "tuners vocal" 30; sleep 5
+measure "T8 vocal tuner max on system effects (expect T0 + response@1k)"
+eq tuners
 tone $CAP --ez stop true
 
 # ---- verdicts -------------------------------------------------------------
@@ -129,7 +138,11 @@ BLK_B=$(grep -cE "route: $BLK .*Engine B" "$FULL"); BLK_A=$(grep -cE "route: $BL
 check "Capture-blocked app stays on Engine A" "$([ "$BLK_B" -eq 0 ] && [ "$BLK_A" -ge 1 ] && echo 1 || echo 0)" "A=$BLK_A B=$BLK_B"
 check "Blocked app still audible with EQ" "$(near "$T3" "$T1" 2.0)" "T3=$T3 vs T1=$T1 ±2 dB"
 check "Non-broadcasting app found via DUMP" "$(near "$T4" "$T1" 2.0)" "T4=$T4 vs T1=$T1 ±2 dB"
-T6=$(lvl T6); T7=$(lvl T7)
+T6=$(lvl T6); T7=$(lvl T7); T2B=$(lvl T2b); T8=$(lvl T8)
+R8=$(grep -oE 'tuners vocal=VocalTuner\(intimacy=1.0.*response@1kHz=-?[0-9.]+' "$FULL" | tail -1 | grep -oE '[-0-9.]+$')
+E8=$(awk -v a="$T0" -v r="$R8" 'BEGIN { print a + r }')
+check "Orchestral amp leaves a centred source untouched" "$(near "$T2B" "$T2" 0.5)" "T2b=$T2B vs T2=$T2 ±0.5 dB"
+check "Vocal tuner applies on system effects" "$(near "$T8" "$E8" 1.0)" "T8=$T8, expected $E8 ±1 dB"
 R6=$(grep -oE 'bass preset=Punchy .*response@1kHz=-?[0-9.]+' "$FULL" | tail -1 | grep -oE '[-0-9.]+$')
 R7=$(grep -oE 'tune: .*response@1kHz=-?[0-9.]+' "$FULL" | tail -1 | grep -oE '[-0-9.]+$')
 E6=$(awk -v a="$T0" -v r="$R6" 'BEGIN { print a + r }'); E7=$(awk -v a="$T0" -v r="$R7" 'BEGIN { print a + r }')

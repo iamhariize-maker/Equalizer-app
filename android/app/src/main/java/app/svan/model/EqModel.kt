@@ -107,7 +107,15 @@ data class EqState(
     val presetName: String = "Flat",
     val tuning: Tuning? = null,
     val bass: BassTuner = BassTuner(),
+    val vocal: VocalTuner = VocalTuner(),
+    val instrument: InstrumentTuner = InstrumentTuner(),
 ) {
+    /** Bands for system effects: the same layers plus static stand-ins for the vocal tuner. */
+    fun systemEffectsBands(): List<Band> = if (!enabled) emptyList() else effectiveBands() + vocal.systemEffectsBands()
+
+    val activeVocal: VocalTuner get() = if (enabled) vocal else VocalTuner()
+    val activeInstrument: InstrumentTuner get() = if (enabled) instrument else InstrumentTuner()
+
     /** The user's own EQ layer (parametric or graphic). */
     fun manualBands(): List<Band> = if (mode == EqMode.PARAMETRIC) bands else GraphicLayout.bands(graphicCount, graphicGains)
 
@@ -126,7 +134,7 @@ data class EqState(
         .put("gCount", graphicCount)
         .put("gGains", JSONArray().apply { graphicGains.forEach { put(it) } })
         .put("preamp", preampDb).put("preset", presetName)
-        .put("bass", bass.toJson())
+        .put("bass", bass.toJson()).put("vocal", vocal.toJson()).put("inst", instrument.toJson())
         .apply { tuning?.let { put("tuning", it.toJson()) } }
 
     companion object {
@@ -154,8 +162,68 @@ data class EqState(
                 presetName = o.optString("preset", "Custom"),
                 tuning = o.optJSONObject("tuning")?.let { runCatching { Tuning.fromJson(it) }.getOrNull() },
                 bass = o.optJSONObject("bass")?.let { BassTuner.fromJson(it) } ?: BassTuner(),
+                vocal = o.optJSONObject("vocal")?.let { VocalTuner.fromJson(it) } ?: VocalTuner(),
+                instrument = o.optJSONObject("inst")?.let { InstrumentTuner.fromJson(it) } ?: InstrumentTuner(),
             )
         }
+    }
+}
+
+/**
+ * Vocal tuner (centre/mid channel). Exact in the audiophile engine; on system
+ * effects warmth/intimacy become a gentle EQ on both channels and smoothness a
+ * multiband compressor on the 2.5-6 kHz band.
+ */
+data class VocalTuner(
+    val intimacy: Double = 0.0,   // 0..1
+    val warmth: Double = 0.0,     // 0..1
+    val smoothness: Double = 0.0, // 0..1
+) {
+    val isOff: Boolean get() = intimacy == 0.0 && warmth == 0.0 && smoothness == 0.0
+
+    /** Static approximation for system effects (no mid/side there): half strength, both channels. */
+    fun systemEffectsBands(): List<Band> = buildList {
+        if (warmth > 0) {
+            add(Band(FilterType.PEAK, 220.0, 1.5 * warmth, 0.9))
+            add(Band(FilterType.HIGH_SHELF, 8000.0, -1.0 * warmth, 0.7))
+        }
+        if (intimacy > 0) add(Band(FilterType.PEAK, 1200.0, 1.25 * intimacy, 0.6))
+    }
+
+    fun toJson(): JSONObject = JSONObject().put("int", intimacy).put("warm", warmth).put("smooth", smoothness)
+
+    companion object {
+        fun fromJson(o: JSONObject) = VocalTuner(o.optDouble("int", 0.0), o.optDouble("warm", 0.0), o.optDouble("smooth", 0.0))
+
+        val PRESETS = listOf(
+            "Off" to VocalTuner(),
+            "Intimate" to VocalTuner(0.7, 0.5, 0.4),
+            "Warm & smooth" to VocalTuner(0.3, 0.8, 0.6),
+            "Tame shrill" to VocalTuner(0.0, 0.3, 1.0),
+            "Up front" to VocalTuner(1.0, 0.2, 0.3),
+        )
+    }
+}
+
+/** Instrument amplifier (side channel above ~180 Hz). Audiophile engine only. */
+data class InstrumentTuner(
+    val space: Double = 0.0,       // -1 caved in .. +1 spacious
+    val instruments: Double = 0.0, // 0..1 string/sax presence, body, air
+) {
+    val isOff: Boolean get() = space == 0.0 && instruments == 0.0
+
+    fun toJson(): JSONObject = JSONObject().put("space", space).put("inst", instruments)
+
+    companion object {
+        fun fromJson(o: JSONObject) = InstrumentTuner(o.optDouble("space", 0.0), o.optDouble("inst", 0.0))
+
+        val PRESETS = listOf(
+            "Off" to InstrumentTuner(),
+            "Concert hall" to InstrumentTuner(0.7, 0.4),
+            "Strings & sax" to InstrumentTuner(0.3, 0.9),
+            "Intimate stage" to InstrumentTuner(-0.5, 0.3),
+            "Wide open" to InstrumentTuner(1.0, 0.6),
+        )
     }
 }
 

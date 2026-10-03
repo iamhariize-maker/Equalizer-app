@@ -240,6 +240,9 @@ class CaptureService : Service() {
         engine.setBands(eq.effectiveBands().map { it.toNative() })
         engine.setPreampDb(eq.effectivePreampDb())
         engine.setBassCharacter(eq.bassCharacter, eq.bass.crossoverHz)
+        val v = eq.activeVocal
+        val i = eq.activeInstrument
+        engine.setStereoTuner(v.intimacy, v.warmth, v.smoothness, i.space, i.instruments)
     }
 
     override fun onDestroy() {

@@ -63,7 +63,7 @@ object SvanRepository {
             scope.launch {
                 // StateFlow is already conflated: a slow binder update never queues stale curves.
                 _eq.collect { state ->
-                    EqController.globalEq.setBassDynamics(state.bassCharacter, state.bass.crossoverHz)
+                    EqController.globalEq.setDynamics(state.bassCharacter, state.bass.crossoverHz, state.activeVocal.smoothness)
                     EqController.globalEq.applyCurveFrom(EqController.curveEngine)
                     _engineARevision.update { it + 1 }
                     prefs.edit().putString("eq", state.toJson().toString()).apply()
@@ -130,7 +130,8 @@ object SvanRepository {
 
     private fun applyCurve(s: EqState) {
         val engine = EqController.curveEngine
-        engine.setBands(s.effectiveBands().map { it.toNative() })
+        // The curve engine renders Engine A's curve, so it gets the system-effects stand-ins.
+        engine.setBands(s.systemEffectsBands().map { it.toNative() })
         engine.setPreampDb(s.effectivePreampDb())
     }
 

@@ -265,50 +265,102 @@ fun SoundScreen() {
             item { Text(message!!, style = MaterialTheme.typography.bodySmall, color = Svan.Rose, modifier = Modifier.padding(4.dp)) }
         }
 
-        // ---- bass tuner ----
+        // ---- tuners ----
         item { BassTunerCard(eq.bass) }
+        item { VocalTunerCard(eq.vocal) }
+        item { InstrumentTunerCard(eq.instrument) }
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
 @Composable
-private fun BassTunerCard(b: BassTuner) {
-    SectionLabel("Bass tuner")
+private fun TunerHeader(title: String, subtitle: String) {
+    SectionLabel(title)
+    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted, modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+}
+
+@Composable
+private fun <T> PresetRow(presets: List<Pair<String, T>>, current: T, onPick: (T) -> Unit) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        BassTuner.PRESETS.forEach { (name, preset) ->
-            Pill(name, b == preset, { SvanRepository.update { it.copy(bass = preset) } })
-        }
+        presets.forEach { (name, preset) -> Pill(name, current == preset, { onPick(preset) }) }
     }
     Spacer(Modifier.height(10.dp))
+}
+
+private fun pct(v: Double) = "%d%%".format((v * 100).toInt())
+
+@Composable
+private fun BassTunerCard(b: BassTuner) {
+    TunerHeader("Bass tuner", "Level, depth and feel of the low end.")
+    PresetRow(BassTuner.PRESETS, b) { p -> SvanRepository.update { it.copy(bass = p) } }
     SvanCard {
         Column {
-            ValueSlider("Amount", b.amountDb, ::formatDb,
-                toSlider = { ((it + 6) / 18).toFloat() }, fromSlider = { Math.round((it * 18 - 6) * 2) / 2.0 },
-                onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(amountDb = v)) } },
-                entryRange = -6.0..12.0, entryUnit = "dB")
-            ValueSlider("Depth", b.focusHz, { f -> "%.0f Hz · %s".format(f, if (f < 65) "deep sub" else if (f < 110) "full" else "mid-bass") },
-                toSlider = { (ln(it / 40.0) / ln(4.0)).toFloat() }, fromSlider = { Math.round(40.0 * 4.0.pow(it.toDouble())).toDouble() },
-                onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(focusHz = v)) } })
-            Row(Modifier.fillMaxWidth()) {
-                Text("Sustain · boom", style = MaterialTheme.typography.labelMedium, color = Svan.Cyan)
-                Spacer(Modifier.weight(1f))
-                Text("Punch · tight", style = MaterialTheme.typography.labelMedium, color = Svan.Saffron)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Knob("Amount", b.amountDb, -6.0, 12.0, ::formatDb, step = 0.5,
+                    onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(amountDb = v)) } })
+                Knob("Depth", b.focusHz, 40.0, 160.0, { f -> "%.0f Hz".format(f) }, default = 80.0, step = 1.0,
+                    onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(focusHz = v)) } })
+                Knob("Feel", b.character, -1.0, 1.0, { c ->
+                    when {
+                        c == 0.0 -> "Natural"
+                        c > 0 -> "Punch ${pct(c)}"
+                        else -> "Sustain ${pct(-c)}"
+                    }
+                }, step = 0.05, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
             }
-            ValueSlider("Feel", b.character, { c ->
-                when {
-                    c == 0.0 -> "Natural"
-                    c > 0 -> "Punch %d%%".format((c * 100).toInt())
-                    else -> "Sustain %d%%".format((-c * 100).toInt())
-                }
-            },
-                toSlider = { ((it + 1) / 2).toFloat() }, fromSlider = { Math.round((it * 2 - 1) * 20) / 20.0 },
-                onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } },
-                accent = if (b.character < 0) Svan.Cyan else Svan.Saffron)
-            Text(
-                "Feel shapes each bass note over time: punch sharpens kicks and shortens the tail for precise bass; " +
-                    "sustain softens the hit and lets notes bloom. Exact in the audiophile engine, approximated on system effects.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint,
-            )
+            Spacer(Modifier.height(6.dp))
+            Text("Depth: deep sub (40 Hz) ↔ mid-bass (160 Hz). Feel: sustain lets notes bloom; punch sharpens kicks and " +
+                "tightens tails. Exact in the audiophile engine, approximated on system effects.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
+        }
+    }
+}
+
+@Composable
+private fun VocalTunerCard(v: app.svan.model.VocalTuner) {
+    TunerHeader("Vocal tuner", "Intimate, warm vocals without the shrill edge.")
+    PresetRow(app.svan.model.VocalTuner.PRESETS, v) { p -> SvanRepository.update { it.copy(vocal = p) } }
+    SvanCard {
+        Column {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Knob("Intimacy", v.intimacy, 0.0, 1.0, ::pct, step = 0.05,
+                    onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(intimacy = x)) } })
+                Knob("Warmth", v.warmth, 0.0, 1.0, ::pct, step = 0.05,
+                    onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(warmth = x)) } })
+                Knob("Smooth", v.smoothness, 0.0, 1.0, ::pct, step = 0.05,
+                    onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(smoothness = x)) } })
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("Works on the centre of the mix, where the lead voice lives. Smooth only acts when a voice turns " +
+                "shrill (a screaming rock vocal), leaving mellow singers untouched. Full effect in the audiophile engine; " +
+                "a gentler approximation on system effects.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
+        }
+    }
+}
+
+@Composable
+private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
+    TunerHeader("Orchestral amplifier", "Strings, guitars, sitar, sax and the band around the voice.")
+    PresetRow(app.svan.model.InstrumentTuner.PRESETS, i) { p -> SvanRepository.update { it.copy(instrument = p) } }
+    SvanCard {
+        Column {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Knob("Space", i.space, -1.0, 1.0, { s ->
+                    when {
+                        s == 0.0 -> "Natural"
+                        s > 0 -> "Spacious ${pct(s)}"
+                        else -> "Intimate ${pct(-s)}"
+                    }
+                }, step = 0.05, onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(space = x)) } })
+                Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.05,
+                    onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(instruments = x)) } })
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("Shapes the sides of the stereo mix — where orchestras, guitars and backing vocals sit — so the lead " +
+                "vocal and the bass stay exactly as they are. No added reverb. Needs the audiophile engine (system " +
+                "effects can't separate centre from sides).",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         }
     }
 }

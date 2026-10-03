@@ -46,7 +46,8 @@ int sanitizeFactor(int f) { return (f == 2 || f == 4 || f == 8) ? f : 1; }
 Engine::Engine(const EngineConfig& cfg)
     : cfg_(cfg),
       eq_(std::max(1, cfg.channels), cfg.sampleRate * sanitizeFactor(cfg.oversample)),
-      bass_(cfg.sampleRate, std::max(1, cfg.channels)) {
+      bass_(cfg.sampleRate, std::max(1, cfg.channels)),
+      stereo_(cfg.sampleRate) {
   cfg_.channels = std::max(1, cfg_.channels);
   cfg_.oversample = sanitizeFactor(cfg_.oversample);
   cfg_.maxBlock = std::max(16, cfg_.maxBlock);
@@ -103,6 +104,7 @@ int Engine::latencyFrames() const { return os_.empty() ? 0 : os_[0]->latencySamp
 void Engine::reset() {
   eq_.reset();
   bass_.reset();
+  stereo_.reset();
   for (auto& o : os_) o->reset();
   for (auto& d : dither_) d.reset();
 }
@@ -141,6 +143,10 @@ void Engine::process(const float* in, float* out, int frames) {
         eq_.process(ch, y, n);
       }
       bass_.process(ch, y, n);  // bass needs no oversampling; runs at the base rate
+    }
+    if (C == 2) stereo_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);
+    for (int ch = 0; ch < C; ++ch) {
+      const double* y = &outBuf_[static_cast<size_t>(ch) * cfg_.maxBlock];
       for (int i = 0; i < n; ++i) peak = std::max(peak, std::fabs(y[i]));
     }
     double scale = agpGain;

@@ -96,6 +96,18 @@ class MainActivity : ComponentActivity() {
                 val r = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
                 EqController.log("bass preset=$name bands=${preset.bands().size} response@1kHz=%.2f dB".format(r))
             }
+            "tuners" -> {
+                // --ef intimacy/warmth/smooth/space/instruments <value>: set the vocal tuner and orchestral amplifier
+                fun f(k: String) = intent.getFloatExtra(k, 0f).toDouble()
+                SvanRepository.update {
+                    it.copy(
+                        vocal = app.svan.model.VocalTuner(f("intimacy"), f("warmth"), f("smooth")),
+                        instrument = app.svan.model.InstrumentTuner(f("space"), f("instruments")),
+                    )
+                }
+                val r = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
+                EqController.log("tuners vocal=${SvanRepository.eq.value.vocal} inst=${SvanRepository.eq.value.instrument} response@1kHz=%.2f dB".format(r))
+            }
             "tune" -> {
                 // --es query "Sennheiser HD 650" [--es source oratory1990] [--es sig HARMAN]: fetch from AutoEq and apply
                 val q = intent.getStringExtra("query") ?: return

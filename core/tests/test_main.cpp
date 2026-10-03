@@ -20,6 +20,7 @@
 #include "eqcore/resampler.h"
 #include "eqcore/bass.h"
 #include "eqcore/tuning.h"
+#include "eqcore/stereo.h"
 #include <fstream>
 #include <sstream>
 
@@ -763,6 +764,172 @@ TEST(real_hd650_correction_matches_autoeq) {
   auto fit = fitDenseBands(ours, 64);
   std::printf("    64-band fit of the real correction: rms %.2f dB\n", fit.rmsErrorDb);
   CHECK(fit.rmsErrorDb < 0.5);
+}
+
+// ------------------------------------------------- vocal tuner / instrument amp
+
+namespace {
+struct Stereo {
+  std::vector<double> l, r;
+};
+// mid/side test signal: centre content `mid(t)`, side content `side(t)`.
+Stereo ms(double fs, double secs, const std::function<double(double)>& mid, const std::function<double(double)>& side) {
+  Stereo st;
+  const int n = static_cast<int>(fs * secs);
+  for (int i = 0; i < n; ++i) {
+    const double t = i / fs;
+    st.l.push_back(mid(t) + side(t));
+    st.r.push_back(mid(t) - side(t));
+  }
+  return st;
+}
+Stereo runTuner(StereoTunerParams p, Stereo st, double fs) {
+  StereoTuner t(fs);
+  t.setParams(p);
+  for (size_t i = 0; i < st.l.size(); i += 256) {
+    const int n = static_cast<int>(std::min<size_t>(256, st.l.size() - i));
+    t.process(st.l.data() + i, st.r.data() + i, n);
+  }
+  return st;
+}
+std::vector<double> sideOf(const Stereo& st) {
+  std::vector<double> s(st.l.size());
+  for (size_t i = 0; i < s.size(); ++i) s[i] = 0.5 * (st.l[i] - st.r[i]);
+  return s;
+}
+std::vector<double> midOf(const Stereo& st) {
+  std::vector<double> m(st.l.size());
+  for (size_t i = 0; i < m.size(); ++i) m[i] = 0.5 * (st.l[i] + st.r[i]);
+  return m;
+}
+}  // namespace
+
+TEST(stereo_tuner_off_is_bit_exact) {
+  const double fs = 48000;
+  auto in = ms(fs, 0.5, [](double t) { return 0.3 * std::sin(2 * kPi * 440 * t); },
+               [](double t) { return 0.2 * std::sin(2 * kPi * 3000 * t); });
+  auto out = runTuner({}, in, fs);
+  CHECK(out.l == in.l && out.r == in.r);
+}
+
+TEST(instrument_amp_never_touches_a_centred_voice) {
+  const double fs = 48000;
+  // Pure centre content (L == R): voice fundamentals, formants and sibilance.
+  auto in = ms(fs, 1.0, [](double t) {
+    return 0.3 * std::sin(2 * kPi * 220 * t) + 0.2 * std::sin(2 * kPi * 3000 * t) + 0.05 * std::sin(2 * kPi * 7000 * t);
+  }, [](double) { return 0.0; });
+  StereoTunerParams p;
+  p.space = 1.0;
+  p.instruments = 1.0;
+  auto out = runTuner(p, in, fs);
+  CHECK(out.l == in.l && out.r == in.r);  // bit-identical, not just "close"
+  p.space = -1.0;
+  out = runTuner(p, in, fs);
+  CHECK(out.l == in.l && out.r == in.r);
+}
+
+TEST(space_widens_or_narrows_the_sides_but_not_side_bass) {
+  const double fs = 48000;
+  for (double space : {1.0, -1.0}) {
+    StereoTunerParams p;
+    p.space = space;
+    auto hi = runTuner(p, ms(fs, 1.0, [](double) { return 0.0; }, [](double t) { return 0.2 * std::sin(2 * kPi * 2000 * t); }), fs);
+    auto lo = runTuner(p, ms(fs, 1.0, [](double) { return 0.0; }, [](double t) { return 0.2 * std::sin(2 * kPi * 60 * t); }), fs);
+    const double gHi = toDb(sineAmplitude(sideOf(hi), 2000, fs, 24000, 48000) / 0.2);
+    const double gLo = toDb(sineAmplitude(sideOf(lo), 60, fs, 24000, 48000) / 0.2);
+    std::printf("    space %+.0f: sides at 2 kHz %+.2f dB, side bass at 60 Hz %+.2f dB\n", space, gHi, gLo);
+    CHECK_NEAR(gHi, 6.0 * space, 0.3);
+    CHECK_NEAR(gLo, 0.0, 0.3);
+  }
+}
+
+TEST(vocal_tuner_never_touches_the_sides) {
+  const double fs = 48000;
+  auto in = ms(fs, 0.5, [](double) { return 0.0; }, [](double t) {
+    return 0.2 * std::sin(2 * kPi * 220 * t) + 0.2 * std::sin(2 * kPi * 3800 * t);
+  });
+  StereoTunerParams p;
+  p.intimacy = p.warmth = p.smoothness = 1.0;
+  auto out = runTuner(p, in, fs);
+  double worst = 0;
+  for (size_t i = 0; i < in.l.size(); ++i) worst = std::max(worst, std::fabs(out.l[i] - in.l[i]));
+  CHECK(worst < 1e-12);
+}
+
+TEST(vocal_warmth_lifts_chest_and_softens_the_top) {
+  const double fs = 48000;
+  StereoTunerParams p;
+  p.warmth = 1.0;
+  for (auto [f, expect] : {std::pair{220.0, 3.0}, {12000.0, -2.0}}) {
+    auto out = runTuner(p, ms(fs, 1.0, [f = f](double t) { return 0.2 * std::sin(2 * kPi * f * t); }, [](double) { return 0.0; }), fs);
+    const double g = toDb(sineAmplitude(midOf(out), f, fs, 24000, 48000) / 0.2);
+    std::printf("    warmth at %.0f Hz: %+.2f dB\n", f, g);
+    CHECK_NEAR(g, expect, 0.5);
+  }
+}
+
+TEST(smoothness_tames_shrill_vocals_and_spares_mellow_ones) {
+  const double fs = 48000;
+  StereoTunerParams p;
+  p.smoothness = 1.0;
+  // Shrill: the 3.8 kHz edge dominates the voice. Mellow: it's a faint overtone.
+  auto shrillIn = [](double t) { return 0.1 * std::sin(2 * kPi * 300 * t) + 0.3 * std::sin(2 * kPi * 3800 * t); };
+  auto mellowIn = [](double t) { return 0.3 * std::sin(2 * kPi * 300 * t) + 0.03 * std::sin(2 * kPi * 3800 * t); };
+  auto shrill = runTuner(p, ms(fs, 1.0, shrillIn, [](double) { return 0.0; }), fs);
+  auto mellow = runTuner(p, ms(fs, 1.0, mellowIn, [](double) { return 0.0; }), fs);
+  const double cutShrill = toDb(sineAmplitude(midOf(shrill), 3800, fs, 24000, 48000) / 0.3);
+  const double cutMellow = toDb(sineAmplitude(midOf(mellow), 3800, fs, 24000, 48000) / 0.03);
+  const double body = toDb(sineAmplitude(midOf(shrill), 300, fs, 24000, 48000) / 0.1);
+  std::printf("    3.8 kHz edge: shrill voice %+.1f dB, mellow voice %+.1f dB; 300 Hz body %+.2f dB\n", cutShrill, cutMellow, body);
+  CHECK(cutShrill < -6.0);
+  CHECK(cutMellow > -1.0);
+  CHECK_NEAR(body, 0.0, 0.5);
+}
+
+TEST(engine_instrument_amp_keeps_centre_and_widens_sides) {
+  const double fs = 48000;
+  const int n = 48000;
+  auto run = [&](StereoTunerParams p, double sideAmp) {
+    EngineConfig cfg;
+    cfg.sampleRate = fs;
+    cfg.channels = 2;
+    cfg.oversample = 2;
+    cfg.autoHeadroom = false;
+    cfg.gainProtection = false;
+    Engine e(cfg);
+    e.setStereoTuner(p);
+    std::vector<float> buf(n * 2);
+    for (int i = 0; i < n; ++i) {
+      const double m = 0.2 * std::sin(2 * kPi * 1000 * i / fs), s = sideAmp * std::sin(2 * kPi * 2000 * i / fs);
+      buf[2 * i] = static_cast<float>(m + s);
+      buf[2 * i + 1] = static_cast<float>(m - s);
+    }
+    e.process(buf.data(), buf.data(), n);
+    return buf;
+  };
+  StereoTunerParams wide;
+  wide.space = 1.0;
+  auto offMono = run({}, 0.0), wideMono = run(wide, 0.0);
+  CHECK(offMono == wideMono);  // centre-only content: identical output through the whole chain
+  auto wideSides = run(wide, 0.1);
+  std::vector<double> side(n);
+  for (int i = 0; i < n; ++i) side[i] = 0.5 * (wideSides[2 * i] - wideSides[2 * i + 1]);
+  CHECK_NEAR(toDb(sineAmplitude(side, 2000, fs, n / 2, n) / 0.1), 6.0, 0.3);
+}
+
+TEST(stereo_tuner_is_stable_on_noise) {
+  const double fs = 44100;
+  StereoTuner t(fs);
+  StereoTunerParams p{1, 1, 1, 1, 1};
+  t.setParams(p);
+  std::mt19937 rng(4);
+  std::uniform_real_distribution<double> u(-1, 1);
+  std::vector<double> l(44100), r(44100);
+  for (size_t i = 0; i < l.size(); ++i) { l[i] = u(rng); r[i] = u(rng); }
+  t.process(l.data(), r.data(), static_cast<int>(l.size()));
+  bool ok = true;
+  for (size_t i = 0; i < l.size(); ++i) ok = ok && std::isfinite(l[i]) && std::isfinite(r[i]) && std::fabs(l[i]) < 10;
+  CHECK(ok);
 }
 
 TEST(quality_presets_are_consistent) {

@@ -4,7 +4,8 @@
 //
 //   float in -> 64-bit -> preamp (+ auto headroom) -> [oversample up]
 //            -> parametric EQ at the high rate -> [oversample down]
-//            -> bass character (punch/sustain) -> gain protection
+//            -> bass character (punch/sustain) -> vocal tuner / instrument amp (M/S)
+//            -> gain protection
 //            -> dither to the output word length -> float out
 //
 // QualityMode::Audiophile spends CPU on precision: EQ runs at 4x (or 8x) the
@@ -18,6 +19,7 @@
 #include "eqcore/dither.h"
 #include "eqcore/oversampler.h"
 #include "eqcore/parametric_eq.h"
+#include "eqcore/stereo.h"
 
 namespace eqcore {
 
@@ -56,6 +58,8 @@ class Engine {
   // Bass character: -1 sustain .. 0 off .. +1 punch; crossover 60..250 Hz.
   // Thread-safe: applied by the audio thread at the next block.
   void setBassCharacter(double character, double crossoverHz = 120.0);
+  // Vocal tuner + instrument amplifier (stereo engines only; mono ignores it).
+  void setStereoTuner(const StereoTunerParams& p) { stereo_.setParams(p); }
 
   // Interleaved float I/O. In-place (in == out) is allowed. Allocation-free.
   void process(const float* in, float* out, int frames);
@@ -86,6 +90,7 @@ class Engine {
   std::atomic<double> bassCrossover_{120.0};
   double appliedBassCrossover_ = 120.0;
   BassShaper bass_;
+  StereoTuner stereo_;
   std::vector<double> outBuf_, high_;  // per-channel chunk, oversampled scratch
 };
 

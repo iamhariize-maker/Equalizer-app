@@ -29,6 +29,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
     @Volatile private var inputGainDb: Float = 0f
     @Volatile private var bassCharacter: Double = 0.0
     @Volatile private var bassCrossoverHz: Double = 120.0
+    @Volatile private var deharsh: Double = 0.0
     /** MBC only exists in effects created while a bass feel was set (config is fixed at creation). */
     @Volatile private var mbcInUse = false
 
@@ -90,25 +91,28 @@ class GlobalEqEngine(bandCount: Int = 128) {
             DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
             CHANNELS,
             true, bandCount,   // pre-EQ: our curve
-            mbcInUse, if (mbcInUse) 2 else 0, // MBC: bass feel (see setBassDynamics)
+            mbcInUse, if (mbcInUse) 4 else 0, // MBC: bass feel + vocal smoothness (see setDynamics)
             false, 0,          // post-EQ
             true,              // limiter
         ).build()
 
     /**
-     * Bass feel on system effects: an approximation of the audiophile engine's
-     * shaper using DynamicsProcessing's multiband compressor on the bass band.
-     *  punch   -> downward expander (quiet tails decay faster: tighter)
-     *  sustain -> slow compressor + make-up gain (tails held up: more bloom)
+     * Dynamics on system effects, via DynamicsProcessing's multiband compressor
+     * (an approximation of the audiophile engine's processors):
+     *  band 0 (bass)      punch -> downward expander (tails decay faster: tighter)
+     *                     sustain -> slow compressor + make-up gain (tails held up)
+     *  band 2 (2.5-6 kHz) vocal smoothness -> fast compressor on the shrill band
+     *  bands 1, 3         neutral
      */
     @Synchronized
-    fun setBassDynamics(character: Double, crossoverHz: Double) {
-        val needMbc = character != 0.0
+    fun setDynamics(character: Double, crossoverHz: Double, smoothness: Double) {
+        val needMbc = character != 0.0 || smoothness > 0.0
         bassCharacter = character
         bassCrossoverHz = crossoverHz
+        deharsh = smoothness
         if (needMbc != mbcInUse) {
             mbcInUse = needMbc
-            EqController.log("system effects: bass dynamics ${if (needMbc) "on" else "off"} (${effects.size} session(s) re-created)")
+            EqController.log("system effects: dynamics ${if (needMbc) "on" else "off"} (${effects.size} session(s) re-created)")
             val sessions = effects.keys.toList()
             sessions.forEach(::detach)
             sessions.forEach { attach(it) }
@@ -120,18 +124,25 @@ class GlobalEqEngine(bandCount: Int = 128) {
     private fun applyMbc(dp: DynamicsProcessing) {
         if (!mbcInUse) return
         val c = bassCharacter.toFloat()
-        val bass = if (c > 0) {
-            DynamicsProcessing.MbcBand(true, bassCrossoverHz.toFloat(), 1f, 60f, 1f, 0f, 0f,
-                -45f + 15f * c, 1f + 2f * c, 0f, 0f)
-        } else {
-            val s = -c
-            DynamicsProcessing.MbcBand(true, bassCrossoverHz.toFloat(), 15f, 300f + 300f * s, 1f + 3f * s, -30f, 6f,
-                -90f, 1f, 0f, 4f * s)
+        val xo = bassCrossoverHz.toFloat().coerceAtMost(2000f)
+        val bass = when {
+            c > 0 -> DynamicsProcessing.MbcBand(true, xo, 1f, 60f, 1f, 0f, 0f, -45f + 15f * c, 1f + 2f * c, 0f, 0f)
+            c < 0 -> {
+                val s = -c
+                DynamicsProcessing.MbcBand(true, xo, 15f, 300f + 300f * s, 1f + 3f * s, -30f, 6f, -90f, 1f, 0f, 4f * s)
+            }
+            else -> neutral(xo)
         }
-        val rest = DynamicsProcessing.MbcBand(true, 20000f, 1f, 60f, 1f, 0f, 0f, -90f, 1f, 0f, 0f)
+        val d = deharsh.toFloat()
+        val harsh = if (d > 0) DynamicsProcessing.MbcBand(true, 6000f, 2f, 80f, 1f + 3f * d, -24f - 8f * d, 6f, -90f, 1f, 0f, 0f)
+        else neutral(6000f)
         dp.setMbcBandAllChannelsTo(0, bass)
-        dp.setMbcBandAllChannelsTo(1, rest)
+        dp.setMbcBandAllChannelsTo(1, neutral(2500f))
+        dp.setMbcBandAllChannelsTo(2, harsh)
+        dp.setMbcBandAllChannelsTo(3, neutral(20000f))
     }
+
+    private fun neutral(cutoff: Float) = DynamicsProcessing.MbcBand(true, cutoff, 1f, 60f, 1f, 0f, 0f, -90f, 1f, 0f, 0f)
 
     /**
      * Every band update is a binder call (measured on a TECNO LH7n: ~2 ms per

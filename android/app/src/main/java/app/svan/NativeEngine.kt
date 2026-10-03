@@ -60,6 +60,10 @@ class NativeEngine(
     /** Bass character: -1 sustain .. 0 off .. +1 punch (Engine B only; exact). */
     fun setBassCharacter(character: Double, crossoverHz: Double) = nativeSetBassCharacter(handle, character, crossoverHz)
 
+    /** Vocal tuner (mid) + instrument amplifier (side). Stereo engines only. */
+    fun setStereoTuner(intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double) =
+        nativeSetStereoTuner(handle, intimacy, warmth, smoothness, space, instruments)
+
     /** Preamp minus auto headroom currently applied, in dB. */
     val appliedGainDb: Double get() = nativeAppliedGainDb(handle)
 
@@ -113,6 +117,9 @@ class NativeEngine(
         @JvmStatic external fun nativeGainProtectionDb(handle: Long): Double
         @JvmStatic external fun nativeParseParametric(text: String): DoubleArray
         @JvmStatic external fun nativeSetBassCharacter(handle: Long, character: Double, crossoverHz: Double)
+        @JvmStatic external fun nativeSetStereoTuner(
+            handle: Long, intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double,
+        )
         @JvmStatic external fun nativeComputeTuning(measurement: String, target: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray
         @JvmStatic external fun nativeFitCorrection(text: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray
 

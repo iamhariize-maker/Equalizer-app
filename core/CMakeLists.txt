@@ -26,6 +26,7 @@ add_library(eqcore STATIC
   src/resampler.cpp
   src/bass.cpp
   src/tuning.cpp
+  src/stereo.cpp
   src/dither.cpp
   src/autoeq.cpp
   src/engine.cpp)
