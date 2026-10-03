@@ -20,6 +20,10 @@ import android.media.projection.MediaProjectionManager
 import android.os.IBinder
 import android.os.Process
 import android.util.Log
+import app.svan.model.AudioSettings
+import app.svan.model.DitherChoice
+import app.svan.model.EqState
+import app.svan.model.QualityMode
 
 /**
  * Engine B: capture other apps' playback, run the full native chain (parametric
@@ -49,7 +53,12 @@ class CaptureService : Service() {
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         @Suppress("DEPRECATION")
         val data: Intent? = intent?.getParcelableExtra(EXTRA_RESULT_DATA)
-        val quality = NativeEngine.Quality.entries[intent?.getIntExtra(EXTRA_QUALITY, 0) ?: 0]
+        SvanRepository.init(this)
+        if (intent?.hasExtra(EXTRA_QUALITY) == true) {
+            // Explicit quality (scripted tests) overrides the saved setting.
+            val q = QualityMode.entries[intent.getIntExtra(EXTRA_QUALITY, 0).coerceIn(0, QualityMode.entries.size - 1)]
+            SvanRepository.updateSettings { it.copy(quality = q) }
+        }
         if (data == null || running) return START_NOT_STICKY
 
         val mpm = getSystemService(MediaProjectionManager::class.java)
@@ -64,7 +73,8 @@ class CaptureService : Service() {
         SessionRouter.onCaptureStarted(mp)
 
         running = true
-        worker = Thread({ audioLoop(mp, quality) }, "eq-capture").apply {
+        isRunning = true
+        worker = Thread({ audioLoop(mp) }, "eq-capture").apply {
             priority = Thread.MAX_PRIORITY
             start()
         }
@@ -72,7 +82,7 @@ class CaptureService : Service() {
     }
 
     @SuppressLint("MissingPermission") // checked in MainActivity before starting
-    private fun audioLoop(mp: MediaProjection, quality: NativeEngine.Quality) {
+    private fun audioLoop(mp: MediaProjection) {
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
         val rate = EqController.SAMPLE_RATE
         val format = AudioFormat.Builder()
@@ -118,11 +128,24 @@ class CaptureService : Service() {
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
 
-        // The platform mixer converts our float output; 24-bit dither keeps the
-        // requantisation clean if the HAL runs at 24-bit.
-        val engine = NativeEngine(rate, 2, quality, outputBits = 24)
-        engine.loadParametricPreset(EqController.SAMPLE_PRESET)
-        EqController.log("capture: started, quality=$quality, DSP latency=${engine.latencyFrames} frames")
+        SvanRepository.init(this)
+        var settings = SvanRepository.settings.value
+        var engine = buildEngine(settings)
+        current = engine
+        // EQ edits arrive on their own thread; setBands is thread-safe, and the
+        // lock keeps an engine from being freed mid-update.
+        val eqWatcher = Thread({
+            var last: EqState? = null
+            while (running) {
+                val eq = SvanRepository.eq.value
+                if (eq !== last) {
+                    synchronized(engineLock) { current?.let { applyEq(it, eq) } }
+                    last = eq
+                }
+                Thread.sleep(15)
+            }
+        }, "svan-eq-watch").apply { start() }
+        EqController.log("capture: started, quality=${settings.quality}, DSP latency=${engine.latencyFrames} frames")
 
         val frames = 256
         val buf = FloatArray(frames * 2)
@@ -130,6 +153,17 @@ class CaptureService : Service() {
         track.play()
         try {
             while (running) {
+                val now = SvanRepository.settings.value
+                if (now != settings) {
+                    // Quality / dither / gain settings changed: rebuild between blocks.
+                    synchronized(engineLock) {
+                        engine.close()
+                        settings = now
+                        engine = buildEngine(now)
+                        current = engine
+                    }
+                    EqController.log("capture: engine rebuilt, quality=${now.quality}")
+                }
                 val n = record.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                 if (n <= 0) continue
                 engine.process(buf, buf, n / 2)
@@ -138,7 +172,12 @@ class CaptureService : Service() {
         } finally {
             record.stop(); record.release()
             track.stop(); track.release()
-            engine.close()
+            eqWatcher.join(200)
+            synchronized(engineLock) {
+                current = null
+                engine.close()
+            }
+            isRunning = false
             EqController.log("capture: stopped")
         }
     }
@@ -167,10 +206,31 @@ class CaptureService : Service() {
         sync()
     }
 
+    private val engineLock = Any()
+    @Volatile private var current: NativeEngine? = null
+
+    private fun buildEngine(s: AudioSettings): NativeEngine =
+        NativeEngine(
+            EqController.SAMPLE_RATE, 2,
+            oversample = s.quality.oversample,
+            stopbandDb = s.quality.stopbandDb,
+            // Dither "off" means no word-length reduction at all: float goes straight out.
+            ditherBits = if (s.dither == DitherChoice.OFF) 0 else s.outputBits,
+            ditherMode = s.dither.nativeMode,
+            autoHeadroom = s.autoHeadroom,
+            gainProtection = s.gainProtection,
+        ).also { applyEq(it, SvanRepository.eq.value) }
+
+    private fun applyEq(engine: NativeEngine, eq: EqState) {
+        engine.setBands(eq.effectiveBands().map { it.toNative() })
+        engine.setPreampDb(eq.effectivePreampDb())
+    }
+
     override fun onDestroy() {
         playbackCallback?.let { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(it) }
         SessionRouter.onCaptureStopped()
         running = false
+        isRunning = false
         worker?.join(500)
         projection?.stop()
         super.onDestroy()
@@ -194,13 +254,17 @@ class CaptureService : Service() {
         const val EXTRA_RESULT_DATA = "resultData"
         const val EXTRA_QUALITY = "quality"
 
-        fun start(context: Context, resultCode: Int, data: Intent, quality: NativeEngine.Quality) {
-            Log.i(TAG, "starting capture, quality=$quality")
+        @Volatile var isRunning = false
+            private set
+
+        /** [quality] null = use the saved Audiophile setting. */
+        fun start(context: Context, resultCode: Int, data: Intent, quality: QualityMode? = null) {
+            Log.i(TAG, "starting capture, quality=${quality ?: "saved"}")
             context.startForegroundService(
                 Intent(context, CaptureService::class.java)
                     .putExtra(EXTRA_RESULT_CODE, resultCode)
                     .putExtra(EXTRA_RESULT_DATA, data)
-                    .putExtra(EXTRA_QUALITY, quality.ordinal),
+                    .apply { if (quality != null) putExtra(EXTRA_QUALITY, quality.ordinal) },
             )
         }
     }

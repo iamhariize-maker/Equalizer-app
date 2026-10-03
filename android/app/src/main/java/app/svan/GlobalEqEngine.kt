@@ -17,7 +17,10 @@ import kotlin.math.sqrt
  * parametric curve is rendered by the native core and sampled into [bandCount]
  * log-spaced bands. Each band covers frequencies up to its cutoff.
  */
-class GlobalEqEngine(val bandCount: Int = 128) {
+class GlobalEqEngine(bandCount: Int = 128) {
+
+    @Volatile var bandCount: Int = bandCount
+        private set
 
     private val effects = ConcurrentHashMap<Int, DynamicsProcessing>()
     private val lastSent = ConcurrentHashMap<DynamicsProcessing, FloatArray>()
@@ -53,9 +56,22 @@ class GlobalEqEngine(val bandCount: Int = 128) {
 
     fun releaseAll() = effects.keys.toList().forEach(::detach)
 
+    /** Changes the band count; attached sessions are re-created with the new layout. */
+    @Synchronized
+    fun reconfigure(bands: Int) {
+        if (bands == bandCount) return
+        val sessions = effects.keys.toList()
+        sessions.forEach(::detach)
+        bandCount = bands
+        centersHz = logSpaced(bands, 20.0, 20000.0)
+        gainsDb = DoubleArray(bands)
+        sessions.forEach { attach(it) }
+    }
+
     /** Samples [engine]'s parametric curve into the band gains and pushes it to every session. */
     fun applyCurveFrom(engine: NativeEngine) {
         val response = engine.responseDb(centersHz)
+        if (response.size != bandCount) return // raced with reconfigure(); the next update fixes it
         // responseDb already includes the engine's auto-headroom/preamp. Keep a
         // limiter after the EQ as a second line of defence against overs.
         val peak = response.maxOrNull() ?: 0.0

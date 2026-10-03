@@ -431,6 +431,8 @@ TEST(engine_auto_headroom_prevents_clipping) {
   Engine e(cfg);
   e.setBandsAllChannels({{FilterType::Peak, 1000, 12, 1.0, true}});
   CHECK_NEAR(e.appliedGainDb(), -12.0, 0.01);
+  CHECK_NEAR(e.eqResponseDb(0, 1000), 12.0, 1e-9);  // UI curve excludes the headroom
+  CHECK_NEAR(e.responseDb(0, 1000), 0.0, 1e-3);     // total includes it (grid-sampled peak)
   CHECK_NEAR(engineGainDb(e, 1000, 0.99), 0.0, 0.02);  // boost cancelled by headroom: no overs
 }
 

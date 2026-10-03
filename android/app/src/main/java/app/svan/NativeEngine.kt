@@ -15,9 +15,30 @@ class NativeEngine(
     /** Ordinal values must match typeFromInt() in jni_bridge.cpp. */
     enum class FilterType { PEAK, LOW_SHELF, HIGH_SHELF, LOW_PASS, HIGH_PASS, BAND_PASS, NOTCH, ALL_PASS }
 
-    data class Band(val type: FilterType, val freqHz: Double, val gainDb: Double, val q: Double)
+    data class Band(
+        val type: FilterType,
+        val freqHz: Double,
+        val gainDb: Double,
+        val q: Double,
+        val enabled: Boolean = true,
+    )
 
     private var handle: Long = nativeCreate(sampleRate, channels, quality.ordinal, outputBits)
+
+    /** Fully custom configuration (Audiophile settings screen). */
+    constructor(
+        sampleRate: Int,
+        channels: Int,
+        oversample: Int,
+        stopbandDb: Double,
+        ditherBits: Int,
+        ditherMode: Int,
+        autoHeadroom: Boolean,
+        gainProtection: Boolean,
+    ) : this(sampleRate, channels, Quality.EFFICIENT) {
+        nativeDestroy(handle)
+        handle = nativeCreateCustom(sampleRate, channels, oversample, stopbandDb, ditherBits, ditherMode, autoHeadroom, gainProtection)
+    }
 
     val latencyFrames: Int get() = nativeLatency(handle)
 
@@ -29,8 +50,18 @@ class NativeEngine(
             DoubleArray(bands.size) { bands[it].freqHz },
             DoubleArray(bands.size) { bands[it].gainDb },
             DoubleArray(bands.size) { bands[it].q },
+            BooleanArray(bands.size) { bands[it].enabled },
         )
     }
+
+    /** The bands' own response in dB (no preamp/headroom) — what the UI draws. */
+    fun curveDb(freqsHz: DoubleArray, channel: Int = 0): DoubleArray = nativeCurveDb(handle, channel, freqsHz)
+
+    /** Preamp minus auto headroom currently applied, in dB. */
+    val appliedGainDb: Double get() = nativeAppliedGainDb(handle)
+
+    /** Attenuation Automatic Gain Protection has applied so far (<= 0 dB). */
+    val gainProtectionDb: Double get() = nativeGainProtectionDb(handle)
 
     /** AutoEq "ParametricEQ.txt" contents. Returns the number of bands loaded. */
     fun loadParametricPreset(text: String): Int = nativeLoadParametricPreset(handle, text)
@@ -52,14 +83,32 @@ class NativeEngine(
         }
     }
 
-    private companion object {
+    companion object {
         init { System.loadLibrary("eqjni") }
+
+        /** Parses AutoEq/Equalizer APO "ParametricEQ.txt" text. Returns (preampDb, bands). */
+        fun parseParametric(text: String): Pair<Double, List<Band>> {
+            val raw = nativeParseParametric(text)
+            val bands = (1 until raw.size step 5).map { i ->
+                Band(FilterType.entries[raw[i].toInt()], raw[i + 1], raw[i + 2], raw[i + 3], raw[i + 4] != 0.0)
+            }
+            return raw[0] to bands
+        }
 
         @JvmStatic external fun nativeCreate(sampleRate: Int, channels: Int, quality: Int, outputBits: Int): Long
         @JvmStatic external fun nativeDestroy(handle: Long)
         @JvmStatic external fun nativeSetBands(
             handle: Long, channel: Int, types: IntArray, freqs: DoubleArray, gains: DoubleArray, qs: DoubleArray,
+            enabled: BooleanArray,
         )
+        @JvmStatic external fun nativeCreateCustom(
+            sampleRate: Int, channels: Int, oversample: Int, stopbandDb: Double, ditherBits: Int, ditherMode: Int,
+            autoHeadroom: Boolean, gainProtection: Boolean,
+        ): Long
+        @JvmStatic external fun nativeCurveDb(handle: Long, channel: Int, freqs: DoubleArray): DoubleArray
+        @JvmStatic external fun nativeAppliedGainDb(handle: Long): Double
+        @JvmStatic external fun nativeGainProtectionDb(handle: Long): Double
+        @JvmStatic external fun nativeParseParametric(text: String): DoubleArray
         @JvmStatic external fun nativeLoadParametricPreset(handle: Long, text: String): Int
         @JvmStatic external fun nativeSetPreamp(handle: Long, db: Double)
         @JvmStatic external fun nativeProcess(handle: Long, input: FloatArray, output: FloatArray, frames: Int)

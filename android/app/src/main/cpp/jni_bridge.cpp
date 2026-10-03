@@ -41,10 +41,10 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeDestroy(JNIEnv*, jclass,
 
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBands(
     JNIEnv* env, jclass, jlong h, jint channel, jintArray types, jdoubleArray freqs,
-    jdoubleArray gains, jdoubleArray qs) {
+    jdoubleArray gains, jdoubleArray qs, jbooleanArray enabled) {
   const jsize n = env->GetArrayLength(types);
   if (env->GetArrayLength(freqs) != n || env->GetArrayLength(gains) != n ||
-      env->GetArrayLength(qs) != n)
+      env->GetArrayLength(qs) != n || env->GetArrayLength(enabled) != n)
     return;
   std::vector<jint> t(n);
   std::vector<jdouble> f(n), g(n), q(n);
@@ -52,8 +52,10 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBands(
   env->GetDoubleArrayRegion(freqs, 0, n, f.data());
   env->GetDoubleArrayRegion(gains, 0, n, g.data());
   env->GetDoubleArrayRegion(qs, 0, n, q.data());
+  std::vector<jboolean> on(n);
+  env->GetBooleanArrayRegion(enabled, 0, n, on.data());
   std::vector<BandParams> bands(n);
-  for (jsize i = 0; i < n; ++i) bands[i] = {typeFromInt(t[i]), f[i], g[i], q[i], true};
+  for (jsize i = 0; i < n; ++i) bands[i] = {typeFromInt(t[i]), f[i], g[i], q[i], on[i] == JNI_TRUE};
   if (channel < 0) fromHandle(h)->setBandsAllChannels(bands);
   else fromHandle(h)->setBands(channel, bands);
 }
@@ -91,6 +93,60 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeResponseDb(
   for (jsize i = 0; i < n; ++i) r[i] = fromHandle(h)->responseDb(channel, f[i]);
   jdoubleArray result = env->NewDoubleArray(n);
   env->SetDoubleArrayRegion(result, 0, n, r.data());
+  return result;
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeCurveDb(
+    JNIEnv* env, jclass, jlong h, jint channel, jdoubleArray freqs) {
+  const jsize n = env->GetArrayLength(freqs);
+  std::vector<jdouble> f(n), r(n);
+  env->GetDoubleArrayRegion(freqs, 0, n, f.data());
+  for (jsize i = 0; i < n; ++i) r[i] = fromHandle(h)->eqResponseDb(channel, f[i]);
+  jdoubleArray result = env->NewDoubleArray(n);
+  env->SetDoubleArrayRegion(result, 0, n, r.data());
+  return result;
+}
+
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeAppliedGainDb(JNIEnv*, jclass, jlong h) {
+  return fromHandle(h)->appliedGainDb();
+}
+
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeGainProtectionDb(JNIEnv*, jclass, jlong h) {
+  return fromHandle(h)->gainProtectionDb();
+}
+
+JNIEXPORT jlong JNICALL Java_app_svan_NativeEngine_nativeCreateCustom(
+    JNIEnv*, jclass, jint sampleRate, jint channels, jint oversample, jdouble stopbandDb, jint ditherBits,
+    jint ditherMode, jboolean autoHeadroom, jboolean gainProtection) {
+  EngineConfig c;
+  c.sampleRate = sampleRate;
+  c.channels = channels;
+  c.oversample = oversample;
+  c.stopbandDb = stopbandDb;
+  c.ditherBits = ditherBits;
+  c.ditherMode = static_cast<DitherMode>(ditherMode < 0 || ditherMode > 2 ? 1 : ditherMode);
+  c.autoHeadroom = autoHeadroom;
+  c.gainProtection = gainProtection;
+  return reinterpret_cast<jlong>(new Engine(c));
+}
+
+// Returns [preampDb, type0, freq0, gain0, q0, enabled0, type1, ...]; types use the
+// same ordinals as typeFromInt(). Lines that fail to parse are skipped.
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeParseParametric(JNIEnv* env, jclass,
+                                                                                jstring text) {
+  const char* chars = env->GetStringUTFChars(text, nullptr);
+  const ParametricPreset p = parseParametricEq(chars);
+  env->ReleaseStringUTFChars(text, chars);
+  std::vector<jdouble> out{p.preampDb};
+  for (const auto& b : p.bands) {
+    out.push_back(static_cast<double>(static_cast<int>(b.type)));
+    out.push_back(b.freqHz);
+    out.push_back(b.gainDb);
+    out.push_back(b.q);
+    out.push_back(b.enabled ? 1.0 : 0.0);
+  }
+  jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(out.size()));
+  env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(out.size()), out.data());
   return result;
 }
 

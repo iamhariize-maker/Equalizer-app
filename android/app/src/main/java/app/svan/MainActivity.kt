@@ -1,75 +1,51 @@
 package app.svan
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import app.svan.model.QualityMode
+import app.svan.ui.SvanApp
+import app.svan.ui.SvanTheme
 import kotlin.concurrent.thread
 
-/** Bare diagnostics UI for the spike: no design, just buttons and a log. */
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
 
-    private lateinit var logView: TextView
-    private var quality = NativeEngine.Quality.AUDIOPHILE
+    /** Quality forced by a scripted start_capture; null = the saved setting. */
+    private var pendingQuality: QualityMode? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.BLACK),
+        )
         super.onCreate(savedInstanceState)
-        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 32, 32, 32) }
-        logView = TextView(this).apply { setTextIsSelectable(true); typeface = android.graphics.Typeface.MONOSPACE }
-
-        fun button(label: String, onClick: (Button) -> Unit) =
-            Button(this).apply { text = label; setOnClickListener { onClick(this) } }.also { root.addView(it) }
-
-        button("1. Probe DynamicsProcessing band limits") {
-            append("Probing…")
-            thread { val r = DynamicsProbe.run(this); runOnUiThread { append(r) } }
-        }
-        button("1b. Measure audible band resolution (plays tones, volume low!)") {
-            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
-                append("Grant microphone permission (needed by Visualizer), then tap again.")
-                return@button
-            }
-            append("Measuring… (~1 min)")
-            thread {
-                val r = ResolutionProbe.timeBulkSet(this) + ResolutionProbe.run(this)
-                runOnUiThread { append(r) }
-            }
-        }
-        button("2. Engine A: load sample AutoEq preset") {
-            val n = EqController.loadPreset(EqController.SAMPLE_PRESET)
-            append("Loaded $n bands into ${EqController.globalEq.bandCount}-band DynamicsProcessing; " +
-                "sessions attached: ${EqController.globalEq.attachedSessions}")
-        }
-        button("3. Engine B quality: $quality") { b ->
-            quality = NativeEngine.Quality.entries[(quality.ordinal + 1) % NativeEngine.Quality.entries.size]
-            b.text = "3. Engine B quality: $quality"
-        }
-        button("4. Engine B: start capture") { startCapture() }
-        button("5. Engine B: stop capture") {
-            startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
-        }
-        button("6. Session discovery diagnostics") {
-            thread { val r = sessionReport(); runOnUiThread { append(r) } }
-        }
-        button("7. Forget per-app capture verdicts") {
-            SessionRouter.init(this)
-            SessionRouter.compat().clear()
-            append("Capture verdicts cleared")
-        }
-        button("Refresh log") { refresh() }
+        SvanRepository.init(this)
+        SessionRouter.init(this)
 
         val dump = checkSelfPermission(Manifest.permission.DUMP) == PackageManager.PERMISSION_GRANTED
-        append("DUMP permission: ${if (dump) "granted" else "not granted (adb shell pm grant $packageName android.permission.DUMP)"}")
+        EqController.log("DUMP permission: ${if (dump) "granted" else "not granted (adb shell pm grant $packageName android.permission.DUMP)"}")
 
-        root.addView(ScrollView(this).apply { addView(logView) })
-        setContentView(root)
+        setContent {
+            SvanTheme {
+                SvanApp(
+                    onStartCapture = { pendingQuality = null; startCapture() },
+                    onStopCapture = ::stopCapture,
+                    labActions = listOf(
+                        "Probe band limits" to { thread { EqController.log(DynamicsProbe.run(this)) } },
+                        "Audible resolution" to ::runResolutionProbe,
+                        "Sessions" to { thread { EqController.log(sessionReport()) } },
+                        "Forget capture verdicts" to { SessionRouter.compat().clear(); EqController.log("Capture verdicts cleared") },
+                    ),
+                )
+            }
+        }
         handleCommand(intent)
     }
 
@@ -86,11 +62,11 @@ class MainActivity : Activity() {
      */
     private fun handleCommand(intent: Intent?) {
         val cmd = intent?.getStringExtra("cmd") ?: return
-        intent.getStringExtra("quality")?.let { quality = NativeEngine.Quality.valueOf(it) }
+        intent.getStringExtra("quality")?.let { pendingQuality = QualityMode.valueOf(it) }
         EqController.log("CMD $cmd")
         when (cmd) {
             "probe" -> thread { EqController.log(DynamicsProbe.run(this)) }
-            "resolution" -> thread { EqController.log(ResolutionProbe.timeBulkSet(this) + ResolutionProbe.run(this)) }
+            "resolution" -> runResolutionProbe()
             "sessions" -> thread { EqController.log(sessionReport()) }
             "preset" -> {
                 val n = EqController.loadPreset(EqController.SAMPLE_PRESET)
@@ -98,12 +74,22 @@ class MainActivity : Activity() {
                 EqController.log("preset bands=$n response@1kHz=%.2f dB".format(r))
             }
             "start_capture" -> startCapture()
-            "stop_capture" -> startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
+            "stop_capture" -> stopCapture()
             "measure_mix" -> thread {
                 EqController.log(try { MixMeter.measure(intent.getFloatExtra("seconds", 3f).toDouble()) } catch (e: Exception) { "MIX error $e" })
             }
-            "forget_verdicts" -> { SessionRouter.init(this); SessionRouter.compat().clear() }
+            "forget_verdicts" -> SessionRouter.compat().clear()
         }
+    }
+
+    private fun runResolutionProbe() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
+            EqController.log("Grant microphone permission (needed by Visualizer), then run again.")
+            return
+        }
+        EqController.log("Measuring… (~1 min, plays tones)")
+        thread { EqController.log(ResolutionProbe.timeBulkSet(this) + ResolutionProbe.run(this)) }
     }
 
     private fun sessionReport(): String = buildString {
@@ -114,7 +100,6 @@ class MainActivity : Activity() {
             appendLine("  sid=${it.sessionId} ${it.packageName} ${it.usage} ${it.state} flags=0x${it.flags.toString(16)}" +
                 if (it.flagsBlockCapture) " (capture opt-out)" else "")
         }
-        SessionRouter.init(this@MainActivity)
         appendLine("routes: " + SessionRouter.snapshot.joinToString { "${it.pkg}#${it.sessionId}=${it.owner}" })
         appendLine("capture verdicts: ${SessionRouter.compat().all()}")
     }
@@ -132,30 +117,28 @@ class MainActivity : Activity() {
         startActivityForResult(mpm.createScreenCaptureIntent(), REQ_PROJECTION)
     }
 
-    @Deprecated("Spike uses the framework Activity API")
+    private fun stopCapture() {
+        startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
+    }
+
+    @Deprecated("Uses the framework result API so scripted tests keep working")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQ_PROJECTION && resultCode == RESULT_OK && data != null) {
-            CaptureService.start(this, resultCode, data, quality)
-            append("Capture requested ($quality)")
-        } else if (requestCode == REQ_PROJECTION) {
-            append("Capture permission denied")
+        if (requestCode != REQ_PROJECTION) return
+        if (resultCode == RESULT_OK && data != null) {
+            CaptureService.start(this, resultCode, data, pendingQuality)
+            EqController.log("Capture requested (${pendingQuality ?: SvanRepository.settings.value.quality})")
+        } else {
+            EqController.log("Capture permission denied")
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+    @Deprecated("Uses the framework permission API")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        @Suppress("DEPRECATION")
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_PERMS && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) startCapture()
-    }
-
-    private fun refresh() {
-        logView.text = synchronized(EqController.log) { EqController.log.toString() }
-    }
-
-    private fun append(line: String) {
-        EqController.log(line)
-        refresh()
     }
 
     private companion object {

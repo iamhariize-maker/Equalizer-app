@@ -57,6 +57,8 @@ class Engine {
 
   // Response of the configured curve, including preamp and auto headroom.
   double responseDb(int channel, double freqHz) const;
+  // Response of the bands alone (no preamp/headroom): what a UI draws.
+  double eqResponseDb(int channel, double freqHz) const { return eq_.responseDb(channel, freqHz); }
   double appliedGainDb() const { return gainDb_.load(); }
   // Extra attenuation Automatic Gain Protection has applied so far (<= 0 dB).
   double gainProtectionDb() const { return agpDb_.load(); }

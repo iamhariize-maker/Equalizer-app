@@ -10,7 +10,7 @@ object EqController {
     /** Parametric curve source of truth; also renders the curve for Engine A. */
     val curveEngine: NativeEngine by lazy { NativeEngine(SAMPLE_RATE, 2, NativeEngine.Quality.EFFICIENT) }
 
-    val globalEq = GlobalEqEngine(bandCount = 64)
+    val globalEq = GlobalEqEngine(bandCount = 128)
 
     val log = StringBuilder()
 
@@ -19,11 +19,8 @@ object EqController {
         synchronized(log) { log.appendLine(line) }
     }
 
-    fun loadPreset(text: String): Int {
-        val n = curveEngine.loadParametricPreset(text)
-        globalEq.applyCurveFrom(curveEngine)
-        return n
-    }
+    /** Loads AutoEq text into the shared state; both engines follow it. */
+    fun loadPreset(text: String): Int = SvanRepository.importParametric("Sample preset", text)
 
     /** Sample AutoEq-format preset used by the spike UI. */
     const val SAMPLE_PRESET = """Preamp: -6.0 dB
