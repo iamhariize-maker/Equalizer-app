@@ -241,10 +241,10 @@ fun SoundScreen() {
                         ValueSlider("Brightness", tilt, { v -> if (v == 0.0) "Neutral" else if (v > 0) "Brighter %.1f".format(v * 10) else "Warmer %.1f".format(-v * 10) },
                             toSlider = { ((it + 0.6) / 1.2).toFloat() }, fromSlider = { Math.round((it * 1.2 - 0.6) * 20) / 20.0 },
                             onChange = { tilt = it })
-                        Text("Resolution", style = MaterialTheme.typography.bodyMedium, color = Svan.TextMuted)
+                        Text("Resolution (bands)", style = MaterialTheme.typography.bodyMedium, color = Svan.TextMuted)
                         Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(32, 64, 96).forEach { n -> Pill("$n bands", bandCount == n, { bandCount = n }) }
+                            listOf(32, 64, 96).forEach { n -> Pill("$n", bandCount == n, { bandCount = n }) }
                         }
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {

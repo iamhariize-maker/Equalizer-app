@@ -6,7 +6,7 @@ A="adb -s $S"
 mkdir -p "$OUT"
 # Boot animation: cold start, capture mid-morph and at the full name.
 $A shell am force-stop app.svan; $A shell am start -n app.svan/.MainActivity >/dev/null
-sleep 1; $A exec-out screencap -p > "$OUT/boot-1.png"
+sleep 1.2; $A exec-out screencap -p > "$OUT/boot-1.png"
 sleep 0.9; $A exec-out screencap -p > "$OUT/boot-2.png"
 echo "saved boot frames"
 sleep 6
@@ -25,6 +25,7 @@ swipe_up() { $A shell input swipe $((W / 2)) $((H * 3 / 4)) $((W / 2)) $((H / 5)
 swipe_up; shot 0b-sound-tuners
 swipe_up; shot 0c-sound-tuners
 swipe_up; shot 0d-sound-tuners
+swipe_up; shot 0e-sound-tuners
 tap_text "EQ" && shot 1-eq
 tap_text "Graphic" && shot 2-eq-graphic
 tap_text "Parametric"

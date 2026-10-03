@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +35,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.async
@@ -80,7 +82,9 @@ fun Exten9edTitle(modifier: Modifier = Modifier) {
     Row(modifier.clearAndSetSemantics { contentDescription = "EQ Extended" }, verticalAlignment = Alignment.Bottom) {
         Text("EQ exten", style = style)
         // A vertically flipped "d": the bowl rises to the top and the stem descends — a 9.
-        Text("d", style = style, modifier = Modifier.graphicsLayer { scaleY = -1f; translationY = -style.fontSize.toPx() * 0.12f })
+        // Flipping about the line box centre lifts the glyph; drop it back so the stem
+        // reaches the baseline like the descender of a 9.
+        Text("d", style = style, modifier = Modifier.graphicsLayer { scaleY = -1f; translationY = style.fontSize.toPx() * 0.24f })
         Text("ed", style = style)
     }
 }
@@ -132,14 +136,18 @@ fun BootAnimation(onDone: () -> Unit) {
                     strokeWidth = 1.dp.toPx())
             }
         }
+        BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        // Fit "Svanam Shreshtham" (17 serif glyphs) on one line on any screen width.
+        val fitSp = (maxWidth.value / 10.2f).coerceIn(20f, 36f)
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Box(contentAlignment = Alignment.Center) {
-                val big = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 46.sp, brush = Svan.AccentBrush)
-                Text("Svan", style = big, modifier = Modifier.alpha(shortIn.value * (1f - morph.value))
+                val big = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = (fitSp * 1.35f).sp, brush = Svan.AccentBrush)
+                Text("Svan", style = big, maxLines = 1, modifier = Modifier.alpha(shortIn.value * (1f - morph.value))
                     .graphicsLayer { val s = 0.92f + 0.08f * shortIn.value; scaleX = s; scaleY = s })
                 Text(
                     BRAND_FULL,
-                    style = big.copy(fontSize = 34.sp, letterSpacing = (4 * (1 - morph.value)).sp),
+                    style = big.copy(fontSize = fitSp.sp, letterSpacing = (3 * (1 - morph.value)).sp),
+                    maxLines = 1, softWrap = false, textAlign = TextAlign.Center,
                     modifier = Modifier.alpha(morph.value).graphicsLayer { val s = 0.9f + 0.1f * morph.value; scaleX = s; scaleY = s },
                 )
             }
@@ -152,6 +160,7 @@ fun BootAnimation(onDone: () -> Unit) {
                 color = Svan.Molten,
                 modifier = Modifier.alpha(tagline.value).padding(start = 6.dp),
             )
+        }
         }
     }
 }
