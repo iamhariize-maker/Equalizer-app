@@ -150,7 +150,7 @@ fun EqScreen() {
                     )
                     val hr = if (settings.autoHeadroom) "Auto headroom: ${formatDb(-max(0.0, headroom))} applied so boosts never clip"
                     else if (headroom > 0) "Peak boost ${formatDb(headroom)} — may clip without auto headroom" else "No clipping risk"
-                    Text(hr, style = MaterialTheme.typography.bodySmall, color = if (!settings.autoHeadroom && headroom > 0) Svan.Rose else Svan.TextMuted)
+                    Text(hr, style = MaterialTheme.typography.bodySmall, color = if (!settings.autoHeadroom && headroom > 0) Svan.Ember else Svan.TextMuted)
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -173,17 +173,34 @@ private fun Header(enabled: Boolean, preset: String, quality: String, onPower: (
                 EngineStatus(quality)
             }
         }
-        val ring = if (enabled) Svan.Saffron else Svan.Outline
-        IconButton(
-            onClick = onPower,
-            modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(if (enabled) Svan.Saffron.copy(alpha = 0.14f) else Svan.SurfaceHigh)
-                .border(1.5.dp, ring, CircleShape),
-        ) {
-            Icon(Icons.Outlined.PowerSettingsNew, contentDescription = if (enabled) "Turn EQ off" else "Turn EQ on",
-                tint = if (enabled) Svan.Saffron else Svan.TextMuted)
+        val ring = if (enabled) Svan.Gold else Svan.Outline
+        Box(contentAlignment = Alignment.Center) {
+            // Yantra: concentric hairline rings and eight radial marks around the power control.
+            androidx.compose.foundation.Canvas(Modifier.size(64.dp)) {
+                val c = if (enabled) Svan.Gold else Svan.Outline
+                val r = size.minDimension / 2
+                drawCircle(c.copy(alpha = 0.35f), radius = r - 1f, style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
+                drawCircle(c.copy(alpha = 0.18f), radius = r - 5.dp.toPx(), style = androidx.compose.ui.graphics.drawscope.Stroke(1f))
+                for (k in 0 until 8) {
+                    val a = Math.PI / 4 * k
+                    val r0 = r - 4.dp.toPx()
+                    drawLine(c.copy(alpha = 0.4f),
+                        androidx.compose.ui.geometry.Offset(center.x + (r0 * kotlin.math.cos(a)).toFloat(), center.y + (r0 * kotlin.math.sin(a)).toFloat()),
+                        androidx.compose.ui.geometry.Offset(center.x + ((r - 1f) * kotlin.math.cos(a)).toFloat(), center.y + ((r - 1f) * kotlin.math.sin(a)).toFloat()),
+                        strokeWidth = 1f)
+                }
+            }
+            IconButton(
+                onClick = onPower,
+                modifier = Modifier
+                    .size(46.dp)
+                    .clip(CircleShape)
+                    .background(if (enabled) Svan.Gold.copy(alpha = 0.12f) else Svan.SurfaceHigh)
+                    .border(1.dp, ring, CircleShape),
+            ) {
+                Icon(Icons.Outlined.PowerSettingsNew, contentDescription = if (enabled) "Turn EQ off" else "Turn EQ on",
+                    tint = if (enabled) Svan.Gold else Svan.TextMuted)
+            }
         }
     }
 }
@@ -210,7 +227,8 @@ private fun EngineStatus(quality: String) {
         Modifier.clip(RoundedCornerShape(50)).background(Svan.SurfaceHigh).padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(7.dp).clip(CircleShape).background(if (live) Svan.Green else Svan.TextFaint))
+        Box(Modifier.size(7.dp).clip(CircleShape).background(if (live) Svan.Glow else Svan.TextFaint)
+            .border(if (live) 2.dp else 0.dp, Svan.Gold.copy(alpha = 0.25f), CircleShape))
         Spacer(Modifier.width(6.dp))
         Text(text, style = MaterialTheme.typography.labelMedium, color = Svan.TextMuted, maxLines = 1, softWrap = false)
     }
@@ -253,7 +271,7 @@ private fun ParametricControls(bands: List<Band>, selected: Int, onSelect: (Int)
                 Switch(
                     checked = band.enabled,
                     onCheckedChange = { on -> SvanRepository.update { s -> s.copy(bands = s.bands.replace(selected) { it.copy(enabled = on) }) } },
-                    colors = SwitchDefaults.colors(checkedTrackColor = Svan.Saffron, checkedThumbColor = Svan.Black, uncheckedTrackColor = Svan.SurfaceHigher),
+                    colors = SwitchDefaults.colors(checkedTrackColor = Svan.Gold, checkedThumbColor = Svan.Black, uncheckedTrackColor = Svan.SurfaceHigher),
                 )
                 IconButton(onClick = {
                     SvanRepository.update { s -> s.copy(bands = s.bands.filterIndexed { j, _ -> j != selected }, presetName = "Custom") }

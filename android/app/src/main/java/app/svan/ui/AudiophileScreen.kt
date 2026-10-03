@@ -63,7 +63,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         SvanCard {
             Column {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(10.dp).clip(CircleShape).background(if (running) Svan.Green else Svan.TextFaint))
+                    Box(Modifier.size(10.dp).clip(CircleShape).background(if (running) Svan.Glow else Svan.TextFaint))
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(if (running) "Audiophile engine running" else "Audiophile engine off", style = MaterialTheme.typography.titleMedium)
@@ -84,7 +84,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                 } else {
                     Button(
                         onClick = onStartCapture, modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Svan.Saffron, contentColor = Svan.Black),
+                        colors = ButtonDefaults.buttonColors(containerColor = Svan.Gold, contentColor = Svan.OnGold),
                     ) { Text("Start audiophile engine") }
                 }
             }

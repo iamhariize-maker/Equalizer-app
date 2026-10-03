@@ -56,9 +56,9 @@ fun SvanApp(
                         icon = { Icon(t.icon, contentDescription = t.label) },
                         label = { Text(t.label, maxLines = 1, softWrap = false) },
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Svan.Saffron,
-                            selectedTextColor = Svan.Saffron,
-                            indicatorColor = Svan.Saffron.copy(alpha = 0.14f),
+                            selectedIconColor = Svan.Gold,
+                            selectedTextColor = Svan.Gold,
+                            indicatorColor = Svan.Gold.copy(alpha = 0.14f),
                             unselectedIconColor = Svan.TextMuted,
                             unselectedTextColor = Svan.TextMuted,
                         ),

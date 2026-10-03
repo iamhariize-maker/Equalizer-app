@@ -14,6 +14,8 @@ tap_text() { # taps the centre of the first node whose text equals $1
 }
 shot() { sleep 4; $A exec-out screencap -p > "$OUT/$1.png"; echo "saved $OUT/$1.png"; }
 shot 0-sound
+$A shell input swipe 540 1900 540 500 400; shot 0b-sound-tuners
+$A shell input swipe 540 1900 540 500 400; shot 0c-sound-tuners
 tap_text "EQ" && shot 1-eq
 tap_text "Graphic" && shot 2-eq-graphic
 tap_text "Parametric"

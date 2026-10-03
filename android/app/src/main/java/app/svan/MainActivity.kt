@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(Color.BLACK),
+            navigationBarStyle = SystemBarStyle.dark(0xFF0C0A08.toInt()), // Svan.Black: warm charcoal
         )
         super.onCreate(savedInstanceState)
         SvanRepository.init(this)

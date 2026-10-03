@@ -78,7 +78,7 @@ fun ResponseGraph(
     // Reused every frame: allocating Paints while dragging causes GC stutter.
     val gridPaint = remember(density) {
         android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(255, 90, 94, 114)
+            color = android.graphics.Color.argb(255, 110, 101, 88) // Svan.TextFaint
             textSize = 10f * density.density
             isAntiAlias = true
         }
@@ -199,15 +199,16 @@ private fun DrawScope.drawCurve(curve: DoubleArray, range: Float, alpha: Float) 
         lineTo(0f, zeroY)
         close()
     }
+    // Warm metallic sheen between the curve and 0 dB.
     drawPath(fill, Brush.verticalGradient(
-        0f to Svan.Saffron.copy(alpha = 0.22f * alpha),
-        0.5f to Svan.Rose.copy(alpha = 0.06f * alpha),
-        1f to Svan.Saffron.copy(alpha = 0.18f * alpha),
+        0f to Svan.Molten.copy(alpha = 0.16f * alpha),
+        0.5f to Svan.Bronze.copy(alpha = 0.04f * alpha),
+        1f to Svan.Gold.copy(alpha = 0.12f * alpha),
     ))
     // glow + crisp line
-    drawPath(line, Brush.horizontalGradient(listOf(Svan.Saffron, Svan.Rose)), alpha = 0.25f * alpha,
+    drawPath(line, Svan.CurveBrush, alpha = 0.22f * alpha,
         style = Stroke(width = 10f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-    drawPath(line, Brush.horizontalGradient(listOf(Svan.Saffron, Svan.Rose)), alpha = alpha,
+    drawPath(line, Svan.CurveBrush, alpha = alpha,
         style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 

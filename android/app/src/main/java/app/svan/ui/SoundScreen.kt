@@ -162,7 +162,7 @@ fun SoundScreen() {
             item {
                 SvanCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Outlined.Headphones, contentDescription = null, tint = Svan.Saffron)
+                        Icon(Icons.Outlined.Headphones, contentDescription = null, tint = Svan.Gold)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(entry!!.name, style = MaterialTheme.typography.titleMedium)
@@ -172,7 +172,7 @@ fun SoundScreen() {
                             Switch(
                                 checked = tuning.enabled,
                                 onCheckedChange = { on -> SvanRepository.update { s -> s.copy(tuning = s.tuning?.copy(enabled = on)) } },
-                                colors = SwitchDefaults.colors(checkedTrackColor = Svan.Saffron, checkedThumbColor = Svan.Black, uncheckedTrackColor = Svan.SurfaceHigher),
+                                colors = SwitchDefaults.colors(checkedTrackColor = Svan.Gold, checkedThumbColor = Svan.Black, uncheckedTrackColor = Svan.SurfaceHigher),
                             )
                         }
                     }
@@ -185,10 +185,10 @@ fun SoundScreen() {
                     value = query, onValueChange = { query = it },
                     placeholder = { Text("Search ~9,000 headphones & IEMs", color = Svan.TextFaint) },
                     leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = Svan.TextMuted) },
-                    trailingIcon = { if (searching) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Svan.Saffron) },
+                    trailingIcon = { if (searching) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Svan.Gold) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Svan.Saffron, unfocusedBorderColor = Svan.Outline),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Svan.Gold, unfocusedBorderColor = Svan.Outline),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text("Measurements from oratory1990, crinacle, Super Review, Rtings and more, via AutoEq.",
@@ -250,19 +250,19 @@ fun SoundScreen() {
                         Spacer(Modifier.height(8.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (busy) {
-                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Svan.Saffron)
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Svan.Gold)
                                 Spacer(Modifier.width(8.dp))
                                 Text("Tuning…", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                             } else {
                                 Text(message ?: tuning?.let { "${it.bands.size} bands · fit accuracy ±%.2f dB".format(it.fitRmsDb) } ?: "",
-                                    style = MaterialTheme.typography.bodySmall, color = Svan.Saffron)
+                                    style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
                             }
                         }
                     }
                 }
             }
         } else if (message != null) {
-            item { Text(message!!, style = MaterialTheme.typography.bodySmall, color = Svan.Rose, modifier = Modifier.padding(4.dp)) }
+            item { Text(message!!, style = MaterialTheme.typography.bodySmall, color = Svan.Ember, modifier = Modifier.padding(4.dp)) }
         }
 
         // ---- tuners ----

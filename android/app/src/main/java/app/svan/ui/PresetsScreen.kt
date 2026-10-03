@@ -86,7 +86,7 @@ fun PresetsScreen() {
             }
             message?.let {
                 Spacer(Modifier.height(8.dp))
-                Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.Saffron)
+                Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
             }
             Text(
                 "Headphone correction: find your model at autoeq.app, download “ParametricEQ.txt”, import it here.",
@@ -135,7 +135,7 @@ private fun ActionTile(title: String, sub: String, icon: ImageVector, modifier: 
             .clickable(onClick = onClick)
             .padding(14.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = Svan.Saffron)
+        Icon(icon, contentDescription = null, tint = Svan.Gold)
         Spacer(Modifier.height(10.dp))
         Text(title, style = MaterialTheme.typography.labelLarge)
         Text(sub, style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
@@ -149,8 +149,8 @@ private fun PresetRow(p: Preset, selected: Boolean, onApply: () -> Unit, onDelet
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (selected) Svan.Saffron.copy(alpha = 0.08f) else Svan.Surface)
-            .border(1.dp, if (selected) Svan.Saffron else Svan.Grid, RoundedCornerShape(16.dp))
+            .background(if (selected) Svan.Gold.copy(alpha = 0.08f) else Svan.Surface)
+            .border(1.dp, if (selected) Svan.Gold else Svan.Grid, RoundedCornerShape(16.dp))
             .clickable(onClick = onApply)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -72,7 +72,7 @@ fun Pill(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    accent: Color = Svan.Saffron,
+    accent: Color = Svan.Gold,
     enabled: Boolean = true,
 ) {
     val bg by animateColorAsState(if (selected) accent.copy(alpha = 0.16f) else Svan.SurfaceHigh, label = "pillBg")
@@ -103,7 +103,7 @@ fun ValueSlider(
     onChange: (Double) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    accent: Color = Svan.Saffron,
+    accent: Color = Svan.Gold,
     entryRange: ClosedFloatingPointRange<Double>? = null,
     entryUnit: String = "",
 ) {
@@ -200,7 +200,7 @@ fun SettingSwitchRow(title: String, detail: String, checked: Boolean, onChange: 
             enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Svan.Black,
-                checkedTrackColor = Svan.Saffron,
+                checkedTrackColor = Svan.Gold,
                 uncheckedThumbColor = Svan.TextMuted,
                 uncheckedTrackColor = Svan.SurfaceHigher,
                 uncheckedBorderColor = Svan.Outline,
@@ -212,13 +212,13 @@ fun SettingSwitchRow(title: String, detail: String, checked: Boolean, onChange: 
 /** Neutron-style radio row: title, explanation, selection dot. */
 @Composable
 fun ChoiceRow(title: String, detail: String, selected: Boolean, onClick: () -> Unit, badge: String? = null) {
-    val border by animateColorAsState(if (selected) Svan.Saffron else Svan.Grid, label = "choice")
+    val border by animateColorAsState(if (selected) Svan.Gold else Svan.Grid, label = "choice")
     Row(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) Svan.Saffron.copy(alpha = 0.07f) else Svan.SurfaceHigh)
+            .background(if (selected) Svan.Gold.copy(alpha = 0.07f) else Svan.SurfaceHigh)
             .border(1.dp, border, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(14.dp),
@@ -229,8 +229,8 @@ fun ChoiceRow(title: String, detail: String, selected: Boolean, onClick: () -> U
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 if (badge != null) {
                     Spacer(Modifier.width(8.dp))
-                    Text(badge, style = MaterialTheme.typography.labelMedium, color = Svan.Black,
-                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Svan.Saffron).padding(horizontal = 6.dp, vertical = 1.dp))
+                    Text(badge, style = MaterialTheme.typography.labelMedium, color = Svan.OnGold,
+                        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(Svan.Gold).padding(horizontal = 6.dp, vertical = 1.dp))
                 }
             }
             Spacer(Modifier.height(2.dp))
@@ -238,10 +238,10 @@ fun ChoiceRow(title: String, detail: String, selected: Boolean, onClick: () -> U
         }
         Spacer(Modifier.width(12.dp))
         Box(
-            Modifier.size22().clip(RoundedCornerShape(50)).border(2.dp, if (selected) Svan.Saffron else Svan.Outline, RoundedCornerShape(50)),
+            Modifier.size22().clip(RoundedCornerShape(50)).border(2.dp, if (selected) Svan.Gold else Svan.Outline, RoundedCornerShape(50)),
             contentAlignment = Alignment.Center,
         ) {
-            if (selected) Box(Modifier.size10().clip(RoundedCornerShape(50)).background(Svan.Saffron))
+            if (selected) Box(Modifier.size10().clip(RoundedCornerShape(50)).background(Svan.Gold))
         }
     }
 }
@@ -295,7 +295,7 @@ fun VerticalFader(
         val zeroY = pad + h / 2
         val y = pad + ((range - value) / (2 * range) * h).toFloat()
         drawRoundRect(Svan.SurfaceHigher, Offset(cx - trackW / 2, pad), Size(trackW, h), CornerRadius(trackW))
-        val accent = if (value >= 0) Svan.Saffron else Svan.Cyan
+        val accent = if (value >= 0) Svan.Gold else Svan.Ash
         val top = minOf(y, zeroY)
         drawRoundRect(accent.copy(alpha = if (enabled) 1f else 0.4f), Offset(cx - trackW / 2, top), Size(trackW, kotlin.math.abs(y - zeroY)), CornerRadius(trackW))
         drawLine(Svan.Outline, Offset(cx - 8.dp.toPx(), zeroY), Offset(cx + 8.dp.toPx(), zeroY), strokeWidth = 1.5f)

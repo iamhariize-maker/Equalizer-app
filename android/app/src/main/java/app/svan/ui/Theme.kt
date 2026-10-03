@@ -12,24 +12,38 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import app.svan.NativeEngine.FilterType
 
-/** Svan palette: AMOLED black, deep indigo surfaces, saffron accent. */
+/**
+ * Svan palette — the warm gold of molten metal, polished brass and the embers
+ * of a yajna fire, on charred, earthy darks. Gold is the only hue; everything
+ * else is warm neutral. Ember is reserved for warnings.
+ */
 object Svan {
-    val Black = Color(0xFF000000)
-    val Surface = Color(0xFF0D0E14)
-    val SurfaceHigh = Color(0xFF151722)
-    val SurfaceHigher = Color(0xFF1D2030)
-    val Outline = Color(0xFF272A3B)
-    val Grid = Color(0xFF1B1E2B)
-    val Text = Color(0xFFECEDF3)
-    val TextMuted = Color(0xFF8B8FA3)
-    val TextFaint = Color(0xFF5A5E72)
-    val Saffron = Color(0xFFFFA63D)
-    val Rose = Color(0xFFFF5D7E)
-    val Cyan = Color(0xFF4FD3EA)
-    val Violet = Color(0xFFA48BFF)
-    val Green = Color(0xFF5BE3A1)
+    // Grounds: charred wood and dark bronze, never pure black.
+    val Black = Color(0xFF0C0A08)
+    val Surface = Color(0xFF15120E)
+    val SurfaceHigh = Color(0xFF1C1813)
+    val SurfaceHigher = Color(0xFF262019)
+    val Outline = Color(0xFF3A3024)
+    val Grid = Color(0xFF221D16)
 
-    val AccentBrush = Brush.horizontalGradient(listOf(Saffron, Rose))
+    // Parchment text.
+    val Text = Color(0xFFEEE6D8)
+    val TextMuted = Color(0xFFA79D8D)
+    val TextFaint = Color(0xFF6E6558)
+
+    // The gold spectrum.
+    val Gold = Color(0xFFD9A84E)    // polished brass — the accent
+    val Molten = Color(0xFFF3D58F)  // molten highlight
+    val Bronze = Color(0xFF9A6B2A)  // depth
+    val Ember = Color(0xFFB4552E)   // glowing coal: warnings and clipping only
+    val Ash = Color(0xFFA39A8B)     // cool counterweight: cuts, sustain, "negative" sides
+    val Glow = Color(0xFFE9C46A)    // live indicators
+
+    val OnGold = Color(0xFF1A1206)
+
+    /** Molten-metal gradient: bronze depth to a bright gold crest. */
+    val AccentBrush = Brush.horizontalGradient(listOf(Bronze, Gold, Molten, Gold))
+    val CurveBrush = Brush.horizontalGradient(listOf(Bronze, Gold, Molten))
 
     fun typeColor(t: FilterType): Color = when (t) {
         FilterType.PEAK -> Saffron
@@ -72,13 +86,14 @@ fun formatHz(f: Double): String = when {
 fun formatDb(g: Double): String = "%+.1f dB".format(g).replace("+0.0", "0.0").replace("-0.0", "0.0")
 
 private val SvanType = Typography(
-    headlineMedium = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 26.sp, letterSpacing = (-0.5).sp),
-    titleLarge = TextStyle(fontWeight = FontWeight.SemiBold, fontSize = 20.sp),
+    // Serif display type for titles and the wordmark: the ancient-world gravitas.
+    headlineMedium = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, letterSpacing = 0.2.sp),
+    titleLarge = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium, fontSize = 21.sp),
     titleMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 16.sp),
     bodyMedium = TextStyle(fontSize = 14.sp, lineHeight = 19.sp),
     bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
     labelLarge = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp),
-    labelMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 12.sp, letterSpacing = 0.4.sp),
+    labelMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 11.sp, letterSpacing = 1.2.sp),
     labelSmall = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
 )
 
@@ -86,10 +101,11 @@ private val SvanType = Typography(
 fun SvanTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
-            primary = Svan.Saffron,
-            onPrimary = Color(0xFF1E1200),
-            secondary = Svan.Rose,
-            tertiary = Svan.Cyan,
+            primary = Svan.Gold,
+            onPrimary = Svan.OnGold,
+            secondary = Svan.Molten,
+            tertiary = Svan.Bronze,
+            error = Svan.Ember,
             background = Svan.Black,
             onBackground = Svan.Text,
             surface = Svan.Surface,
