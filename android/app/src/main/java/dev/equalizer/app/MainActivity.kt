@@ -55,6 +55,29 @@ class MainActivity : Activity() {
         button("5. Engine B: stop capture") {
             startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
         }
+        button("6. Session discovery diagnostics") {
+            thread {
+                val r = buildString {
+                    val dump = PlaybackSessions.hasDumpPermission(this@MainActivity)
+                    appendLine("DUMP granted: $dump")
+                    val sessions = PlaybackSessions.query(this@MainActivity)
+                    if (sessions == null) appendLine("dump: unavailable (${PlaybackSessions.lastError})")
+                    else sessions.forEach {
+                        appendLine("  sid=${it.sessionId} ${it.packageName} ${it.usage} ${it.state} flags=0x${it.flags.toString(16)}" +
+                            if (it.flagsBlockCapture) " (capture opt-out)" else "")
+                    }
+                    SessionRouter.init(this@MainActivity)
+                    appendLine("routes: " + SessionRouter.snapshot.joinToString { "${it.pkg}#${it.sessionId}=${it.owner}" })
+                    appendLine("capture verdicts: ${SessionRouter.compat().all()}")
+                }
+                runOnUiThread { append(r) }
+            }
+        }
+        button("7. Forget per-app capture verdicts") {
+            SessionRouter.init(this)
+            SessionRouter.compat().clear()
+            append("Capture verdicts cleared")
+        }
         button("Refresh log") { refresh() }
 
         val dump = checkSelfPermission(Manifest.permission.DUMP) == PackageManager.PERMISSION_GRANTED

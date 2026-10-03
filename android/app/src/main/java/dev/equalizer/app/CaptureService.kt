@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -23,12 +25,10 @@ import android.util.Log
  * Engine B: capture other apps' playback, run the full native chain (parametric
  * EQ, Audiophile oversampling, dither), and play the result.
  *
- * SPIKE STATUS: the processed stream currently plays *in addition to* the
- * original. Silencing the source app's own output is the open problem this spike
- * exists to solve; see docs/SPIKE.md for the candidate approaches to test.
- *
- * Apps that opt out of playback capture (reported: Spotify, Chrome, SoundCloud)
- * are never seen here; Engine A covers those.
+ * The source apps' own output is muted by SessionRouter/SourceMuter (session
+ * DynamicsProcessing at -200 dB; capture taps audio before session effects).
+ * Apps that opt out of capture (reported: Spotify, Chrome, SoundCloud) are
+ * detected by CaptureCompat and left unmuted on Engine A instead.
  */
 class CaptureService : Service() {
 
@@ -58,6 +58,10 @@ class CaptureService : Service() {
             override fun onStop() { running = false }
         }, null)
         projection = mp
+
+        SessionRouter.init(this)
+        startSessionWatch()
+        SessionRouter.onCaptureStarted(mp)
 
         running = true
         worker = Thread({ audioLoop(mp, quality) }, "eq-capture").apply {
@@ -139,7 +143,33 @@ class CaptureService : Service() {
         }
     }
 
+    private var playbackCallback: AudioManager.AudioPlaybackCallback? = null
+
+    /** With DUMP: re-sync sessions whenever any app starts/stops playing. */
+    private fun startSessionWatch() {
+        if (!PlaybackSessions.hasDumpPermission(this)) {
+            EqController.log("session watch: DUMP not granted, relying on OPEN/CLOSE broadcasts only")
+            return
+        }
+        val am = getSystemService(AudioManager::class.java)
+        val sync = {
+            Thread {
+                val sessions = PlaybackSessions.query(this)
+                if (sessions == null) EqController.log("session dump failed: ${PlaybackSessions.lastError}")
+                else SessionRouter.sync(sessions)
+            }.start()
+        }
+        val cb = object : AudioManager.AudioPlaybackCallback() {
+            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) = sync()
+        }
+        am.registerAudioPlaybackCallback(cb, null)
+        playbackCallback = cb
+        sync()
+    }
+
     override fun onDestroy() {
+        playbackCallback?.let { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(it) }
+        SessionRouter.onCaptureStopped()
         running = false
         worker?.join(500)
         projection?.stop()

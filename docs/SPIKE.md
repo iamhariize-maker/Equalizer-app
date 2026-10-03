@@ -28,7 +28,13 @@ against per-band calls.
 
 | Device | Bands | 60 Hz | 1 kHz | 10 kHz | Bulk vs per-band (1024) |
 |---|---|---|---|---|---|
-| | | | | | |
+| TECNO LH7n | 31…1024 | ≈0 | ≈0 | ≈0 | no faster (~0.9–1.4 s either way; 128 bands ~100 ms) |
+
+**Inconclusive.** Every count reads about 0 dB, even 31 bands, so the Visualizer
+sees the session's audio *before* its effects. That's useful for Q3, though:
+it's consistent with playback capture also tapping pre-effect audio. Next
+method: measure through Engine B's capture of a second, effect-free route, or
+use a loopback cable / USB audio interface.
 
 ## Q2. Which apps announce their sessions? (Engine A)
 
@@ -44,19 +50,46 @@ Play music in each app, then tap **Refresh log** and look for `OPEN session=… 
 Enhanced detection with the DUMP permission isn't implemented yet. It comes next,
 if Q2 shows it's needed.
 
-## Q3. Can Engine B silence the original stream? (the open problem)
+## Q3. Engine B double audio: implemented, needs device testing
 
-Tap **"4. Engine B: start capture"** and play something. Today you'll hear
-**both** the processed copy and the original. RootlessJamesDSP solves this, but
-how isn't documented in its README. Candidate approaches to test:
+**Technique** (confirmed by reading RootlessJamesDSP's source; ours is an
+independent implementation, no GPL code copied). Playback capture receives a
+player's audio *before* its session effects. So putting a top-priority
+`DynamicsProcessing` with input gain −200 dB on the source session mutes what you
+hear, while the capture still gets the clean signal.
 
-1. Read RootlessJamesDSP's source to see what it actually does. It's GPL, so read it to learn the technique, don't copy code.
-2. Attach a DynamicsProcessing to the source session with input gain −∞ dB
-   (silence the original via Engine A). Needs to be checked: does capture tap the
-   stream before or after session effects?
-3. Shizuku-assisted hidden APIs: route the source app's playback only to the capture policy.
+| Piece | File |
+|---|---|
+| Mute the source session, and re-assert if another app takes over the effect | `SourceMuter.kt` |
+| Find sessions: OPEN/CLOSE broadcasts, plus the `audio` service dump with DUMP granted | `SessionReceiver.kt`, `PlaybackSessions.kt` |
+| Exactly one engine per session (A and the mute share one DynamicsProcessing engine) | `SessionRouter.kt` |
+| **Our addition:** per-app check of whether capture actually works. Mute, listen to that UID only for ≤2.5 s; any real audio → Engine B; only zeros → unmute and use Engine A. The verdict is cached per app. | `CaptureCompat.kt` |
 
-Record which works on which Android version. **This decides whether Engine B ships.**
+Without that check, an app that opts out of capture (e.g. Spotify) would be muted
+and never re-rendered, leaving total silence.
+
+**Setup (one-time, over ADB or Wireless debugging + LADB/Shizuku):**
+```sh
+adb shell pm grant dev.equalizer.app android.permission.DUMP        # find every session
+adb shell appops set dev.equalizer.app PROJECT_MEDIA allow          # optional: skip the capture prompt
+```
+
+**Test:** grant DUMP, tap 4 (start capture), then play in YouTube Music or a local
+player. Expect to hear one processed copy with no echo or phasing. Tap 6 to see
+the routes, then try Spotify (expect ~2.5 s of silence once, then it plays via
+Engine A).
+
+| App | Verdict | Single copy heard? | Notes |
+|---|---|---|---|
+| | | | |
+
+**Known risks to watch:**
+- Two simultaneous captures (mixed + per-UID check) may be refused on some
+  builds. The check then fails "inconclusive" and the app stays on Engine A.
+- An app paused during its check would be wrongly marked BLOCKED. The check
+  only runs while the dump says `started`. Button 7 clears the verdicts.
+- Another effect app (Wavelet, etc.) on the same session takes over the mute.
+  The router drops the session and logs it.
 
 ## Q4. Engine B real-world cost
 

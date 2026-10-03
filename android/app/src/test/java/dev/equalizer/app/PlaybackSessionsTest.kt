@@ -1,0 +1,44 @@
+package dev.equalizer.app
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class PlaybackSessionsTest {
+
+    // Shape of `dumpsys audio` playback lines on API 31+ (fields matched
+    // independently, so ordering differences between releases don't matter).
+    private val dump = """
+        |  playback activity as reported through PlayerBase:
+        |  AudioPlaybackConfiguration piid:15 deviceId:3 type:android.media.AudioTrack u/pid:10234/5512 state:started attr:AudioAttributes: usage=USAGE_MEDIA content=CONTENT_TYPE_MUSIC flags=0x800 tags= bundle=null sessionId:1281 mutedState:
+        |  AudioPlaybackConfiguration piid:23 deviceId:3 type:exoplayer u/pid:10187/6620 state:paused attr:AudioAttributes: usage=USAGE_MEDIA content=CONTENT_TYPE_MUSIC flags=0x400 tags= bundle=null sessionId:2049 mutedState:
+        |  AudioPlaybackConfiguration piid:31 deviceId:3 type:android.media.SoundPool u/pid:1000/900 state:idle attr:AudioAttributes: usage=USAGE_ASSISTANCE_SONIFICATION content=CONTENT_TYPE_SONIFICATION flags=0x0 tags= bundle=null sessionId:0 mutedState:
+        |  AudioPlaybackConfiguration piid:16 deviceId:3 type:android.media.AudioTrack u/pid:10234/5512 state:stopped attr:AudioAttributes: usage=USAGE_MEDIA content=CONTENT_TYPE_MUSIC flags=0x800 tags= bundle=null sessionId:1281 mutedState:
+        |  some unrelated line sessionId:77
+    """.trimMargin()
+
+    @Test
+    fun parsesSessionsAndSkipsInvalid() {
+        val s = PlaybackSessions.parse(dump).associateBy { it.sessionId }
+        assertEquals(setOf(1281, 2049), s.keys) // sessionId 0 and non-config lines skipped
+        assertEquals(10234, s[1281]!!.uid)
+        assertEquals("USAGE_MEDIA", s[1281]!!.usage)
+        assertEquals("stopped", s[1281]!!.state) // later player on the same session wins
+        assertTrue(s[1281]!!.usageCapturable)
+        assertFalse(s[1281]!!.flagsBlockCapture)
+    }
+
+    @Test
+    fun detectsPerPlayerCaptureOptOut() {
+        val s = PlaybackSessions.parse(dump).first { it.sessionId == 2049 }
+        assertEquals("paused", s.state)
+        assertTrue(s.flagsBlockCapture) // FLAG_NO_MEDIA_PROJECTION = 0x400
+    }
+
+    @Test
+    fun nonMediaUsageIsNotCapturable() {
+        val line = "AudioPlaybackConfiguration piid:1 u/pid:10001/1 state:started attr:AudioAttributes: usage=USAGE_VOICE_COMMUNICATION content=CONTENT_TYPE_SPEECH flags=0x0 sessionId:9"
+        assertFalse(PlaybackSessions.parse(line).single().usageCapturable)
+    }
+}
