@@ -45,13 +45,14 @@ object Svan {
     val AccentBrush = Brush.horizontalGradient(listOf(Bronze, Gold, Molten, Gold))
     val CurveBrush = Brush.horizontalGradient(listOf(Bronze, Gold, Molten))
 
+    // Filter types stay within the gold family, told apart by value, not hue.
     fun typeColor(t: FilterType): Color = when (t) {
-        FilterType.PEAK -> Saffron
-        FilterType.LOW_SHELF, FilterType.HIGH_SHELF -> Cyan
-        FilterType.LOW_PASS, FilterType.HIGH_PASS -> Violet
-        FilterType.BAND_PASS -> Green
-        FilterType.NOTCH -> Rose
-        FilterType.ALL_PASS -> TextMuted
+        FilterType.PEAK -> Gold
+        FilterType.LOW_SHELF, FilterType.HIGH_SHELF -> Molten
+        FilterType.LOW_PASS, FilterType.HIGH_PASS -> Bronze
+        FilterType.BAND_PASS -> Glow
+        FilterType.NOTCH -> Ember
+        FilterType.ALL_PASS -> Ash
     }
 
     fun typeShort(t: FilterType): String = when (t) {
