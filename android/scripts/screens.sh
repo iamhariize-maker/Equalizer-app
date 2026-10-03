@@ -14,8 +14,12 @@ tap_text() { # taps the centre of the first node whose text equals $1
 }
 shot() { sleep 4; $A exec-out screencap -p > "$OUT/$1.png"; echo "saved $OUT/$1.png"; }
 shot 0-sound
-$A shell input swipe 540 1900 540 500 400; shot 0b-sound-tuners
-$A shell input swipe 540 1900 540 500 400; shot 0c-sound-tuners
+# Swipe relative to the real screen size (CI's emulator is small).
+read -r W H < <($A shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr 'x' ' ')
+swipe_up() { $A shell input swipe $((W / 2)) $((H * 3 / 4)) $((W / 2)) $((H / 5)) 500; }
+swipe_up; shot 0b-sound-tuners
+swipe_up; shot 0c-sound-tuners
+swipe_up; shot 0d-sound-tuners
 tap_text "EQ" && shot 1-eq
 tap_text "Graphic" && shot 2-eq-graphic
 tap_text "Parametric"
