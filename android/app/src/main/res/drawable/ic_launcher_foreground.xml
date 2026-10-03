@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Svan mark: a brass yantra ring around a sound wave of bars 3 : 6 : 9 : 6 : 3. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- outer ring -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#D9A84E"
+        android:strokeWidth="1.8"
+        android:pathData="M54,25 A29,29 0 1,1 53.99,25 Z" />
+    <!-- inner hairline ring -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#9A6B2A"
+        android:strokeWidth="0.9"
+        android:pathData="M54,29.5 A24.5,24.5 0 1,1 53.99,29.5 Z" />
+    <!-- nine radial marks (3-6-9) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#9A6B2A"
+        android:strokeWidth="1"
+        android:strokeLineCap="round"
+        android:pathData="M54.00,22.50 L54.00,25.00 M74.25,29.87 L72.64,31.78 M85.02,48.53 L82.56,48.96 M81.28,69.75 L79.11,68.50 M64.77,83.60 L63.92,81.25 M43.23,83.60 L44.08,81.25 M26.72,69.75 L28.89,68.50 M22.98,48.53 L25.44,48.96 M33.75,29.87 L35.36,31.78" />
+    <!-- bars 3 : 6 : 9 : 6 : 3, centred like a waveform -->
+    <path
+        android:fillColor="#B98A3C"
+        android:pathData="M37.80,52.15 A2.20,2.20 0 0,1 42.20,52.15 L42.20,55.85 A2.20,2.20 0 0,1 37.80,55.85 Z" />
+    <path
+        android:fillColor="#D9A84E"
+        android:pathData="M44.80,48.10 A2.20,2.20 0 0,1 49.20,48.10 L49.20,59.90 A2.20,2.20 0 0,1 44.80,59.90 Z" />
+    <path
+        android:fillColor="#F3D58F"
+        android:pathData="M51.80,44.05 A2.20,2.20 0 0,1 56.20,44.05 L56.20,63.95 A2.20,2.20 0 0,1 51.80,63.95 Z" />
+    <path
+        android:fillColor="#D9A84E"
+        android:pathData="M58.80,48.10 A2.20,2.20 0 0,1 63.20,48.10 L63.20,59.90 A2.20,2.20 0 0,1 58.80,59.90 Z" />
+    <path
+        android:fillColor="#B98A3C"
+        android:pathData="M65.80,52.15 A2.20,2.20 0 0,1 70.20,52.15 L70.20,55.85 A2.20,2.20 0 0,1 65.80,55.85 Z" />
+</vector>

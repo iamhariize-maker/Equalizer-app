@@ -39,8 +39,7 @@ fun LabScreen(actions: List<Pair<String, () -> Unit>>) {
         }
     }
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Lab", style = MaterialTheme.typography.headlineMedium)
-        Text("Device probes and the engine log.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        ScreenTitle("Lab", "Device probes and the engine log.")
         Spacer(Modifier.height(12.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             actions.forEach { (label, action) -> Pill(label, false, action) }

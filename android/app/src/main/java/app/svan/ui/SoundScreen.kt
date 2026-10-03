@@ -144,8 +144,7 @@ fun SoundScreen() {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
         item {
-            Text("Sound", style = MaterialTheme.typography.headlineMedium.copy(brush = Svan.AccentBrush))
-            Text("Make your headphones sound their best.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            ScreenTitle("Sound", "Make your headphones sound their best.")
             Spacer(Modifier.height(12.dp))
             Box(
                 Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(20.dp)).background(Svan.Surface)

@@ -4,7 +4,12 @@ set -u
 S=${1:-emulator-5554}; OUT=${2:-${TMPDIR:-/tmp}/svan-screens}
 A="adb -s $S"
 mkdir -p "$OUT"
-$A shell am start -n app.svan/.MainActivity >/dev/null; sleep 8
+# Boot animation: cold start, capture mid-morph and at the full name.
+$A shell am force-stop app.svan; $A shell am start -n app.svan/.MainActivity >/dev/null
+sleep 1; $A exec-out screencap -p > "$OUT/boot-1.png"
+sleep 0.9; $A exec-out screencap -p > "$OUT/boot-2.png"
+echo "saved boot frames"
+sleep 6
 tap_text() { # taps the centre of the first node whose text equals $1
   $A shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
   local b; b=$($A shell cat /sdcard/ui.xml | grep -o "text=\"$1\"[^>]*bounds=\"[^\"]*\"" | head -1 | grep -o 'bounds="[^"]*"')

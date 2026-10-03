@@ -165,7 +165,9 @@ private fun Header(enabled: Boolean, preset: String, quality: String, onPower: (
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("Svan", style = MaterialTheme.typography.headlineMedium.copy(brush = Svan.AccentBrush))
+            BrandLine()
+            Spacer(Modifier.height(4.dp))
+            Exten9edTitle()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(preset, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))

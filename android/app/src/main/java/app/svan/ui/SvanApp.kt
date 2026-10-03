@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -45,6 +46,9 @@ fun SvanApp(
     labActions: List<Pair<String, () -> Unit>>,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    // Boot animation once per app start (survives rotation, not a fresh launch).
+    var booted by rememberSaveable { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = Svan.Black,
         bottomBar = {
@@ -78,6 +82,8 @@ fun SvanApp(
                 }
             }
         }
+    }
+    if (!booted) BootAnimation(onDone = { booted = true })
     }
 }
 

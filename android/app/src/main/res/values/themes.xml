@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Warm charcoal from the first frame: no white flash before the boot animation. -->
+    <style name="Theme.Svan" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/svan_charcoal</item>
+        <item name="android:colorBackground">@color/svan_charcoal</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/svan_charcoal</item>
+    </style>
+</resources>

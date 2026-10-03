@@ -56,8 +56,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        Text("Audiophile", style = MaterialTheme.typography.headlineMedium)
-        Text("64-bit processing is always on.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        ScreenTitle("Hi-Fi", "Audiophile processing. 64-bit is always on.")
 
         SectionLabel("Engine")
         SvanCard {

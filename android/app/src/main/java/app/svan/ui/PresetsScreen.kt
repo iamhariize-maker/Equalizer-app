@@ -74,8 +74,7 @@ fun PresetsScreen() {
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
         item {
-            Text("Presets", style = MaterialTheme.typography.headlineMedium)
-            Text("Now: ${eq.presetName}", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            ScreenTitle("Presets", "Now: ${eq.presetName}")
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ActionTile("Import AutoEq", "ParametricEQ.txt", Icons.Outlined.FileOpen, Modifier.weight(1f)) {

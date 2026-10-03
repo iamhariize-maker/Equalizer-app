@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Svan" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/svan_charcoal</item>
+        <item name="android:colorBackground">@color/svan_charcoal</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/svan_charcoal</item>
+        <!-- Android 12+ system splash: charcoal with the Svan mark, then our boot animation. -->
+        <item name="android:windowSplashScreenBackground">@color/svan_charcoal</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+    </style>
+</resources>
