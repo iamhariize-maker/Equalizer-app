@@ -13,7 +13,8 @@ tap_text() { # taps the centre of the first node whose text equals $1
   $A shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
 }
 shot() { sleep 4; $A exec-out screencap -p > "$OUT/$1.png"; echo "saved $OUT/$1.png"; }
-shot 1-eq
+shot 0-sound
+tap_text "EQ" && shot 1-eq
 tap_text "Graphic" && shot 2-eq-graphic
 tap_text "Parametric"
 tap_text "Presets" && shot 3-presets

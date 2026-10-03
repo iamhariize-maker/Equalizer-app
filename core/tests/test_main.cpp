@@ -19,6 +19,9 @@
 #include "eqcore/parametric_eq.h"
 #include "eqcore/resampler.h"
 #include "eqcore/bass.h"
+#include "eqcore/tuning.h"
+#include <fstream>
+#include <sstream>
 
 using namespace eqcore;
 
@@ -625,6 +628,29 @@ TEST(bass_shaper_leaves_treble_alone) {
   CHECK_NEAR(toDb(a / 0.1), 0.0, 0.05);
 }
 
+TEST(engine_runs_bass_character_in_the_chain) {
+  const double fs = 48000;
+  const int hits = 5;
+  auto x = kicks(fs, hits);
+  double change[2] = {0, 0};
+  for (int on = 0; on < 2; ++on) {
+    EngineConfig cfg;
+    cfg.sampleRate = fs;
+    cfg.channels = 1;
+    cfg.oversample = 2;
+    cfg.autoHeadroom = false;
+    cfg.gainProtection = false;
+    Engine e(cfg);
+    if (on) e.setBassCharacter(1.0, 120);
+    std::vector<float> buf(x.begin(), x.end());
+    e.process(buf.data(), buf.data(), static_cast<int>(buf.size()));
+    std::vector<double> y(buf.begin(), buf.end());
+    change[on] = attackToTailDb(y, fs, hits);
+  }
+  std::printf("    engine punch: %+.1f dB attack/tail vs bass shaper off\n", change[1] - change[0]);
+  CHECK(change[1] - change[0] > 3.0);
+}
+
 TEST(bass_shaper_is_stable_on_noise) {
   const double fs = 44100;
   BassShaper b(fs, 2);
@@ -640,6 +666,103 @@ TEST(bass_shaper_is_stable_on_noise) {
     for (double v : y) ok = ok && std::isfinite(v) && std::fabs(v) < 8.0;
   }
   CHECK(ok);
+}
+
+// ------------------------------------------------------------------ tuning
+
+namespace {
+std::string readFile(const std::string& name) {
+  std::ifstream in(std::string(EQCORE_TEST_DATA_DIR) + "/" + name);
+  std::stringstream ss;
+  ss << in.rdbuf();
+  return ss.str();
+}
+FrCurve curveFrom(const std::function<double(double)>& fn) {
+  FrCurve c;
+  for (int k = 0; k < 400; ++k) {
+    const double f = 20.0 * std::pow(1000.0, k / 399.0);
+    c.hz.push_back(f);
+    c.db.push_back(fn(f));
+  }
+  return c;
+}
+double bell(double f, double f0, double g, double q) {
+  return magnitudeDb(designBiquad({FilterType::Peak, f0, g, q, true}, 96000), f, 96000);
+}
+}  // namespace
+
+TEST(curve_parser_reads_autoeq_and_squiglink_formats) {
+  auto a = parseCurve("frequency,raw\n20.00,3.86\n20.20,3.89\n1000,0\n");
+  CHECK(a.hz.size() == 3);
+  CHECK_NEAR(a.at(20.0), 3.86, 1e-12);
+  auto b = parseCurve("* Squiglink export\n* freq\tdB\n20\t-3.5\n100\t-1\n1000\t0\n10000;2.5\n");
+  CHECK(b.hz.size() == 4);
+  CHECK_NEAR(b.at(10000), 2.5, 1e-12);
+  CHECK_NEAR(b.at(316.2277660168), -0.5, 1e-9);  // log-midpoint interpolation
+  CHECK(parseCurve("hello\nworld").empty());
+}
+
+TEST(correction_recovers_a_known_deviation) {
+  // Headphone = target minus three resonances -> correction must put them back.
+  auto target = curveFrom([](double f) { return 4.0 / (1 + std::pow(f / 105.0, 2)); });
+  auto dev = [](double f) { return bell(f, 60, -5, 0.8) + bell(f, 2500, 4, 2.0) + bell(f, 5000, -3, 1.5); };
+  auto meas = curveFrom([&](double f) { return target.at(f) - dev(f) + 7.0; });  // +7: arbitrary level
+  TuningOptions opt;
+  opt.trebleSmoothFromHz = 20000;  // test the core maths without treble smoothing
+  auto corr = computeCorrection(meas, target, opt);
+  double worst = 0;
+  for (double f = 40; f < 6000; f *= 1.1) worst = std::max(worst, std::fabs(corr.at(f) - dev(f)));
+  std::printf("    worst error vs known deviation 40 Hz-6 kHz: %.2f dB\n", worst);
+  CHECK(worst < 1.0);
+}
+
+TEST(dense_fit_follows_the_curve_with_64_bands) {
+  auto curve = curveFrom([](double f) { return bell(f, 80, 6, 0.7) + bell(f, 3000, -5, 3) + bell(f, 9000, 4, 2); });
+  auto fit = fitDenseBands(curve, 64);
+  std::printf("    64-band fit: rms %.2f dB, max %.2f dB\n", fit.rmsErrorDb, fit.maxErrorDb);
+  CHECK(fit.bands.size() == 64);
+  CHECK(fit.rmsErrorDb < 0.3);
+  auto coarse = fitDenseBands(curve, 10);
+  std::printf("    10-band fit: rms %.2f dB (why 60+ bands matter)\n", coarse.rmsErrorDb);
+  CHECK(coarse.rmsErrorDb > fit.rmsErrorDb);
+}
+
+TEST(taste_controls_shift_bass_and_tilt) {
+  auto target = curveFrom([](double) { return 0.0; });
+  auto meas = target;
+  TuningOptions base, bassy, bright;
+  bassy.bassDb = 4;
+  bright.tiltDbPerOct = 0.5;
+  auto c0 = computeCorrection(meas, target, base);
+  auto cb = computeCorrection(meas, target, bassy);
+  auto ct = computeCorrection(meas, target, bright);
+  CHECK_NEAR(cb.at(30) - c0.at(30), 4.0, 0.6);
+  CHECK_NEAR(cb.at(3000) - c0.at(3000), 0.0, 0.3);
+  CHECK(ct.at(8000) - ct.at(1000) > 1.0);
+}
+
+TEST(real_hd650_correction_matches_autoeq) {
+  auto meas = parseCurve(readFile("oratory1990_HD650.csv"));
+  auto target = parseCurve(readFile("harman_over_ear_2018.csv"));
+  auto autoeq = parseGraphicEq(readFile("autoeq_HD650_GraphicEQ.txt"));
+  CHECK(!meas.empty() && !target.empty() && autoeq.size() > 100);
+  FrCurve ref;
+  for (auto& [f, g] : autoeq) { ref.hz.push_back(f); ref.db.push_back(g); }
+  auto ours = computeCorrection(meas, target);
+  // AutoEq bakes its preamp into GraphicEQ: compare shapes after aligning levels.
+  std::vector<double> diffs;
+  for (double f = 50; f < 6000; f *= 1.05) diffs.push_back(ours.at(f) - ref.at(f));
+  std::vector<double> sorted = diffs;
+  std::sort(sorted.begin(), sorted.end());
+  const double offset = sorted[sorted.size() / 2];
+  double sq = 0, worst = 0;
+  for (double d : diffs) { sq += (d - offset) * (d - offset); worst = std::max(worst, std::fabs(d - offset)); }
+  const double rms = std::sqrt(sq / diffs.size());
+  std::printf("    HD 650 -> Harman: shape vs AutoEq 50 Hz-6 kHz rms %.2f dB, worst %.2f dB\n", rms, worst);
+  CHECK(rms < 1.0);
+  auto fit = fitDenseBands(ours, 64);
+  std::printf("    64-band fit of the real correction: rms %.2f dB\n", fit.rmsErrorDb);
+  CHECK(fit.rmsErrorDb < 0.5);
 }
 
 TEST(quality_presets_are_consistent) {

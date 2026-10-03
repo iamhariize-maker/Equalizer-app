@@ -33,6 +33,69 @@ data class Band(
 
 enum class EqMode { PARAMETRIC, GRAPHIC }
 
+/** Headphone correction layer (from AutoEq data), applied under the user's EQ. */
+data class Tuning(
+    val enabled: Boolean = true,
+    val headphone: String,
+    val source: String,
+    val signature: String,
+    val bands: List<Band>,
+    val fitRmsDb: Double,
+    val bassDb: Double = 0.0,
+    val tiltDbPerOct: Double = 0.0,
+    /** How to find the data again for re-tuning: "<source>|<form>|<rig>|<name>|<resultPath>". */
+    val ref: String = "",
+) {
+    fun toJson(): JSONObject = JSONObject().put("on", enabled).put("hp", headphone).put("src", source).put("ref", ref)
+        .put("sig", signature).put("rms", fitRmsDb).put("bass", bassDb).put("tilt", tiltDbPerOct)
+        .put("bands", JSONArray().apply { bands.forEach { put(it.toJson()) } })
+
+    companion object {
+        fun fromJson(o: JSONObject) = Tuning(
+            o.optBoolean("on", true), o.getString("hp"), o.optString("src"), o.optString("sig"),
+            o.optJSONArray("bands")?.let { a -> List(a.length()) { Band.fromJson(a.getJSONObject(it)) } } ?: emptyList(),
+            o.optDouble("rms", 0.0), o.optDouble("bass", 0.0), o.optDouble("tilt", 0.0), o.optString("ref"),
+        )
+    }
+}
+
+/**
+ * Bass tuner. Level and depth are EQ (both engines); feel is the time-domain
+ * bass shaper (exact in the audiophile engine, approximated on system effects).
+ */
+data class BassTuner(
+    val amountDb: Double = 0.0,     // -6..+12
+    val focusHz: Double = 80.0,     // 40 (deep sub) .. 160 (mid-bass)
+    val character: Double = 0.0,    // -1 sustain/boom .. +1 punch/tight
+) {
+    val isOff: Boolean get() = amountDb == 0.0 && character == 0.0
+
+    /** Upper edge of the band the shaper works on. */
+    val crossoverHz: Double get() = (focusHz * 1.8).coerceIn(80.0, 220.0)
+
+    fun bands(): List<Band> = buildList {
+        if (amountDb != 0.0) add(Band(FilterType.LOW_SHELF, focusHz, amountDb, 0.71))
+        // Precision: clear the upper-bass "mud" region. Bloom: a soft resonance above the focus.
+        if (character > 0) add(Band(FilterType.PEAK, 250.0, -2.0 * character, 1.0))
+        if (character < 0) add(Band(FilterType.PEAK, (focusHz * 1.3).coerceAtMost(200.0), 2.0 * -character, 1.2))
+    }
+
+    fun toJson(): JSONObject = JSONObject().put("amt", amountDb).put("focus", focusHz).put("char", character)
+
+    companion object {
+        fun fromJson(o: JSONObject) = BassTuner(o.optDouble("amt", 0.0), o.optDouble("focus", 80.0), o.optDouble("char", 0.0))
+
+        val PRESETS = listOf(
+            "Off" to BassTuner(),
+            "Deep & warm" to BassTuner(6.0, 55.0, -0.4),
+            "Punchy" to BassTuner(4.0, 85.0, 0.7),
+            "Tight & precise" to BassTuner(2.0, 70.0, 1.0),
+            "Club rumble" to BassTuner(9.0, 45.0, -0.8),
+            "Bass-light fix" to BassTuner(5.0, 110.0, 0.3),
+        )
+    }
+}
+
 /** Everything the EQ screen edits. */
 data class EqState(
     val enabled: Boolean = true,
@@ -42,13 +105,18 @@ data class EqState(
     val graphicGains: List<Double> = List(10) { 0.0 },
     val preampDb: Double = 0.0,
     val presetName: String = "Flat",
+    val tuning: Tuning? = null,
+    val bass: BassTuner = BassTuner(),
 ) {
-    /** The bands the engines actually run. */
-    fun effectiveBands(): List<Band> = when {
-        !enabled -> emptyList()
-        mode == EqMode.PARAMETRIC -> bands
-        else -> GraphicLayout.bands(graphicCount, graphicGains)
-    }
+    /** The user's own EQ layer (parametric or graphic). */
+    fun manualBands(): List<Band> = if (mode == EqMode.PARAMETRIC) bands else GraphicLayout.bands(graphicCount, graphicGains)
+
+    /** The bands the engines actually run: headphone tuning + your EQ + bass tuner. */
+    fun effectiveBands(): List<Band> = if (!enabled) emptyList() else
+        (tuning?.takeIf { it.enabled }?.bands ?: emptyList()) + manualBands() + bass.bands()
+
+    /** Bass shaper amount the engines should run (0 when the EQ is off). */
+    val bassCharacter: Double get() = if (enabled) bass.character else 0.0
 
     fun effectivePreampDb(): Double = if (enabled) preampDb else 0.0
 
@@ -58,6 +126,8 @@ data class EqState(
         .put("gCount", graphicCount)
         .put("gGains", JSONArray().apply { graphicGains.forEach { put(it) } })
         .put("preamp", preampDb).put("preset", presetName)
+        .put("bass", bass.toJson())
+        .apply { tuning?.let { put("tuning", it.toJson()) } }
 
     companion object {
         /** A neutral starting layout: five 0 dB bands to grab and drag. */
@@ -82,6 +152,8 @@ data class EqState(
                 graphicGains = gains,
                 preampDb = o.optDouble("preamp", 0.0),
                 presetName = o.optString("preset", "Custom"),
+                tuning = o.optJSONObject("tuning")?.let { runCatching { Tuning.fromJson(it) }.getOrNull() },
+                bass = o.optJSONObject("bass")?.let { BassTuner.fromJson(it) } ?: BassTuner(),
             )
         }
     }

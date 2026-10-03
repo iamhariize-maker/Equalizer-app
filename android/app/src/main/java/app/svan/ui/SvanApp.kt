@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Equalizer
+import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Tune
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 private data class Tab(val label: String, val icon: ImageVector)
 
 private val TABS = listOf(
+    Tab("Sound", Icons.Outlined.Headphones),
     Tab("EQ", Icons.Outlined.Equalizer),
     Tab("Presets", Icons.Outlined.LibraryMusic),
     Tab("Audiophile", Icons.Outlined.Tune),
@@ -68,9 +70,10 @@ fun SvanApp(
         Box(Modifier.fillMaxSize().padding(padding)) {
             AnimatedContent(tab, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "tab") { t ->
                 when (t) {
-                    0 -> EqScreen()
-                    1 -> PresetsScreen()
-                    2 -> AudiophileScreen(onStartCapture, onStopCapture)
+                    0 -> SoundScreen()
+                    1 -> EqScreen()
+                    2 -> PresetsScreen()
+                    3 -> AudiophileScreen(onStartCapture, onStopCapture)
                     else -> LabScreen(labActions)
                 }
             }

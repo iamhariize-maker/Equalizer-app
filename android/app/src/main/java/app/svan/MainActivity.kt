@@ -14,6 +14,7 @@ import app.svan.model.QualityMode
 import app.svan.ui.SvanApp
 import app.svan.ui.SvanTheme
 import kotlin.concurrent.thread
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -86,6 +87,36 @@ class MainActivity : ComponentActivity() {
                 val route = SessionRouter.snapshot.firstOrNull { it.pkg == pkg }
                 if (uid < 0 || route == null) EqController.log("DIAG no route for $pkg (uid=$uid)")
                 else SessionRouter.diagnose(uid, route.sessionId)
+            }
+            "bass" -> {
+                // --es preset "Punchy": apply a bass-tuner preset (both engines)
+                val name = intent.getStringExtra("preset") ?: "Off"
+                val preset = app.svan.model.BassTuner.PRESETS.firstOrNull { it.first == name }?.second ?: return
+                SvanRepository.update { it.copy(bass = preset) }
+                val r = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
+                EqController.log("bass preset=$name bands=${preset.bands().size} response@1kHz=%.2f dB".format(r))
+            }
+            "tune" -> {
+                // --es query "Sennheiser HD 650" [--es source oratory1990] [--es sig HARMAN]: fetch from AutoEq and apply
+                val q = intent.getStringExtra("query") ?: return
+                val src = intent.getStringExtra("source")
+                val sig = app.svan.tuning.Signature.valueOf(intent.getStringExtra("sig") ?: "HARMAN")
+                kotlinx.coroutines.MainScope().launch {
+                    val entry = runCatching {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            app.svan.tuning.AutoEqSource.search(this@MainActivity, q).firstOrNull { src == null || it.source == src }
+                        }
+                    }.getOrElse { EqController.log("tune: index failed: $it"); return@launch }
+                    if (entry == null) { EqController.log("tune: no match for $q"); return@launch }
+                    app.svan.tuning.TuningController.build(this@MainActivity,
+                        app.svan.tuning.TuningController.Request(entry, sig, 0.0, 0.0, 64))
+                        .onSuccess { t ->
+                            SvanRepository.update { it.copy(tuning = t) }
+                            val r = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
+                            EqController.log("tune: ${t.headphone} (${t.source}) -> ${t.signature}: ${t.bands.size} bands rms=%.2f dB response@1kHz=%.2f dB".format(t.fitRmsDb, r))
+                        }
+                        .onFailure { EqController.log("tune: failed: $it") }
+                }
             }
             "dump_lines" -> thread {
                 PlaybackSessions.query(this)

@@ -63,6 +63,7 @@ object SvanRepository {
             scope.launch {
                 // StateFlow is already conflated: a slow binder update never queues stale curves.
                 _eq.collect { state ->
+                    EqController.globalEq.setBassDynamics(state.bassCharacter, state.bass.crossoverHz)
                     EqController.globalEq.applyCurveFrom(EqController.curveEngine)
                     _engineARevision.update { it + 1 }
                     prefs.edit().putString("eq", state.toJson().toString()).apply()
@@ -107,7 +108,7 @@ object SvanRepository {
 
     fun currentAsPreset(name: String): Preset {
         val s = _eq.value
-        return Preset(name, s.preampDb, s.effectiveBands().ifEmpty { s.bands })
+        return Preset(name, s.preampDb, s.manualBands()) // tuning and bass tuner stay separate layers
     }
 
     // ---- settings ----

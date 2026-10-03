@@ -27,6 +27,10 @@ class GlobalEqEngine(bandCount: Int = 128) {
     @Volatile private var centersHz: DoubleArray = logSpaced(bandCount, 20.0, 20000.0)
     @Volatile private var gainsDb: DoubleArray = DoubleArray(bandCount)
     @Volatile private var inputGainDb: Float = 0f
+    @Volatile private var bassCharacter: Double = 0.0
+    @Volatile private var bassCrossoverHz: Double = 120.0
+    /** MBC only exists in effects created while a bass feel was set (config is fixed at creation). */
+    @Volatile private var mbcInUse = false
 
     val attachedSessions: Set<Int> get() = effects.keys
 
@@ -42,6 +46,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
         } catch (e: RuntimeException) {
             // UnsupportedOperationException / IllegalStateException on some OEM builds.
             Log.w(TAG, "attach failed for session $sessionId", e)
+            EqController.log("system effects: attach failed for session $sessionId: $e")
             false
         }
     }
@@ -85,10 +90,48 @@ class GlobalEqEngine(bandCount: Int = 128) {
             DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
             CHANNELS,
             true, bandCount,   // pre-EQ: our curve
-            false, 0,          // MBC: unused in the spike
+            mbcInUse, if (mbcInUse) 2 else 0, // MBC: bass feel (see setBassDynamics)
             false, 0,          // post-EQ
             true,              // limiter
         ).build()
+
+    /**
+     * Bass feel on system effects: an approximation of the audiophile engine's
+     * shaper using DynamicsProcessing's multiband compressor on the bass band.
+     *  punch   -> downward expander (quiet tails decay faster: tighter)
+     *  sustain -> slow compressor + make-up gain (tails held up: more bloom)
+     */
+    @Synchronized
+    fun setBassDynamics(character: Double, crossoverHz: Double) {
+        val needMbc = character != 0.0
+        bassCharacter = character
+        bassCrossoverHz = crossoverHz
+        if (needMbc != mbcInUse) {
+            mbcInUse = needMbc
+            EqController.log("system effects: bass dynamics ${if (needMbc) "on" else "off"} (${effects.size} session(s) re-created)")
+            val sessions = effects.keys.toList()
+            sessions.forEach(::detach)
+            sessions.forEach { attach(it) }
+        } else {
+            effects.values.forEach(::applyMbc)
+        }
+    }
+
+    private fun applyMbc(dp: DynamicsProcessing) {
+        if (!mbcInUse) return
+        val c = bassCharacter.toFloat()
+        val bass = if (c > 0) {
+            DynamicsProcessing.MbcBand(true, bassCrossoverHz.toFloat(), 1f, 60f, 1f, 0f, 0f,
+                -45f + 15f * c, 1f + 2f * c, 0f, 0f)
+        } else {
+            val s = -c
+            DynamicsProcessing.MbcBand(true, bassCrossoverHz.toFloat(), 15f, 300f + 300f * s, 1f + 3f * s, -30f, 6f,
+                -90f, 1f, 0f, 4f * s)
+        }
+        val rest = DynamicsProcessing.MbcBand(true, 20000f, 1f, 60f, 1f, 0f, 0f, -90f, 1f, 0f, 0f)
+        dp.setMbcBandAllChannelsTo(0, bass)
+        dp.setMbcBandAllChannelsTo(1, rest)
+    }
 
     /**
      * Every band update is a binder call (measured on a TECNO LH7n: ~2 ms per
@@ -108,6 +151,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             sent[i] = g
         }
         dp.setInputGainAllChannelsTo(inputGainDb)
+        applyMbc(dp)
         dp.setLimiterAllChannelsTo(
             DynamicsProcessing.Limiter(
                 true, true, 0,

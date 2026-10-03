@@ -1,0 +1,314 @@
+package app.svan.ui
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Headphones
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import app.svan.EqController
+import app.svan.SvanRepository
+import app.svan.model.BassTuner
+import app.svan.tuning.AutoEqSource
+import app.svan.tuning.Signature
+import app.svan.tuning.TuningController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.ln
+import kotlin.math.pow
+
+/** The friendly front door: pick your headphones and a sound, then shape the bass. */
+@Composable
+fun SoundScreen() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val eq by SvanRepository.eq.collectAsState()
+    val tuning = eq.tuning
+
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<AutoEqSource.Entry>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    var entry by remember(tuning?.ref) { mutableStateOf(tuning?.ref?.let(TuningController::entryFromRef)) }
+    var signature by remember(tuning?.signature) {
+        mutableStateOf(Signature.entries.firstOrNull { it.title == tuning?.signature } ?: Signature.HARMAN)
+    }
+    var bassDb by remember(tuning?.ref) { mutableDoubleStateOf(tuning?.bassDb ?: 0.0) }
+    var tilt by remember(tuning?.ref) { mutableDoubleStateOf(tuning?.tiltDbPerOct ?: 0.0) }
+    var bandCount by remember { mutableIntStateOf(64) }
+    var customTarget by remember { mutableStateOf<String?>(null) }
+    var customMeasurement by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var picking by remember { mutableStateOf(tuning == null) }
+
+    fun apply() {
+        val e = entry ?: return
+        busy = true
+        message = null
+        scope.launch {
+            val r = TuningController.build(
+                context,
+                TuningController.Request(e, signature, bassDb, tilt, bandCount, customTarget, customMeasurement),
+            )
+            busy = false
+            r.onSuccess { t ->
+                SvanRepository.update { it.copy(tuning = t, enabled = true) }
+                message = "${t.bands.size} bands · fit accuracy ±%.2f dB".format(t.fitRmsDb)
+                picking = false
+            }.onFailure { message = it.message ?: "Couldn't build the tuning" }
+        }
+    }
+
+    // Taste sliders re-tune live (debounced) once a tuning exists.
+    LaunchedEffect(bassDb, tilt, bandCount) {
+        if (tuning == null || entry == null || busy) return@LaunchedEffect
+        if (bassDb == tuning.bassDb && tilt == tuning.tiltDbPerOct && bandCount == tuning.bands.size) return@LaunchedEffect
+        delay(350)
+        apply()
+    }
+    LaunchedEffect(query) {
+        if (query.length < 2) { results = emptyList(); return@LaunchedEffect }
+        delay(200)
+        searching = true
+        results = runCatching { withContext(Dispatchers.IO) { AutoEqSource.search(context, query) } }
+            .onFailure { message = "Can't load the headphone list: ${it.message}" }
+            .getOrDefault(emptyList())
+        searching = false
+    }
+
+    val targetPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        customTarget = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+        signature = Signature.CUSTOM
+        apply()
+    }
+    val measurementPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        customMeasurement = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+        val name = uri.lastPathSegment?.substringAfterLast('/')?.substringBeforeLast('.') ?: "Imported headphone"
+        entry = AutoEqSource.Entry(name, "Imported", if (entry?.form == "in-ear") "in-ear" else "over-ear", null, "")
+        if (signature == Signature.PUBLISHED) signature = Signature.HARMAN
+        picking = false
+        apply()
+    }
+
+    val curve = remember(eq) { EqController.curveEngine.curveDb(CURVE_FREQS) }
+
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+        item {
+            Text("Sound", style = MaterialTheme.typography.headlineMedium.copy(brush = Svan.AccentBrush))
+            Text("Make your headphones sound their best.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            Spacer(Modifier.height(12.dp))
+            Box(
+                Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(20.dp)).background(Svan.Surface)
+                    .border(1.dp, Svan.Grid, RoundedCornerShape(20.dp)),
+            ) {
+                ResponseGraph(emptyList(), curve, -1, eq.enabled, editable = false,
+                    onSelect = {}, onMove = { _, _, _ -> }, onAdd = { _, _ -> }, onDelete = {}, modifier = Modifier.fillMaxSize())
+            }
+            SectionLabel("Your headphones")
+        }
+
+        // ---- headphones ----
+        if (!picking && entry != null) {
+            item {
+                SvanCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Headphones, contentDescription = null, tint = Svan.Saffron)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(entry!!.name, style = MaterialTheme.typography.titleMedium)
+                            Text(entry!!.label, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                        }
+                        if (tuning != null) {
+                            Switch(
+                                checked = tuning.enabled,
+                                onCheckedChange = { on -> SvanRepository.update { s -> s.copy(tuning = s.tuning?.copy(enabled = on)) } },
+                                colors = SwitchDefaults.colors(checkedTrackColor = Svan.Saffron, checkedThumbColor = Svan.Black, uncheckedTrackColor = Svan.SurfaceHigher),
+                            )
+                        }
+                    }
+                }
+                TextButton(onClick = { picking = true }) { Text("Change headphones") }
+            }
+        } else {
+            item {
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it },
+                    placeholder = { Text("Search ~9,000 headphones & IEMs", color = Svan.TextFaint) },
+                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = Svan.TextMuted) },
+                    trailingIcon = { if (searching) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Svan.Saffron) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Svan.Saffron, unfocusedBorderColor = Svan.Outline),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("Measurements from oratory1990, crinacle, Super Review, Rtings and more, via AutoEq.",
+                    style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint, modifier = Modifier.padding(top = 6.dp, start = 4.dp))
+                TextButton(onClick = { measurementPicker.launch(arrayOf("*/*")) }) { Text("Not listed? Import a measurement file") }
+            }
+            items(results, key = { it.resultPath }) { e ->
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(14.dp)).background(Svan.Surface)
+                        .clickable {
+                            entry = e
+                            customMeasurement = null
+                            signature = Signature.available(e).let { if (Signature.HARMAN in it) Signature.HARMAN else Signature.PUBLISHED }
+                            picking = false
+                            query = ""
+                            apply()
+                        }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
+                    Column {
+                        Text(e.name, style = MaterialTheme.typography.titleMedium)
+                        Text(e.label, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                    }
+                }
+            }
+        }
+
+        // ---- signature & taste ----
+        val current = entry
+        if (current != null && !picking) {
+            item {
+                SectionLabel("Sound signature")
+                val options = if (customMeasurement != null) Signature.entries.filter { it != Signature.PUBLISHED && (it == Signature.CUSTOM || it.targetFile(current) != null) }
+                else Signature.available(current)
+                options.forEach { sig ->
+                    ChoiceRow(sig.title, sig.detail, signature == sig, badge = if (sig == Signature.HARMAN) "Most liked" else null, onClick = {
+                        if (sig == Signature.CUSTOM && customTarget == null) targetPicker.launch(arrayOf("*/*"))
+                        else { signature = sig; apply() }
+                    })
+                }
+                if (!current.supportsCustomTargets && customMeasurement == null) {
+                    Text("Only the reviewer's profile is available for this measurement (raw data isn't published, or the rig needs its own targets).",
+                        style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint, modifier = Modifier.padding(4.dp))
+                }
+                SectionLabel("Your taste")
+                SvanCard {
+                    Column {
+                        ValueSlider("Bass", bassDb, { formatDb(it) },
+                            toSlider = { ((it + 6) / 12).toFloat() }, fromSlider = { Math.round((it * 12 - 6) * 2) / 2.0 },
+                            onChange = { bassDb = it }, entryRange = -6.0..6.0, entryUnit = "dB")
+                        ValueSlider("Brightness", tilt, { v -> if (v == 0.0) "Neutral" else if (v > 0) "Brighter %.1f".format(v * 10) else "Warmer %.1f".format(-v * 10) },
+                            toSlider = { ((it + 0.6) / 1.2).toFloat() }, fromSlider = { Math.round((it * 1.2 - 0.6) * 20) / 20.0 },
+                            onChange = { tilt = it })
+                        Text("Resolution", style = MaterialTheme.typography.bodyMedium, color = Svan.TextMuted)
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(32, 64, 96).forEach { n -> Pill("$n bands", bandCount == n, { bandCount = n }) }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (busy) {
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Svan.Saffron)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Tuning…", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                            } else {
+                                Text(message ?: tuning?.let { "${it.bands.size} bands · fit accuracy ±%.2f dB".format(it.fitRmsDb) } ?: "",
+                                    style = MaterialTheme.typography.bodySmall, color = Svan.Saffron)
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (message != null) {
+            item { Text(message!!, style = MaterialTheme.typography.bodySmall, color = Svan.Rose, modifier = Modifier.padding(4.dp)) }
+        }
+
+        // ---- bass tuner ----
+        item { BassTunerCard(eq.bass) }
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun BassTunerCard(b: BassTuner) {
+    SectionLabel("Bass tuner")
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        BassTuner.PRESETS.forEach { (name, preset) ->
+            Pill(name, b == preset, { SvanRepository.update { it.copy(bass = preset) } })
+        }
+    }
+    Spacer(Modifier.height(10.dp))
+    SvanCard {
+        Column {
+            ValueSlider("Amount", b.amountDb, ::formatDb,
+                toSlider = { ((it + 6) / 18).toFloat() }, fromSlider = { Math.round((it * 18 - 6) * 2) / 2.0 },
+                onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(amountDb = v)) } },
+                entryRange = -6.0..12.0, entryUnit = "dB")
+            ValueSlider("Depth", b.focusHz, { f -> "%.0f Hz · %s".format(f, if (f < 65) "deep sub" else if (f < 110) "full" else "mid-bass") },
+                toSlider = { (ln(it / 40.0) / ln(4.0)).toFloat() }, fromSlider = { Math.round(40.0 * 4.0.pow(it.toDouble())).toDouble() },
+                onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(focusHz = v)) } })
+            Row(Modifier.fillMaxWidth()) {
+                Text("Sustain · boom", style = MaterialTheme.typography.labelMedium, color = Svan.Cyan)
+                Spacer(Modifier.weight(1f))
+                Text("Punch · tight", style = MaterialTheme.typography.labelMedium, color = Svan.Saffron)
+            }
+            ValueSlider("Feel", b.character, { c ->
+                when {
+                    c == 0.0 -> "Natural"
+                    c > 0 -> "Punch %d%%".format((c * 100).toInt())
+                    else -> "Sustain %d%%".format((-c * 100).toInt())
+                }
+            },
+                toSlider = { ((it + 1) / 2).toFloat() }, fromSlider = { Math.round((it * 2 - 1) * 20) / 20.0 },
+                onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } },
+                accent = if (b.character < 0) Svan.Cyan else Svan.Saffron)
+            Text(
+                "Feel shapes each bass note over time: punch sharpens kicks and shortens the tail for precise bass; " +
+                    "sustain softens the hit and lets notes bloom. Exact in the audiophile engine, approximated on system effects.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint,
+            )
+        }
+    }
+}

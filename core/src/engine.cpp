@@ -44,7 +44,9 @@ int sanitizeFactor(int f) { return (f == 2 || f == 4 || f == 8) ? f : 1; }
 }  // namespace
 
 Engine::Engine(const EngineConfig& cfg)
-    : cfg_(cfg), eq_(std::max(1, cfg.channels), cfg.sampleRate * sanitizeFactor(cfg.oversample)) {
+    : cfg_(cfg),
+      eq_(std::max(1, cfg.channels), cfg.sampleRate * sanitizeFactor(cfg.oversample)),
+      bass_(cfg.sampleRate, std::max(1, cfg.channels)) {
   cfg_.channels = std::max(1, cfg_.channels);
   cfg_.oversample = sanitizeFactor(cfg_.oversample);
   cfg_.maxBlock = std::max(16, cfg_.maxBlock);
@@ -77,6 +79,11 @@ void Engine::setPreampDb(double db) {
   updateGain();
 }
 
+void Engine::setBassCharacter(double character, double crossoverHz) {
+  bassCharacter_.store(character);
+  bassCrossover_.store(crossoverHz);
+}
+
 void Engine::updateGain() {
   double headroom = 0.0;
   if (cfg_.autoHeadroom) {
@@ -95,6 +102,7 @@ int Engine::latencyFrames() const { return os_.empty() ? 0 : os_[0]->latencySamp
 
 void Engine::reset() {
   eq_.reset();
+  bass_.reset();
   for (auto& o : os_) o->reset();
   for (auto& d : dither_) d.reset();
 }
@@ -102,6 +110,13 @@ void Engine::reset() {
 void Engine::process(const float* in, float* out, int frames) {
   const int C = cfg_.channels;
   const int L = cfg_.oversample;
+  bass_.setCharacter(bassCharacter_.load(std::memory_order_relaxed));
+  const double xo = bassCrossover_.load(std::memory_order_relaxed);
+  if (xo != appliedBassCrossover_) {
+    bass_.setCrossoverHz(xo);
+    appliedBassCrossover_ = xo;
+  }
+
   for (int start = 0; start < frames; start += cfg_.maxBlock) {
     const int n = std::min(cfg_.maxBlock, frames - start);
     const float* src = in + static_cast<size_t>(start) * C;
@@ -125,6 +140,7 @@ void Engine::process(const float* in, float* out, int frames) {
       } else {
         eq_.process(ch, y, n);
       }
+      bass_.process(ch, y, n);  // bass needs no oversampling; runs at the base rate
       for (int i = 0; i < n; ++i) peak = std::max(peak, std::fabs(y[i]));
     }
     double scale = agpGain;

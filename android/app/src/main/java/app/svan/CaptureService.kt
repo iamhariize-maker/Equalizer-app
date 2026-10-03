@@ -239,6 +239,7 @@ class CaptureService : Service() {
     private fun applyEq(engine: NativeEngine, eq: EqState) {
         engine.setBands(eq.effectiveBands().map { it.toNative() })
         engine.setPreampDb(eq.effectivePreampDb())
+        engine.setBassCharacter(eq.bassCharacter, eq.bass.crossoverHz)
     }
 
     override fun onDestroy() {

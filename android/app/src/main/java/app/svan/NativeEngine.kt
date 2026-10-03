@@ -57,6 +57,9 @@ class NativeEngine(
     /** The bands' own response in dB (no preamp/headroom) — what the UI draws. */
     fun curveDb(freqsHz: DoubleArray, channel: Int = 0): DoubleArray = nativeCurveDb(handle, channel, freqsHz)
 
+    /** Bass character: -1 sustain .. 0 off .. +1 punch (Engine B only; exact). */
+    fun setBassCharacter(character: Double, crossoverHz: Double) = nativeSetBassCharacter(handle, character, crossoverHz)
+
     /** Preamp minus auto headroom currently applied, in dB. */
     val appliedGainDb: Double get() = nativeAppliedGainDb(handle)
 
@@ -109,6 +112,25 @@ class NativeEngine(
         @JvmStatic external fun nativeAppliedGainDb(handle: Long): Double
         @JvmStatic external fun nativeGainProtectionDb(handle: Long): Double
         @JvmStatic external fun nativeParseParametric(text: String): DoubleArray
+        @JvmStatic external fun nativeSetBassCharacter(handle: Long, character: Double, crossoverHz: Double)
+        @JvmStatic external fun nativeComputeTuning(measurement: String, target: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray
+        @JvmStatic external fun nativeFitCorrection(text: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray
+
+        data class Fit(val bands: List<Band>, val rmsErrorDb: Double, val maxErrorDb: Double)
+
+        private fun unpackFit(raw: DoubleArray): Fit? {
+            if (raw.size < 2) return null
+            val bands = (2 until raw.size step 3).map { i -> Band(FilterType.PEAK, raw[i], raw[i + 1], raw[i + 2]) }
+            return Fit(bands, raw[0], raw[1])
+        }
+
+        /** Headphone correction to [target] from [measurement] (CSV/Squiglink text), fitted with [bands] bells. */
+        fun computeTuning(measurement: String, target: String, bassDb: Double, tilt: Double, bands: Int): Fit? =
+            unpackFit(nativeComputeTuning(measurement, target, bassDb, tilt, bands))
+
+        /** Fits a ready-made correction (AutoEq GraphicEQ or a dB curve). */
+        fun fitCorrection(text: String, bassDb: Double, tilt: Double, bands: Int): Fit? =
+            unpackFit(nativeFitCorrection(text, bassDb, tilt, bands))
         @JvmStatic external fun nativeLoadParametricPreset(handle: Long, text: String): Int
         @JvmStatic external fun nativeSetPreamp(handle: Long, db: Double)
         @JvmStatic external fun nativeProcess(handle: Long, input: FloatArray, output: FloatArray, frames: Int)

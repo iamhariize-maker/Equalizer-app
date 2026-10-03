@@ -6,6 +6,7 @@
 
 #include "eqcore/autoeq.h"
 #include "eqcore/engine.h"
+#include "eqcore/tuning.h"
 
 using namespace eqcore;
 
@@ -148,6 +149,74 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeParseParametric(
   jdoubleArray result = env->NewDoubleArray(static_cast<jsize>(out.size()));
   env->SetDoubleArrayRegion(result, 0, static_cast<jsize>(out.size()), out.data());
   return result;
+}
+
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassCharacter(JNIEnv*, jclass, jlong h,
+                                                                         jdouble character, jdouble crossoverHz) {
+  fromHandle(h)->setBassCharacter(character, crossoverHz);
+}
+
+namespace {
+// [rmsErrorDb, maxErrorDb, f0, g0, q0, f1, g1, q1, ...]
+jdoubleArray packFit(JNIEnv* env, const DenseFit& fit) {
+  std::vector<jdouble> out{fit.rmsErrorDb, fit.maxErrorDb};
+  for (const auto& b : fit.bands) {
+    out.push_back(b.freqHz);
+    out.push_back(b.gainDb);
+    out.push_back(b.q);
+  }
+  jdoubleArray r = env->NewDoubleArray(static_cast<jsize>(out.size()));
+  env->SetDoubleArrayRegion(r, 0, static_cast<jsize>(out.size()), out.data());
+  return r;
+}
+std::string str(JNIEnv* env, jstring s) {
+  const char* c = env->GetStringUTFChars(s, nullptr);
+  std::string out(c);
+  env->ReleaseStringUTFChars(s, c);
+  return out;
+}
+}  // namespace
+
+// Correction (target + taste) - measurement, fitted with bandCount dense bells.
+// Returns an empty array if either curve could not be parsed.
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeComputeTuning(
+    JNIEnv* env, jclass, jstring measurement, jstring target, jdouble bassDb, jdouble tiltDbPerOct, jint bandCount) {
+  const FrCurve m = parseCurve(str(env, measurement));
+  const FrCurve t = parseCurve(str(env, target));
+  if (m.empty() || t.empty()) return env->NewDoubleArray(0);
+  TuningOptions opt;
+  opt.bassDb = bassDb;
+  opt.tiltDbPerOct = tiltDbPerOct;
+  return packFit(env, fitDenseBands(computeCorrection(m, t, opt), bandCount));
+}
+
+// Fits a ready-made correction (AutoEq "GraphicEQ: f g; ..." or a plain
+// frequency/dB curve) with bandCount dense bells, plus optional taste.
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeFitCorrection(
+    JNIEnv* env, jclass, jstring text, jdouble bassDb, jdouble tiltDbPerOct, jint bandCount) {
+  const std::string s = str(env, text);
+  FrCurve c;
+  if (s.find("GraphicEQ") != std::string::npos) {
+    for (const auto& [f, g] : parseGraphicEq(s)) {
+      c.hz.push_back(f);
+      c.db.push_back(g);
+    }
+  } else {
+    c = parseCurve(s);
+  }
+  if (c.empty()) return env->NewDoubleArray(0);
+  // Taste on top of a finished correction: same shapes as computeCorrection's.
+  FrCurve flat;
+  flat.hz = {20.0, 20000.0};
+  flat.db = {0.0, 0.0};
+  TuningOptions opt;
+  opt.bassDb = bassDb;
+  opt.tiltDbPerOct = tiltDbPerOct;
+  opt.trebleSmoothFromHz = 20000.0;
+  opt.fadeFromHz = 19000.0;
+  const FrCurve taste = computeCorrection(flat, flat, opt);
+  for (size_t i = 0; i < c.hz.size(); ++i) c.db[i] += taste.at(c.hz[i]);
+  return packFit(env, fitDenseBands(c, bandCount));
 }
 
 JNIEXPORT jint JNICALL Java_app_svan_NativeEngine_nativeLatency(JNIEnv*, jclass, jlong h) {
