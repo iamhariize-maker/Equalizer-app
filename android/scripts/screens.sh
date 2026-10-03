@@ -6,8 +6,8 @@ A="adb -s $S"
 mkdir -p "$OUT"
 # Boot animation: cold start, capture mid-morph and at the full name.
 $A shell am force-stop app.svan; $A shell am start -n app.svan/.MainActivity >/dev/null
-sleep 1.2; $A exec-out screencap -p > "$OUT/boot-1.png"
-sleep 0.9; $A exec-out screencap -p > "$OUT/boot-2.png"
+sleep 1.0; $A exec-out screencap -p > "$OUT/boot-1.png"
+sleep 0.5; $A exec-out screencap -p > "$OUT/boot-2.png"
 echo "saved boot frames"
 sleep 6
 tap_text() { # taps the centre of the first node whose text equals $1

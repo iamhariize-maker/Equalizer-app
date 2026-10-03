@@ -82,9 +82,10 @@ fun Exten9edTitle(modifier: Modifier = Modifier) {
     Row(modifier.clearAndSetSemantics { contentDescription = "EQ Extended" }, verticalAlignment = Alignment.Bottom) {
         Text("EQ exten", style = style)
         // A vertically flipped "d": the bowl rises to the top and the stem descends — a 9.
-        // Flipping about the line box centre lifts the glyph; drop it back so the stem
-        // reaches the baseline like the descender of a 9.
-        Text("d", style = style, modifier = Modifier.graphicsLayer { scaleY = -1f; translationY = style.fontSize.toPx() * 0.24f })
+        // Flipped about its line box, the d's bowl lands at the top and its stem below.
+        // -0.12em sat too high (superscript), +0.24em too low (a "q"); +0.03em ends the
+        // stem on the baseline with the bowl up top — a 9.
+        Text("d", style = style, modifier = Modifier.graphicsLayer { scaleY = -1f; translationY = style.fontSize.toPx() * 0.03f })
         Text("ed", style = style)
     }
 }
