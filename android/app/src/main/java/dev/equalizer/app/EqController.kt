@@ -14,7 +14,10 @@ object EqController {
 
     val log = StringBuilder()
 
-    fun log(line: String) = synchronized(log) { log.appendLine(line) }
+    fun log(line: String) {
+        android.util.Log.i("EqSpike", line) // automated tests read logcat
+        synchronized(log) { log.appendLine(line) }
+    }
 
     fun loadPreset(text: String): Int {
         val n = curveEngine.loadParametricPreset(text)

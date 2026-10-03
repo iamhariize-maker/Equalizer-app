@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "EqualizerSpike"
 include(":app")
+include(":testsource")

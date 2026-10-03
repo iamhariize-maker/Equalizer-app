@@ -56,22 +56,7 @@ class MainActivity : Activity() {
             startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
         }
         button("6. Session discovery diagnostics") {
-            thread {
-                val r = buildString {
-                    val dump = PlaybackSessions.hasDumpPermission(this@MainActivity)
-                    appendLine("DUMP granted: $dump")
-                    val sessions = PlaybackSessions.query(this@MainActivity)
-                    if (sessions == null) appendLine("dump: unavailable (${PlaybackSessions.lastError})")
-                    else sessions.forEach {
-                        appendLine("  sid=${it.sessionId} ${it.packageName} ${it.usage} ${it.state} flags=0x${it.flags.toString(16)}" +
-                            if (it.flagsBlockCapture) " (capture opt-out)" else "")
-                    }
-                    SessionRouter.init(this@MainActivity)
-                    appendLine("routes: " + SessionRouter.snapshot.joinToString { "${it.pkg}#${it.sessionId}=${it.owner}" })
-                    appendLine("capture verdicts: ${SessionRouter.compat().all()}")
-                }
-                runOnUiThread { append(r) }
-            }
+            thread { val r = sessionReport(); runOnUiThread { append(r) } }
         }
         button("7. Forget per-app capture verdicts") {
             SessionRouter.init(this)
@@ -85,6 +70,53 @@ class MainActivity : Activity() {
 
         root.addView(ScrollView(this).apply { addView(logView) })
         setContentView(root)
+        handleCommand(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleCommand(intent)
+    }
+
+    /**
+     * Scriptable entry points for automated tests (output goes to logcat tag EqSpike):
+     *   adb shell am start -n dev.equalizer.app/.MainActivity --es cmd <command> [--es quality EFFICIENT]
+     * Commands: probe, resolution, sessions, preset, start_capture, stop_capture,
+     *           measure_mix, forget_verdicts
+     */
+    private fun handleCommand(intent: Intent?) {
+        val cmd = intent?.getStringExtra("cmd") ?: return
+        intent.getStringExtra("quality")?.let { quality = NativeEngine.Quality.valueOf(it) }
+        EqController.log("CMD $cmd")
+        when (cmd) {
+            "probe" -> thread { EqController.log(DynamicsProbe.run(this)) }
+            "resolution" -> thread { EqController.log(ResolutionProbe.timeBulkSet(this) + ResolutionProbe.run(this)) }
+            "sessions" -> thread { EqController.log(sessionReport()) }
+            "preset" -> {
+                val n = EqController.loadPreset(EqController.SAMPLE_PRESET)
+                val r = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
+                EqController.log("preset bands=$n response@1kHz=%.2f dB".format(r))
+            }
+            "start_capture" -> startCapture()
+            "stop_capture" -> startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
+            "measure_mix" -> thread {
+                EqController.log(try { MixMeter.measure(intent.getFloatExtra("seconds", 3f).toDouble()) } catch (e: Exception) { "MIX error $e" })
+            }
+            "forget_verdicts" -> { SessionRouter.init(this); SessionRouter.compat().clear() }
+        }
+    }
+
+    private fun sessionReport(): String = buildString {
+        appendLine("DUMP granted: ${PlaybackSessions.hasDumpPermission(this@MainActivity)}")
+        val sessions = PlaybackSessions.query(this@MainActivity)
+        if (sessions == null) appendLine("dump: unavailable (${PlaybackSessions.lastError})")
+        else sessions.forEach {
+            appendLine("  sid=${it.sessionId} ${it.packageName} ${it.usage} ${it.state} flags=0x${it.flags.toString(16)}" +
+                if (it.flagsBlockCapture) " (capture opt-out)" else "")
+        }
+        SessionRouter.init(this@MainActivity)
+        appendLine("routes: " + SessionRouter.snapshot.joinToString { "${it.pkg}#${it.sessionId}=${it.owner}" })
+        appendLine("capture verdicts: ${SessionRouter.compat().all()}")
     }
 
     private fun startCapture() {
