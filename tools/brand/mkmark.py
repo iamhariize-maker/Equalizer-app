@@ -19,7 +19,8 @@ def glyph_path(font_file, char="श", box=(54, 54), height=34.0, wght=None):
     tx = cx - (x0 + x1) / 2 * s
     ty = cy + (y0 + y1) / 2 * s
     rec = RecordingPen(); gs[name].draw(TransformPen(rec, (s, 0, 0, -s, tx, ty)))
-    pen = SVGPathPen(None); rec.replay(pen)
+    # 1 decimal (0.1 of a 108-unit viewport, ~0.2 px on a 192 px icon) keeps the path short.
+    pen = SVGPathPen(None, ntos=lambda v: f"{v:.1f}".rstrip("0").rstrip(".")); rec.replay(pen)
     w = (x1 - x0) * s
     return pen.getCommands(), (cx - w / 2, cy - height / 2, cx + w / 2, cy + height / 2)
 
