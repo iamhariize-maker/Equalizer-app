@@ -16,6 +16,7 @@ wait_for() { # pattern timeout — searches the full log file
   echo "TIMEOUT: $1"; return 1
 }
 
+$A uninstall $EQ >/dev/null 2>&1
 $A install -r -g app/build/outputs/apk/debug/app-debug.apk >/dev/null
 $A install -r testsource/build/outputs/apk/capturable/debug/testsource-capturable-debug.apk >/dev/null
 $A shell pm grant $EQ android.permission.DUMP

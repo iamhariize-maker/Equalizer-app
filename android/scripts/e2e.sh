@@ -52,6 +52,8 @@ measure() { # $1 = label
 $A logcat -s EqSpike:I EqTestSource:I > "$TMP/e2e_eqspike_full.log" 2>/dev/null &
 FULLLOG=$!
 log "installing"
+# Start from a clean install: saved EQ state from an earlier run would skew T0.
+$A uninstall app.svan >/dev/null 2>&1
 for apk in "$APP_APK" "$CAP_APK" "$BLK_APK"; do
   [ -f "$apk" ] || { echo "missing $apk"; exit 1; }
   $A install -r -g "$apk" >/dev/null || { echo "install failed: $apk"; exit 1; }

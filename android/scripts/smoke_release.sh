@@ -27,4 +27,5 @@ if $A logcat -d | grep -qE "FATAL EXCEPTION|UnsatisfiedLinkError|NoSuchMethodErr
 fi
 [ -n "$($A shell pidof app.svan)" ] || { echo "FAIL app.svan not running"; ok=0; }
 $A logcat -d -s EqSpike:I | grep -E "preset bands|bass preset" | sed 's/^.*EqSpike: //'
+$A uninstall app.svan >/dev/null 2>&1  # leave no state behind for later scripts
 [ $ok = 1 ] && echo "PASS release smoke test" || { echo "FAIL release smoke test"; exit 1; }
