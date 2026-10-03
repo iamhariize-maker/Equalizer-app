@@ -1,4 +1,4 @@
-package dev.equalizer.app
+package app.svan
 
 import android.media.audiofx.DynamicsProcessing
 import android.util.Log

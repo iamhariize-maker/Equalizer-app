@@ -1,4 +1,4 @@
-// JNI surface for dev.equalizer.app.NativeEngine.
+// JNI surface for app.svan.NativeEngine.
 #include <jni.h>
 
 #include <string>
@@ -28,18 +28,18 @@ FilterType typeFromInt(jint t) {
 
 extern "C" {
 
-JNIEXPORT jlong JNICALL Java_dev_equalizer_app_NativeEngine_nativeCreate(
+JNIEXPORT jlong JNICALL Java_app_svan_NativeEngine_nativeCreate(
     JNIEnv*, jclass, jint sampleRate, jint channels, jint quality, jint outputBits) {
   const auto mode = static_cast<QualityMode>(quality < 0 || quality > 3 ? 0 : quality);
   auto cfg = EngineConfig::forQuality(mode, sampleRate, channels, outputBits);
   return reinterpret_cast<jlong>(new Engine(cfg));
 }
 
-JNIEXPORT void JNICALL Java_dev_equalizer_app_NativeEngine_nativeDestroy(JNIEnv*, jclass, jlong h) {
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeDestroy(JNIEnv*, jclass, jlong h) {
   delete fromHandle(h);
 }
 
-JNIEXPORT void JNICALL Java_dev_equalizer_app_NativeEngine_nativeSetBands(
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBands(
     JNIEnv* env, jclass, jlong h, jint channel, jintArray types, jdoubleArray freqs,
     jdoubleArray gains, jdoubleArray qs) {
   const jsize n = env->GetArrayLength(types);
@@ -58,7 +58,7 @@ JNIEXPORT void JNICALL Java_dev_equalizer_app_NativeEngine_nativeSetBands(
   else fromHandle(h)->setBands(channel, bands);
 }
 
-JNIEXPORT jint JNICALL Java_dev_equalizer_app_NativeEngine_nativeLoadParametricPreset(
+JNIEXPORT jint JNICALL Java_app_svan_NativeEngine_nativeLoadParametricPreset(
     JNIEnv* env, jclass, jlong h, jstring text) {
   const char* chars = env->GetStringUTFChars(text, nullptr);
   const ParametricPreset p = parseParametricEq(chars);
@@ -68,12 +68,12 @@ JNIEXPORT jint JNICALL Java_dev_equalizer_app_NativeEngine_nativeLoadParametricP
   return static_cast<jint>(p.bands.size());
 }
 
-JNIEXPORT void JNICALL Java_dev_equalizer_app_NativeEngine_nativeSetPreamp(JNIEnv*, jclass, jlong h,
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetPreamp(JNIEnv*, jclass, jlong h,
                                                                            jdouble db) {
   fromHandle(h)->setPreampDb(db);
 }
 
-JNIEXPORT void JNICALL Java_dev_equalizer_app_NativeEngine_nativeProcess(
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeProcess(
     JNIEnv* env, jclass, jlong h, jfloatArray in, jfloatArray out, jint frames) {
   // Critical access avoids copies on the audio thread. No JNI calls in between.
   auto* src = static_cast<float*>(env->GetPrimitiveArrayCritical(in, nullptr));
@@ -83,7 +83,7 @@ JNIEXPORT void JNICALL Java_dev_equalizer_app_NativeEngine_nativeProcess(
   if (src) env->ReleasePrimitiveArrayCritical(in, src, JNI_ABORT);
 }
 
-JNIEXPORT jdoubleArray JNICALL Java_dev_equalizer_app_NativeEngine_nativeResponseDb(
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeResponseDb(
     JNIEnv* env, jclass, jlong h, jint channel, jdoubleArray freqs) {
   const jsize n = env->GetArrayLength(freqs);
   std::vector<jdouble> f(n), r(n);
@@ -94,7 +94,7 @@ JNIEXPORT jdoubleArray JNICALL Java_dev_equalizer_app_NativeEngine_nativeRespons
   return result;
 }
 
-JNIEXPORT jint JNICALL Java_dev_equalizer_app_NativeEngine_nativeLatency(JNIEnv*, jclass, jlong h) {
+JNIEXPORT jint JNICALL Java_app_svan_NativeEngine_nativeLatency(JNIEnv*, jclass, jlong h) {
   return fromHandle(h)->latencyFrames();
 }
 

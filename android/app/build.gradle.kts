@@ -4,12 +4,12 @@ plugins {
 }
 
 android {
-    namespace = "dev.equalizer.app"
+    namespace = "app.svan"
     compileSdk = 35
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
-        applicationId = "dev.equalizer.app"
+        applicationId = "app.svan"
         // 29: AudioPlaybackCapture (capture engine). DynamicsProcessing needs 28.
         minSdk = 29
         targetSdk = 35

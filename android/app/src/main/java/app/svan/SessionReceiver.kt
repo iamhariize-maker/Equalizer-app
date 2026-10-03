@@ -1,4 +1,4 @@
-package dev.equalizer.app
+package app.svan
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -10,7 +10,7 @@ import android.media.audiofx.AudioEffect
  * local players) broadcast OPEN/CLOSE when they start/stop an audio session.
  *
  * Players that don't broadcast are found through the audio-service dump instead
- * (PlaybackSessions; requires `adb shell pm grant dev.equalizer.app android.permission.DUMP`).
+ * (PlaybackSessions; requires `adb shell pm grant app.svan android.permission.DUMP`).
  * Either way, SessionRouter decides which engine owns the session.
  */
 class SessionReceiver : BroadcastReceiver() {

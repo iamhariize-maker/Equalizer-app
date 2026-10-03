@@ -1,4 +1,4 @@
-package dev.equalizer.app
+package app.svan
 
 /** Kotlin handle to the shared C++ DSP engine (core/). Not thread-confined, but
  *  [process] must only ever be called from one audio thread. */

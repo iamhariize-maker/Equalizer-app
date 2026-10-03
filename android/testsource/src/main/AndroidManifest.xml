@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="EQ test source" android:allowAudioPlaybackCapture="true">
+    <application android:label="Svan test source" android:allowAudioPlaybackCapture="true">
         <activity android:name=".ToneActivity" android:exported="true" android:launchMode="singleTask">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

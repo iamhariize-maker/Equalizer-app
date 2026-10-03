@@ -1,6 +1,6 @@
-# Equalizer
+# Svan
 
-A **global (system-wide) audiophile equalizer for Android**, inspired by
+**Svan** (Sanskrit/Hindi: sound) is a **global (system-wide) audiophile equalizer for Android**, inspired by
 Neutron Music Player's DSP and settings, Wavelet and Poweramp Equalizer.
 
 Status: **early spike.** The DSP core is real and tested; the Android app is a
@@ -45,7 +45,7 @@ Requires the Android SDK with NDK 27.0.12077973 and CMake 3.22.1. Gradle install
 cd android && ./gradlew assembleDebug
 adb install app/build/outputs/apk/debug/app-debug.apk
 # Optional, enables enhanced session detection (the Wavelet approach):
-adb shell pm grant dev.equalizer.app android.permission.DUMP
+adb shell pm grant app.svan android.permission.DUMP
 ```
 
 Then follow [docs/SPIKE.md](docs/SPIKE.md).

@@ -1,4 +1,4 @@
-package dev.equalizer.testsource
+package app.svan.testsource
 
 import android.app.Activity
 import android.content.Intent
@@ -12,9 +12,9 @@ import kotlin.math.PI
 import kotlin.math.sin
 
 /**
- * adb shell am start -n <pkg>/dev.equalizer.testsource.ToneActivity \
+ * adb shell am start -n <pkg>/app.svan.testsource.ToneActivity \
  *     --ef freq 1000 --ef amp 0.25 --ez broadcast true
- * adb shell am start -n <pkg>/dev.equalizer.testsource.ToneActivity --ez stop true
+ * adb shell am start -n <pkg>/app.svan.testsource.ToneActivity --ez stop true
  */
 class ToneActivity : Activity() {
 
@@ -103,6 +103,6 @@ class ToneActivity : Activity() {
 
     private companion object {
         const val TAG = "EqTestSource"
-        const val EQ_PACKAGE = "dev.equalizer.app"
+        const val EQ_PACKAGE = "app.svan"
     }
 }

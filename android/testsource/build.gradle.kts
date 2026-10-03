@@ -7,10 +7,10 @@ plugins {
 // Flavor `capturable` allows playback capture (like most players);
 // flavor `blocked` opts out at app level (like Spotify).
 android {
-    namespace = "dev.equalizer.testsource"
+    namespace = "app.svan.testsource"
     compileSdk = 35
     defaultConfig {
-        applicationId = "dev.equalizer.testsource"
+        applicationId = "app.svan.testsource"
         minSdk = 29
         targetSdk = 35
         versionCode = 1

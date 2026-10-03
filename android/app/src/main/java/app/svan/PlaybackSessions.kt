@@ -1,4 +1,4 @@
-package dev.equalizer.app
+package app.svan
 
 import android.content.Context
 import android.content.pm.PackageManager
@@ -32,7 +32,7 @@ data class PlaybackSession(
 /**
  * Finds other apps' audio sessions without relying on their OPEN broadcasts,
  * by reading the `audio` system service dump. Needs
- * `adb shell pm grant dev.equalizer.app android.permission.DUMP`.
+ * `adb shell pm grant app.svan android.permission.DUMP`.
  */
 object PlaybackSessions {
 

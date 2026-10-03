@@ -70,8 +70,8 @@ and never re-rendered, leaving total silence.
 
 **Setup (one-time, over ADB or Wireless debugging + LADB/Shizuku):**
 ```sh
-adb shell pm grant dev.equalizer.app android.permission.DUMP        # find every session
-adb shell appops set dev.equalizer.app PROJECT_MEDIA allow          # optional: skip the capture prompt
+adb shell pm grant app.svan android.permission.DUMP        # find every session
+adb shell appops set app.svan PROJECT_MEDIA allow          # optional: skip the capture prompt
 ```
 
 **Test:** grant DUMP, tap 4 (start capture), then play in YouTube Music or a local

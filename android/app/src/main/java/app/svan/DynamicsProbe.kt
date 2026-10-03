@@ -1,4 +1,4 @@
-package dev.equalizer.app
+package app.svan
 
 import android.content.Context
 import android.media.AudioAttributes

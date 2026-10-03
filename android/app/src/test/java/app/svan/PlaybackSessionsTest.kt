@@ -1,4 +1,4 @@
-package dev.equalizer.app
+package app.svan
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

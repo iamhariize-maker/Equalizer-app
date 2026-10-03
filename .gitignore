@@ -8,3 +8,4 @@ android/**/build/
 .cxx/
 *.apk
 *.aab
+android/build-kit/

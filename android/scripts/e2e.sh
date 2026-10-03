@@ -3,19 +3,33 @@
 # Plays known tones from the test-source apps and measures the device's final
 # output mix (Visualizer on session 0) to tell apart:
 #   one processed copy  vs  double audio (louder)  vs  silence (muted, not re-rendered)
-# Usage: scripts/e2e.sh [adb-serial]
+# Usage:
+#   From the repo:            scripts/e2e.sh [adb-serial]
+#   On the phone (Termux):    APK_DIR=~/storage/downloads bash e2e.sh 127.0.0.1:<port>
+#     APK_DIR must contain svan.apk, svan-testsource-capturable.apk, svan-testsource-blocked.apk
+# The test plays a 1 kHz tone; VOLUME (0-15, default 4) sets the media volume.
 set -u
-cd "$(dirname "$0")/.."
 S=${1:-emulator-5554}
+TMP=${TMPDIR:-/tmp}
+if [ -n "${APK_DIR:-}" ]; then
+  APP_APK=$APK_DIR/svan.apk
+  CAP_APK=$APK_DIR/svan-testsource-capturable.apk
+  BLK_APK=$APK_DIR/svan-testsource-blocked.apk
+else
+  cd "$(dirname "$0")/.."
+  APP_APK=app/build/outputs/apk/debug/app-debug.apk
+  CAP_APK=testsource/build/outputs/apk/capturable/debug/testsource-capturable-debug.apk
+  BLK_APK=testsource/build/outputs/apk/blocked/debug/testsource-blocked-debug.apk
+fi
 A="adb -s $S"
-EQ=dev.equalizer.app
-CAP=dev.equalizer.testsource.capturable
-BLK=dev.equalizer.testsource.blocked
+EQ=app.svan
+CAP=app.svan.testsource.capturable
+BLK=app.svan.testsource.blocked
 QUALITY=${QUALITY:-EFFICIENT}
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 eq() { $A shell am start -n $EQ/.MainActivity --es cmd "$@" >/dev/null; }
-tone() { $A shell am start -n "$1"/dev.equalizer.testsource.ToneActivity "${@:2}" >/dev/null; }
+tone() { $A shell am start -n "$1"/app.svan.testsource.ToneActivity "${@:2}" >/dev/null; }
 # Wait for a logcat line matching $1 (tag EqSpike), print it.
 wait_for() {
   local pat=$1 timeout=${2:-120} t=0
@@ -31,19 +45,21 @@ measure() { # $1 = label
   eq measure_mix --ef seconds 4
   local r; r=$(wait_for "MIX " 90)
   log "$1: $r"
-  echo "$1|$r" >> /tmp/e2e_results.txt
+  echo "$1|$r" >> "$TMP/e2e_results.txt"
 }
 
-: > /tmp/e2e_results.txt
+: > "$TMP/e2e_results.txt"
 log "installing"
-$A install -r -g app/build/outputs/apk/debug/app-debug.apk >/dev/null
-$A install -r testsource/build/outputs/apk/capturable/debug/testsource-capturable-debug.apk >/dev/null
-$A install -r testsource/build/outputs/apk/blocked/debug/testsource-blocked-debug.apk >/dev/null
+for apk in "$APP_APK" "$CAP_APK" "$BLK_APK"; do
+  [ -f "$apk" ] || { echo "missing $apk"; exit 1; }
+  $A install -r -g "$apk" >/dev/null || { echo "install failed: $apk"; exit 1; }
+done
 $A shell pm grant $EQ android.permission.DUMP
 $A shell pm grant $EQ android.permission.RECORD_AUDIO
 $A shell pm grant $EQ android.permission.POST_NOTIFICATIONS 2>/dev/null
 $A shell appops set $EQ PROJECT_MEDIA allow
-$A shell media volume --stream 3 --set 15 >/dev/null 2>&1 || true
+$A shell cmd media_session volume --stream 3 --set "${VOLUME:-4}" >/dev/null 2>&1 \
+  || $A shell media volume --stream 3 --set "${VOLUME:-4}" >/dev/null 2>&1 || true
 
 log "T0 baseline: capturable tone, EQ flat"
 eq forget_verdicts; sleep 3
@@ -84,5 +100,9 @@ $A logcat -c; eq stop_capture; wait_for "capture: stopped" 60; sleep 5
 measure "T5 after stop (expect ~T1 via Engine A, or T0 if discovered only by dump)"
 tone $CAP --ez stop true
 
-log "results:"; cat /tmp/e2e_results.txt
-$A logcat -d -s EqSpike:I > /tmp/e2e_eqspike.log
+log "results:"; cat "$TMP/e2e_results.txt"
+$A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
+log "full app log: $TMP/e2e_eqspike.log"
+if [ -n "${APK_DIR:-}" ]; then
+  cp "$TMP/e2e_results.txt" "$TMP/e2e_eqspike.log" "$APK_DIR/" && log "copied results to $APK_DIR"
+fi

@@ -1,4 +1,4 @@
-package dev.equalizer.app
+package app.svan
 
 import android.media.audiofx.Visualizer
 

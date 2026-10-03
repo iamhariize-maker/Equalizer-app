@@ -1,4 +1,4 @@
-package dev.equalizer.app
+package app.svan
 
 import android.annotation.SuppressLint
 import android.app.Notification
@@ -180,7 +180,7 @@ class CaptureService : Service() {
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel(CHANNEL, "Capture engine", NotificationManager.IMPORTANCE_LOW))
         return Notification.Builder(this, CHANNEL)
-            .setContentTitle("Equalizer capture engine running")
+            .setContentTitle("Svan capture engine running")
             .setSmallIcon(android.R.drawable.ic_media_play)
             .build()
     }
@@ -189,7 +189,7 @@ class CaptureService : Service() {
         private const val TAG = "CaptureService"
         private const val CHANNEL = "capture"
         private const val NOTIF_ID = 1
-        const val ACTION_STOP = "dev.equalizer.app.STOP_CAPTURE"
+        const val ACTION_STOP = "app.svan.STOP_CAPTURE"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"
         const val EXTRA_QUALITY = "quality"

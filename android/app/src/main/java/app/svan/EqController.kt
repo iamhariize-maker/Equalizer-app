@@ -1,4 +1,4 @@
-package dev.equalizer.app
+package app.svan
 
 /**
  * Process-wide state for the spike. A real app would host this in a foreground

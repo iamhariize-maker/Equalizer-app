@@ -1,4 +1,4 @@
-package dev.equalizer.app
+package app.svan
 
 import android.Manifest
 import android.app.Activity
@@ -80,7 +80,7 @@ class MainActivity : Activity() {
 
     /**
      * Scriptable entry points for automated tests (output goes to logcat tag EqSpike):
-     *   adb shell am start -n dev.equalizer.app/.MainActivity --es cmd <command> [--es quality EFFICIENT]
+     *   adb shell am start -n app.svan/.MainActivity --es cmd <command> [--es quality EFFICIENT]
      * Commands: probe, resolution, sessions, preset, start_capture, stop_capture,
      *           measure_mix, forget_verdicts
      */
