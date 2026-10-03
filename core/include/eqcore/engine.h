@@ -1,0 +1,81 @@
+#pragma once
+// The full processing chain used by both the capture engine (Android) and
+// any future player mode:
+//
+//   float in -> 64-bit -> preamp (+ auto headroom) -> [oversample up]
+//            -> parametric EQ at the high rate -> [oversample down]
+//            -> dither to the output word length -> float out
+//
+// QualityMode::Audiophile spends CPU on precision: EQ runs at 4x (or 8x) the
+// sample rate so high-frequency bands keep their analog shape instead of
+// being "cramped" near Nyquist, and the output is TPDF-dithered.
+#include <atomic>
+#include <memory>
+#include <vector>
+
+#include "eqcore/dither.h"
+#include "eqcore/oversampler.h"
+#include "eqcore/parametric_eq.h"
+
+namespace eqcore {
+
+enum class QualityMode {
+  Efficient,   // 1x, no dither
+  HighQuality, // 2x oversampling, TPDF dither
+  Audiophile,  // 4x oversampling, 120 dB FIRs, TPDF dither
+  Extreme,     // 8x oversampling, 140 dB FIRs, noise-shaped TPDF dither
+};
+
+struct EngineConfig {
+  double sampleRate = 48000.0;
+  int channels = 2;
+  int oversample = 1;        // 1, 2, 4, 8
+  double stopbandDb = 120.0; // oversampler FIR attenuation
+  int ditherBits = 0;        // 0 = off; 16 or 24 typical
+  DitherMode ditherMode = DitherMode::Tpdf;
+  bool autoHeadroom = true;  // pre-attenuate by the curve's max boost (predictive)
+  bool gainProtection = true; // Neutron-style "Automatic Gain Protection" (reactive):
+                              // on an actual overload, lower the gain and keep it lowered
+  int maxBlock = 1024;       // frames per internal chunk
+
+  static EngineConfig forQuality(QualityMode mode, double sampleRate, int channels, int outputBits);
+};
+
+class Engine {
+ public:
+  explicit Engine(const EngineConfig& cfg);
+
+  const EngineConfig& config() const { return cfg_; }
+
+  // Thread-safe; call from the UI thread.
+  void setBands(int channel, const std::vector<BandParams>& bands);
+  void setBandsAllChannels(const std::vector<BandParams>& bands);
+  void setPreampDb(double db);
+
+  // Interleaved float I/O. In-place (in == out) is allowed. Allocation-free.
+  void process(const float* in, float* out, int frames);
+
+  // Response of the configured curve, including preamp and auto headroom.
+  double responseDb(int channel, double freqHz) const;
+  double appliedGainDb() const { return gainDb_.load(); }
+  // Extra attenuation Automatic Gain Protection has applied so far (<= 0 dB).
+  double gainProtectionDb() const { return agpDb_.load(); }
+  void resetGainProtection() { agpDb_.store(0.0); }
+  int latencyFrames() const;
+
+  void reset();
+
+ private:
+  void updateGain();
+
+  EngineConfig cfg_;
+  ParametricEq eq_;  // runs at sampleRate * oversample
+  std::vector<std::unique_ptr<Oversampler>> os_;
+  std::vector<Dither> dither_;
+  std::atomic<double> userPreampDb_{0.0};
+  std::atomic<double> gainDb_{0.0};
+  std::atomic<double> agpDb_{0.0};
+  std::vector<double> outBuf_, high_;  // per-channel chunk, oversampled scratch
+};
+
+}  // namespace eqcore

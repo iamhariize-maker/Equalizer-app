@@ -1,0 +1,144 @@
+#include "eqcore/engine.h"
+
+#include <algorithm>
+#include <cmath>
+
+namespace eqcore {
+
+EngineConfig EngineConfig::forQuality(QualityMode mode, double sampleRate, int channels,
+                                      int outputBits) {
+  EngineConfig c;
+  c.sampleRate = sampleRate;
+  c.channels = channels;
+  switch (mode) {
+    case QualityMode::Efficient:
+      c.oversample = 1;
+      c.ditherBits = 0;
+      break;
+    case QualityMode::HighQuality:
+      c.oversample = 2;
+      c.stopbandDb = 100.0;
+      c.ditherBits = outputBits;
+      c.ditherMode = DitherMode::Tpdf;
+      break;
+    case QualityMode::Audiophile:
+      c.oversample = 4;
+      c.stopbandDb = 120.0;
+      c.ditherBits = outputBits;
+      c.ditherMode = DitherMode::Tpdf;
+      break;
+    case QualityMode::Extreme:
+      c.oversample = 8;
+      c.stopbandDb = 140.0;
+      c.ditherBits = outputBits;
+      c.ditherMode = DitherMode::ShapedTpdf;
+      break;
+  }
+  return c;
+}
+
+namespace {
+// -0.1 dBFS: leaves room for the dither's +-1 LSB without reaching full scale.
+constexpr double kAgpCeiling = 0.98855;
+int sanitizeFactor(int f) { return (f == 2 || f == 4 || f == 8) ? f : 1; }
+}  // namespace
+
+Engine::Engine(const EngineConfig& cfg)
+    : cfg_(cfg), eq_(std::max(1, cfg.channels), cfg.sampleRate * sanitizeFactor(cfg.oversample)) {
+  cfg_.channels = std::max(1, cfg_.channels);
+  cfg_.oversample = sanitizeFactor(cfg_.oversample);
+  cfg_.maxBlock = std::max(16, cfg_.maxBlock);
+  for (int ch = 0; ch < cfg_.channels; ++ch) {
+    OversamplerSpec spec;
+    spec.factor = cfg_.oversample;
+    spec.baseSampleRate = cfg_.sampleRate;
+    spec.stopbandDb = cfg_.stopbandDb;
+    spec.maxBlock = cfg_.maxBlock;
+    os_.push_back(std::make_unique<Oversampler>(spec));
+    // Different seeds per channel: correlated dither would image in the centre.
+    dither_.emplace_back(cfg_.ditherBits, cfg_.ditherMode, 0x9E3779B97F4A7C15ull + 7919ull * ch);
+  }
+  outBuf_.assign(static_cast<size_t>(cfg_.maxBlock) * cfg_.channels, 0.0);
+  high_.assign(static_cast<size_t>(cfg_.maxBlock) * cfg_.oversample, 0.0);
+}
+
+void Engine::setBands(int channel, const std::vector<BandParams>& bands) {
+  eq_.setBands(channel, bands);
+  updateGain();
+}
+
+void Engine::setBandsAllChannels(const std::vector<BandParams>& bands) {
+  for (int ch = 0; ch < cfg_.channels; ++ch) eq_.setBands(ch, bands);
+  updateGain();
+}
+
+void Engine::setPreampDb(double db) {
+  userPreampDb_.store(db);
+  updateGain();
+}
+
+void Engine::updateGain() {
+  double headroom = 0.0;
+  if (cfg_.autoHeadroom) {
+    const double maxHz = std::min(20000.0, 0.49 * cfg_.sampleRate);
+    for (int ch = 0; ch < cfg_.channels; ++ch)
+      headroom = std::max(headroom, eq_.peakGainDb(ch, 10.0, maxHz));
+  }
+  gainDb_.store(userPreampDb_.load() - headroom);
+}
+
+double Engine::responseDb(int channel, double freqHz) const {
+  return eq_.responseDb(channel, freqHz) + gainDb_.load();
+}
+
+int Engine::latencyFrames() const { return os_.empty() ? 0 : os_[0]->latencySamples(); }
+
+void Engine::reset() {
+  eq_.reset();
+  for (auto& o : os_) o->reset();
+  for (auto& d : dither_) d.reset();
+}
+
+void Engine::process(const float* in, float* out, int frames) {
+  const int C = cfg_.channels;
+  const int L = cfg_.oversample;
+  for (int start = 0; start < frames; start += cfg_.maxBlock) {
+    const int n = std::min(cfg_.maxBlock, frames - start);
+    const float* src = in + static_cast<size_t>(start) * C;
+    float* dst = out + static_cast<size_t>(start) * C;
+    const double gain = std::pow(10.0, gainDb_.load(std::memory_order_relaxed) / 20.0);
+    // AGP gain is applied *after* the EQ. The 64-bit chain cannot clip
+    // internally, so this is equivalent to lowering the preamp, but it never
+    // leaves filter state out of step with the new gain (which would overshoot
+    // again on the next chunk and over-reduce).
+    const double agpGain = std::pow(10.0, agpDb_.load(std::memory_order_relaxed) / 20.0);
+    // All channels of the chunk are processed before any output is written,
+    // so gain protection can scale the whole chunk consistently.
+    double peak = 0.0;
+    for (int ch = 0; ch < C; ++ch) {
+      double* y = &outBuf_[static_cast<size_t>(ch) * cfg_.maxBlock];
+      for (int i = 0; i < n; ++i) y[i] = static_cast<double>(src[i * C + ch]) * gain;
+      if (L > 1) {
+        os_[ch]->up(y, n, high_.data());
+        eq_.process(ch, high_.data(), n * L);
+        os_[ch]->down(high_.data(), n, y);
+      } else {
+        eq_.process(ch, y, n);
+      }
+      for (int i = 0; i < n; ++i) peak = std::max(peak, std::fabs(y[i]));
+    }
+    double scale = agpGain;
+    if (cfg_.gainProtection && peak * agpGain > kAgpCeiling) {
+      // Fix the overloaded chunk now and keep the reduction for what follows.
+      scale = kAgpCeiling / peak;
+      agpDb_.store(20.0 * std::log10(scale), std::memory_order_relaxed);
+    }
+    for (int ch = 0; ch < C; ++ch) {
+      const double* y = &outBuf_[static_cast<size_t>(ch) * cfg_.maxBlock];
+      Dither& d = dither_[ch];
+      for (int i = 0; i < n; ++i) dst[i * C + ch] = static_cast<float>(d.process(y[i] * scale));
+    }
+  }
+}
+
+}  // namespace eqcore

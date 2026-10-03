@@ -1,0 +1,41 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test (Release)
+        run: |
+          cmake -S core -B build/core
+          cmake --build build/core -j
+          ./build/core/eqcore_tests
+      - name: Test with ASan + UBSan
+        run: |
+          cmake -S core -B build/asan -DEQCORE_SANITIZE=address,undefined -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/asan -j
+          ./build/asan/eqcore_tests
+      - name: Test with TSan (threaded parameter updates)
+        run: |
+          cmake -S core -B build/tsan -DEQCORE_SANITIZE=thread -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build/tsan -j
+          ./build/tsan/eqcore_tests eq_parameter
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Assemble debug APK and lint
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug lintDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug
+          path: android/app/build/outputs/apk/debug/app-debug.apk
