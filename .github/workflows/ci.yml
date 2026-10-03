@@ -59,7 +59,9 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Build APKs
         working-directory: android
-        run: ./gradlew --no-daemon assembleDebug :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
+        run: ./gradlew --no-daemon assembleDebug assembleRelease :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
+      - name: Prepare output dir
+        run: mkdir -p e2e-out
       - name: Run e2e on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -70,11 +72,13 @@ jobs:
           # No -noaudio: the test needs the emulator's audio HAL.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
-          script: bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/e2e.sh emulator-5554 ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" || true
+          script: bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/e2e.sh emulator-5554 ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" || true
       - name: Results
         if: always()
         run: |
+          cat e2e-out/smoke.txt || echo "no smoke output"
           cat e2e-out/e2e_results.txt || { echo "no results"; exit 1; }
+          grep -q '^PASS release smoke test' e2e-out/smoke.txt
           ! grep -q '^FAIL' e2e-out/e2e_results.txt
       - uses: actions/upload-artifact@v4
         if: always()
