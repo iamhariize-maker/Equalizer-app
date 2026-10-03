@@ -18,6 +18,6 @@ tap_text "EQ" && shot 1-eq
 tap_text "Graphic" && shot 2-eq-graphic
 tap_text "Parametric"
 tap_text "Presets" && shot 3-presets
-tap_text "Audiophile" && shot 4-audiophile
+tap_text "Hi-Fi" && shot 4-hifi
 tap_text "Lab" && shot 5-lab
 tap_text "EQ"

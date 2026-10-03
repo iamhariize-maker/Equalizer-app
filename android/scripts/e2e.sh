@@ -106,7 +106,7 @@ $A logcat -c; eq bass --es preset Punchy; wait_for "bass preset=Punchy" 30; slee
 measure "T6 bass tuner Punchy (expect T0 + response@1k)"
 
 log "T7 headphone tuning from AutoEq (network)"
-$A logcat -c; eq tune --es query "Sennheiser HD 650" --es source oratory1990; wait_for "tune: " 120; sleep 5
+$A logcat -c; eq tune --es query "'Sennheiser HD 650'" --es source oratory1990; wait_for "tune: " 120; sleep 5
 measure "T7 HD 650 -> Harman tuning (expect T0 + response@1k)"
 eq bass --es preset Off
 tone $CAP --ez stop true
@@ -114,7 +114,7 @@ tone $CAP --ez stop true
 # ---- verdicts -------------------------------------------------------------
 FULL="$TMP/e2e_eqspike_full.log"
 lvl() { grep "^$1 " "$TMP/e2e_results.txt" | grep -oE 'median=-?[0-9.]+' | cut -d= -f2; }
-RESP=$(grep -oE 'response@1kHz=-?[0-9.]+' "$FULL" | tail -1 | cut -d= -f2)
+RESP=$(grep -oE 'preset bands=.*response@1kHz=-?[0-9.]+' "$FULL" | tail -1 | grep -oE '[-0-9.]+$')
 T0=$(lvl T0); T1=$(lvl T1); T2=$(lvl T2); T3=$(lvl T3); T4=$(lvl T4)
 check() { # name ok? detail
   if [ "$2" = 1 ]; then echo "PASS $1 — $3"; else echo "FAIL $1 — $3"; fi >> "$TMP/e2e_results.txt"
@@ -136,7 +136,7 @@ E6=$(awk -v a="$T0" -v r="$R6" 'BEGIN { print a + r }'); E7=$(awk -v a="$T0" -v 
 check "Bass tuner applies on system effects" "$(near "$T6" "$E6" 1.0)" "T6=$T6, expected $E6 ±1 dB"
 check "Bass dynamics didn't break system effects" "$(grep -q 'attach failed' "$FULL" && echo 0 || echo 1)" "no 'attach failed' in log"
 TUNE=$(grep -oE 'tune: .*' "$FULL" | tail -1)
-check "AutoEq tuning fetched and fitted" "$(echo "$TUNE" | grep -qE '64 bands rms=0\.[0-4]' && echo 1 || echo 0)" "$TUNE"
+check "AutoEq tuning fetched and fitted" "$(echo "$TUNE" | grep -qE 'Sennheiser HD 650 \(oratory1990.*64 bands rms=0\.[0-4]' && echo 1 || echo 0)" "$TUNE"
 check "Tuning applies on system effects" "$(near "$T7" "$E7" 1.0)" "T7=$T7, expected $E7 ±1 dB"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"

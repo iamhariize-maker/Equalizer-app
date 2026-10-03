@@ -34,7 +34,7 @@ private val TABS = listOf(
     Tab("Sound", Icons.Outlined.Headphones),
     Tab("EQ", Icons.Outlined.Equalizer),
     Tab("Presets", Icons.Outlined.LibraryMusic),
-    Tab("Audiophile", Icons.Outlined.Tune),
+    Tab("Hi-Fi", Icons.Outlined.Tune),
     Tab("Lab", Icons.Outlined.Science),
 )
 
@@ -54,7 +54,7 @@ fun SvanApp(
                         selected = tab == i,
                         onClick = { tab = i },
                         icon = { Icon(t.icon, contentDescription = t.label) },
-                        label = { Text(t.label) },
+                        label = { Text(t.label, maxLines = 1, softWrap = false) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Svan.Saffron,
                             selectedTextColor = Svan.Saffron,

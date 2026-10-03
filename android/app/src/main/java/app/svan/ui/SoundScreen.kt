@@ -87,7 +87,7 @@ fun SoundScreen() {
     var customMeasurement by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
-    var picking by remember { mutableStateOf(tuning == null) }
+    var picking by remember(tuning?.ref) { mutableStateOf(tuning == null) }
 
     fun apply() {
         val e = entry ?: return
