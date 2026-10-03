@@ -34,7 +34,7 @@ jobs:
           java-version: 17
       - name: Assemble debug APK, lint, unit tests
         working-directory: android
-        run: ./gradlew --no-daemon assembleDebug lintDebug testDebugUnitTest
+        run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug testDebugUnitTest
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug

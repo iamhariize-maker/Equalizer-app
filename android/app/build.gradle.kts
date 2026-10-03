@@ -23,7 +23,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // R8 shrinks Compose and icons from ~57 MB (debug) to a phone-friendly size.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Preview builds are signed with the debug key so they install over debug builds.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {
