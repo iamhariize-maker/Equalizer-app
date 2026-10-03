@@ -66,6 +66,40 @@ class CaptureCompat(context: Context) {
         }
     }
 
+    /** Diagnostics: what one UID's capture actually delivers in [ms]. */
+    @SuppressLint("MissingPermission")
+    fun measure(projection: MediaProjection, uid: Int, ms: Long): String {
+        val record = AudioRecord.Builder()
+            .setAudioFormat(
+                AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                    .setSampleRate(48000).setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build(),
+            )
+            .setAudioPlaybackCaptureConfig(AudioPlaybackCaptureConfiguration.Builder(projection).addMatchingUid(uid).build())
+            .build()
+        val buf = FloatArray(1024)
+        var frames = 0L
+        var peak = 0f
+        var firstNonZeroMs = -1L
+        val t0 = System.nanoTime()
+        try {
+            record.startRecording()
+            while ((System.nanoTime() - t0) / 1_000_000 < ms) {
+                val n = record.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                if (n < 0) return "read error $n"
+                for (i in 0 until n) {
+                    val a = kotlin.math.abs(buf[i])
+                    if (a > peak) peak = a
+                    if (a > 0f && firstNonZeroMs < 0) firstNonZeroMs = (System.nanoTime() - t0) / 1_000_000
+                }
+                frames += n / 2
+            }
+        } finally {
+            record.stop()
+            record.release()
+        }
+        return "frames=$frames peak=%.4f firstAudio=%s".format(peak, if (firstNonZeroMs < 0) "never" else "${firstNonZeroMs}ms")
+    }
+
     companion object {
         /** Usage list for the main (mixed) capture. */
         val MIX_USAGES = intArrayOf(AudioAttributes.USAGE_MEDIA, AudioAttributes.USAGE_GAME, AudioAttributes.USAGE_UNKNOWN)

@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.svan.CaptureService
 import app.svan.EqController
@@ -76,7 +77,7 @@ fun EqScreen() {
     val headroom = max(0.0, curve.maxOrNull() ?: 0.0) - eq.preampDb
 
     Column(Modifier.fillMaxSize()) {
-        Header(eq.enabled, eq.presetName) { SvanRepository.update { it.copy(enabled = !it.enabled) } }
+        Header(eq.enabled, eq.presetName, settings.quality.title) { SvanRepository.update { it.copy(enabled = !it.enabled) } }
 
         // Graph stays pinned while the controls scroll.
         Box(
@@ -126,8 +127,6 @@ fun EqScreen() {
                 Pill("Parametric", eq.mode == EqMode.PARAMETRIC, { SvanRepository.update { it.copy(mode = EqMode.PARAMETRIC) } })
                 Spacer(Modifier.width(8.dp))
                 Pill("Graphic", eq.mode == EqMode.GRAPHIC, { SvanRepository.update { it.copy(mode = EqMode.GRAPHIC) } })
-                Spacer(Modifier.weight(1f))
-                EngineStatus(settings.quality.title)
             }
 
             AnimatedContent(eq.mode, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "mode") { mode ->
@@ -160,14 +159,19 @@ fun EqScreen() {
 }
 
 @Composable
-private fun Header(enabled: Boolean, preset: String, onPower: () -> Unit) {
+private fun Header(enabled: Boolean, preset: String, quality: String, onPower: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text("Svan", style = MaterialTheme.typography.headlineMedium.copy(brush = Svan.AccentBrush))
-            Text(preset, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(preset, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Spacer(Modifier.width(8.dp))
+                EngineStatus(quality)
+            }
         }
         val ring = if (enabled) Svan.Saffron else Svan.Outline
         IconButton(
@@ -208,7 +212,7 @@ private fun EngineStatus(quality: String) {
     ) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(if (live) Svan.Green else Svan.TextFaint))
         Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.labelMedium, color = Svan.TextMuted)
+        Text(text, style = MaterialTheme.typography.labelMedium, color = Svan.TextMuted, maxLines = 1, softWrap = false)
     }
 }
 

@@ -49,6 +49,8 @@ measure() { # $1 = label
 }
 
 : > "$TMP/e2e_results.txt"
+$A logcat -s EqSpike:I EqTestSource:I > "$TMP/e2e_eqspike_full.log" 2>/dev/null &
+FULLLOG=$!
 log "installing"
 for apk in "$APP_APK" "$CAP_APK" "$BLK_APK"; do
   [ -f "$apk" ] || { echo "missing $apk"; exit 1; }
@@ -102,6 +104,7 @@ tone $CAP --ez stop true
 
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
+kill $FULLLOG 2>/dev/null
 log "full app log: $TMP/e2e_eqspike.log"
 if [ -n "${APK_DIR:-}" ]; then
   cp "$TMP/e2e_results.txt" "$TMP/e2e_eqspike.log" "$APK_DIR/" && log "copied results to $APK_DIR"

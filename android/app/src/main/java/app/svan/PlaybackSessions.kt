@@ -82,6 +82,13 @@ object PlaybackSessions {
     @Volatile var lastError: String? = null
         private set
 
+    @Volatile var lastDumpSize: Int = 0
+        private set
+
+    /** Raw playback-config lines of the last dump, for diagnosing parser misses. */
+    @Volatile var lastConfigLines: String = ""
+        private set
+
     /**
      * android.os.ServiceManager is a hidden API (greylisted), reached by
      * reflection. If a future Android blocks it, Shizuku's
@@ -100,6 +107,8 @@ object PlaybackSessions {
             write.close()
             FileInputStream(read.fileDescriptor).bufferedReader().use { it.readText() }.also {
                 read.close()
+                lastDumpSize = it.length
+                lastConfigLines = it.lineSequence().filter { l -> "AudioPlaybackConfiguration" in l }.take(6).joinToString("\n")
                 lastError = if (it.isBlank()) "empty dump (DUMP permission not granted?)" else null
             }.ifBlank { null }
         }

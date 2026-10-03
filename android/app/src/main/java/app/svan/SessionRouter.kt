@@ -37,6 +37,23 @@ object SessionRouter {
 
     fun compat(): CaptureCompat = compatStore
 
+    /**
+     * Diagnostics for the capture/mute interaction on this device: capture one
+     * UID unmuted, then muted, then muted while the main capture also runs.
+     */
+    fun diagnose(uid: Int, sessionId: Int) {
+        val mp = projection ?: run { EqController.log("DIAG no projection"); return }
+        worker.execute {
+            muter.unmute(sessionId)
+            EqController.globalEq.detach(sessionId)
+            EqController.log("DIAG unmuted:  " + compatStore.measure(mp, uid, 3000))
+            val ok = muter.mute(sessionId)
+            EqController.log("DIAG muted($ok): " + compatStore.measure(mp, uid, 3000))
+            muter.unmute(sessionId)
+            EqController.log("DIAG done (session $sessionId left unmuted)")
+        }
+    }
+
     /** Engine B started: move every capturable session over to it. */
     fun onCaptureStarted(mp: MediaProjection) {
         projection = mp
@@ -80,6 +97,7 @@ object SessionRouter {
     fun sync(active: List<PlaybackSession>) {
         val seen = active.filter { it.uid != Process.myUid() }.associateBy { it.sessionId }
         routes.keys.filter { it !in seen }.forEach(::sessionClosed)
+        EqController.log("sync: ${seen.size} session(s) in dump: " + seen.values.joinToString { "${it.packageName}#${it.sessionId}:${it.state}" })
         seen.values.forEach { s ->
             if (!s.usageCapturable) return@forEach // calls, alarms, notifications: leave alone
             if (s.flagsBlockCapture && compatStore.cached(s.packageName) == null) {

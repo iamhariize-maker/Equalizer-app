@@ -79,6 +79,18 @@ class MainActivity : ComponentActivity() {
                 EqController.log(try { MixMeter.measure(intent.getFloatExtra("seconds", 3f).toDouble()) } catch (e: Exception) { "MIX error $e" })
             }
             "forget_verdicts" -> SessionRouter.compat().clear()
+            "diag_capture" -> {
+                // --es pkg <package>: capture that app unmuted vs muted (Engine B must be running)
+                val pkg = intent.getStringExtra("pkg") ?: return
+                val uid = runCatching { packageManager.getApplicationInfo(pkg, 0).uid }.getOrDefault(-1)
+                val route = SessionRouter.snapshot.firstOrNull { it.pkg == pkg }
+                if (uid < 0 || route == null) EqController.log("DIAG no route for $pkg (uid=$uid)")
+                else SessionRouter.diagnose(uid, route.sessionId)
+            }
+            "dump_lines" -> thread {
+                PlaybackSessions.query(this)
+                EqController.log("DUMP size=${PlaybackSessions.lastDumpSize} err=${PlaybackSessions.lastError}\n${PlaybackSessions.lastConfigLines}")
+            }
         }
     }
 

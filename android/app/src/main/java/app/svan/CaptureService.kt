@@ -147,6 +147,8 @@ class CaptureService : Service() {
         }, "svan-eq-watch").apply { start() }
         EqController.log("capture: started, quality=${settings.quality}, DSP latency=${engine.latencyFrames} frames")
 
+        var levelPeak = 0f
+        var levelFrames = 0L
         val frames = 256
         val buf = FloatArray(frames * 2)
         record.startRecording()
@@ -166,6 +168,13 @@ class CaptureService : Service() {
                 }
                 val n = record.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                 if (n <= 0) continue
+                for (i in 0 until n) levelPeak = maxOf(levelPeak, kotlin.math.abs(buf[i]))
+                levelFrames += n / 2
+                if (levelFrames >= rate * 2) {
+                    EqController.log("capture level: peak=%.4f over %d frames".format(levelPeak, levelFrames))
+                    levelPeak = 0f
+                    levelFrames = 0
+                }
                 engine.process(buf, buf, n / 2)
                 track.write(buf, 0, n, AudioTrack.WRITE_BLOCKING)
             }
@@ -194,6 +203,7 @@ class CaptureService : Service() {
         val sync = {
             Thread {
                 val sessions = PlaybackSessions.query(this)
+                if (sessions != null && sessions.isEmpty()) EqController.log("session dump: parsed 0 sessions (dump ${PlaybackSessions.lastDumpSize} chars)")
                 if (sessions == null) EqController.log("session dump failed: ${PlaybackSessions.lastError}")
                 else SessionRouter.sync(sessions)
             }.start()
