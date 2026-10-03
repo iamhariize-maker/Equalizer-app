@@ -24,6 +24,7 @@ object SessionRouter {
 
     private val routes = ConcurrentHashMap<Int, Route>()
     private val worker = Executors.newSingleThreadExecutor()
+    private lateinit var appContext: Context
     private lateinit var compatStore: CaptureCompat
 
     @Volatile private var projection: MediaProjection? = null
@@ -32,7 +33,10 @@ object SessionRouter {
     val snapshot: Collection<Route> get() = routes.values
 
     fun init(context: Context) {
-        if (!::compatStore.isInitialized) compatStore = CaptureCompat(context.applicationContext)
+        if (!::compatStore.isInitialized) {
+            appContext = context.applicationContext
+            compatStore = CaptureCompat(appContext)
+        }
     }
 
     fun compat(): CaptureCompat = compatStore
@@ -69,9 +73,23 @@ object SessionRouter {
         }
     }
 
-    /** [playing] = null when unknown (broadcast path). */
+    /** [playing] = null when unknown (broadcast path). [uid] < 0 = unknown, resolved here. */
     fun sessionOpened(sessionId: Int, pkg: String, uid: Int, playing: Boolean? = null) {
         if (sessionId <= 0 || uid == Process.myUid()) return
+        if (uid < 0) {
+            // Package lookup failed (visibility) — the audio service dump knows the uid.
+            worker.execute {
+                val fromDump = if (PlaybackSessions.hasDumpPermission(appContext)) {
+                    PlaybackSessions.query(appContext)?.firstOrNull { it.sessionId == sessionId }?.uid
+                } else null
+                if (fromDump != null && fromDump != Process.myUid()) sessionOpened(sessionId, pkg, fromDump, playing)
+                else {
+                    EqController.log("uid unknown for $pkg (session $sessionId): Engine A only")
+                    toEngineA(sessionId, pkg, -1, playing)
+                }
+            }
+            return
+        }
         val existing = routes[sessionId]
         if (existing != null) {
             // Re-route a session that was parked on Engine A only because it
@@ -119,6 +137,12 @@ object SessionRouter {
             CaptureCompat.Verdict.BLOCKED -> toEngineA(sid, pkg, uid, playing)
             CaptureCompat.Verdict.CAPTURABLE -> toEngineB(sid, pkg, uid, playing)
             null -> {
+                if (uid < 0) {
+                    // Never run the capture check without a real uid: it would hear silence
+                    // and wrongly cache BLOCKED.
+                    toEngineA(sid, pkg, uid, playing)
+                    return
+                }
                 if (playing == false) {
                     // Silence proves nothing; park on Engine A until it plays.
                     toEngineA(sid, pkg, uid, playing)

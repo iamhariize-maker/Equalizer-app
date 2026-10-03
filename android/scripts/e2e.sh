@@ -102,6 +102,24 @@ $A logcat -c; eq stop_capture; wait_for "capture: stopped" 60; sleep 5
 measure "T5 after stop (expect ~T1 via Engine A, or T0 if discovered only by dump)"
 tone $CAP --ez stop true
 
+# ---- verdicts -------------------------------------------------------------
+FULL="$TMP/e2e_eqspike_full.log"
+lvl() { grep "^$1 " "$TMP/e2e_results.txt" | grep -oE 'median=-?[0-9.]+' | cut -d= -f2; }
+RESP=$(grep -oE 'response@1kHz=-?[0-9.]+' "$FULL" | tail -1 | cut -d= -f2)
+T0=$(lvl T0); T1=$(lvl T1); T2=$(lvl T2); T3=$(lvl T3); T4=$(lvl T4)
+check() { # name ok? detail
+  if [ "$2" = 1 ]; then echo "PASS $1 — $3"; else echo "FAIL $1 — $3"; fi >> "$TMP/e2e_results.txt"
+}
+near() { awk -v a="$1" -v b="$2" -v t="$3" 'BEGIN { d = a - b; if (d < 0) d = -d; print (a != "" && b != "" && d <= t) ? 1 : 0 }'; }
+EXP1=$(awk -v a="$T0" -v r="$RESP" 'BEGIN { print a + r }')
+check "Engine A applies the curve" "$(near "$T1" "$EXP1" 1.0)" "T1=$T1, expected T0+($RESP)=$EXP1 ±1 dB"
+B_ROUTE=$(grep -cE "route: $CAP .*Engine B" "$FULL")
+check "Engine B takes the capturable app" "$([ "$B_ROUTE" -ge 1 ] && echo 1 || echo 0)" "Engine B routes for $CAP: $B_ROUTE"
+check "Engine B: one processed copy, no double audio" "$(near "$T2" "$T1" 2.0)" "T2=$T2 vs T1=$T1 ±2 dB (double audio ≥ T0=$T0)"
+BLK_B=$(grep -cE "route: $BLK .*Engine B" "$FULL"); BLK_A=$(grep -cE "route: $BLK .*Engine A" "$FULL")
+check "Capture-blocked app stays on Engine A" "$([ "$BLK_B" -eq 0 ] && [ "$BLK_A" -ge 1 ] && echo 1 || echo 0)" "A=$BLK_A B=$BLK_B"
+check "Blocked app still audible with EQ" "$(near "$T3" "$T1" 2.0)" "T3=$T3 vs T1=$T1 ±2 dB"
+check "Non-broadcasting app found via DUMP" "$(near "$T4" "$T1" 2.0)" "T4=$T4 vs T1=$T1 ±2 dB"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
 kill $FULLLOG 2>/dev/null

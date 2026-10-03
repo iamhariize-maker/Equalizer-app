@@ -75,7 +75,7 @@ object PlaybackSessions {
         val dump = dumpService("audio") ?: return null
         val pm = context.packageManager
         return parse(dump).map { s ->
-            s.copy(packageName = pm.getPackagesForUid(s.uid)?.firstOrNull() ?: s.uid.toString())
+            s.copy(packageName = pm.getPackagesForUid(s.uid)?.firstOrNull() ?: "uid:${s.uid}")
         }
     }
 

@@ -24,6 +24,7 @@ add_library(eqcore STATIC
   src/parametric_eq.cpp
   src/oversampler.cpp
   src/resampler.cpp
+  src/bass.cpp
   src/dither.cpp
   src/autoeq.cpp
   src/engine.cpp)

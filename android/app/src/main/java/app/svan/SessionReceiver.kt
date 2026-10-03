@@ -22,7 +22,7 @@ class SessionReceiver : BroadcastReceiver() {
                 val uid = try {
                     context.packageManager.getApplicationInfo(pkg, 0).uid
                 } catch (e: Exception) {
-                    -1
+                    -1 // resolved from the dump by SessionRouter
                 }
                 EqController.log("OPEN  session=$session pkg=$pkg")
                 SessionRouter.init(context)

@@ -18,6 +18,7 @@
 #include "eqcore/oversampler.h"
 #include "eqcore/parametric_eq.h"
 #include "eqcore/resampler.h"
+#include "eqcore/bass.h"
 
 using namespace eqcore;
 
@@ -555,6 +556,90 @@ TEST(resampler_audiophile_extends_passband_and_crushes_aliasing) {
     std::printf("    %s alias rejection at 23 kHz: %.1f dB\n", q == ResamplerQuality::Audiophile ? "audiophile" : "quality", rejDb);
     CHECK(rejDb > (q == ResamplerQuality::Audiophile ? 130.0 : 95.0));
   }
+}
+
+// ------------------------------------------------------------- bass shaper
+
+namespace {
+// Kick-like bass hits: 55 Hz, instant attack, 150 ms exponential decay, every 0.6 s.
+std::vector<double> kicks(double fs, int hits, double hfAmp = 0.0) {
+  const int period = static_cast<int>(0.6 * fs);
+  std::vector<double> x(static_cast<size_t>(period) * hits);
+  for (size_t i = 0; i < x.size(); ++i) {
+    const double t = static_cast<double>(i % period) / fs;
+    x[i] = 0.5 * std::exp(-t / 0.15) * std::sin(2 * kPi * 55 * t) + hfAmp * std::sin(2 * kPi * 2000 * i / fs);
+  }
+  return x;
+}
+// Energy ratio (dB) of the first 30 ms of each hit vs 150..400 ms, averaged over hits 2..n.
+double attackToTailDb(const std::vector<double>& y, double fs, int hits) {
+  const int period = static_cast<int>(0.6 * fs);
+  double att = 0, tail = 0;
+  for (int h = 1; h < hits; ++h) {
+    const size_t base = static_cast<size_t>(h) * period;
+    for (int i = 0; i < static_cast<int>(0.03 * fs); ++i) att += y[base + i] * y[base + i];
+    for (int i = static_cast<int>(0.15 * fs); i < static_cast<int>(0.4 * fs); ++i) tail += y[base + i] * y[base + i];
+  }
+  return 10 * std::log10((att / 0.03) / (tail / 0.25));
+}
+}  // namespace
+
+TEST(bass_shaper_off_is_bit_exact) {
+  const double fs = 48000;
+  BassShaper b(fs, 1);
+  auto x = kicks(fs, 3, 0.1);
+  auto y = x;
+  b.process(0, y.data(), static_cast<int>(y.size()));
+  bool same = true;
+  for (size_t i = 0; i < x.size(); ++i) same = same && (x[i] == y[i]);
+  CHECK(same);
+}
+
+TEST(bass_shaper_punch_tightens_and_sustain_blooms) {
+  const double fs = 48000;
+  const int hits = 6;
+  auto x = kicks(fs, hits);
+  const double ref = attackToTailDb(x, fs, hits);
+  double punchDb = 0, sustainDb = 0;
+  for (double c : {1.0, -1.0}) {
+    BassShaper b(fs, 1);
+    b.setCharacter(c);
+    auto y = x;
+    for (size_t i = 0; i < y.size(); i += 256) b.process(0, y.data() + i, static_cast<int>(std::min<size_t>(256, y.size() - i)));
+    (c > 0 ? punchDb : sustainDb) = attackToTailDb(y, fs, hits) - ref;
+  }
+  std::printf("    attack/tail change: punch %+.1f dB, sustain %+.1f dB\n", punchDb, sustainDb);
+  CHECK(punchDb > 3.0);
+  CHECK(sustainDb < -3.0);
+}
+
+TEST(bass_shaper_leaves_treble_alone) {
+  const double fs = 48000;
+  const int hits = 4;
+  auto x = kicks(fs, hits, 0.1);
+  BassShaper b(fs, 1);
+  b.setCharacter(1.0);
+  auto y = x;
+  b.process(0, y.data(), static_cast<int>(y.size()));
+  const double a = sineAmplitude(y, 2000, fs, y.size() / 4, y.size());
+  CHECK_NEAR(toDb(a / 0.1), 0.0, 0.05);
+}
+
+TEST(bass_shaper_is_stable_on_noise) {
+  const double fs = 44100;
+  BassShaper b(fs, 2);
+  std::mt19937 rng(9);
+  std::uniform_real_distribution<double> u(-1, 1);
+  bool ok = true;
+  for (double c : {-1.0, -0.3, 0.4, 1.0}) {
+    b.setCharacter(c);
+    b.setCrossoverHz(c > 0 ? 80 : 200);
+    std::vector<double> y(44100);
+    for (auto& v : y) v = u(rng);
+    b.process(1, y.data(), static_cast<int>(y.size()));
+    for (double v : y) ok = ok && std::isfinite(v) && std::fabs(v) < 8.0;
+  }
+  CHECK(ok);
 }
 
 TEST(quality_presets_are_consistent) {

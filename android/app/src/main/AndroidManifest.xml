@@ -11,6 +11,19 @@
     <uses-permission android:name="android.permission.DUMP"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- Package visibility (Android 11+): Svan must resolve the uid/name of the
+         apps whose audio it routes. Music apps have a launcher activity or a
+         media browser service; this avoids the Play-restricted QUERY_ALL_PACKAGES. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.media.browse.MediaBrowserService" />
+        </intent>
+    </queries>
+
     <!-- allowAudioPlaybackCapture=false: our processed output must never be
          captured back into Engine B (feedback loop). -->
     <application

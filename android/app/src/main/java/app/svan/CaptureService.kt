@@ -192,6 +192,7 @@ class CaptureService : Service() {
     }
 
     private var playbackCallback: AudioManager.AudioPlaybackCallback? = null
+    private val syncExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     /** With DUMP: re-sync sessions whenever any app starts/stops playing. */
     private fun startSessionWatch() {
@@ -200,13 +201,17 @@ class CaptureService : Service() {
             return
         }
         val am = getSystemService(AudioManager::class.java)
+        // Playback callbacks arrive in bursts; one sync at a time, latest wins.
+        val syncPending = java.util.concurrent.atomic.AtomicBoolean(false)
         val sync = {
-            Thread {
-                val sessions = PlaybackSessions.query(this)
-                if (sessions != null && sessions.isEmpty()) EqController.log("session dump: parsed 0 sessions (dump ${PlaybackSessions.lastDumpSize} chars)")
-                if (sessions == null) EqController.log("session dump failed: ${PlaybackSessions.lastError}")
-                else SessionRouter.sync(sessions)
-            }.start()
+            if (syncPending.compareAndSet(false, true)) {
+                syncExecutor.execute {
+                    syncPending.set(false)
+                    val sessions = PlaybackSessions.query(this)
+                    if (sessions == null) EqController.log("session dump failed: ${PlaybackSessions.lastError}")
+                    else SessionRouter.sync(sessions)
+                }
+            }
         }
         val cb = object : AudioManager.AudioPlaybackCallback() {
             override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) = sync()
