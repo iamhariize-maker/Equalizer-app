@@ -75,6 +75,21 @@ fun ResponseGraph(
     val range by animateFloatAsState(targetRange, spring(stiffness = Spring.StiffnessLow), label = "range")
     val dim by animateFloatAsState(if (enabled) 1f else 0.35f, label = "dim")
 
+    // Reused every frame: allocating Paints while dragging causes GC stutter.
+    val gridPaint = remember(density) {
+        android.graphics.Paint().apply {
+            color = android.graphics.Color.argb(255, 90, 94, 114)
+            textSize = 10f * density.density
+            isAntiAlias = true
+        }
+    }
+    val labelPaint = remember {
+        android.graphics.Paint().apply {
+            isFakeBoldText = true
+            isAntiAlias = true
+            textAlign = android.graphics.Paint.Align.CENTER
+        }
+    }
     val currentBands by rememberUpdatedState(bands)
     val currentCurve by rememberUpdatedState(curveDb)
     var dragging by remember { mutableIntStateOf(-1) }
@@ -126,7 +141,7 @@ fun ResponseGraph(
                 )
             },
     ) {
-        drawGrid(range)
+        drawGrid(range, gridPaint)
         drawCurve(curveDb, range, dim)
         // Nodes
         bands.forEachIndexed { i, b ->
@@ -142,19 +157,14 @@ fun ResponseGraph(
             drawCircle(Svan.Black, radius = nodeRadius + 2.5f, center = Offset(x, y))
             drawCircle(color, radius = if (isSel) nodeRadius * 1.15f else nodeRadius, center = Offset(x, y),
                 style = if (b.enabled) androidx.compose.ui.graphics.drawscope.Fill else Stroke(3f))
-            drawLabel("${i + 1}", Offset(x, y), if (b.enabled) Svan.Black else color, nodeRadius * 1.15f)
+            drawLabel("${i + 1}", Offset(x, y), if (b.enabled) Svan.Black else color, nodeRadius * 1.15f, labelPaint)
         }
     }
 }
 
-private fun DrawScope.drawGrid(range: Float) {
+private fun DrawScope.drawGrid(range: Float, paint: android.graphics.Paint) {
     val w = size.width
     val h = size.height
-    val paint = android.graphics.Paint().apply {
-        color = android.graphics.Color.argb(255, 90, 94, 114)
-        textSize = 10f * density
-        isAntiAlias = true
-    }
     // dB lines every 6 dB (every 12 when zoomed out)
     val step = if (range > 18) 12 else 6
     var db = -range.toInt() / step * step
@@ -201,16 +211,11 @@ private fun DrawScope.drawCurve(curve: DoubleArray, range: Float, alpha: Float) 
         style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }
 
-private fun DrawScope.drawLabel(text: String, center: Offset, color: Color, radius: Float) {
-    val paint = android.graphics.Paint().apply {
-        this.color = android.graphics.Color.argb(
-            (color.alpha * 255).toInt(), (color.red * 255).toInt(), (color.green * 255).toInt(), (color.blue * 255).toInt(),
-        )
-        textSize = radius * (if (text.length > 1) 0.95f else 1.1f)
-        isFakeBoldText = true
-        isAntiAlias = true
-        textAlign = android.graphics.Paint.Align.CENTER
-    }
+private fun DrawScope.drawLabel(text: String, center: Offset, color: Color, radius: Float, paint: android.graphics.Paint) {
+    paint.color = android.graphics.Color.argb(
+        (color.alpha * 255).toInt(), (color.red * 255).toInt(), (color.green * 255).toInt(), (color.blue * 255).toInt(),
+    )
+    paint.textSize = radius * (if (text.length > 1) 0.95f else 1.1f)
     drawContext.canvas.nativeCanvas.drawText(text, center.x, center.y + paint.textSize * 0.36f, paint)
 }
 
