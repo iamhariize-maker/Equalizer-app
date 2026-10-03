@@ -3,6 +3,7 @@ package dev.equalizer.app
 import android.media.audiofx.DynamicsProcessing
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.max
@@ -16,9 +17,10 @@ import kotlin.math.sqrt
  * parametric curve is rendered by the native core and sampled into [bandCount]
  * log-spaced bands. Each band covers frequencies up to its cutoff.
  */
-class GlobalEqEngine(val bandCount: Int = 64) {
+class GlobalEqEngine(val bandCount: Int = 128) {
 
     private val effects = ConcurrentHashMap<Int, DynamicsProcessing>()
+    private val lastSent = ConcurrentHashMap<DynamicsProcessing, FloatArray>()
     @Volatile private var centersHz: DoubleArray = logSpaced(bandCount, 20.0, 20000.0)
     @Volatile private var gainsDb: DoubleArray = DoubleArray(bandCount)
     @Volatile private var inputGainDb: Float = 0f
@@ -43,6 +45,7 @@ class GlobalEqEngine(val bandCount: Int = 64) {
 
     fun detach(sessionId: Int) {
         effects.remove(sessionId)?.let {
+            lastSent.remove(it)
             it.enabled = false
             it.release()
         }
@@ -71,13 +74,22 @@ class GlobalEqEngine(val bandCount: Int = 64) {
             true,              // limiter
         ).build()
 
+    /**
+     * Every band update is a binder call (measured on a TECNO LH7n: ~2 ms per
+     * band, ~250 ms for all 128). Only push bands whose gain actually changed,
+     * so dragging one control costs a handful of calls, not the whole curve.
+     */
     private fun applyTo(dp: DynamicsProcessing) {
         val centers = centersHz
         val gains = gainsDb
+        val sent = lastSent.getOrPut(dp) { FloatArray(centers.size) { Float.NaN } }
         for (i in centers.indices) {
+            val g = gains[i].toFloat()
+            if (abs(g - sent[i]) < 0.01f) continue
             // Upper edge = geometric midpoint to the next centre.
             val cutoff = if (i + 1 < centers.size) sqrt(centers[i] * centers[i + 1]) else 22000.0
-            dp.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, cutoff.toFloat(), gains[i].toFloat()))
+            dp.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, cutoff.toFloat(), g))
+            sent[i] = g
         }
         dp.setInputGainAllChannelsTo(inputGainDb)
         dp.setLimiterAllChannelsTo(

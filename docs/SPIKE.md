@@ -11,7 +11,24 @@ It tries 10…1024 bands on a live session, reads every gain back, and times set
 
 | Device | Android | Max bands OK | Read-back mismatches | Notes |
 |---|---|---|---|---|
-| | | | | |
+| TECNO LH7n | 14 (API 34) | **1024** (all tested) | 0 | Setup (per-band calls): 128 → ~225–255 ms, 256 → ~430–590 ms, 1024 → ~2.6–3.3 s |
+
+**Takeaways so far**
+- Band count isn't the limit on this device; per-band binder cost is. Engine A
+  now defaults to 128 bands and only re-sends bands whose gain changed.
+- Stored ≠ audible. **Q1b** measures what you actually hear.
+
+## Q1b. Does the device *audibly* honour the bands?
+
+Tap **"1b. Measure audible band resolution"** with the volume low. It plays
+tones through alternating +6/−6 dB bands and measures the level with a
+Visualizer. Adjacent bands should differ by **12 dB**: ~12 means fully
+resolved, ~0 means smeared. It also times a bulk `setPreEqAllChannelsTo` call
+against per-band calls.
+
+| Device | Bands | 60 Hz | 1 kHz | 10 kHz | Bulk vs per-band (1024) |
+|---|---|---|---|---|---|
+| | | | | | |
 
 ## Q2. Which apps announce their sessions? (Engine A)
 

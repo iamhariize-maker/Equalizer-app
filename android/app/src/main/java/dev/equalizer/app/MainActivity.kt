@@ -30,6 +30,18 @@ class MainActivity : Activity() {
             append("Probing…")
             thread { val r = DynamicsProbe.run(this); runOnUiThread { append(r) } }
         }
+        button("1b. Measure audible band resolution (plays tones, volume low!)") {
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
+                append("Grant microphone permission (needed by Visualizer), then tap again.")
+                return@button
+            }
+            append("Measuring… (~1 min)")
+            thread {
+                val r = ResolutionProbe.timeBulkSet(this) + ResolutionProbe.run(this)
+                runOnUiThread { append(r) }
+            }
+        }
         button("2. Engine A: load sample AutoEq preset") {
             val n = EqController.loadPreset(EqController.SAMPLE_PRESET)
             append("Loaded $n bands into ${EqController.globalEq.bandCount}-band DynamicsProcessing; " +
@@ -94,5 +106,6 @@ class MainActivity : Activity() {
     private companion object {
         const val REQ_PROJECTION = 1
         const val REQ_PERMS = 2
+        const val REQ_MIC = 3
     }
 }
