@@ -16,6 +16,8 @@ diagnostics shell for answering the open platform questions on real phones.
 | `android/` | Kotlin app + JNI bridge: Engine A (system effects), Engine B (capture), probes. |
 | `docs/` | [Architecture](docs/ARCHITECTURE.md), [Audiophile mode](docs/AUDIOPHILE.md), [Spike plan](docs/SPIKE.md). |
 
+Contributors and coding agents: start with [`AGENTS.md`](AGENTS.md) and [`docs/HANDOFF.md`](docs/HANDOFF.md).
+
 ## The DSP core
 
 - **Parametric EQ:** up to 128 bands per channel, independent L/R. Peak, shelf, high/low-pass, band-pass, notch and all-pass filters.

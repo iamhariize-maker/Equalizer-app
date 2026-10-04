@@ -83,9 +83,10 @@ fun Exten9edTitle(modifier: Modifier = Modifier) {
         Text("EQ exten", style = style)
         // A vertically flipped "d": the bowl rises to the top and the stem descends — a 9.
         // Flipped about its line box, the d's bowl lands at the top and its stem below.
-        // -0.12em sat too high (superscript), +0.24em too low (a "q"); +0.03em ends the
-        // stem on the baseline with the bowl up top — a 9.
-        Text("d", style = style, modifier = Modifier.graphicsLayer { scaleY = -1f; translationY = style.fontSize.toPx() * 0.03f })
+        // Tuned from CI screenshots: -0.12em floated (superscript), +0.03em let the stem hang
+        // below the baseline (reads as "q"). -0.07em should end the stem ON the baseline.
+        // VERIFY on the next screenshots (1-eq.png); nudge by 0.02em steps if needed.
+        Text("d", style = style, modifier = Modifier.graphicsLayer { scaleY = -1f; translationY = -style.fontSize.toPx() * 0.07f })
         Text("ed", style = style)
     }
 }
@@ -139,7 +140,7 @@ fun BootAnimation(onDone: () -> Unit) {
         }
         BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // Fit "Svanam Shreshtham" (17 serif glyphs) on one line on any screen width.
-        val fitSp = (maxWidth.value / 10.2f).coerceIn(20f, 36f)
+        val fitSp = (maxWidth.value / 12.8f).coerceIn(18f, 34f) // ~12% side margins
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Box(contentAlignment = Alignment.Center) {
                 val big = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = (fitSp * 1.35f).sp, brush = Svan.AccentBrush)
