@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Real Shizuku authorization + R8 user service, then measured music routing.
-set -euo pipefail
+set -uo pipefail   # no -e: keep going after a failed check so one run shows every problem
+FAILED=0
 cd "$(dirname "$0")/.."
 S=${1:-emulator-5554}; OUT=${2:-/tmp/svan-detection}
 mkdir -p "$OUT"
 A="adb -s $S"; CAP=app.svan.testsource.capturable
 : > "$OUT/detection.txt"
-trap '$A logcat -d > "$OUT/logcat.txt"; if [ "$?" != 0 ]; then true; fi' EXIT
+$A logcat -c
+$A logcat -v threadtime > "$OUT/logcat-full.txt" 2>&1 &   # whole run, never cleared
+LOGPID=$!
+trap 'kill $LOGPID 2>/dev/null; $A logcat -d > "$OUT/logcat.txt"; exit $FAILED' EXIT
 eq() { $A shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
 tone() { $A shell am start -n "$CAP"/app.svan.testsource.ToneActivity "$@" >/dev/null; }
 wait_log() {
@@ -36,6 +40,15 @@ level() {
   $A logcat -c; eq measure_mix --ef seconds 3
   wait_log 'MIX median=' | sed -n 's/.*median=\([-0-9.]*\).*/\1/p'
 }
+diagnose() {   # state at the moment a check fails
+  local tag; tag=$(echo "$1" | tr -c 'A-Za-z0-9' '_' | cut -c1-40)
+  { echo "=== $1"; $A shell dumpsys audio 2>/dev/null | grep -E "AudioPlaybackConfiguration|muted|sessionId" | head -20
+    echo "--- effects"; $A shell dumpsys media.audio_flinger 2>/dev/null | grep -iE "effect|Dynamics|session|enabled" | head -40
+    echo "--- svan processes"; $A shell "ps -A | grep -E 'svan|shizuku'"; } > "$OUT/diag-$tag.txt" 2>&1
+  eq sessions; sleep 2
+  $A logcat -d -s EqSpike:I > "$OUT/eqspike-$tag.txt"
+  $A exec-out screencap -p > "$OUT/fail-$tag.png"
+}
 check_delta() {
   python3 - "$1" "$2" "$3" "$4" <<'PY' | tee -a "$OUT/detection.txt"
 import sys
@@ -44,6 +57,8 @@ ok=abs((a-b)-delta)<=1.0
 print(('PASS ' if ok else 'FAIL ')+name+f' — measured change {a-b:+.1f} dB, expected {delta:+.1f} ±1 dB')
 sys.exit(0 if ok else 1)
 PY
+  local rc=${PIPESTATUS[0]}
+  if [ "$rc" != 0 ]; then FAILED=1; diagnose "$1"; fi
 }
 
 $A uninstall app.svan >/dev/null 2>&1 || true
@@ -75,8 +90,7 @@ for ((attempt=0;attempt<12;attempt++)); do
   if tap 'Allow all the time'; then break; fi
   sleep 1
 done
-wait_log 'detection setup: granted via Shizuku'
-echo 'PASS release Shizuku permission grant' | tee -a "$OUT/detection.txt"
+if wait_log 'detection setup: granted via Shizuku'; then echo 'PASS release Shizuku permission grant' | tee -a "$OUT/detection.txt"; else FAILED=1; fi
 wait_log "route: $CAP .*Engine A"
 sleep 3
 AFTER=$(level)
