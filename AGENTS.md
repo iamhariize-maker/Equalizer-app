@@ -27,7 +27,7 @@ instance per session; never attach both).
 | `android/scripts/` | `e2e.sh` (23 PASS/FAIL checks), `detection_release.sh` (10 setup/output checks), `diag.sh`, `smoke_release.sh`, `screens.sh` |
 | `tools/brand/` | Generates the launcher icon (स्व) from OFL font outlines with HarfBuzz |
 | `.github/workflows/ci.yml` | **The real test device**: core tests (+ASan/UBSan/TSan), Android build/lint/unit tests, KVM emulator e2e |
-| `docs/` | `HANDOFF.md`, `ARCHITECTURE.md`, `AUDIOPHILE.md` (measured numbers), `SPIKE.md` |
+| `docs/` | `HANDOFF.md`, `ARCHITECTURE.md`, `AUDIOPHILE.md` (measured numbers), `SPIKE.md`, `SMART.md` (Svaramanas plan, not yet implemented) |
 
 ## How to verify (do this before every push)
 ```sh
