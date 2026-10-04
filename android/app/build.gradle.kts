@@ -3,6 +3,15 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val productionBuild = providers.gradleProperty("svanProduction").orNull == "true"
+val signingInputs = listOf("SVAN_KEYSTORE", "SVAN_STORE_PASSWORD", "SVAN_KEY_ALIAS", "SVAN_KEY_PASSWORD")
+val productionSigning = signingInputs.associateWith { providers.environmentVariable(it).orNull }
+if (productionBuild) {
+    require(productionSigning.values.all { !it.isNullOrBlank() }) {
+        "Production signing requires SVAN_KEYSTORE, SVAN_STORE_PASSWORD, SVAN_KEY_ALIAS and SVAN_KEY_PASSWORD"
+    }
+}
+
 android {
     namespace = "app.svan"
     compileSdk = 35
@@ -21,6 +30,15 @@ android {
         }
     }
 
+    if (productionBuild) {
+        signingConfigs.create("production") {
+            storeFile = file(productionSigning.getValue("SVAN_KEYSTORE")!!)
+            storePassword = productionSigning.getValue("SVAN_STORE_PASSWORD")
+            keyAlias = productionSigning.getValue("SVAN_KEY_ALIAS")
+            keyPassword = productionSigning.getValue("SVAN_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             // R8 shrinks Compose and icons from ~57 MB (debug) to a phone-friendly size.
@@ -28,7 +46,7 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Preview builds are signed with the debug key so they install over debug builds.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (productionBuild) "production" else "debug")
         }
     }
     compileOptions {

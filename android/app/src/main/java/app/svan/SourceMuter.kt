@@ -23,9 +23,12 @@ class SourceMuter(private val onLost: (sessionId: Int) -> Unit) {
 
     fun mute(sessionId: Int): Boolean {
         if (muted.containsKey(sessionId)) return true
+        var candidate: DynamicsProcessing? = null
         return try {
             val dp = DynamicsProcessing(Int.MAX_VALUE, sessionId, null)
+            candidate = dp
             silence(dp)
+            check(dp.hasControl() && dp.enabled && dp.getChannelByChannelIndex(0).inputGain < -190f) { "source mute not confirmed" }
             // Another effect app (or the player) can disable us or take control:
             // re-assert, or report the loss so the router can react.
             dp.setEnableStatusListener { fx, enabled -> if (!enabled) reassert(sessionId, fx as DynamicsProcessing) }
@@ -35,6 +38,7 @@ class SourceMuter(private val onLost: (sessionId: Int) -> Unit) {
             muted[sessionId] = dp
             true
         } catch (e: RuntimeException) {
+            candidate?.let { runCatching { it.release() } }
             Log.w(TAG, "cannot mute session $sessionId", e)
             false
         }
@@ -42,17 +46,17 @@ class SourceMuter(private val onLost: (sessionId: Int) -> Unit) {
 
     fun unmute(sessionId: Int) {
         muted.remove(sessionId)?.let {
-            try {
-                it.enabled = false
-            } finally {
-                it.release()
-            }
+            it.setEnableStatusListener(null)
+            it.setControlStatusListener(null)
+            runCatching { it.enabled = false }
+            it.release()
         }
     }
 
     fun releaseAll() = muted.keys.toList().forEach(::unmute)
 
     private fun reassert(sessionId: Int, dp: DynamicsProcessing) {
+        if (muted[sessionId] !== dp) return
         try {
             silence(dp)
         } catch (e: RuntimeException) {

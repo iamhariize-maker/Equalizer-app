@@ -76,6 +76,14 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetPreamp(JNIEnv*, jclas
   fromHandle(h)->setPreampDb(db);
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetAutoHeadroom(JNIEnv*, jclass, jlong h, jboolean enabled) {
+  fromHandle(h)->setAutoHeadroom(enabled == JNI_TRUE);
+}
+
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeResetGainProtection(JNIEnv*, jclass, jlong h) {
+  fromHandle(h)->resetGainProtection();
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeProcess(
     JNIEnv* env, jclass, jlong h, jfloatArray in, jfloatArray out, jint frames) {
   // Critical access avoids copies on the audio thread. No JNI calls in between.

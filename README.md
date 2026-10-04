@@ -1,7 +1,6 @@
 # Svan
 
-**Svan** (Sanskrit/Hindi: sound) is a **global (system-wide) audiophile equalizer for Android**, inspired by
-Neutron Music Player's DSP and settings, Wavelet and Poweramp Equalizer.
+**Svan** (Sanskrit/Hindi: sound) is a **global (system-wide) equalizer for Android** with Svan’s own processing controls and gold interface.
 
 Status: **early spike.** The DSP core is real and tested; the Android app is a
 diagnostics shell for answering the open platform questions on real phones.
@@ -20,12 +19,12 @@ Contributors and coding agents: start with [`AGENTS.md`](AGENTS.md) and [`docs/H
 
 ## The DSP core
 
-- **Parametric EQ:** up to 128 bands per channel, independent L/R. Peak, shelf, high/low-pass, band-pass, notch and all-pass filters.
+- **Parametric EQ:** up to 256 active stages per channel, independent L/R (Android allows 128 manual bands plus tuning and tuners). Peak, shelf, high/low-pass, band-pass, notch and all-pass filters.
 - **Thread safety:** band changes are applied without ever blocking the audio thread.
 - **AutoEq import:** `ParametricEQ.txt` and `GraphicEQ.txt` formats.
 - **64-bit processing:** the whole chain runs in double precision.
 - **Oversampled EQ** (2x/4x/8x): removes the high-frequency "cramping" distortion of digital EQ.
-- **Resampler** with Neutron-style **Quality / Audiophile** settings.
+- **Resampler** with **Quality / Audiophile** settings (portable core only; Android capture stays at 48 kHz).
 - **TPDF and noise-shaped dither.**
 - **Auto headroom** (predicts boosts from the curve) and **Automatic Gain Protection** (catches actual overloads).
 

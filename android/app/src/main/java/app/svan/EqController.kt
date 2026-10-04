@@ -1,8 +1,8 @@
 package app.svan
 
 /**
- * Process-wide state for the spike. A real app would host this in a foreground
- * service so Android doesn't kill the process (and our effects) in the background.
+ * Shared engine state. SystemEqService owns the foreground lifetime and releases
+ * session effects when processing is stopped.
  */
 object EqController {
     const val SAMPLE_RATE = 48000

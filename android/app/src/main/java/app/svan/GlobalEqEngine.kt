@@ -26,6 +26,8 @@ class GlobalEqEngine(bandCount: Int = 128) {
     private val lastSent = ConcurrentHashMap<DynamicsProcessing, FloatArray>()
     @Volatile private var centersHz: DoubleArray = logSpaced(bandCount, 20.0, 20000.0)
     @Volatile private var gainsDb: DoubleArray = DoubleArray(bandCount)
+    @Volatile private var protection = true
+    @Volatile private var eqEnabled = true
     @Volatile private var inputGainDb: Float = 0f
     @Volatile private var bassCharacter: Double = 0.0
     @Volatile private var bassCrossoverHz: Double = 120.0
@@ -35,16 +37,21 @@ class GlobalEqEngine(bandCount: Int = 128) {
 
     val attachedSessions: Set<Int> get() = effects.keys
 
+    @Synchronized
     fun attach(sessionId: Int): Boolean {
-        if (sessionId <= 0 || effects.containsKey(sessionId)) return false
+        if (sessionId <= 0) return false
+        if (effects.containsKey(sessionId)) return true
+        var candidate: DynamicsProcessing? = null
         return try {
             val dp = DynamicsProcessing(PRIORITY, sessionId, buildConfig())
+            candidate = dp
             applyTo(dp)
             dp.enabled = true
             effects[sessionId] = dp
             Log.i(TAG, "attached to session $sessionId ($bandCount bands)")
             true
         } catch (e: RuntimeException) {
+            candidate?.let { lastSent.remove(it); runCatching { it.release() } }
             // UnsupportedOperationException / IllegalStateException on some OEM builds.
             Log.w(TAG, "attach failed for session $sessionId", e)
             EqController.log("system effects: attach failed for session $sessionId: $e")
@@ -52,14 +59,16 @@ class GlobalEqEngine(bandCount: Int = 128) {
         }
     }
 
+    @Synchronized
     fun detach(sessionId: Int) {
         effects.remove(sessionId)?.let {
             lastSent.remove(it)
-            it.enabled = false
+            runCatching { it.enabled = false }
             it.release()
         }
     }
 
+    @Synchronized
     fun releaseAll() = effects.keys.toList().forEach(::detach)
 
     /** Changes the band count; attached sessions are re-created with the new layout. */
@@ -75,15 +84,28 @@ class GlobalEqEngine(bandCount: Int = 128) {
     }
 
     /** Samples [engine]'s parametric curve into the band gains and pushes it to every session. */
-    fun applyCurveFrom(engine: NativeEngine) {
+    @Synchronized
+    fun applyCurveFrom(engine: NativeEngine, gainProtection: Boolean = true, enabled: Boolean = true) {
+        protection = gainProtection
+        eqEnabled = enabled
         val response = engine.responseDb(centersHz)
         if (response.size != bandCount) return // raced with reconfigure(); the next update fixes it
-        // responseDb already includes the engine's auto-headroom/preamp. Keep a
-        // limiter after the EQ as a second line of defence against overs.
-        val peak = response.maxOrNull() ?: 0.0
-        inputGainDb = (-max(0.0, peak)).toFloat()
+        // The native response already contains preamp and chosen headroom.
+        // Avoid a second automatic attenuation when headroom is disabled.
+        inputGainDb = 0f
         gainsDb = response
-        effects.values.forEach(::applyTo)
+        forEachEffect(::applyTo)
+    }
+
+    private fun forEachEffect(apply: (DynamicsProcessing) -> Unit) {
+        effects.entries.toList().forEach { (sid, dp) ->
+            try { apply(dp) } catch (e: RuntimeException) {
+                // Players can close a session while binder updates are in flight.
+                // One dead effect must not kill the repository's update collector.
+                EqController.log("system effects: update failed for session $sid: $e")
+                detach(sid)
+            }
+        }
     }
 
     private fun buildConfig(): DynamicsProcessing.Config =
@@ -117,7 +139,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             sessions.forEach(::detach)
             sessions.forEach { attach(it) }
         } else {
-            effects.values.forEach(::applyMbc)
+            forEachEffect(::applyMbc)
         }
     }
 
@@ -165,7 +187,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
         applyMbc(dp)
         dp.setLimiterAllChannelsTo(
             DynamicsProcessing.Limiter(
-                true, true, 0,
+                true, protection && eqEnabled, 0,
                 1f,    // attack ms
                 60f,   // release ms
                 10f,   // ratio

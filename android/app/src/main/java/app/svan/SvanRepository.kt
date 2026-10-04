@@ -27,6 +27,7 @@ import org.json.JSONObject
 object SvanRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private lateinit var appContext: Context
     private lateinit var prefs: android.content.SharedPreferences
 
     private val _eq = MutableStateFlow(EqState())
@@ -48,7 +49,8 @@ object SvanRepository {
         if (initialized) return
         synchronized(this) {
             if (initialized) return
-            prefs = context.applicationContext.getSharedPreferences("svan", Context.MODE_PRIVATE)
+            appContext = context.applicationContext
+            prefs = appContext.getSharedPreferences("svan", Context.MODE_PRIVATE)
             prefs.getString("eq", null)?.let { s -> runCatching { _eq.value = EqState.fromJson(JSONObject(s)) } }
             prefs.getString("settings", null)?.let { s -> runCatching { _settings.value = AudioSettings.fromJson(JSONObject(s)) } }
             prefs.getString("presets", null)?.let { s ->
@@ -62,9 +64,9 @@ object SvanRepository {
             initialized = true
             scope.launch {
                 // StateFlow is already conflated: a slow binder update never queues stale curves.
-                _eq.collect { state ->
+                kotlinx.coroutines.flow.combine(_eq, _settings) { state, settings -> state to settings }.collect { (state, _) ->
                     EqController.globalEq.setDynamics(state.bassCharacter, state.bass.crossoverHz, state.activeVocal.smoothness)
-                    EqController.globalEq.applyCurveFrom(EqController.curveEngine)
+                    EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.gainProtection, _eq.value.enabled)
                     _engineARevision.update { it + 1 }
                     prefs.edit().putString("eq", state.toJson().toString()).apply()
                 }
@@ -116,12 +118,16 @@ object SvanRepository {
     fun updateSettings(transform: (AudioSettings) -> AudioSettings) {
         val old = _settings.value
         val next = transform(old)
+        EqController.curveEngine.setAutoHeadroom(next.autoHeadroom)
         _settings.value = next
         prefs.edit().putString("settings", next.toJson().toString()).apply()
+        if (next.engineMode == app.svan.model.EngineMode.SYSTEM_ONLY && next.engineMode != old.engineMode) {
+            appContext.stopService(android.content.Intent(appContext, CaptureService::class.java))
+        }
         if (next.systemBands != old.systemBands) {
             scope.launch {
                 EqController.globalEq.reconfigure(next.systemBands)
-                EqController.globalEq.applyCurveFrom(EqController.curveEngine)
+                EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.gainProtection, _eq.value.enabled)
             }
         }
     }
@@ -131,6 +137,7 @@ object SvanRepository {
     private fun applyCurve(s: EqState) {
         val engine = EqController.curveEngine
         // The curve engine renders Engine A's curve, so it gets the system-effects stand-ins.
+        engine.setAutoHeadroom(_settings.value.autoHeadroom)
         engine.setBands(s.systemEffectsBands().map { it.toNative() })
         engine.setPreampDb(s.effectivePreampDb())
     }

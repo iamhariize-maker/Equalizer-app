@@ -119,8 +119,56 @@ eq bass --es preset Off
 log "T8 vocal tuner on system effects"
 $A logcat -c; eq tuners --ef intimacy 1 --ef warmth 1 --ef smooth 1; wait_for "tuners vocal" 30; sleep 5
 measure "T8 vocal tuner max on system effects (expect T0 + response@1k)"
-eq tuners
+eq tuners; sleep 3
 tone $CAP --ez stop true
+
+log "T9 explicit EQ boost with headroom disabled"
+tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true; sleep 3
+eq eq_band --ef frequency 1000 --ef gain 6
+eq gain_settings --ez headroom false --ez protection true; sleep 5
+measure "T9 +6 dB bell without predictive headroom (expect T0 + 6)"
+eq bypass --ez off true; sleep 4
+measure "T10 bypass restores flat level (expect T0)"
+eq bypass --ez off false
+eq gain_settings --ez headroom true --ez protection true
+eq preset; sleep 4
+
+log "T11 capturable app forced to system effects during capture"
+eq app_engine --es pkg $CAP --ez system_only true
+$A logcat -c; eq start_capture --es quality EFFICIENT; wait_for "capture: started" 120; sleep 6
+measure "T11 system override excludes capturable audio (expect T1, no double copy)"
+$A logcat -c; eq app_engine --es pkg $CAP --ez system_only false
+wait_for "capture: stopped" 60; sleep 4
+measure "T12 changing override stops capture safely (expect T1)"
+$A logcat -c; eq start_capture --es quality EFFICIENT; wait_for "capture: started" 120
+wait_for "route: $CAP .*Engine B" 120; sleep 5
+measure "T13 auto restored to Engine B (expect T1)"
+$A logcat -c; eq engine_mode --ez system_only true
+wait_for "capture: stopped" 60; sleep 4
+measure "T14 global system-only stops capture (expect T1)"
+
+log "T15 Engine A while activity is backgrounded"
+$A logcat -c; eq measure_mix --ef seconds 6
+$A shell input keyevent KEYCODE_HOME
+r=$(wait_for "MIX " 90)
+echo "T15 system EQ in background|$r" >> "$TMP/e2e_results.txt"
+
+log "T16 undetected app must not enter capture mix"
+tone $CAP --ez stop true; sleep 3
+eq stop_system; sleep 3
+$A shell pm revoke $EQ android.permission.DUMP
+eq start_system; sleep 3
+eq engine_mode --ez system_only false
+$A logcat -c; eq start_capture --es quality EFFICIENT; wait_for "capture: started" 120
+tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false; sleep 6
+measure "T16 unknown non-broadcasting audio stays single and unprocessed (expect T0)"
+eq stop_capture; sleep 3
+tone $CAP --ez stop true; sleep 3
+$A shell pm grant $EQ android.permission.DUMP
+# Restart discovery so screenshots include real detected app rows.
+eq stop_system; sleep 3; eq start_system; sleep 3
+tone $CAP --ef freq 1000 --ef amp 0.05 --ez broadcast true; sleep 4
+tone $CAP --ez stop true; sleep 3
 
 # ---- verdicts -------------------------------------------------------------
 FULL="$TMP/e2e_eqspike_full.log"
@@ -153,6 +201,16 @@ check "Bass dynamics didn't break system effects" "$(grep -q 'attach failed' "$F
 TUNE=$(grep -oE 'tune: .*' "$FULL" | tail -1)
 check "AutoEq tuning fetched and fitted" "$(echo "$TUNE" | grep -qE 'Sennheiser HD 650 \(oratory1990.*64 bands rms=0\.[0-4]' && echo 1 || echo 0)" "$TUNE"
 check "Tuning applies on system effects" "$(near "$T7" "$E7" 1.0)" "T7=$T7, expected $E7 ±1 dB"
+T9=$(lvl T9); T10=$(lvl T10); T11=$(lvl T11); T12=$(lvl T12); T13=$(lvl T13); T14=$(lvl T14); T15=$(lvl T15); T16=$(lvl T16)
+E9=$(awk -v a="$T0" 'BEGIN { print a + 6 }')
+check "System headroom switch permits measured +6 dB boost" "$(near "$T9" "$E9" 1.0)" "T9=$T9 expected $E9 ±1 dB"
+check "EQ bypass restores level" "$(near "$T10" "$T0" 1.0)" "T10=$T10 expected $T0 ±1 dB"
+check "Per-app system override has no duplicate capture" "$(near "$T11" "$T1" 2.0)" "T11=$T11 vs T1=$T1"
+check "Changing app preference stops capture safely" "$(near "$T12" "$T1" 2.0)" "T12=$T12 vs T1=$T1"
+check "Returning to Auto restores processed capture" "$(near "$T13" "$T1" 2.0)" "T13=$T13 vs T1=$T1"
+check "Global system-only stops processed capture" "$(near "$T14" "$T1" 2.0)" "T14=$T14 vs T1=$T1"
+check "System EQ remains effective behind the launcher" "$(near "$T15" "$T1" 2.0)" "T15=$T15 vs T1=$T1"
+check "Undetected audio is excluded from capture" "$(near "$T16" "$T0" 1.0)" "T16=$T16 vs T0=$T0"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
 kill $FULLLOG 2>/dev/null

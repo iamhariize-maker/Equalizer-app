@@ -4,6 +4,13 @@ set -u
 S=${1:-emulator-5554}; OUT=${2:-${TMPDIR:-/tmp}/svan-screens}
 A="adb -s $S"
 mkdir -p "$OUT"
+# Capture Android's system splash before the Compose boot overlay.
+$A shell am force-stop app.svan
+$A shell am start -W -n app.svan/.MainActivity >/dev/null &
+LAUNCH=$!
+sleep 0.15; $A exec-out screencap -p > "$OUT/system-splash.png"
+wait "$LAUNCH"
+sleep 3
 # Boot animation: cold start, capture mid-morph and at the full name.
 $A shell am force-stop app.svan; $A shell am start -n app.svan/.MainActivity >/dev/null
 sleep 1.0; $A exec-out screencap -p > "$OUT/boot-1.png"
@@ -31,5 +38,8 @@ tap_text "Graphic" && shot 2-eq-graphic
 tap_text "Parametric"
 tap_text "Presets" && shot 3-presets
 tap_text "Hi-Fi" && shot 4-hifi
+swipe_up; shot 4b-hifi-apps
+swipe_up; shot 4c-hifi-quality
+swipe_up; shot 4d-hifi-gain
 tap_text "Lab" && shot 5-lab
 tap_text "EQ"

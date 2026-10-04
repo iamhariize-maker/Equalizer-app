@@ -22,6 +22,8 @@ for t in EQ Presets Hi-Fi Lab Sound; do tap "$t" || ok=0; done
 # Exercise native code paths that R8 could break (JNI, JSON, parsing).
 $A shell am start -n app.svan/.MainActivity --es cmd preset >/dev/null; sleep 3
 $A shell am start -n app.svan/.MainActivity --es cmd bass --es preset Punchy >/dev/null; sleep 3
+$A shell am start -n app.svan/.MainActivity --es cmd gain_settings --ez headroom false >/dev/null; sleep 3
+$A shell am start -n app.svan/.MainActivity --es cmd app_engine --es pkg app.svan.testsource.capturable --ez system_only true >/dev/null; sleep 2
 if $A logcat -d | grep -qE "FATAL EXCEPTION|UnsatisfiedLinkError|NoSuchMethodError|ClassNotFoundException"; then
   echo "FAIL release build crashed:"; $A logcat -d | grep -A15 "FATAL EXCEPTION" | head -40; ok=0
 fi

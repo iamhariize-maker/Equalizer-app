@@ -74,7 +74,8 @@ fun EqScreen() {
     // The engine already holds this state (SvanRepository applies it synchronously).
     val curve = remember(eq) { EqController.curveEngine.curveDb(CURVE_FREQS) }
     val displayBands = if (eq.mode == EqMode.PARAMETRIC) eq.bands else GraphicLayout.bands(eq.graphicCount, eq.graphicGains)
-    val headroom = max(0.0, curve.maxOrNull() ?: 0.0) - eq.preampDb
+    val headroom = max(0.0, (curve.maxOrNull() ?: 0.0) + eq.effectivePreampDb())
+    val appliedGain = remember(eq, settings) { EqController.curveEngine.appliedGainDb }
 
     Column(Modifier.fillMaxSize()) {
         Header(eq.enabled, eq.presetName, settings.quality.title) { SvanRepository.update { it.copy(enabled = !it.enabled) } }
@@ -148,8 +149,9 @@ fun EqScreen() {
                         onChange = { v -> SvanRepository.update { it.copy(preampDb = v) } },
                         entryRange = -24.0..6.0, entryUnit = "dB",
                     )
-                    val hr = if (settings.autoHeadroom) "Auto headroom: ${formatDb(-max(0.0, headroom))} applied so boosts never clip"
-                    else if (headroom > 0) "Peak boost ${formatDb(headroom)} — may clip without auto headroom" else "No clipping risk"
+                    val hr = if (settings.autoHeadroom) "Applied preamp ${formatDb(appliedGain)} · includes required headroom"
+                    else if (headroom > 0) "Peak boost ${formatDb(headroom)} — may clip without auto headroom" else "No predicted EQ overload"
+                    Text("Boosts change tonal balance; headroom can lower overall volume to avoid overload. Toggle it in Hi-Fi; gain protection remains separate.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
                     Text(hr, style = MaterialTheme.typography.bodySmall, color = if (!settings.autoHeadroom && headroom > 0) Svan.Ember else Svan.TextMuted)
                 }
             }

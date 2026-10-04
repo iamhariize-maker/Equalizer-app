@@ -18,7 +18,7 @@ import java.util.concurrent.Executors
  */
 object SessionRouter {
 
-    enum class Owner { ENGINE_A, ENGINE_B_MUTED, PROBING }
+    enum class Owner { ENGINE_A, ENGINE_B_MUTED, PROBING, UNPROCESSED }
 
     data class Route(val sessionId: Int, val pkg: String, val uid: Int, val owner: Owner, val playing: Boolean? = null)
 
@@ -26,20 +26,52 @@ object SessionRouter {
     private val worker = Executors.newSingleThreadExecutor()
     private lateinit var appContext: Context
     private lateinit var compatStore: CaptureCompat
+    private lateinit var appEngines: AppEnginePreferences
+    @Volatile private var enabled = false
+    @Volatile private var captureSystemPackages: Set<String> = emptySet()
 
     @Volatile private var projection: MediaProjection? = null
     private val muter = SourceMuter { sid -> worker.execute { onMuteLost(sid) } }
 
-    val snapshot: Collection<Route> get() = routes.values
+    @Volatile var captureUids: Set<Int> = emptySet()
+        private set
 
+    private fun publishCaptureUids() {
+        val next = CapturePolicy.eligibleUids(routes.values, Process.myUid())
+        if (captureUids != next) captureUids = next
+        if (projection != null && routes.values.any { it.owner == Owner.ENGINE_B_MUTED && it.uid !in next }) {
+            EqController.log("capture: conflicting UID routes; stopping safely")
+            appContext.stopService(android.content.Intent(appContext, CaptureService::class.java))
+        }
+    }
+
+    val snapshot: Collection<Route> get() = routes.values.toList()
+
+    @Synchronized
     fun init(context: Context) {
         if (!::compatStore.isInitialized) {
             appContext = context.applicationContext
             compatStore = CaptureCompat(appContext)
+            appEngines = AppEnginePreferences(appContext)
         }
     }
 
     fun compat(): CaptureCompat = compatStore
+    fun appPreferences(): AppEnginePreferences = appEngines
+
+    fun enable() { enabled = true }
+
+    fun shutdown() {
+        enabled = false
+        projection = null
+        captureUids = emptySet()
+        worker.execute {
+            if (!CaptureService.isRunning) muter.releaseAll()
+            EqController.globalEq.releaseAll()
+            routes.clear()
+            publishCaptureUids()
+        }
+    }
 
     /**
      * Diagnostics for the capture/mute interaction on this device: capture one
@@ -59,7 +91,8 @@ object SessionRouter {
     }
 
     /** Engine B started: move every capturable session over to it. */
-    fun onCaptureStarted(mp: MediaProjection) {
+    fun onCaptureStarted(mp: MediaProjection, systemPackages: Set<String>) {
+        captureSystemPackages = systemPackages
         projection = mp
         worker.execute { routes.values.toList().forEach { reroute(it.sessionId, it.pkg, it.uid, it.playing) } }
     }
@@ -67,6 +100,7 @@ object SessionRouter {
     /** Engine B stopped: unmute everything and hand it back to Engine A. */
     fun onCaptureStopped() {
         projection = null
+        captureUids = emptySet()
         worker.execute {
             muter.releaseAll()
             routes.values.toList().forEach { reroute(it.sessionId, it.pkg, it.uid, it.playing) }
@@ -75,7 +109,7 @@ object SessionRouter {
 
     /** [playing] = null when unknown (broadcast path). [uid] < 0 = unknown, resolved here. */
     fun sessionOpened(sessionId: Int, pkg: String, uid: Int, playing: Boolean? = null) {
-        if (sessionId <= 0 || uid == Process.myUid()) return
+        if (!enabled || sessionId <= 0 || uid == Process.myUid()) return
         if (uid < 0) {
             // Package lookup failed (visibility) — the audio service dump knows the uid.
             worker.execute {
@@ -95,7 +129,7 @@ object SessionRouter {
             // Re-route a session that was parked on Engine A only because it
             // wasn't playing yet (can't run the capture check on silence).
             val parked = existing.owner == Owner.ENGINE_A && existing.playing == false &&
-                playing == true && projection != null && compatStore.cached(pkg) == null
+                playing == true && projection != null
             routes[sessionId] = existing.copy(playing = playing ?: existing.playing)
             if (parked) worker.execute { reroute(sessionId, pkg, uid, true) }
             return
@@ -106,6 +140,7 @@ object SessionRouter {
     fun sessionClosed(sessionId: Int) {
         worker.execute {
             routes.remove(sessionId)
+            publishCaptureUids()
             muter.unmute(sessionId)
             EqController.globalEq.detach(sessionId)
         }
@@ -128,8 +163,9 @@ object SessionRouter {
     // ---- worker thread only below ----
 
     private fun reroute(sid: Int, pkg: String, uid: Int, playing: Boolean?) {
+        if (!enabled) return
         val mp = projection
-        if (mp == null) {
+        if (mp == null || pkg in captureSystemPackages) {
             toEngineA(sid, pkg, uid, playing)
             return
         }
@@ -155,12 +191,17 @@ object SessionRouter {
                     return
                 }
                 routes[sid] = Route(sid, pkg, uid, Owner.PROBING, playing)
+                publishCaptureUids()
                 val verdict = try {
-                    compatStore.probe(mp, uid)
+                    compatStore.probe(mp, uid, stillActive = { projection === mp && enabled })
                 } catch (e: Exception) {
                     // Inconclusive (e.g. a second capture refused): don't cache a guess.
                     EqController.log("capture check failed for $pkg: $e")
                     toEngineA(sid, pkg, uid, playing)
+                    return
+                }
+                if (projection !== mp || !enabled) {
+                    if (enabled) toEngineA(sid, pkg, uid, playing) else muter.unmute(sid)
                     return
                 }
                 compatStore.remember(pkg, verdict)
@@ -172,15 +213,19 @@ object SessionRouter {
 
     private fun toEngineA(sid: Int, pkg: String, uid: Int, playing: Boolean?) {
         muter.unmute(sid)
-        EqController.globalEq.attach(sid)
-        routes[sid] = Route(sid, pkg, uid, Owner.ENGINE_A, playing)
-        EqController.log("route: $pkg (session $sid) → Engine A")
+        if (!enabled) { routes.remove(sid); publishCaptureUids(); return }
+        val attached = EqController.globalEq.attach(sid)
+        routes[sid] = Route(sid, pkg, uid, if (attached) Owner.ENGINE_A else Owner.UNPROCESSED, playing)
+        publishCaptureUids()
+        EqController.log("route: $pkg (session $sid) → ${if (attached) "Engine A" else "unprocessed (system effects unavailable)"}")
     }
 
     private fun toEngineB(sid: Int, pkg: String, uid: Int, playing: Boolean?) {
+        if (!enabled || projection == null) { toEngineA(sid, pkg, uid, playing); return }
         EqController.globalEq.detach(sid)
         if (muter.mute(sid)) {
             routes[sid] = Route(sid, pkg, uid, Owner.ENGINE_B_MUTED, playing)
+            publishCaptureUids()
             EqController.log("route: $pkg (session $sid) → Engine B (source muted)")
         } else {
             toEngineA(sid, pkg, uid, playing)
@@ -190,9 +235,12 @@ object SessionRouter {
     private fun onMuteLost(sid: Int) {
         val r = routes[sid] ?: return
         EqController.log("lost mute control of ${r.pkg} (session $sid): another effect app took over")
-        muter.unmute(sid)
+        // Fail closed: stop processed playback before releasing source mutes.
+        // Keeping a broad capture running here would create an audible echo.
+        appContext.stopService(android.content.Intent(appContext, CaptureService::class.java))
         // The other app now drives this session's DynamicsProcessing; adding
         // Engine A would fight it, so leave the session alone.
         routes.remove(sid)
+        publishCaptureUids()
     }
 }

@@ -4,6 +4,66 @@ Written at the end of a long Claude Code session so another agent (Codex cloud) 
 Repo: `iamhariize-maker/Equalizer-app`, branch **`ccr-208702a3-2mju42`** (not merged; no PR opened).
 Start with `AGENTS.md`. This file has the detail.
 
+## Continuation — 2026-10-04
+
+User now reports heavy delay / echo-like doubled playback with **YouTube Music
+on Bluetooth** on the TECNO LH7n. Other players/outputs are untested. They want
+Svan’s own identity, measurable feature effectiveness and fewer unsupported claims.
+Treat this as unresolved phone evidence, even when synthetic emulator tests pass.
+
+Changes in this continuation (CI verification still pending at this writing):
+- Boot name margins confirmed in `a48a8bd` screenshots. Its flipped d still looked
+  like q; now using a serif numeral 9 with accessible “EQ Extended”. The system
+  splash gets a new screenshot attempt; confirm the actual icon image.
+- Engine B now captures only known UIDs whose routed sessions are all muted.
+  Unknown audio is excluded. Mute loss/conflicting UID routes stop capture.
+  Smaller explicit input/output buffers; Hi-Fi shows output queue, DSP load and
+  underruns, explicitly excluding total Bluetooth/capture latency.
+- Per-app Auto/System effects choices in Hi-Fi. Changing one stops capture;
+  a new explicit grant applies it. Global System effects only also stops Engine B.
+- Engine A’s foreground lifetime/discovery moves into SystemEqService, with
+  notification Stop and a Hi-Fi start/stop control. Failed/dead effects no longer
+  terminate the update collector; unavailable processing is shown in the app row.
+- Measured duplicate headroom attenuation fixed: −6 dB preamp plus +6 dB bell no
+  longer becomes −12 dB preamp. Headroom/protection toggles now apply to Engine A.
+  Engine B protection resets on EQ edits, so bypass does not retain old overload loss.
+- DSP capacity reserved at 256 stages for 128 manual bands plus up to 96 tuning
+  bands and tuners. Previously later non-neutral layers could be silently dropped.
+  Native processing remains allocation-free in steady playback.
+- Removed comparison branding; qualified mid/side and synthetic-test claims.
+  No voice/instrument recognition or total phone-latency guarantee is claimed.
+- New core regressions bring the suite to 44 tests. E2E adds boost/bypass, per-app
+  overrides, global mode, background EQ and unknown-audio exclusion (20 checks).
+- CI uploads `Svan-preview` (release APK) as well as debug and emulator artifacts.
+  `-PsvanProduction=true` requires owner-provided signing inputs; no production
+  key created, no store publication. See RELEASE_READINESS.md and PRIVACY.md.
+
+Remaining work, in original priority order:
+1. Inspect every new CI log and screenshots after each push; confirm numeral 9,
+   boot margins, actual system-splash icon and new Hi-Fi rows on the small emulator.
+2. Deliver latest preview and get phone retest using PHONE_VALIDATION.md. Detection
+   without DUMP, Bluetooth delay/echo, arm64 behavior and 30-minute screen-off/battery
+   stability remain unresolved. Undetected apps are excluded from Engine B, not
+   magically processed; the UI must say so.
+3. Per-app controls implemented; refine based on phone evidence, especially
+   multiple sessions sharing one UID (currently fails safely back to Engine A).
+4. Foreground lifetime implemented; actual OEM kill/restart behavior needs phone tests.
+5. Signing inputs, owner-approved privacy policy URL/contact, Play declarations,
+   dependency upgrades and OEM backup review remain release gates. No blanket
+   dependency update in the audio correctness change.
+6. Licence question sent to user; no answer yet. Keep original-code licence undecided.
+7. Ear-tune only after stable routing and level-matched music evidence. Do not
+   increase all dial gains or invent thresholds to imply perceptual improvement.
+8. No live Squiglink scraping: no applicable data licence established; user file
+   import remains available.
+9. Crossfeed/loudness/delay/convolution remain future work, after the reported
+   playback/efficacy problems are verified on the real phone.
+
+Baseline CI `37166890912` failed 1/12 checks: the source was stopped while a final
+“tuners off” dynamics rebuild attempted attachment to its closed session. Added
+settling time before source close and lifecycle serialization/resource cleanup.
+The actual level and routing checks plus release smoke passed in that run.
+
 ## 1. The user and the goal
 - Solo builder, **one Android phone (TECNO LH7n, Android 14), no PC.** Fan of Neutron Music Player
   (60–80-band EQ, "audiophile" 64-bit processing/resampling) and Wavelet/Poweramp EQ.

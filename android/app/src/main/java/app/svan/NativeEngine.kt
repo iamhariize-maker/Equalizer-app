@@ -73,6 +73,9 @@ class NativeEngine(
     /** AutoEq "ParametricEQ.txt" contents. Returns the number of bands loaded. */
     fun loadParametricPreset(text: String): Int = nativeLoadParametricPreset(handle, text)
 
+    fun setAutoHeadroom(enabled: Boolean) = nativeSetAutoHeadroom(handle, enabled)
+    fun resetGainProtection() = nativeResetGainProtection(handle)
+
     fun setPreampDb(db: Double) = nativeSetPreamp(handle, db)
 
     /** Interleaved float frames; [input] and [output] may be the same array. */
@@ -140,6 +143,8 @@ class NativeEngine(
             unpackFit(nativeFitCorrection(text, bassDb, tilt, bands))
         @JvmStatic external fun nativeLoadParametricPreset(handle: Long, text: String): Int
         @JvmStatic external fun nativeSetPreamp(handle: Long, db: Double)
+        @JvmStatic external fun nativeSetAutoHeadroom(handle: Long, enabled: Boolean)
+        @JvmStatic external fun nativeResetGainProtection(handle: Long)
         @JvmStatic external fun nativeProcess(handle: Long, input: FloatArray, output: FloatArray, frames: Int)
         @JvmStatic external fun nativeResponseDb(handle: Long, channel: Int, freqs: DoubleArray): DoubleArray
         @JvmStatic external fun nativeLatency(handle: Long): Int

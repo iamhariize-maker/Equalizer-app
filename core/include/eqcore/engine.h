@@ -38,7 +38,7 @@ struct EngineConfig {
   int ditherBits = 0;        // 0 = off; 16 or 24 typical
   DitherMode ditherMode = DitherMode::Tpdf;
   bool autoHeadroom = true;  // pre-attenuate by the curve's max boost (predictive)
-  bool gainProtection = true; // Neutron-style "Automatic Gain Protection" (reactive):
+  bool gainProtection = true; // Automatic Gain Protection (reactive):
                               // on an actual overload, lower the gain and keep it lowered
   int maxBlock = 1024;       // frames per internal chunk
 
@@ -55,6 +55,7 @@ class Engine {
   void setBands(int channel, const std::vector<BandParams>& bands);
   void setBandsAllChannels(const std::vector<BandParams>& bands);
   void setPreampDb(double db);
+  void setAutoHeadroom(bool enabled) { autoHeadroom_.store(enabled); updateGain(); }
   // Bass character: -1 sustain .. 0 off .. +1 punch; crossover 60..250 Hz.
   // Thread-safe: applied by the audio thread at the next block.
   void setBassCharacter(double character, double crossoverHz = 120.0);
@@ -80,6 +81,7 @@ class Engine {
   void updateGain();
 
   EngineConfig cfg_;
+  std::atomic<bool> autoHeadroom_;
   ParametricEq eq_;  // runs at sampleRate * oversample
   std::vector<std::unique_ptr<Oversampler>> os_;
   std::vector<Dither> dither_;

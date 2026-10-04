@@ -73,20 +73,16 @@ fun ScreenTitle(title: String, subtitle: String? = null) {
 }
 
 /**
- * "EQ exten9ed": the first "d" of "extended" is a lowercase d flipped
- * vertically, so it reads as a 9 (a nod to 3-6-9). Screen readers say "EQ Extended".
+ * "EQ exten9ed": the first "d" of "extended" is rendered as a serif 9 (a nod to 3-6-9). Screen readers say "EQ Extended".
  */
 @Composable
 fun Exten9edTitle(modifier: Modifier = Modifier) {
     val style = MaterialTheme.typography.headlineMedium.copy(brush = Svan.AccentBrush)
     Row(modifier.clearAndSetSemantics { contentDescription = "EQ Extended" }, verticalAlignment = Alignment.Bottom) {
         Text("EQ exten", style = style)
-        // A vertically flipped "d": the bowl rises to the top and the stem descends — a 9.
-        // Flipped about its line box, the d's bowl lands at the top and its stem below.
-        // Tuned from CI screenshots: -0.12em floated (superscript), +0.03em let the stem hang
-        // below the baseline (reads as "q"). -0.07em should end the stem ON the baseline.
-        // VERIFY on the next screenshots (1-eq.png); nudge by 0.02em steps if needed.
-        Text("d", style = style, modifier = Modifier.graphicsLayer { scaleY = -1f; translationY = -style.fontSize.toPx() * 0.07f })
+        // CI's serif flipped d still read as q. A real 9 keeps the intended
+        // 3-6-9 branding clear at small screen sizes, with the same baseline.
+        Text("9", style = style)
         Text("ed", style = style)
     }
 }

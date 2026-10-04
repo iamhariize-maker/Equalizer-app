@@ -39,7 +39,7 @@ class CaptureCompat(context: Context) {
      * Call off the main thread, after the app's session has been muted.
      */
     @SuppressLint("MissingPermission") // RECORD_AUDIO checked before Engine B starts
-    fun probe(projection: MediaProjection, uid: Int, timeoutMs: Long = 2500): Verdict {
+    fun probe(projection: MediaProjection, uid: Int, timeoutMs: Long = 2500, stillActive: () -> Boolean = { true }): Verdict {
         val config = AudioPlaybackCaptureConfiguration.Builder(projection)
             .addMatchingUid(uid)
             .build()
@@ -56,12 +56,14 @@ class CaptureCompat(context: Context) {
         try {
             record.startRecording()
             while (System.nanoTime() < deadline) {
+                if (!stillActive()) error("capture check cancelled")
                 val n = record.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                if (n < 0) error("capture check read failed ($n)")
                 for (i in 0 until n) if (buf[i] != 0f) return Verdict.CAPTURABLE
             }
             return Verdict.BLOCKED
         } finally {
-            record.stop()
+            runCatching { record.stop() }
             record.release()
         }
     }
@@ -94,7 +96,7 @@ class CaptureCompat(context: Context) {
                 frames += n / 2
             }
         } finally {
-            record.stop()
+            runCatching { record.stop() }
             record.release()
         }
         return "frames=$frames peak=%.4f firstAudio=%s".format(peak, if (firstNonZeroMs < 0) "never" else "${firstNonZeroMs}ms")

@@ -45,6 +45,7 @@ int sanitizeFactor(int f) { return (f == 2 || f == 4 || f == 8) ? f : 1; }
 
 Engine::Engine(const EngineConfig& cfg)
     : cfg_(cfg),
+      autoHeadroom_(cfg.autoHeadroom),
       eq_(std::max(1, cfg.channels), cfg.sampleRate * sanitizeFactor(cfg.oversample)),
       bass_(cfg.sampleRate, std::max(1, cfg.channels)),
       stereo_(cfg.sampleRate) {
@@ -87,12 +88,15 @@ void Engine::setBassCharacter(double character, double crossoverHz) {
 
 void Engine::updateGain() {
   double headroom = 0.0;
-  if (cfg_.autoHeadroom) {
+  if (autoHeadroom_.load()) {
     const double maxHz = std::min(20000.0, 0.49 * cfg_.sampleRate);
     for (int ch = 0; ch < cfg_.channels; ++ch)
       headroom = std::max(headroom, eq_.peakGainDb(ch, 10.0, maxHz));
   }
-  gainDb_.store(userPreampDb_.load() - headroom);
+  const double preamp = userPreampDb_.load();
+  // Existing negative preamp already provides headroom (AutoEq presets do this).
+  // Only add the attenuation still needed; never subtract the full peak twice.
+  gainDb_.store(autoHeadroom_.load() ? preamp - std::max(0.0, headroom + preamp) : preamp);
 }
 
 double Engine::responseDb(int channel, double freqHz) const {

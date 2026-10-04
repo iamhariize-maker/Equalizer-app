@@ -36,3 +36,29 @@ float in → 64-bit → preamp + auto-headroom → [oversample ↑ 2/4/8x]
 - UI thread: `Engine::setBands`, `setPreampDb`. These take a mutex and publish the change.
 - Audio thread: `Engine::process`. It only `try_lock`s that mutex. If the lock is busy it keeps the old coefficients for one more block. It never allocates.
 - TSan-verified (`eq_parameter_updates_from_another_thread_are_safe`).
+
+
+## Capture admission and foreground lifetime (2026-10-04)
+
+SystemEqService owns Engine A’s foreground lifetime and optional DUMP-based
+session discovery. CaptureService owns Engine B’s projection grant and audio loop.
+The shared repository applies headroom/protection choices to both paths.
+
+Engine B no longer records an unrestricted mix. SessionRouter publishes an
+immutable set of UIDs only after their known sessions have been muted. A UID with
+an unmuted/probing/unknown routed session is not admitted; a conflicting active
+route stops capture to avoid silencing a muted source. The audio loop rebuilds
+its AudioRecord only when admission changes. An empty set uses Svan’s own
+capture-blocked UID as a silent sentinel, never a wildcard. Actual source playback
+stops before normal source mutes are released on capture shutdown.
+
+Per-app preferences are frozen for a projection session. Changing one stops that
+session; the user restarts capture with a fresh permission grant. Capture-blocked
+apps remain on Engine A regardless of Auto selection. No discovery means no
+processing claim: without broadcasts or the optional DUMP grant, an app can stay
+undetected and unprocessed, but its audio will not be duplicated by Engine B.
+
+The Android output remains 48 kHz float. Core resampling is not wired into this
+path. Small DSP filter delay is distinct from capture buffers, Android mixing,
+Bluetooth encoding/transport and source-player buffers. Hi-Fi’s queue and CPU
+readings are diagnostics rather than end-to-end latency or listening-quality scores.

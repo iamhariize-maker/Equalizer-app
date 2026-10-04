@@ -309,7 +309,7 @@ private fun BassTunerCard(b: BassTuner) {
             }
             Spacer(Modifier.height(6.dp))
             Text("Depth: deep sub (40 Hz) ↔ mid-bass (160 Hz). Feel: sustain lets notes bloom; punch sharpens kicks and " +
-                "tightens tails. Exact in the audiophile engine, approximated on system effects.",
+                "tightens tails. A native transient shaper in the audiophile engine; an approximation on system effects. Tuned on synthetic signals; results vary with music.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         }
     }
@@ -330,9 +330,7 @@ private fun VocalTunerCard(v: app.svan.model.VocalTuner) {
                     onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(smoothness = x)) } })
             }
             Spacer(Modifier.height(6.dp))
-            Text("Works on the centre of the mix, where the lead voice lives. Smooth only acts when a voice turns " +
-                "shrill (a screaming rock vocal), leaving mellow singers untouched. Full effect in the audiophile engine; " +
-                "a gentler approximation on system effects.",
+            Text("Shapes the centre of the stereo mix, which can include vocals and centred instruments. Smooth reacts to upper-mid energy, not voice recognition. System effects use a coarse approximation; music listening tests are pending.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         }
     }
@@ -356,9 +354,7 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(instruments = x)) } })
             }
             Spacer(Modifier.height(6.dp))
-            Text("Shapes the sides of the stereo mix — where orchestras, guitars and backing vocals sit — so the lead " +
-                "vocal and the bass stay exactly as they are. No added reverb. Needs the audiophile engine (system " +
-                "effects can't separate centre from sides).",
+            Text("Shapes stereo side energy above the bass range. It cannot identify individual instruments; a centred instrument will not be boosted. No added reverb. Requires an app actively using the audiophile engine; has no effect on system effects.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         }
     }

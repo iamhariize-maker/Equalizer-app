@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         SvanRepository.init(this)
         SessionRouter.init(this)
+        SystemEqService.startIfEnabled(this)
 
         val dump = checkSelfPermission(Manifest.permission.DUMP) == PackageManager.PERMISSION_GRANTED
         EqController.log("DUMP permission: ${if (dump) "granted" else "not granted (adb shell pm grant $packageName android.permission.DUMP)"}")
@@ -74,6 +75,22 @@ class MainActivity : ComponentActivity() {
                 val r = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
                 EqController.log("preset bands=$n response@1kHz=%.2f dB".format(r))
             }
+            "gain_settings" -> SvanRepository.updateSettings {
+                it.copy(autoHeadroom = intent.getBooleanExtra("headroom", true), gainProtection = intent.getBooleanExtra("protection", true))
+            }
+            "eq_band" -> SvanRepository.update {
+                it.copy(bands = listOf(app.svan.model.Band(freqHz = intent.getFloatExtra("frequency", 1000f).toDouble(), gainDb = intent.getFloatExtra("gain", 0f).toDouble())), preampDb = 0.0, tuning = null, bass = app.svan.model.BassTuner(), vocal = app.svan.model.VocalTuner(), instrument = app.svan.model.InstrumentTuner())
+            }
+            "bypass" -> SvanRepository.update { it.copy(enabled = !intent.getBooleanExtra("off", true)) }
+            "app_engine" -> {
+                val pkg = intent.getStringExtra("pkg") ?: return
+                SessionRouter.appPreferences().setSystemOnly(pkg, intent.getBooleanExtra("system_only", false))
+            }
+            "engine_mode" -> SvanRepository.updateSettings {
+                it.copy(engineMode = if (intent.getBooleanExtra("system_only", false)) app.svan.model.EngineMode.SYSTEM_ONLY else app.svan.model.EngineMode.AUTO)
+            }
+            "start_system" -> SystemEqService.start(this)
+            "stop_system" -> SystemEqService.stop(this)
             "start_capture" -> startCapture()
             "stop_capture" -> stopCapture()
             "measure_mix" -> thread {
@@ -160,6 +177,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startCapture() {
+        if (CaptureService.isRunning) return
+        if (SvanRepository.settings.value.engineMode == app.svan.model.EngineMode.SYSTEM_ONLY) {
+            EqController.log("capture: system-only mode; not started")
+            return
+        }
+        SystemEqService.start(this)
         val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
         if (android.os.Build.VERSION.SDK_INT >= 33) perms += Manifest.permission.POST_NOTIFICATIONS
         val missing = perms.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
@@ -173,7 +196,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun stopCapture() {
-        startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
+        stopService(Intent(this, CaptureService::class.java))
     }
 
     @Deprecated("Uses the framework result API so scripted tests keep working")

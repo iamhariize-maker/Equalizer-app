@@ -1,5 +1,6 @@
 // Self-contained unit tests (no external framework, so the Android/CI builds
 // need nothing extra). Run: ./eqcore_tests [filter-substring]
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <complex>
@@ -439,6 +440,60 @@ TEST(engine_auto_headroom_prevents_clipping) {
   CHECK_NEAR(e.eqResponseDb(0, 1000), 12.0, 1e-9);  // UI curve excludes the headroom
   CHECK_NEAR(e.responseDb(0, 1000), 0.0, 1e-3);     // total includes it (grid-sampled peak)
   CHECK_NEAR(engineGainDb(e, 1000, 0.99), 0.0, 0.02);  // boost cancelled by headroom: no overs
+}
+
+TEST(headroom_uses_existing_preamp_instead_of_attenuating_twice) {
+  EngineConfig cfg;
+  cfg.gainProtection = false;
+  Engine e(cfg);
+  e.setBandsAllChannels({{FilterType::Peak, 1000, 6, 1.0, true}});
+  e.setPreampDb(-6);
+  CHECK_NEAR(e.appliedGainDb(), -6.0, 0.01);
+  CHECK_NEAR(engineGainDb(e, 1000, 0.5), 0.0, 0.02);
+  e.setPreampDb(-10);
+  CHECK_NEAR(e.appliedGainDb(), -10.0, 0.01);
+  CHECK_NEAR(engineGainDb(e, 1000, 0.5), -4.0, 0.02);
+  e.setPreampDb(-2);
+  CHECK_NEAR(e.appliedGainDb(), -6.0, 0.01);
+}
+
+TEST(disabling_headroom_restores_requested_gain_and_boost) {
+  EngineConfig cfg;
+  cfg.gainProtection = false;
+  Engine e(cfg);
+  e.setBandsAllChannels({{FilterType::Peak, 1000, 6, 1.0, true}});
+  e.setPreampDb(0);
+  e.setAutoHeadroom(false);
+  CHECK_NEAR(e.appliedGainDb(), 0.0, 1e-9);
+  CHECK_NEAR(engineGainDb(e, 1000, 0.1), 6.0, 0.02);
+  e.setAutoHeadroom(true);
+  CHECK_NEAR(engineGainDb(e, 1000, 0.1), 0.0, 0.02);
+}
+
+TEST(flat_and_cut_only_eq_do_not_add_headroom_loss) {
+  EngineConfig cfg;
+  cfg.gainProtection = false;
+  Engine e(cfg);
+  CHECK_NEAR(engineGainDb(e, 1000, 0.5), 0.0, 0.001);
+  e.setBandsAllChannels({{FilterType::Peak, 1000, -6, 1.0, true}});
+  CHECK_NEAR(e.appliedGainDb(), 0.0, 1e-9);
+  CHECK_NEAR(engineGainDb(e, 1000, 0.5), -6.0, 0.02);
+}
+
+TEST(layered_tuning_manual_eq_and_tuners_keep_the_last_band) {
+  EngineConfig cfg;
+  cfg.autoHeadroom = false;
+  cfg.gainProtection = false;
+  Engine e(cfg);
+  // 96 tuning + 128 manual + 6 tuner bands. Reciprocal low bells
+  // cancel in pairs, so the last band's +6 dB must reach the output.
+  std::vector<BandParams> bands;
+  for (int i = 0; i < 228; ++i)
+    bands.push_back({FilterType::Peak, 100, i % 2 ? -0.1 : 0.1, 1.0, true});
+  bands.push_back({FilterType::Peak, 1000, 6, 1.0, true});
+  e.setBandsAllChannels(bands);
+  CHECK_NEAR(e.eqResponseDb(0, 1000), 6.0, 0.001);
+  CHECK_NEAR(engineGainDb(e, 1000, 0.1), 6.0, 0.02);
 }
 
 TEST(audiophile_mode_removes_high_frequency_cramping) {

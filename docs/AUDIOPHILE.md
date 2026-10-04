@@ -1,19 +1,13 @@
 # Audiophile processing
 
-Neutron's settings that inspired this:
-- **64-Bit Processing:** "highly accurate 64-bit audio processing".
-- **Resampling:** *Quality* ("moderate CPU load, good precision of audio interpolation") vs. *Audiophile* ("higher CPU load, best precision of audio interpolation").
-- **Automatic Gain Protection:** "auto-detect overloaded audio and reduce the Preamp gain".
-
-This project implements all three, plus oversampled EQ, which Neutron doesn't
-expose as a separate setting. Every claim below is a measured test result
-(`core/tests/test_main.cpp`), not a marketing number.
+Svan has an original double precision DSP chain and a separate Android system-effects path.
+The measurements below describe synthetic core tests, not listening quality or total phone latency.
+The user reports delayed/echo-like playback on YouTube Music over Bluetooth; this needs phone retesting.
 
 ## 1. 64-bit processing
 
 The whole chain runs in IEEE double precision: filter coefficients, filter state,
-oversampling, resampling and gain. It's always on. On phone CPUs the cost is
-small compared with the filtering work, so there's no 32-bit mode to fall back to.
+oversampling, resampling and gain. This describes Engine B only. Android controls Engine A’s precision. Phone CPU cost is not established.
 
 ## 2. Audiophile resampling (`core/src/resampler.cpp`)
 
@@ -47,7 +41,7 @@ Digital EQ filters bend out of shape as they approach Nyquist ("cramping"). Runn
 at 4x/8x the sample rate fixes it. Measured on a +9 dB bell at 16 kHz on
 44.1 kHz material, against the ideal analog response:
 
-| Mode | Worst deviation 8–19.5 kHz | CPU (80 bands, stereo, host) | Latency |
+| Mode | Worst deviation 8–19.5 kHz | CPU (80 bands, stereo, host) | DSP-only latency |
 |---|---|---|---|
 | Efficient (1x) | **5.56 dB** | 2.6 % | 0 ms |
 | High Quality (2x) | 1.06 dB | 6.8 % | 0.8 ms |
@@ -55,7 +49,7 @@ at 4x/8x the sample rate fixes it. Measured on a +9 dB bell at 16 kHz on
 | Extreme (8x) | 0.06 dB | 26.5 % | 1.4 ms |
 
 The oversampling filters are linear-phase with 120–140 dB image rejection
-(132 dB measured at 2x). Latency is an exact integer number of samples.
+(132 dB measured at 2x). DSP latency is an exact integer number of samples. It excludes capture, Android buffers and Bluetooth transport.
 
 **Host vs. phone:** the CPU figures come from a cloud x86 core. Expect a phone's
 efficiency cores to be several times slower, so measure with `eqcore_bench` on
@@ -68,8 +62,7 @@ the device before picking Extreme as a default.
 
 ## 5. Automatic Gain Protection + auto headroom
 
-- **Auto headroom (predictive):** pre-attenuates by the curve's largest boost.
-- **AGP (reactive):** catches what prediction can't, such as hot masters and
-  inter-sample peaks. On an overload it scales the chunk to −0.1 dBFS and keeps
-  the reduction. Measured: a +12 dB boost on a 0.9 sine reduces by 11.18 dB
-  (theory 11.2 dB). The output never exceeds the ceiling, and the gain doesn't pump.
+- **Auto headroom (predictive):** adds only the attenuation still needed after the user/preset preamp. A −6 dB preamp with a +6 dB bell stays at −6 dB, instead of the previous −12 dB.
+- **AGP (reactive):** catches what prediction can't, such as hot masters. It checks output samples, not true inter-sample peaks. On an overload it scales the chunk to −0.1 dBFS and keeps
+  the reduction until an EQ edit or engine restart. Measured: a +12 dB boost on a 0.9 sine reduces by 11.18 dB
+  (theory 11.2 dB). The tested output stays below the sample ceiling. Listening behavior across music is not yet established.

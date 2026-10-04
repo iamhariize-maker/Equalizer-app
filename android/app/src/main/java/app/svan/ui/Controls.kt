@@ -209,7 +209,7 @@ fun SettingSwitchRow(title: String, detail: String, checked: Boolean, onChange: 
     }
 }
 
-/** Neutron-style radio row: title, explanation, selection dot. */
+/** Processing choice row: title, explanation, selection dot. */
 @Composable
 fun ChoiceRow(title: String, detail: String, selected: Boolean, onClick: () -> Unit, badge: String? = null) {
     val border by animateColorAsState(if (selected) Svan.Gold else Svan.Grid, label = "choice")

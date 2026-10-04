@@ -8,7 +8,7 @@
 
 namespace eqcore {
 
-constexpr int kMaxBandsPerChannel = 128;
+constexpr int kMaxBandsPerChannel = 256;
 
 // Multi-band parametric EQ with independent band lists per channel.
 //

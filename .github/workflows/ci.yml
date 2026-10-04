@@ -35,6 +35,14 @@ jobs:
       - name: Assemble debug APK, lint, unit tests
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug testDebugUnitTest
+      - name: Prepare phone preview
+        run: |
+          mkdir -p android/build-kit
+          cp android/app/build/outputs/apk/release/app-release.apk android/build-kit/Svan-preview.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Svan-preview
+          path: android/build-kit/Svan-preview.apk
       - uses: actions/upload-artifact@v4
         with:
           name: app-debug

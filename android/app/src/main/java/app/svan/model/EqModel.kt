@@ -255,13 +255,13 @@ object GraphicLayout {
 
 enum class QualityMode(val title: String, val oversample: Int, val stopbandDb: Double, val detail: String) {
     EFFICIENT("Efficient", 1, 120.0, "1x · lowest CPU and latency. High bands bend near 20 kHz (5.6 dB error at 16 kHz)."),
-    HIGH_QUALITY("High quality", 2, 100.0, "2x oversampled EQ · 1.1 dB error at 16 kHz · ~0.8 ms latency."),
-    AUDIOPHILE("Audiophile", 4, 120.0, "4x oversampled EQ · 0.24 dB error at 16 kHz · 120 dB image rejection · ~1.1 ms."),
+    HIGH_QUALITY("High quality", 2, 100.0, "2x oversampled EQ · 1.1 dB error at 16 kHz · DSP measurements from synthetic test tones."),
+    AUDIOPHILE("Audiophile", 4, 120.0, "4x oversampled EQ · 0.24 dB error at 16 kHz · device and Bluetooth delay depend on the audio path."),
     EXTREME("Extreme", 8, 140.0, "8x oversampled EQ · 0.06 dB error · 140 dB filters. Heaviest CPU — check battery."),
 }
 
 enum class DitherChoice(val title: String, val nativeMode: Int, val detail: String) {
-    OFF("Off", 0, "Plain rounding to the output word length."),
+    OFF("Off", 0, "Float output without intentional word-length reduction."),
     TPDF("TPDF", 1, "Triangular dither: quantisation error becomes benign, signal-independent noise."),
     SHAPED("Noise-shaped", 2, "TPDF with noise moved up out of the midrange (−17 dB at 1 kHz)."),
 }
@@ -271,7 +271,7 @@ enum class EngineMode(val title: String, val detail: String) {
     SYSTEM_ONLY("System effects only", "Android DynamicsProcessing on each app. Lowest latency and battery; gain-per-band only."),
 }
 
-/** Audiophile settings (Neutron-style). */
+/** Svan processing settings. */
 data class AudioSettings(
     val engineMode: EngineMode = EngineMode.AUTO,
     val quality: QualityMode = QualityMode.AUDIOPHILE,
