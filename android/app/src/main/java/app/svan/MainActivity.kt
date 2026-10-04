@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
                 val r = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
                 EqController.log("preset bands=$n response@1kHz=%.2f dB".format(r))
             }
+            "state" -> EqController.log("EQ_STATE " + SvanRepository.eq.value.toJson().toString())
             "gain_settings" -> SvanRepository.updateSettings {
                 it.copy(autoHeadroom = intent.getBooleanExtra("headroom", true), gainProtection = intent.getBooleanExtra("protection", true))
             }

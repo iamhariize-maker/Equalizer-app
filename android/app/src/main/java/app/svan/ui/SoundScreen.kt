@@ -309,7 +309,7 @@ private fun BassTunerCard(b: BassTuner) {
             }
             Spacer(Modifier.height(6.dp))
             Text("Depth: deep sub (40 Hz) ↔ mid-bass (160 Hz). Feel: sustain lets notes bloom; punch sharpens kicks and " +
-                "tightens tails. A native transient shaper in the audiophile engine; an approximation on system effects. Tuned on synthetic signals; results vary with music.",
+                "tightens tails. Drag dials sideways; double-tap to reset. A native transient shaper in the audiophile engine; an approximation on system effects. Tuned on synthetic signals; results vary with music.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         }
     }
@@ -317,7 +317,7 @@ private fun BassTunerCard(b: BassTuner) {
 
 @Composable
 private fun VocalTunerCard(v: app.svan.model.VocalTuner) {
-    TunerHeader("Vocal tuner", "Intimate, warm vocals without the shrill edge.")
+    TunerHeader("Vocal tuner", "Centre tone and upper-mid dynamics.")
     PresetRow(app.svan.model.VocalTuner.PRESETS, v) { p -> SvanRepository.update { it.copy(vocal = p) } }
     SvanCard {
         Column {
@@ -338,7 +338,7 @@ private fun VocalTunerCard(v: app.svan.model.VocalTuner) {
 
 @Composable
 private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
-    TunerHeader("Orchestral amplifier", "Strings, guitars, sitar, sax and the band around the voice.")
+    TunerHeader("Orchestral amplifier", "Stereo width and side energy above the bass.")
     PresetRow(app.svan.model.InstrumentTuner.PRESETS, i) { p -> SvanRepository.update { it.copy(instrument = p) } }
     SvanCard {
         Column {

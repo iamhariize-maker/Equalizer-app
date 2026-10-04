@@ -88,6 +88,7 @@ jobs:
           cat e2e-out/e2e_results.txt || { echo "no results"; exit 1; }
           grep -q '^PASS release smoke test' e2e-out/smoke.txt
           ! grep -q '^FAIL' e2e-out/e2e_results.txt
+          grep -q '^PASS sound scroll preserves EQ settings' e2e-out/screens/interaction.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

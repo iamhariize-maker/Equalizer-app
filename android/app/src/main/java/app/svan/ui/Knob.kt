@@ -1,7 +1,7 @@
 package app.svan.ui
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +24,13 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.cos
@@ -34,9 +41,10 @@ private const val START_DEG = 135f
 private const val SWEEP_DEG = 270f
 
 /**
- * Rotary dial. Drag up/right to increase, down/left to decrease (a full turn is
+ * Rotary dial. Drag right to increase, left to decrease (a full turn is
  * ~220 dp of travel); double-tap resets to [default]. Bipolar knobs
- * ([min] < 0 < [max]) fill from the 12 o'clock centre outwards.
+ * ([min] < 0 < [max]) fill from the 12 o'clock centre outwards. Vertical
+ * gestures belong to the parent scroll container and must never edit the dial.
  */
 @Composable
 fun Knob(
@@ -65,7 +73,21 @@ fun Knob(
             Canvas(
                 Modifier
                     .size(size)
-                    .pointerInput(min, max) {
+                    .semantics {
+                        contentDescription = label
+                        stateDescription = display(value)
+                        progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), min.toFloat()..max.toFloat())
+                        if (!enabled) disabled()
+                        setProgress { requested ->
+                            if (enabled) {
+                                val stepped = (requested.toDouble() / step).roundToInt() * step
+                                onChange(stepped.coerceIn(min, max))
+                                true
+                            } else false
+                        }
+                    }
+                    .pointerInput(min, max, enabled) {
+                        if (!enabled) return@pointerInput
                         detectTapGestures(onDoubleTap = {
                             onChange(default)
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -75,12 +97,12 @@ fun Knob(
                         if (!enabled) return@pointerInput
                         val travel = 220.dp.toPx()
                         var acc = current
-                        detectDragGestures(
+                        detectHorizontalDragGestures(
                             onDragStart = { acc = current },
                         ) { change, drag ->
                             change.consume()
                             val before = acc
-                            acc = (acc + (drag.x - drag.y) / travel * (max - min)).coerceIn(min, max)
+                            acc = (acc + drag / travel * (max - min)).coerceIn(min, max)
                             val stepped = (acc / step).roundToInt() * step
                             // Ticks at the ends and when crossing the centre of a bipolar knob.
                             val crossedCentre = bipolar && (before < 0) != (acc < 0)

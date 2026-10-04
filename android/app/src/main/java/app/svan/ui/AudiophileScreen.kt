@@ -97,7 +97,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         val a = routes.filter { it.owner == SessionRouter.Owner.ENGINE_A }.map { it.pkg }.distinct().size
                         Text(
                             if (running) "$b app(s) on the full 64-bit chain · $a on system effects"
-                            else "Apps use system effects (gain-per-band). Start to run the full chain.",
+                            else if (systemRunning) "System effects available. Check app rows for actual processing."
+                            else "Processing is stopped. Start the system equalizer or audiophile engine.",
                             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
                         )
                     }

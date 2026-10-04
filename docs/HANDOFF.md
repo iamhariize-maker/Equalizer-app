@@ -11,7 +11,14 @@ on Bluetooth** on the TECNO LH7n. Other players/outputs are untested. They want
 Svan’s own identity, measurable feature effectiveness and fewer unsupported claims.
 Treat this as unresolved phone evidence, even when synthetic emulator tests pass.
 
-Changes in this continuation (CI verification still pending at this writing):
+Commit `0ff00da` passed CI run `37168656837`: core/sanitizers, Android checks,
+release smoke and 20/20 audio checks. Screenshots confirm readable 9, boot margins
+and the actual स्व system splash. Review also exposed vertical swipes editing
+Sound knobs instead of scrolling. Follow-up uses horizontal dial drags, adds
+accessible range actions and a CI state-preservation check for scrolling; its
+CI verification is pending at this writing.
+
+Changes in this continuation:
 - Boot name margins confirmed in `a48a8bd` screenshots. Its flipped d still looked
   like q; now using a serif numeral 9 with accessible “EQ Extended”. The system
   splash gets a new screenshot attempt; confirm the actual icon image.

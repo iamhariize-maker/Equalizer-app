@@ -254,10 +254,10 @@ object GraphicLayout {
 }
 
 enum class QualityMode(val title: String, val oversample: Int, val stopbandDb: Double, val detail: String) {
-    EFFICIENT("Efficient", 1, 120.0, "1x · lowest CPU and latency. High bands bend near 20 kHz (5.6 dB error at 16 kHz)."),
-    HIGH_QUALITY("High quality", 2, 100.0, "2x oversampled EQ · 1.1 dB error at 16 kHz · DSP measurements from synthetic test tones."),
-    AUDIOPHILE("Audiophile", 4, 120.0, "4x oversampled EQ · 0.24 dB error at 16 kHz · device and Bluetooth delay depend on the audio path."),
-    EXTREME("Extreme", 8, 140.0, "8x oversampled EQ · 0.06 dB error · 140 dB filters. Heaviest CPU — check battery."),
+    EFFICIENT("Efficient", 1, 120.0, "1x · lowest DSP cost. Tested high-frequency bell: worst deviation 5.6 dB."),
+    HIGH_QUALITY("High quality", 2, 100.0, "2x oversampled EQ · tested high-frequency bell: worst deviation 1.1 dB."),
+    AUDIOPHILE("Audiophile", 4, 120.0, "4x oversampled EQ · tested high-frequency bell: worst deviation 0.24 dB. Phone and Bluetooth delay depend on the audio path."),
+    EXTREME("Extreme", 8, 140.0, "8x oversampled EQ · tested high-frequency bell: worst deviation 0.06 dB. Heaviest DSP cost; check battery."),
 }
 
 enum class DitherChoice(val title: String, val nativeMode: Int, val detail: String) {

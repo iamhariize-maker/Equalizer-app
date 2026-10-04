@@ -25,6 +25,18 @@ tap_text() { # taps the centre of the first node whose text equals $1
   $A shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 ))
 }
 shot() { sleep 4; $A exec-out screencap -p > "$OUT/$1.png"; echo "saved $OUT/$1.png"; }
+state() {
+  $A logcat -c
+  $A shell am start -n app.svan/.MainActivity --es cmd state >/dev/null
+  local value="" t=0
+  while [ "$t" -lt 10 ]; do
+    value=$($A logcat -d -s EqSpike:I | sed -n 's/^.*EQ_STATE //p' | tail -1)
+    [ -n "$value" ] && { echo "$value"; return 0; }
+    sleep 1; t=$((t + 1))
+  done
+  return 1
+}
+BEFORE=$(state) || BEFORE=""
 shot 0-sound
 # Swipe relative to the real screen size (CI's emulator is small).
 read -r W H < <($A shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr 'x' ' ')
@@ -33,6 +45,13 @@ swipe_up; shot 0b-sound-tuners
 swipe_up; shot 0c-sound-tuners
 swipe_up; shot 0d-sound-tuners
 swipe_up; shot 0e-sound-tuners
+AFTER=$(state) || AFTER=""
+if [ -n "$BEFORE" ] && [ "$BEFORE" = "$AFTER" ]; then
+  echo "PASS sound scroll preserves EQ settings" > "$OUT/interaction.txt"
+else
+  echo "FAIL sound scroll changed EQ settings" > "$OUT/interaction.txt"
+fi
+cat "$OUT/interaction.txt"
 tap_text "EQ" && shot 1-eq
 tap_text "Graphic" && shot 2-eq-graphic
 tap_text "Parametric"
