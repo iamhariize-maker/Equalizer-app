@@ -15,6 +15,7 @@
 #include <memory>
 #include <vector>
 
+#include "eqcore/analyzer.h"
 #include "eqcore/bass.h"
 #include "eqcore/dither.h"
 #include "eqcore/oversampler.h"
@@ -75,6 +76,10 @@ class Engine {
   void resetGainProtection() { agpDb_.store(0.0); }
   int latencyFrames() const;
 
+  // Svaramanas: analyse the *input* (what the source app plays) in process().
+  void setAnalysisEnabled(bool on) { analysisOn_.store(on); }
+  SourceFeatures analysis() const { return analyzer_.snapshot(); }
+
   void reset();
 
  private:
@@ -93,6 +98,8 @@ class Engine {
   double appliedBassCrossover_ = 120.0;
   BassShaper bass_;
   StereoTuner stereo_;
+  std::atomic<bool> analysisOn_{false};
+  SourceAnalyzer analyzer_;
   std::vector<double> outBuf_, high_;  // per-channel chunk, oversampled scratch
 };
 

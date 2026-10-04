@@ -2,9 +2,34 @@
 
 *Svara (sound) + manas (mind).* Svaramanas is the on-device "smart" layer of Svan: it listens to what is
 actually playing, in any player, and drives Svan's existing measured DSP to get the best sound the
-source allows. This document is the design and build plan. **Nothing here is implemented yet**; every
-claim about sound quality must be measured (rule 2 in `AGENTS.md`) before it appears in the app or the
-Play listing.
+source allows. This document is the design and build plan. Every claim about sound quality must be
+measured (rule 2 in `AGENTS.md`) before it appears in the app or the Play listing.
+
+## Status (0.4.0-svaramanas-preview)
+
+Built and tested:
+- `core/…/analyzer.h` **SourceAnalyzer**: gated K-weighted loudness (EBU 3341 sine reads −23.0 LUFS),
+  peak, PLR, clipping rate, stereo correlation / mono detection, lossy ceiling (16 kHz source found at
+  15.5–16.8 kHz), third-octave balance and mud/boom/harsh/air deviations from the mix's own tilt
+  (a −3 dB/oct dark mix is not flagged). Pauses don't wash out the picture. Runs inside `Engine` on the
+  *input* (Engine B), allocation-free; one 4096-point FFT per 85 ms.
+- `core/…/svaramanas.h` **policy + guardrails**: feel × categories (3 always, a 4th only without a range
+  clash, never 5), 6 dB emphasis budget, ±3 dB per band, overlap softening, analyser-driven trims (≤2.5 dB),
+  lossy-ceiling/mono/crushed-master respect rules, fixed band skeleton, reason codes.
+  Tested on all 6876 feel × category × strength combinations; **loudness-matched within 0.1 dB measured
+  through the real engine** (target ±0.5 dB).
+- App: `svaramanas/` (controller, dialog activity, overlay bubble service, Quick Settings tile),
+  in-app bubble (tap = open, hold = hear the original), notification action. Static plan on system
+  effects (Engine A); adaptive on the audiophile engine (re-planned every 3 s, slewed ≤0.5 dB per band).
+- Emulator e2e: T21 the plan reaches system effects at the predicted level; T22 the analyser hears the
+  captured source on a real device image.
+
+Not built yet (next increments, in order): Test Pilot report + AppProfile/player coach; fast
+masking-aware dynamic EQ and resonance suppression; noise-aware lift (mic); loudness compensation by
+volume; hearing test + headphone auto-ID; opt-in track memory; blind A/B tool; small ML controllers.
+Known limits: detection thresholds are first guesses, not yet tuned by ear; with auto headroom on,
+Engine A can end up quieter than loudness-matched (safety wins); the overlay bubble does not yet hide
+itself over full-screen video.
 
 ## 1. Persona and behaviour priority
 

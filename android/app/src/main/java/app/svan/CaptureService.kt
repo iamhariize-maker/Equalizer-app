@@ -270,9 +270,6 @@ class CaptureService : Service() {
             }
     }
 
-    private val engineLock = Any()
-    @Volatile private var current: NativeEngine? = null
-
     private fun buildEngine(s: AudioSettings): NativeEngine =
         NativeEngine(
             EqController.SAMPLE_RATE, 2,
@@ -283,7 +280,10 @@ class CaptureService : Service() {
             ditherMode = s.dither.nativeMode,
             autoHeadroom = s.autoHeadroom,
             gainProtection = s.gainProtection,
-        ).also { applyEq(it, SvanRepository.eq.value) }
+        ).also {
+            it.setAnalysis(true) // Svaramanas listens to the source (cheap: one FFT per 85 ms)
+            applyEq(it, SvanRepository.eq.value)
+        }
 
     private fun applyEq(engine: NativeEngine, eq: EqState) {
         engine.resetGainProtection()
@@ -319,6 +319,12 @@ class CaptureService : Service() {
         val inputPeakDb: Double, val outputPeakDb: Double)
 
     companion object {
+        private val engineLock = Any()
+        @Volatile private var current: NativeEngine? = null
+
+        /** What Svaramanas heard (packed SourceFeatures), or null when Engine B isn't running. */
+        fun analysis(): DoubleArray? = synchronized(engineLock) { current?.analysis() }
+
         @Volatile var stats: Stats? = null
             private set
         private const val TAG = "CaptureService"

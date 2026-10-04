@@ -68,3 +68,14 @@ swipe_up; shot 4e-hifi-protection
 swipe_up; shot 4f-hifi-resolution
 tap_text "Lab" && shot 5-lab
 tap_text "EQ"
+# Svaramanas: the dialog over the app with a real request, scrolled through.
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on true --es feel WARM --es picks VOCALS,STRINGS,BASS >/dev/null
+sleep 2
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas_panel >/dev/null
+shot 6-svaramanas
+swipe_up; shot 6b-svaramanas
+swipe_up; shot 6c-svaramanas
+# The 3-4 rule: a 4th pick that clashes (Guitars vs Vocals) must be refused with a reason.
+tap_text "Guitars" && shot 6d-svaramanas-clash
+$A shell input keyevent KEYCODE_BACK
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on false >/dev/null

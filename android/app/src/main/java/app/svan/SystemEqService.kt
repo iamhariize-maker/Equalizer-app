@@ -42,14 +42,18 @@ class SystemEqService : Service() {
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "System equalizer", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 0, Intent(this, SystemEqService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE)
+        val smart = PendingIntent.getActivity(this, 1, Intent(this, app.svan.svaramanas.SvaramanasActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), PendingIntent.FLAG_IMMUTABLE)
         startForeground(2, Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle("Svan equalizer active")
             .setContentText("System effects stay active in the background")
             .setContentIntent(open).setOngoing(true)
+            .addAction(Notification.Action.Builder(null, "Svaramanas", smart).build())
             .addAction(Notification.Action.Builder(null, "Stop", stop).build()).build(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         SvanRepository.init(this)
+        if (app.svan.svaramanas.Svaramanas.bubble.value) app.svan.svaramanas.SvaramanasBubbleService.start(this)
         SessionRouter.init(this)
         SessionRouter.enable()
         isRunning = true

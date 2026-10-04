@@ -180,11 +180,22 @@ $A shell pm grant $EQ android.permission.DUMP
 eq refresh_detection
 wait_for "route: $CAP .*Engine A" 30; sleep 3
 measure "T19 live permission grant discovers existing playback"
+log "T21 Svaramanas static plan on system effects"
+$A logcat -c
+eq svaramanas --ez on true --es feel BRIGHT --es picks VOCALS,GUITARS,DRUMS
+wait_for "svaramanas plan" 30 > "$TMP/e2e_t21_plan.txt"; cat "$TMP/e2e_t21_plan.txt"
+sleep 4
+measure "T21 Svaramanas plan on system effects (expect T0 + response@1k)"
+eq svaramanas --ez on false; sleep 3
 tone $CAP --ez stop true; sleep 3
 log "T20 muted source whose capture goes silent mid-playback must fail open to Engine A"
 eq engine_mode --ez system_only false
 $A logcat -c; eq start_capture --es quality EFFICIENT; wait_for "capture: started" 120
 tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true; sleep 8
+log "T22 Svaramanas hears the captured source"
+eq svaramanas --ez on true --es feel BALANCED --es picks VOCALS
+wait_for "svaramanas heard: valid=true" 40 > "$TMP/e2e_t22_heard.txt"; cat "$TMP/e2e_t22_heard.txt"
+eq svaramanas --ez on false; sleep 3
 tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez nocapture true; sleep 14
 measure "T20 capture-opt-out stream after Engine B muted it (expect T1, not silence)"
 eq stop_capture; sleep 3
@@ -242,6 +253,11 @@ check "Permission granted during playback takes effect without restarting" "$(ne
 T20=$(lvl T20)
 check "Silent capture fails open to Engine A (never leaves silence)" "$(near "$T20" "$T1" 3.0)" "T20=$T20 vs T1=$T1 ±3 dB"
 check "Watchdog logged the fail-open" "$(grep -q 'failing open' "$FULL" && echo 1 || echo 0)" "log line present"
+R21=$(grep -oE 'response@1kHz=-?[0-9.]+' "$TMP/e2e_t21_plan.txt" | tail -1 | grep -oE '[-0-9.]+$')
+T21=$(lvl T21); E21=$(awk -v a="$T0" -v r="$R21" 'BEGIN { print a + r }')
+check "Svaramanas plan reaches system effects" "$(near "$T21" "$E21" 1.0)" "T21=$T21, expected $E21 ±1 dB ($(sed 's/.*svaramanas plan: //' "$TMP/e2e_t21_plan.txt"))"
+H22=$(grep -oE 'loudness=-?[0-9.]+' "$TMP/e2e_t22_heard.txt" | grep -oE '[-0-9.]+$')
+check "Svaramanas hears the captured source" "$(awk -v l="$H22" 'BEGIN { print (l != "" && l > -60 && l < -3) ? 1 : 0 }')" "$(cat "$TMP/e2e_t22_heard.txt")"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
 kill $FULLLOG 2>/dev/null

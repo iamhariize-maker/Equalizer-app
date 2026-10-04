@@ -48,7 +48,8 @@ Engine::Engine(const EngineConfig& cfg)
       autoHeadroom_(cfg.autoHeadroom),
       eq_(std::max(1, cfg.channels), cfg.sampleRate * sanitizeFactor(cfg.oversample)),
       bass_(cfg.sampleRate, std::max(1, cfg.channels)),
-      stereo_(cfg.sampleRate) {
+      stereo_(cfg.sampleRate),
+      analyzer_(cfg.sampleRate, std::clamp(cfg.channels, 1, 2)) {
   cfg_.channels = std::max(1, cfg_.channels);
   cfg_.oversample = sanitizeFactor(cfg_.oversample);
   cfg_.maxBlock = std::max(16, cfg_.maxBlock);
@@ -109,6 +110,7 @@ void Engine::reset() {
   eq_.reset();
   bass_.reset();
   stereo_.reset();
+  analyzer_.reset();
   resetGainProtection();
   for (auto& o : os_) o->reset();
   for (auto& d : dither_) d.reset();
@@ -116,6 +118,8 @@ void Engine::reset() {
 
 void Engine::process(const float* in, float* out, int frames) {
   const int C = cfg_.channels;
+  // Before processing: `in` may alias `out`. The analyser reads the first two channels.
+  if (analysisOn_.load(std::memory_order_relaxed) && C <= 2) analyzer_.process(in, frames);
   const int L = cfg_.oversample;
   bass_.setCharacter(bassCharacter_.load(std::memory_order_relaxed));
   const double xo = bassCrossover_.load(std::memory_order_relaxed);

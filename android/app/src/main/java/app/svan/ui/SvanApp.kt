@@ -28,6 +28,44 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
+
+/** The in-app Svaramanas bubble: tap to open the dialog, hold to hear the music without it. */
+@Composable
+private fun SvaramanasBubble(modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val request by app.svan.svaramanas.Svaramanas.request.collectAsState()
+    val listening by app.svan.svaramanas.Svaramanas.listening.collectAsState()
+    val eq by app.svan.SvanRepository.eq.collectAsState()
+    Box(
+        modifier
+            .size(58.dp)
+            .shadow(10.dp, CircleShape, ambientColor = Svan.Gold, spotColor = Svan.Gold)
+            .clip(CircleShape)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = { app.svan.svaramanas.SvaramanasActivity.open(context) },
+                    onLongPress = { app.svan.svaramanas.Svaramanas.setBypass(true) },
+                    onPress = {
+                        tryAwaitRelease()
+                        if (app.svan.SvanRepository.eq.value.smartBypass) app.svan.svaramanas.Svaramanas.setBypass(false)
+                    },
+                )
+            }
+            .semantics { contentDescription = "Svaramanas. Tap to open, hold to compare." },
+    ) {
+        SvaramanasMark(58.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
+    }
+}
 
 private data class Tab(val label: String, val icon: ImageVector)
 
@@ -83,6 +121,7 @@ fun SvanApp(
             }
         }
     }
+    SvaramanasBubble(Modifier.align(androidx.compose.ui.Alignment.BottomEnd).padding(end = 18.dp, bottom = 96.dp))
     if (!booted) BootAnimation(onDone = { booted = true })
     }
 }

@@ -109,28 +109,42 @@ data class EqState(
     val bass: BassTuner = BassTuner(),
     val vocal: VocalTuner = VocalTuner(),
     val instrument: InstrumentTuner = InstrumentTuner(),
+    /** Svaramanas's smart layer (recomputed live, never persisted). */
+    val smart: SmartLayer? = null,
+    /** Hold-to-compare: the smart layer is skipped while true. */
+    val smartBypass: Boolean = false,
 ) {
+    /** The smart layer the engines should run right now, if any. */
+    val activeSmart: SmartLayer? get() = if (enabled && !smartBypass) smart else null
+
     /** Built-in Flat is a complete audible reset, including independent layers. */
-    fun withPreset(p: Preset): EqState = if (p.builtIn && p.name == "Flat") EqState() else
+    fun withPreset(p: Preset): EqState = if (p.builtIn && p.name == "Flat") EqState(smart = smart, smartBypass = smartBypass) else
         copy(mode = EqMode.PARAMETRIC, bands = p.bands, preampDb = p.preampDb, presetName = p.name, enabled = true)
 
     /** Bands for system effects: the same layers plus static stand-ins for the vocal tuner. */
     fun systemEffectsBands(): List<Band> = if (!enabled) emptyList() else effectiveBands() + vocal.systemEffectsBands()
 
-    val activeVocal: VocalTuner get() = if (enabled) vocal else VocalTuner()
-    val activeInstrument: InstrumentTuner get() = if (enabled) instrument else InstrumentTuner()
+    /** Your tuners, with Svaramanas's suggestions added where you left room (yours always win). */
+    val activeVocal: VocalTuner get() = if (!enabled) VocalTuner() else activeSmart?.let {
+        VocalTuner(maxOf(vocal.intimacy, it.intimacy), vocal.warmth, maxOf(vocal.smoothness, it.smoothness))
+    } ?: vocal
+    val activeInstrument: InstrumentTuner get() = if (!enabled) InstrumentTuner() else activeSmart?.let {
+        InstrumentTuner(if (instrument.space != 0.0) instrument.space else it.space, maxOf(instrument.instruments, it.instruments))
+    } ?: instrument
 
     /** The user's own EQ layer (parametric or graphic). */
     fun manualBands(): List<Band> = if (mode == EqMode.PARAMETRIC) bands else GraphicLayout.bands(graphicCount, graphicGains)
 
     /** The bands the engines actually run: headphone tuning + your EQ + bass tuner. */
     fun effectiveBands(): List<Band> = if (!enabled) emptyList() else
-        (tuning?.takeIf { it.enabled }?.bands ?: emptyList()) + manualBands() + bass.bands()
+        (tuning?.takeIf { it.enabled }?.bands ?: emptyList()) + manualBands() + bass.bands() +
+            (activeSmart?.bands ?: emptyList())
 
     /** Bass shaper amount the engines should run (0 when the EQ is off). */
-    val bassCharacter: Double get() = if (enabled) bass.character else 0.0
+    val bassCharacter: Double get() = if (enabled) (bass.character + (activeSmart?.bassCharacter ?: 0.0)).coerceIn(-1.0, 1.0) else 0.0
 
-    fun effectivePreampDb(): Double = if (enabled) preampDb else 0.0
+    /** Your preamp plus Svaramanas's loudness-matching trim. */
+    fun effectivePreampDb(): Double = if (enabled) preampDb + (activeSmart?.preampDb ?: 0.0) else 0.0
 
     fun toJson(): JSONObject = JSONObject()
         .put("enabled", enabled).put("mode", mode.name)
@@ -172,6 +186,20 @@ data class EqState(
         }
     }
 }
+
+/**
+ * Svaramanas's smart layer: a few bounded bands, a loudness-matching trim and
+ * gentle tuner suggestions (see core/include/eqcore/svaramanas.h).
+ */
+data class SmartLayer(
+    val bands: List<Band>,
+    val preampDb: Double,
+    val bassCharacter: Double = 0.0,
+    val intimacy: Double = 0.0,
+    val smoothness: Double = 0.0,
+    val space: Double = 0.0,
+    val instruments: Double = 0.0,
+)
 
 /**
  * Vocal tuner (centre/mid channel). Exact in the audiophile engine; on system

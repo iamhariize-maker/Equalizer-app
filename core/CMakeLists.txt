@@ -29,7 +29,9 @@ add_library(eqcore STATIC
   src/stereo.cpp
   src/dither.cpp
   src/autoeq.cpp
-  src/engine.cpp)
+  src/engine.cpp
+  src/analyzer.cpp
+  src/svaramanas.cpp)
 target_include_directories(eqcore PUBLIC include)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   # Deliberately no -ffast-math: it would change NaN/denormal behaviour and

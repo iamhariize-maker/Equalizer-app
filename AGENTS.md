@@ -21,13 +21,13 @@ instance per session; never attach both).
 |---|---|
 | `core/` | Portable C++17 DSP library `eqcore` (CMake). 47 unit tests in `core/tests/test_main.cpp` (no framework). |
 | `android/app/src/main/cpp/` | JNI bridge → `eqcore` |
-| `android/app/src/main/java/app/svan/` | Kotlin: engines, routing, repository, UI (Compose) |
+| `android/app/src/main/java/app/svan/` | Kotlin: engines, routing, repository, UI (Compose); `svaramanas/` = controller, dialog, bubble, QS tile |
 | `android/app/src/main/java/app/svan/ui/` | Screens (Sound, EQ, Presets, Hi-Fi, Lab), `Theme.kt` (gold palette), `Brand.kt` (boot animation, brand line, "EQ exten9ed"), `Knob.kt`, `ResponseGraph.kt` |
 | `android/testsource/` | Fake music app (flavors `capturable` / `blocked`) used by emulator tests |
 | `android/scripts/` | `e2e.sh` (23 PASS/FAIL checks), `detection_release.sh` (10 setup/output checks), `diag.sh`, `smoke_release.sh`, `screens.sh` |
 | `tools/brand/` | Generates the launcher icon (स्व) from OFL font outlines with HarfBuzz |
 | `.github/workflows/ci.yml` | **The real test device**: core tests (+ASan/UBSan/TSan), Android build/lint/unit tests, KVM emulator e2e |
-| `docs/` | `HANDOFF.md`, `ARCHITECTURE.md`, `AUDIOPHILE.md` (measured numbers), `SPIKE.md`, `SMART.md` (Svaramanas plan, not yet implemented) |
+| `docs/` | `HANDOFF.md`, `ARCHITECTURE.md`, `AUDIOPHILE.md` (measured numbers), `SPIKE.md`, `SMART.md` (Svaramanas: design, status, next increments) |
 
 ## How to verify (do this before every push)
 ```sh

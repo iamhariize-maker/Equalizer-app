@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         DetectionSetup.refresh()
         SystemEqService.refreshDetection(this)
+        if (app.svan.svaramanas.Svaramanas.bubble.value) app.svan.svaramanas.SvaramanasBubbleService.start(this)
     }
 
     /**
@@ -166,6 +167,21 @@ class MainActivity : ComponentActivity() {
                         .onFailure { EqController.log("tune: failed: $it") }
                 }
             }
+            // Svaramanas: --ez on true --es feel BRIGHT --es picks VOCALS,GUITARS --ef strength 1.0
+            "svaramanas" -> {
+                val feel = intent.getStringExtra("feel")?.let { f -> app.svan.svaramanas.Feel.entries.firstOrNull { it.name == f.uppercase() } }
+                val picks = intent.getStringExtra("picks")?.split(',')?.mapNotNull { n ->
+                    app.svan.svaramanas.Category.entries.firstOrNull { it.name == n.trim().uppercase() }
+                }
+                val strength = intent.getFloatExtra("strength", -1f)
+                app.svan.svaramanas.Svaramanas.update { r ->
+                    r.copy(
+                        enabled = intent.getBooleanExtra("on", true), feel = feel ?: r.feel, picks = picks ?: r.picks,
+                        strength = if (strength >= 0) strength.toDouble() else r.strength,
+                    )
+                }
+            }
+            "svaramanas_panel" -> app.svan.svaramanas.SvaramanasActivity.open(this)
             "dump_lines" -> thread {
                 PlaybackSessions.query(this)
                 EqController.log("DUMP size=${PlaybackSessions.lastDumpSize} err=${PlaybackSessions.lastError}\n${PlaybackSessions.lastConfigLines}")

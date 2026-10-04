@@ -6,6 +6,7 @@
 
 #include "eqcore/autoeq.h"
 #include "eqcore/engine.h"
+#include "eqcore/svaramanas.h"
 #include "eqcore/tuning.h"
 
 using namespace eqcore;
@@ -230,6 +231,62 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeFitCorrection(
   const FrCurve taste = computeCorrection(flat, flat, opt);
   for (size_t i = 0; i < c.hz.size(); ++i) c.db[i] += taste.at(c.hz[i]);
   return packFit(env, fitDenseBands(c, bandCount));
+}
+
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetAnalysis(JNIEnv*, jclass, jlong h, jboolean on) {
+  fromHandle(h)->setAnalysisEnabled(on == JNI_TRUE);
+}
+
+// SourceFeatures in its packed layout (SourceFeatures::kPacked doubles).
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeAnalysis(JNIEnv* env, jclass, jlong h) {
+  std::vector<jdouble> out(SourceFeatures::kPacked);
+  fromHandle(h)->analysis().pack(out.data());
+  jdoubleArray r = env->NewDoubleArray(SourceFeatures::kPacked);
+  env->SetDoubleArrayRegion(r, 0, SourceFeatures::kPacked, out.data());
+  return r;
+}
+
+// Svaramanas plan. features: packed SourceFeatures or null (static plan).
+// Returns [preamp, predictedDelta, bassChar, intimacy, warmth, smoothness, space, instruments,
+//          accepted, rejected, conflictWith, nNotes, notes..., nBands, (type, freq, gain, q)...].
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
+    JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine) {
+  svaramanas::Request r;
+  r.feel = static_cast<svaramanas::Feel>(feel < 0 || feel > 5 ? 0 : feel);
+  const jsize n = order ? env->GetArrayLength(order) : 0;
+  std::vector<jint> o(static_cast<size_t>(n));
+  if (n) env->GetIntArrayRegion(order, 0, n, o.data());
+  for (jint b : o) {
+    r.order.push_back(static_cast<uint32_t>(b));
+    r.categories |= static_cast<uint32_t>(b);
+  }
+  r.strength = strength;
+  r.stereoEngine = stereoEngine == JNI_TRUE;
+  SourceFeatures f;
+  bool have = false;
+  if (features) {
+    const jsize fn = env->GetArrayLength(features);
+    std::vector<jdouble> fv(static_cast<size_t>(fn));
+    env->GetDoubleArrayRegion(features, 0, fn, fv.data());
+    f = SourceFeatures::unpack(fv.data(), fn);
+    have = true;
+  }
+  const auto p = svaramanas::plan(r, have ? &f : nullptr);
+  std::vector<jdouble> out{p.preampDb, p.predictedDeltaDb, p.bassCharacter, p.stereo.intimacy, p.stereo.warmth,
+                           p.stereo.smoothness, p.stereo.space, p.stereo.instruments,
+                           static_cast<double>(p.categories.accepted), static_cast<double>(p.categories.rejected),
+                           static_cast<double>(p.categories.conflictWith), static_cast<double>(p.notes.size())};
+  for (int note : p.notes) out.push_back(note);
+  out.push_back(static_cast<double>(p.bands.size()));
+  for (const auto& b : p.bands) {
+    out.push_back(static_cast<double>(static_cast<int>(b.type)));
+    out.push_back(b.freqHz);
+    out.push_back(b.gainDb);
+    out.push_back(b.q);
+  }
+  jdoubleArray res = env->NewDoubleArray(static_cast<jsize>(out.size()));
+  env->SetDoubleArrayRegion(res, 0, static_cast<jsize>(out.size()), out.data());
+  return res;
 }
 
 JNIEXPORT jint JNICALL Java_app_svan_NativeEngine_nativeLatency(JNIEnv*, jclass, jlong h) {

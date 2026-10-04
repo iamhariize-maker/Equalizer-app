@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Optional: the Svaramanas bubble floating over players. Everything also works without it. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Granted manually over ADB for enhanced session detection (Engine A). -->
     <uses-permission android:name="android.permission.DUMP"
         tools:ignore="ProtectedPermissions" />
@@ -63,6 +65,30 @@
             android:name=".SystemEqService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Svaramanas: dialog over any app, floating bubble, Quick Settings tile. -->
+        <activity
+            android:name=".svaramanas.SvaramanasActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity="app.svan.svaramanas"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.Svan.Overlay" />
+
+        <service
+            android:name=".svaramanas.SvaramanasBubbleService"
+            android:exported="false" />
+
+        <service
+            android:name=".svaramanas.SvaramanasTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_svaramanas"
+            android:label="Svaramanas"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <service
             android:name=".CaptureService"

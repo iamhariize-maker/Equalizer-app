@@ -78,6 +78,12 @@ class NativeEngine(
 
     fun setPreampDb(db: Double) = nativeSetPreamp(handle, db)
 
+    /** Svaramanas listening: the engine analyses its *input* (the source app's audio). */
+    fun setAnalysis(on: Boolean) = nativeSetAnalysis(handle, on)
+
+    /** Long-term features of the input, packed (see eqcore::SourceFeatures). */
+    fun analysis(): DoubleArray = nativeAnalysis(handle)
+
     /** Interleaved float frames; [input] and [output] may be the same array. */
     fun process(input: FloatArray, output: FloatArray, frames: Int) =
         nativeProcess(handle, input, output, frames)
@@ -148,5 +154,10 @@ class NativeEngine(
         @JvmStatic external fun nativeProcess(handle: Long, input: FloatArray, output: FloatArray, frames: Int)
         @JvmStatic external fun nativeResponseDb(handle: Long, channel: Int, freqs: DoubleArray): DoubleArray
         @JvmStatic external fun nativeLatency(handle: Long): Int
+        @JvmStatic external fun nativeSetAnalysis(handle: Long, on: Boolean)
+        @JvmStatic external fun nativeAnalysis(handle: Long): DoubleArray
+        @JvmStatic external fun nativeSvaramanasPlan(
+            features: DoubleArray?, feel: Int, order: IntArray, strength: Double, stereoEngine: Boolean,
+        ): DoubleArray
     }
 }

@@ -12,7 +12,9 @@
 #include <thread>
 #include <vector>
 
+#include "eqcore/analyzer.h"
 #include "eqcore/autoeq.h"
+#include "eqcore/svaramanas.h"
 #include "eqcore/biquad.h"
 #include "eqcore/dither.h"
 #include "eqcore/engine.h"
@@ -1050,6 +1052,314 @@ TEST(quality_presets_are_consistent) {
   CHECK(x.oversample == 8 && x.ditherMode == DitherMode::ShapedTpdf);
   auto ef = EngineConfig::forQuality(QualityMode::Efficient, 48000, 2, 16);
   CHECK(ef.oversample == 1 && ef.ditherBits == 0);
+}
+
+// ---- Svaramanas: SourceAnalyzer -------------------------------------------------
+
+// Deterministic "music-like" test signal: log-spaced sines (equal amplitude per
+// sine = equal power per octave = pink), shaped by shapeDb(f), random phases.
+// Stereo: L/R share the mid signal; `side` adds independent per-channel content.
+std::vector<float> multisine(double fs, double seconds, double fmax, std::function<double(double)> shapeDb,
+                             double rmsDbfs = -20.0, double side = 0.0, unsigned seed = 7) {
+  const int n = 240;
+  const size_t frames = static_cast<size_t>(fs * seconds);
+  std::mt19937 rng(seed);
+  std::uniform_real_distribution<double> ph(0, 2 * kPi);
+  struct Osc { std::complex<double> z, w; double a; };
+  auto make = [&](std::vector<Osc>& v) {
+    for (int i = 0; i < n; ++i) {
+      const double f = 30.0 * std::pow(fmax / 30.0, i / (n - 1.0));
+      v.push_back({std::polar(1.0, ph(rng)), std::polar(1.0, 2 * kPi * f / fs), std::pow(10.0, shapeDb(f) / 20.0)});
+    }
+  };
+  std::vector<Osc> mid, sl, sr;
+  make(mid);
+  if (side > 0) { make(sl); make(sr); }
+  std::vector<double> l(frames), r(frames);
+  for (size_t t = 0; t < frames; ++t) {
+    double m = 0, a = 0, b = 0;
+    for (auto& o : mid) { m += o.a * o.z.imag(); o.z *= o.w; }
+    for (auto& o : sl) { a += o.a * o.z.imag(); o.z *= o.w; }
+    for (auto& o : sr) { b += o.a * o.z.imag(); o.z *= o.w; }
+    l[t] = m + side * a;
+    r[t] = m + side * b;
+  }
+  double e = 0;
+  for (size_t t = 0; t < frames; ++t) e += 0.5 * (l[t] * l[t] + r[t] * r[t]);
+  const double g = std::pow(10.0, rmsDbfs / 20.0) / std::sqrt(e / frames);
+  std::vector<float> out(frames * 2);
+  for (size_t t = 0; t < frames; ++t) { out[2 * t] = float(l[t] * g); out[2 * t + 1] = float(r[t] * g); }
+  return out;
+}
+
+SourceFeatures analyse(const std::vector<float>& x, double fs = 48000) {
+  SourceAnalyzer a(fs, 2);
+  for (size_t i = 0; i < x.size() / 2; i += 480)
+    a.process(&x[i * 2], static_cast<int>(std::min<size_t>(480, x.size() / 2 - i)));
+  return a.snapshot();
+}
+
+auto flatShape = [](double) { return 0.0; };
+
+TEST(fft_matches_direct_dft) {
+  std::vector<std::complex<double>> x(64), y;
+  std::mt19937 rng(1);
+  std::uniform_real_distribution<double> u(-1, 1);
+  for (auto& v : x) v = {u(rng), u(rng)};
+  y = x;
+  fftInPlace(y.data(), 64);
+  double worst = 0;
+  for (int k = 0; k < 64; ++k) {
+    std::complex<double> s = 0;
+    for (int n = 0; n < 64; ++n) s += x[n] * std::polar(1.0, -2 * kPi * k * n / 64.0);
+    worst = std::max(worst, std::abs(s - y[k]));
+  }
+  CHECK(worst < 1e-9);
+}
+
+TEST(analyzer_loudness_matches_bs1770_reference) {
+  // EBU Tech 3341: stereo 1 kHz sine at -23 dBFS peak per channel reads -23 LUFS.
+  const double fs = 48000, a = std::pow(10.0, -23.0 / 20.0);
+  std::vector<float> x(static_cast<size_t>(fs * 6) * 2);
+  for (size_t t = 0; t < x.size() / 2; ++t) x[2 * t] = x[2 * t + 1] = float(a * std::sin(2 * kPi * 1000.0 * t / fs));
+  const auto f = analyse(x, fs);
+  CHECK(f.valid);
+  CHECK_NEAR(f.loudnessLufs, -23.0, 0.2);
+  CHECK_NEAR(f.peakDbfs, -23.0, 0.1);
+  CHECK(f.clipsPerSecond == 0.0);
+}
+
+TEST(analyzer_finds_the_lossy_codec_ceiling) {
+  const auto lossy = analyse(multisine(48000, 8, 16000, flatShape));
+  CHECK(lossy.valid);
+  CHECK(lossy.cutoffHz > 15500 && lossy.cutoffHz < 16800);
+  const auto full = analyse(multisine(48000, 8, 20000, flatShape));
+  CHECK(full.cutoffHz >= 19500);
+}
+
+TEST(analyzer_tilt_and_local_deviations) {
+  const auto pink = analyse(multisine(48000, 8, 20000, flatShape));
+  CHECK_NEAR(pink.tiltDbPerOct, 0.0, 0.6);
+  CHECK(std::fabs(pink.mudDb) < 1.0 && std::fabs(pink.harshDb) < 1.0 && std::fabs(pink.boomDb) < 1.5);
+  auto bump = [](double lo, double hi, double db) {
+    return [=](double f) { return f >= lo && f <= hi ? db : 0.0; };
+  };
+  const auto muddy = analyse(multisine(48000, 8, 20000, bump(180, 560, 6.0)));
+  CHECK(muddy.mudDb > 3.0);
+  CHECK(std::fabs(muddy.harshDb) < 1.5);
+  const auto shrill = analyse(multisine(48000, 8, 20000, bump(2300, 5600, 6.0)));
+  CHECK(shrill.harshDb > 3.0);
+  CHECK(std::fabs(shrill.mudDb) < 1.5);
+  // A darker mix (-3 dB/oct) is a tilt, not a defect.
+  const auto dark = analyse(multisine(48000, 8, 20000, [](double f) { return -3.0 * std::log2(f / 1000.0); }));
+  CHECK_NEAR(dark.tiltDbPerOct, -3.0, 0.6);
+  CHECK(std::fabs(dark.mudDb) < 1.0 && std::fabs(dark.harshDb) < 1.0);
+}
+
+TEST(analyzer_stereo_image) {
+  const auto mono = analyse(multisine(48000, 6, 20000, flatShape));
+  CHECK(mono.monoLike);
+  CHECK_NEAR(mono.correlation, 1.0, 1e-3);
+  const auto wide = analyse(multisine(48000, 6, 20000, flatShape, -20.0, 1.0));
+  CHECK(!wide.monoLike);
+  CHECK(wide.correlation < 0.7);
+  CHECK(wide.sideToMidDb > -6.0);
+}
+
+TEST(analyzer_pauses_do_not_wash_out_the_picture) {
+  auto x = multisine(48000, 7, 20000, flatShape);
+  const auto before = analyse(x);
+  x.resize(x.size() + static_cast<size_t>(48000 * 10) * 2, 0.0f);  // 10 s pause
+  const auto after = analyse(x);
+  CHECK(after.valid);
+  CHECK_NEAR(after.loudnessLufs, before.loudnessLufs, 0.3);
+  CHECK_NEAR(after.mudDb, before.mudDb, 0.3);
+}
+
+TEST(analyzer_flags_a_clipped_master) {
+  const double fs = 48000;
+  std::vector<float> x(static_cast<size_t>(fs * 6) * 2);
+  for (size_t t = 0; t < x.size() / 2; ++t) {
+    const double v = std::clamp(2.0 * std::sin(2 * kPi * 220.0 * t / fs), -1.0, 1.0);
+    x[2 * t] = x[2 * t + 1] = float(v);
+  }
+  const auto f = analyse(x, fs);
+  CHECK(f.clipsPerSecond > 100.0);
+  CHECK(f.plrDb < 8.0);
+}
+
+TEST(analyzer_features_round_trip_through_the_packed_layout) {
+  const auto f = analyse(multisine(48000, 6, 16000, flatShape));
+  std::vector<double> packed(SourceFeatures::kPacked);
+  f.pack(packed.data());
+  const auto g = SourceFeatures::unpack(packed.data(), static_cast<int>(packed.size()));
+  CHECK(g.valid == f.valid && g.cutoffHz == f.cutoffHz && g.mudDb == f.mudDb && g.bandDb == f.bandDb);
+}
+
+// ---- Svaramanas: policy + guardrails --------------------------------------------
+
+namespace sv = eqcore::svaramanas;
+
+sv::Request req(sv::Feel feel, std::vector<uint32_t> order, double strength = 1.0) {
+  sv::Request r;
+  r.feel = feel;
+  r.order = order;
+  for (auto b : order) r.categories |= b;
+  r.strength = strength;
+  return r;
+}
+
+TEST(svaramanas_three_always_four_only_without_a_clash) {
+  auto c = sv::checkCategories(req(sv::Feel::Balanced, {sv::kVocals, sv::kGuitars, sv::kBass, sv::kDrums}));
+  CHECK(c.accepted == (sv::kVocals | sv::kGuitars | sv::kBass | sv::kDrums) && c.rejected == 0);
+  // Guitars as the 4th pick fight the vocals for 1.8-3 kHz: refused, and we say with whom.
+  c = sv::checkCategories(req(sv::Feel::Balanced, {sv::kVocals, sv::kStrings, sv::kBass, sv::kGuitars}));
+  CHECK(c.accepted == (sv::kVocals | sv::kStrings | sv::kBass));
+  CHECK(c.rejected == sv::kGuitars && (c.conflictWith & sv::kVocals));
+  // The first three always stand, even when they overlap.
+  c = sv::checkCategories(req(sv::Feel::Balanced, {sv::kVocals, sv::kGuitars, sv::kPiano}));
+  CHECK(c.accepted == (sv::kVocals | sv::kGuitars | sv::kPiano));
+  // Never more than four.
+  c = sv::checkCategories(req(sv::Feel::Balanced, {sv::kVocals, sv::kBass, sv::kDrums, sv::kSpace, sv::kSynth}));
+  CHECK(c.rejected == sv::kSynth);
+}
+
+TEST(svaramanas_guardrails_hold_for_every_combination) {
+  int plans = 0, failures = 0;
+  for (int feel = 0; feel <= 5; ++feel)
+    for (uint32_t mask = 0; mask < (1u << sv::kCategoryCount); ++mask) {
+      int bits = 0;
+      for (uint32_t m = mask; m; m &= m - 1) ++bits;
+      if (bits > 5) continue;
+      for (double strength : {0.5, 1.0, 1.5}) {
+        sv::Request r;
+        r.feel = static_cast<sv::Feel>(feel);
+        r.categories = mask;
+        r.strength = strength;
+        const auto p = sv::plan(r, nullptr);
+        ++plans;
+        double positive = 0, peak = -100;
+        bool ok = true;
+        for (const auto& b : p.bands) {
+          ok = ok && std::fabs(b.gainDb) <= sv::kMaxBandDb + 1e-9;
+          if (b.gainDb > 0) positive += b.gainDb;
+        }
+        for (double f = 20; f < 20000; f *= 1.05) {
+          double h = 0;
+          for (const auto& b : p.bands) h += magnitudeDb(designBiquad(b, 48000), f, 48000);
+          peak = std::max(peak, h);
+        }
+        ok = ok && positive <= sv::kEmphasisBudgetDb + 1e-9;
+        ok = ok && peak <= 6.0;
+        // Loudness matched: trim cancels the predicted change (unless clamped).
+        if (p.preampDb > -8.0 && p.preampDb < 1.5) ok = ok && std::fabs(p.preampDb + p.predictedDeltaDb) < 1e-9;
+        ok = ok && p.stereo.intimacy >= 0 && p.stereo.intimacy <= 1 && p.stereo.space >= -1 && p.stereo.space <= 1;
+        ok = ok && __builtin_popcount(p.categories.accepted) <= sv::kMaxCategories;
+        if (!ok) ++failures;
+      }
+    }
+  std::printf("    %d plans checked\n", plans);
+  CHECK(failures == 0);
+}
+
+// Runs the engine with a plan and returns (input LUFS, output LUFS) measured by the analyser.
+std::pair<double, double> measureThroughEngine(const std::vector<float>& x, const sv::Plan& p) {
+  EngineConfig c;
+  c.sampleRate = 48000;
+  c.channels = 2;
+  c.autoHeadroom = false;
+  c.gainProtection = false;
+  Engine e(c);
+  e.setBandsAllChannels(p.bands);
+  e.setPreampDb(p.preampDb);
+  std::vector<float> y(x.size());
+  for (size_t i = 0; i < x.size() / 2; i += 512) {
+    const int n = static_cast<int>(std::min<size_t>(512, x.size() / 2 - i));
+    e.process(&x[i * 2], &y[i * 2], n);
+  }
+  return {analyse(x).loudnessLufs, analyse(y).loudnessLufs};
+}
+
+TEST(svaramanas_is_loudness_matched_when_measured) {
+  // Never win by being louder: the measured K-weighted loudness after the smart
+  // layer stays within 0.5 dB of the original, on pink and on a dark mix.
+  const auto pink = multisine(48000, 8, 20000, flatShape, -24.0, 0.5);
+  const auto dark = multisine(48000, 8, 20000, [](double f) { return -2.0 * std::log2(f / 1000.0); }, -24.0, 0.5);
+  const std::vector<sv::Request> cases = {
+      req(sv::Feel::Bright, {sv::kVocals, sv::kGuitars, sv::kDrums}),
+      req(sv::Feel::Warm, {sv::kBass, sv::kStrings}),
+      req(sv::Feel::Punchy, {sv::kDrums, sv::kBass, sv::kSynth, sv::kSpace}, 1.5),
+      req(sv::Feel::Intimate, {sv::kVocals, sv::kPiano}),
+  };
+  for (const auto* sig : {&pink, &dark}) {
+    const auto heard = analyse(*sig);
+    for (const auto& r : cases) {
+      const auto p = sv::plan(r, &heard);
+      const auto [in, out] = measureThroughEngine(*sig, p);
+      std::printf("    delta %.2f dB (predicted %.2f before trim)\n", out - in, p.predictedDeltaDb);
+      CHECK_NEAR(out - in, 0.0, 0.5);
+    }
+  }
+}
+
+TEST(svaramanas_trims_what_it_hears_and_leaves_a_clean_mix_alone) {
+  const auto clean = analyse(multisine(48000, 8, 20000, flatShape, -20.0, 0.5));
+  auto p = sv::plan(req(sv::Feel::Balanced, {}), &clean);
+  for (const auto& b : p.bands) CHECK(std::fabs(b.gainDb) < 1e-9);  // nothing to fix, nothing asked
+  auto bump = [](double lo, double hi, double db) { return [=](double f) { return f >= lo && f <= hi ? db : 0.0; }; };
+  const auto muddy = analyse(multisine(48000, 8, 20000, bump(180, 560, 6.0), -20.0, 0.5));
+  p = sv::plan(req(sv::Feel::Balanced, {}), &muddy);
+  bool cut = false;
+  for (const auto& b : p.bands) cut = cut || (b.freqHz == 300 && b.gainDb < -0.5 && b.gainDb >= -sv::kMaxCorrectionDb);
+  CHECK(cut);
+  CHECK(std::find(p.notes.begin(), p.notes.end(), sv::kNoteMud) != p.notes.end());
+}
+
+TEST(svaramanas_respects_lossy_sources_mono_files_and_crushed_masters) {
+  const auto lossy = analyse(multisine(48000, 8, 16000, flatShape, -20.0, 0.5));
+  auto p = sv::plan(req(sv::Feel::Bright, {sv::kSynth, sv::kSpace}), &lossy);
+  for (const auto& b : p.bands) CHECK(!(b.gainDb > 0 && b.freqHz >= 0.7 * lossy.cutoffHz));
+  CHECK(std::find(p.notes.begin(), p.notes.end(), sv::kNoteLossy) != p.notes.end());
+
+  const auto mono = analyse(multisine(48000, 6, 20000, flatShape));
+  p = sv::plan(req(sv::Feel::Spacious, {sv::kSpace}), &mono);
+  CHECK(p.stereo.space == 0.0 && p.stereo.instruments == 0.0);
+
+  // A limited, clipping master: lifts are halved (more boost would only clip).
+  SourceFeatures crushed = mono;
+  crushed.plrDb = 6.0;
+  crushed.clipsPerSecond = 50.0;
+  const auto loudReq = req(sv::Feel::Bright, {sv::kVocals});
+  const auto a = sv::plan(loudReq, &crushed);
+  const auto b = sv::plan(loudReq, &mono);
+  double pa = 0, pb = 0;
+  for (const auto& x : a.bands) pa += std::max(0.0, x.gainDb);
+  for (const auto& x : b.bands) pb += std::max(0.0, x.gainDb);
+  CHECK(pa < 0.6 * pb);
+}
+
+TEST(svaramanas_keeps_one_band_skeleton_per_request) {
+  // Adaptive updates slew band by band, so what was heard must never change the layout.
+  const auto r = req(sv::Feel::Warm, {sv::kVocals, sv::kBass});
+  const auto a = sv::plan(r, nullptr);
+  const auto heard = analyse(multisine(48000, 8, 16000, [](double f) { return f > 200 && f < 500 ? 6.0 : 0.0; }));
+  const auto b = sv::plan(r, &heard);
+  CHECK(a.bands.size() == b.bands.size());
+  for (size_t i = 0; i < std::min(a.bands.size(), b.bands.size()); ++i)
+    CHECK(a.bands[i].type == b.bands[i].type && a.bands[i].freqHz == b.bands[i].freqHz && a.bands[i].q == b.bands[i].q);
+}
+
+TEST(engine_analyses_the_source_not_its_own_output) {
+  EngineConfig c;
+  c.sampleRate = 48000;
+  c.channels = 2;
+  Engine e(c);
+  e.setPreampDb(-12.0);
+  e.setAnalysisEnabled(true);
+  auto x = multisine(48000, 6, 20000, flatShape, -20.0, 0.5);
+  const double in = analyse(x).loudnessLufs;
+  for (size_t i = 0; i < x.size() / 2; i += 256) e.process(&x[i * 2], &x[i * 2], 256);  // in place
+  CHECK_NEAR(e.analysis().loudnessLufs, in, 0.2);
 }
 
 int main(int argc, char** argv) {

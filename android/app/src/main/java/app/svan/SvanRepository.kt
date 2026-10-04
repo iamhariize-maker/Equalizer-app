@@ -62,6 +62,7 @@ object SvanRepository {
             applyCurve(_eq.value)
             EqController.globalEq.reconfigure(_settings.value.systemBands, _settings.value.systemFrameMs)
             initialized = true
+            app.svan.svaramanas.Svaramanas.init(appContext)
             scope.launch {
                 // StateFlow is already conflated: a slow binder update never queues stale curves.
                 kotlinx.coroutines.flow.combine(_eq, _settings) { state, settings -> state to settings }.collect { (state, _) ->
@@ -86,7 +87,11 @@ object SvanRepository {
         it.withPreset(p)
     }
 
-    fun resetSound() = update { EqState() }
+    /** Full reset: every layer, and Svaramanas goes back to resting. */
+    fun resetSound() {
+        app.svan.svaramanas.Svaramanas.update { it.copy(enabled = false) }
+        update { EqState() }
+    }
 
     /** Imports AutoEq / Equalizer APO text. Returns the number of bands, or 0 if nothing parsed. */
     fun importParametric(name: String, text: String): Int {
