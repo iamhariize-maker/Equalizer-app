@@ -69,9 +69,14 @@ jobs:
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug assembleRelease :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
       - name: Prepare output dir
-        run: mkdir -p e2e-out
+        run: |
+          mkdir -p e2e-out
+          curl -fL --retry 3 https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk -o shizuku.apk
+          echo '6e273ab0e991c4e79bc8b1bbb9b9dd739ccac1a8712a541a214078886b7b790f  shizuku.apk' | sha256sum -c -
       - name: Run e2e on emulator
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          SHIZUKU_APK: ${{ github.workspace }}/shizuku.apk
         with:
           api-level: 34
           target: default
@@ -80,7 +85,7 @@ jobs:
           # No -noaudio: the test needs the emulator's audio HAL.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
-          script: bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/e2e.sh emulator-5554 ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" || true
+          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/e2e.sh emulator-5554 ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" || true
       - name: Results
         if: always()
         run: |
@@ -89,6 +94,9 @@ jobs:
           grep -q '^PASS release smoke test' e2e-out/smoke.txt
           ! grep -q '^FAIL' e2e-out/e2e_results.txt
           grep -q '^PASS sound scroll preserves EQ settings' e2e-out/screens/interaction.txt
+          cat e2e-out/detection/detection.txt
+          ! grep -q '^FAIL' e2e-out/detection/detection.txt
+          test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:

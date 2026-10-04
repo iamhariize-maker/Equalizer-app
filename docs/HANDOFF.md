@@ -6,6 +6,31 @@ Start with `AGENTS.md`. This file has the detail.
 
 ## Continuation — 2026-10-04
 
+Phone report after `55f84f8` / CI `37169778164` (all tests green and screenshots
+reviewed): installed successfully, but YouTube Music remained completely
+unprocessed. Screenshots show zero detected apps; the running capture service
+was processing silence at 29.4% measured DSP load. Wi-Fi is available. Other
+players are available on a different phone but have not yet been tested.
+
+Current follow-up addresses the delivery-to-audio gap, with CI pending at writing:
+- Runtime session receiver in SystemEqService accepts general player broadcasts.
+  The old tests explicitly addressed Svan, hiding Android's manifest-only receiver
+  limitation. New checks omit the package and revoke DUMP.
+- Phone-only Music detection setup uses Shizuku 13.1.5 API (MIT) and a fixed,
+  short-lived UserService to grant only Svan's DUMP permission. Normal operation
+  remains in Svan's own process; the helper can be stopped afterwards.
+- Discovery refreshes after a live grant and polls every five seconds as backup.
+  Duplicate playback records preserve a playing sibling and all capture opt-outs.
+- No admitted source skips DSP/dither and produces zero output; input/output
+  signal peaks make silence visible. EQ status no longer calls zero apps active.
+- `detection_release.sh` exercises the R8 grant service against pinned official
+  Shizuku 13.6.0 under shell identity, already-playing discovery, helper shutdown,
+  single-copy 4× capture, graphic +6 dB, bypass, and parametric −12 dB.
+- Version 0.2 requires another phone check after setup. Android/OEM behavior,
+  Bluetooth delay and perceived sound quality are still not established by CI.
+
+The original priorities and previous implementation history follow.
+
 User now reports heavy delay / echo-like doubled playback with **YouTube Music
 on Bluetooth** on the TECNO LH7n. Other players/outputs are untested. They want
 Svan’s own identity, measurable feature effectiveness and fewer unsupported claims.

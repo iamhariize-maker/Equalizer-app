@@ -24,7 +24,7 @@ class PlaybackSessionsTest {
         assertEquals(setOf(1281, 2049), s.keys) // sessionId 0 and non-config lines skipped
         assertEquals(10234, s[1281]!!.uid)
         assertEquals("USAGE_MEDIA", s[1281]!!.usage)
-        assertEquals("stopped", s[1281]!!.state) // later player on the same session wins
+        assertEquals("started", s[1281]!!.state) // a stopped sibling must not hide playing audio
         assertTrue(s[1281]!!.usageCapturable)
         assertFalse(s[1281]!!.flagsBlockCapture)
     }
@@ -40,5 +40,13 @@ class PlaybackSessionsTest {
     fun nonMediaUsageIsNotCapturable() {
         val line = "AudioPlaybackConfiguration piid:1 u/pid:10001/1 state:started attr:AudioAttributes: usage=USAGE_VOICE_COMMUNICATION content=CONTENT_TYPE_SPEECH flags=0x0 sessionId:9"
         assertFalse(PlaybackSessions.parse(line).single().usageCapturable)
+    }
+
+    @Test
+    fun sharedSessionPreservesCaptureOptOutFromAnyPlayer() {
+        val blocked = "AudioPlaybackConfiguration u/pid:10234/4 state:paused usage=USAGE_MEDIA flags=0x400 sessionId:1281"
+        val s = PlaybackSessions.parse(dump + "\n" + blocked).first { it.sessionId == 1281 }
+        assertEquals("started", s.state)
+        assertTrue(s.flagsBlockCapture)
     }
 }

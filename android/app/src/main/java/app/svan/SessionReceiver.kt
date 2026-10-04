@@ -6,11 +6,11 @@ import android.content.Intent
 import android.media.audiofx.AudioEffect
 
 /**
- * Standard session hand-off: well-behaved players (Spotify, YouTube Music, most
- * local players) broadcast OPEN/CLOSE when they start/stop an audio session.
+ * Runtime receiver owned by the foreground service. Players may broadcast
+ * OPEN/CLOSE explicitly or implicitly when they create/release a session.
  *
  * Players that don't broadcast are found through the audio-service dump instead
- * (PlaybackSessions; requires `adb shell pm grant app.svan android.permission.DUMP`).
+ * (PlaybackSessions; enabled by the phone-only detection setup).
  * Either way, SessionRouter decides which engine owns the session.
  */
 class SessionReceiver : BroadcastReceiver() {

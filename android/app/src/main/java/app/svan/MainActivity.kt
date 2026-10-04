@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         SvanRepository.init(this)
         SessionRouter.init(this)
+        DetectionSetup.init(this)
         SystemEqService.startIfEnabled(this)
 
         val dump = checkSelfPermission(Manifest.permission.DUMP) == PackageManager.PERMISSION_GRANTED
@@ -56,6 +57,12 @@ class MainActivity : ComponentActivity() {
         handleCommand(intent)
     }
 
+    override fun onResume() {
+        super.onResume()
+        DetectionSetup.refresh()
+        SystemEqService.refreshDetection(this)
+    }
+
     /**
      * Scriptable entry points for automated tests (output goes to logcat tag EqSpike):
      *   adb shell am start -n app.svan/.MainActivity --es cmd <command> [--es quality EFFICIENT]
@@ -76,11 +83,18 @@ class MainActivity : ComponentActivity() {
                 EqController.log("preset bands=$n response@1kHz=%.2f dB".format(r))
             }
             "state" -> EqController.log("EQ_STATE " + SvanRepository.eq.value.toJson().toString())
+            "setup_detection" -> DetectionSetup.enable()
+            "refresh_detection" -> SystemEqService.refreshDetection(this)
             "gain_settings" -> SvanRepository.updateSettings {
                 it.copy(autoHeadroom = intent.getBooleanExtra("headroom", true), gainProtection = intent.getBooleanExtra("protection", true))
             }
             "eq_band" -> SvanRepository.update {
-                it.copy(bands = listOf(app.svan.model.Band(freqHz = intent.getFloatExtra("frequency", 1000f).toDouble(), gainDb = intent.getFloatExtra("gain", 0f).toDouble())), preampDb = 0.0, tuning = null, bass = app.svan.model.BassTuner(), vocal = app.svan.model.VocalTuner(), instrument = app.svan.model.InstrumentTuner())
+                it.copy(mode = app.svan.model.EqMode.PARAMETRIC, bands = listOf(app.svan.model.Band(freqHz = intent.getFloatExtra("frequency", 1000f).toDouble(), gainDb = intent.getFloatExtra("gain", 0f).toDouble())), preampDb = 0.0, tuning = null, bass = app.svan.model.BassTuner(), vocal = app.svan.model.VocalTuner(), instrument = app.svan.model.InstrumentTuner())
+            }
+            "graphic_test" -> SvanRepository.update {
+                it.copy(mode = app.svan.model.EqMode.GRAPHIC, graphicCount = 10,
+                    graphicGains = List(10) { band -> if (band == 5) 6.0 else 0.0 }, preampDb = 0.0,
+                    tuning = null, bass = app.svan.model.BassTuner(), vocal = app.svan.model.VocalTuner(), instrument = app.svan.model.InstrumentTuner())
             }
             "bypass" -> SvanRepository.update { it.copy(enabled = !intent.getBooleanExtra("off", true)) }
             "app_engine" -> {

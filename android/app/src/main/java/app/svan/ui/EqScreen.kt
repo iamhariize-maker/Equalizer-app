@@ -34,6 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -50,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.svan.CaptureService
+import app.svan.DetectionSetup
 import app.svan.EqController
 import app.svan.NativeEngine.FilterType
 import app.svan.SessionRouter
@@ -65,9 +67,10 @@ import kotlin.math.pow
 private const val MAX_BANDS = 128
 
 @Composable
-fun EqScreen() {
+fun EqScreen(onOpenDetection: () -> Unit = {}) {
     val eq by SvanRepository.eq.collectAsState()
     val settings by SvanRepository.settings.collectAsState()
+    val detection by DetectionSetup.state.collectAsState()
     var selected by remember { mutableIntStateOf(0) }
     if (selected >= eq.bands.size) selected = eq.bands.size - 1
 
@@ -79,6 +82,9 @@ fun EqScreen() {
 
     Column(Modifier.fillMaxSize()) {
         Header(eq.enabled, eq.presetName, settings.quality.title) { SvanRepository.update { it.copy(enabled = !it.enabled) } }
+        if (detection.stage != DetectionSetup.Stage.READY) {
+            TextButton(onClick = onOpenDetection, modifier = Modifier.fillMaxWidth()) { Text("Music not detected? Set up in Hi-Fi") }
+        }
 
         // Graph stays pinned while the controls scroll.
         Box(
@@ -174,7 +180,7 @@ private fun Header(enabled: Boolean, preset: String, quality: String, onPower: (
                 Text(preset, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
                     maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 Spacer(Modifier.width(8.dp))
-                EngineStatus(quality)
+                EngineStatus(quality, enabled)
             }
         }
         val ring = if (enabled) Svan.Gold else Svan.Outline
@@ -211,22 +217,24 @@ private fun Header(enabled: Boolean, preset: String, quality: String, onPower: (
 
 /** Which engine is live and how many apps it covers (polled; routes aren't observable). */
 @Composable
-private fun EngineStatus(quality: String) {
+private fun EngineStatus(quality: String, enabled: Boolean) {
     var text by remember { mutableStateOf("") }
-    LaunchedEffect(quality) {
+    var live by remember { mutableStateOf(false) }
+    LaunchedEffect(quality, enabled) {
         while (true) {
             val routes = SessionRouter.snapshot
-            val b = routes.count { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }
-            val a = routes.count { it.owner == SessionRouter.Owner.ENGINE_A }
+            val b = routes.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.map { it.pkg }.distinct().size
+            val a = routes.filter { it.owner == SessionRouter.Owner.ENGINE_A && it.sessionId in EqController.globalEq.attachedSessions }.map { it.pkg }.distinct().size
+            live = enabled && (a > 0 || b > 0)
             text = when {
-                CaptureService.isRunning -> "$quality · $b app${if (b == 1) "" else "s"}" + if (a > 0) " · +$a system" else ""
+                !enabled -> "EQ bypassed"
+                CaptureService.isRunning && b > 0 -> "$quality · $b app${if (b == 1) "" else "s"}" + if (a > 0) " · +$a system" else ""
                 a > 0 -> "System EQ · $a app${if (a == 1) "" else "s"}"
-                else -> "Waiting for audio"
+                else -> "No music connected"
             }
             delay(1000)
         }
     }
-    val live = CaptureService.isRunning
     Row(
         Modifier.clip(RoundedCornerShape(50)).background(Svan.SurfaceHigh).padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,

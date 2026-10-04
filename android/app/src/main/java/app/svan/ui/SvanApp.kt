@@ -75,7 +75,7 @@ fun SvanApp(
             AnimatedContent(tab, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "tab") { t ->
                 when (t) {
                     0 -> SoundScreen()
-                    1 -> EqScreen()
+                    1 -> EqScreen(onOpenDetection = { tab = 3 })
                     2 -> PresetsScreen()
                     3 -> AudiophileScreen(onStartCapture, onStopCapture)
                     else -> LabScreen(labActions)
@@ -86,4 +86,3 @@ fun SvanApp(
     if (!booted) BootAnimation(onDone = { booted = true })
     }
 }
-

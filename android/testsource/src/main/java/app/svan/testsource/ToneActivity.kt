@@ -20,6 +20,7 @@ class ToneActivity : Activity() {
 
     @Volatile private var playing = false
     private var thread: Thread? = null
+    private var explicitBroadcast = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +38,7 @@ class ToneActivity : Activity() {
         val freq = intent.getFloatExtra("freq", 1000f).toDouble()
         val amp = intent.getFloatExtra("amp", 0.25f)
         val broadcast = intent.getBooleanExtra("broadcast", true)
+        explicitBroadcast = intent.getBooleanExtra("explicit", true)
         playing = true
         thread = Thread { play(freq, amp, broadcast) }.also { it.start() }
     }
@@ -86,7 +88,7 @@ class ToneActivity : Activity() {
                 .putExtra(AudioEffect.EXTRA_AUDIO_SESSION, session)
                 .putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
                 .putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-                .setPackage(EQ_PACKAGE), // explicit: implicit broadcasts to manifest receivers are dropped
+                .apply { if (explicitBroadcast) setPackage(EQ_PACKAGE) },
         )
     }
 

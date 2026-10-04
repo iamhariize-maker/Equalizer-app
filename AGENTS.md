@@ -24,7 +24,7 @@ instance per session; never attach both).
 | `android/app/src/main/java/app/svan/` | Kotlin: engines, routing, repository, UI (Compose) |
 | `android/app/src/main/java/app/svan/ui/` | Screens (Sound, EQ, Presets, Hi-Fi, Lab), `Theme.kt` (gold palette), `Brand.kt` (boot animation, brand line, "EQ exten9ed"), `Knob.kt`, `ResponseGraph.kt` |
 | `android/testsource/` | Fake music app (flavors `capturable` / `blocked`) used by emulator tests |
-| `android/scripts/` | `e2e.sh` (20 PASS/FAIL checks), `diag.sh`, `smoke_release.sh`, `screens.sh` |
+| `android/scripts/` | `e2e.sh` (23 PASS/FAIL checks), `detection_release.sh` (7 setup/output checks), `diag.sh`, `smoke_release.sh`, `screens.sh` |
 | `tools/brand/` | Generates the launcher icon (स्व) from OFL font outlines with HarfBuzz |
 | `.github/workflows/ci.yml` | **The real test device**: core tests (+ASan/UBSan/TSan), Android build/lint/unit tests, KVM emulator e2e |
 | `docs/` | `HANDOFF.md`, `ARCHITECTURE.md`, `AUDIOPHILE.md` (measured numbers), `SPIKE.md` |

@@ -135,6 +135,7 @@ class CaptureService : Service() {
             EqController.log("capture: started, quality=${settings.quality}, DSP latency=${dsp.latencyFrames} frames, output buffer=${output.bufferSizeInFrames} frames")
             val buf = FloatArray(frames * 2)
             var levelPeak = 0f
+            var outputPeak = 0f
             var levelFrames = 0L
             var writtenFrames = 0L
             var dspNanos = 0L
@@ -170,9 +171,16 @@ class CaptureService : Service() {
                 if (n == 0) continue
                 for (i in 0 until n) levelPeak = maxOf(levelPeak, kotlin.math.abs(buf[i]))
                 levelFrames += n / 2
-                val begin = System.nanoTime()
-                dsp.process(buf, buf, n / 2)
-                dspNanos += System.nanoTime() - begin
+                if (allowed.isNotEmpty()) {
+                    val begin = System.nanoTime()
+                    dsp.process(buf, buf, n / 2)
+                    dspNanos += System.nanoTime() - begin
+                } else {
+                    // No admitted source: do not spend phone CPU oversampling
+                    // silence or let dither/filter tails masquerade as music.
+                    java.util.Arrays.fill(buf, 0, n, 0f)
+                }
+                for (i in 0 until n) outputPeak = maxOf(outputPeak, kotlin.math.abs(buf[i]))
                 processedFrames += n / 2
                 var written = 0
                 while (running && written < n) {
@@ -187,9 +195,11 @@ class CaptureService : Service() {
                     stats = Stats(output.bufferSizeInFrames * 1000.0 / rate, queued * 1000.0 / rate,
                         dsp.latencyFrames * 1000.0 / rate, output.underrunCount,
                         dspNanos.toDouble() / (processedFrames * 1e9 / rate) * 100.0,
-                        dsp.appliedGainDb, dsp.gainProtectionDb)
+                        dsp.appliedGainDb, dsp.gainProtectionDb,
+                        20.0 * kotlin.math.log10(maxOf(levelPeak.toDouble(), 1e-6)),
+                        20.0 * kotlin.math.log10(maxOf(outputPeak.toDouble(), 1e-6)))
                     EqController.log("capture level: peak=%.4f over %d frames; output queued=%.1f ms, underruns=%d, DSP=%.1f%%".format(levelPeak, levelFrames, stats!!.queuedMs, stats!!.underruns, stats!!.dspPercent))
-                    levelPeak = 0f; levelFrames = 0; dspNanos = 0; processedFrames = 0
+                    levelPeak = 0f; outputPeak = 0f; levelFrames = 0; dspNanos = 0; processedFrames = 0
                 }
             }
         } catch (e: Exception) {
@@ -274,7 +284,8 @@ class CaptureService : Service() {
     }
 
     data class Stats(val bufferMs: Double, val queuedMs: Double, val dspLatencyMs: Double,
-        val underruns: Int, val dspPercent: Double, val gainDb: Double, val protectionDb: Double)
+        val underruns: Int, val dspPercent: Double, val gainDb: Double, val protectionDb: Double,
+        val inputPeakDb: Double, val outputPeakDb: Double)
 
     companion object {
         @Volatile var stats: Stats? = null

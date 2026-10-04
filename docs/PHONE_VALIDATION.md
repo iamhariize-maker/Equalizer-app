@@ -15,13 +15,37 @@ settings you need. No ADB commands are required for the listening checklist.
 
 ## YouTube Music / Bluetooth first
 
+The 0.1 preview was installed and tested: screenshots show zero detected apps,
+so none of its EQ changes reached YouTube Music. Version 0.2 repairs the runtime
+broadcast listener and adds a phone-only enhanced-detection setup. Wi-Fi is
+available on the user's TECNO; other players have not yet been tested.
+
+Before listening in 0.2:
+
+1. Open Hi-Fi → Music detection. Some players connect through the new runtime
+   receiver. Enable enhanced detection if YouTube Music remains missing.
+2. Install Shizuku from the linked official download page. With Wi-Fi connected,
+   follow Shizuku's instructions to enable Developer options / Wireless debugging,
+   pair using the displayed code and start Shizuku. No PC or root is required on
+   this Android 14 phone. Pairing/start requires the user's Android UI actions.
+3. Return to Svan and tap Enable music detection. Approve Svan in Shizuku's dialog.
+   Svan's single-purpose setup service grants only its own DUMP permission.
+4. After Enhanced detection enabled appears, Shizuku and wireless debugging can
+   be stopped. The grant persists until revoked or Svan is uninstalled. An update
+   signed with the same key preserves it; a different preview key may require a
+   reinstall and therefore setup again.
+5. Keep a song playing and check the YouTube Music row. A running capture service
+   without a connected player is not working EQ. On Engine B, input/output peaks
+   near −120 dBFS mean silence; the output-queue reading alone never proves music
+   is being processed. Report the app row, signal peaks and any detection error.
+
 Use a familiar song at a comfortable, fixed phone volume. Keep headphone tuning,
 bass, vocal and orchestral controls off initially, with a flat EQ and 0 dB preamp.
 
 1. Hi-Fi: start the system equalizer. Play YouTube Music, return to Hi-Fi and
    check Apps & engines. If it is missing, Svan has not detected its session;
    do not assume the EQ is processing it. Apps without session broadcasts need
-   enhanced detection, which currently requires an ADB DUMP grant.
+   enhanced detection through the phone-only setup above (or an ADB DUMP grant).
 2. Start the audiophile engine. The player must appear as **Audiophile engine**,
    rather than just the service saying it is running. Listen for an echo, a
    pause when switching, crackle and persistent delay. A blocked or undetected

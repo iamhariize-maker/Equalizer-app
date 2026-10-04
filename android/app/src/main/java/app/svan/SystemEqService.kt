@@ -7,10 +7,15 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.media.AudioPlaybackConfiguration
+import android.media.audiofx.AudioEffect
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -19,6 +24,15 @@ class SystemEqService : Service() {
     private val executor = Executors.newSingleThreadExecutor()
     private val syncPending = AtomicBoolean(false)
     private var callback: AudioManager.AudioPlaybackCallback? = null
+    private val sessionReceiver = SessionReceiver()
+    private val main = Handler(Looper.getMainLooper())
+    private val rescan = object : Runnable {
+        override fun run() {
+            if (!isRunning) return
+            sync()
+            main.postDelayed(this, 5_000)
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -39,16 +53,21 @@ class SystemEqService : Service() {
         SessionRouter.init(this)
         SessionRouter.enable()
         isRunning = true
-        if (PlaybackSessions.hasDumpPermission(this)) {
-            callback = object : AudioManager.AudioPlaybackCallback() {
-                override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) { sync() }
-            }.also { getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(it, null) }
-            sync()
-        }
+        ContextCompat.registerReceiver(this, sessionReceiver, IntentFilter().apply {
+            addAction(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION)
+            addAction(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION)
+        }, ContextCompat.RECEIVER_EXPORTED)
+        // Register even before DUMP is granted: a grant while this service is
+        // alive must take effect without a force-stop or an app reinstall.
+        callback = object : AudioManager.AudioPlaybackCallback() {
+            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) { sync() }
+        }.also { getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(it, null) }
+        main.post(rescan)
         EqController.log("system service: started")
     }
 
     private fun sync() {
+        if (!isRunning || !PlaybackSessions.hasDumpPermission(this)) return
         if (!syncPending.compareAndSet(false, true)) return
         executor.execute {
             try {
@@ -65,11 +84,14 @@ class SystemEqService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        sync()
         return START_STICKY
     }
 
     override fun onDestroy() {
         isRunning = false
+        main.removeCallbacks(rescan)
+        unregisterReceiver(sessionReceiver)
         callback?.let { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(it) }
         executor.shutdown()
         stopService(Intent(this, CaptureService::class.java))
@@ -86,6 +108,12 @@ class SystemEqService : Service() {
 
         fun startIfEnabled(context: Context) {
             if (context.getSharedPreferences(CHANNEL, MODE_PRIVATE).getBoolean("enabled", true)) start(context)
+        }
+
+        fun refreshDetection(context: Context) {
+            // Called from the visible activity after permission setup. Preserve
+            // an explicit stop chosen by the user.
+            startIfEnabled(context)
         }
 
         fun start(context: Context) {

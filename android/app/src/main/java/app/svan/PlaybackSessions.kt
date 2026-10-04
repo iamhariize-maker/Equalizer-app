@@ -31,8 +31,8 @@ data class PlaybackSession(
 
 /**
  * Finds other apps' audio sessions without relying on their OPEN broadcasts,
- * by reading the `audio` system service dump. Needs
- * `adb shell pm grant app.svan android.permission.DUMP`.
+ * by reading the `audio` system service dump. DUMP is granted once through
+ * the in-app Shizuku setup (or by ADB); it is not a normal runtime permission.
  */
 object PlaybackSessions {
 
@@ -62,16 +62,23 @@ object PlaybackSessions {
                     flags = FLAGS.find(line)?.groupValues?.get(1)?.toLongOrNull(16)?.toInt() ?: 0,
                 )
             }
-            // A session can have several players; the dump lists the newest last.
-            .associateBy { it.sessionId }
-            .values
-            .toList()
+            .groupBy { it.sessionId }
+            .values.map { players ->
+                // A released/paused track can appear after a playing track on
+                // the same session. Preserve activity and every capture opt-out.
+                val active = players.firstOrNull { it.state == "started" } ?: players.last()
+                active.copy(flags = players.fold(0) { flags, player -> flags or player.flags })
+            }
 
     fun hasDumpPermission(context: Context): Boolean =
         context.checkSelfPermission(android.Manifest.permission.DUMP) == PackageManager.PERMISSION_GRANTED
 
     /** Returns null (with [lastError] set) if the dump is unavailable. */
     fun query(context: Context): List<PlaybackSession>? {
+        if (!hasDumpPermission(context)) {
+            lastError = "Enhanced detection is not enabled. Open Hi-Fi → Music detection."
+            return null
+        }
         val dump = dumpService("audio") ?: return null
         val pm = context.packageManager
         return parse(dump).map { s ->
@@ -109,8 +116,12 @@ object PlaybackSessions {
                 read.close()
                 lastDumpSize = it.length
                 lastConfigLines = it.lineSequence().filter { l -> "AudioPlaybackConfiguration" in l }.take(6).joinToString("\n")
-                lastError = if (it.isBlank()) "empty dump (DUMP permission not granted?)" else null
-            }.ifBlank { null }
+                lastError = when {
+                    it.isBlank() -> "Android returned an empty audio report."
+                    it.contains("Permission Denial", ignoreCase = true) -> "Android denied the audio report. Re-enable music detection."
+                    else -> null
+                }
+            }.takeIf { lastError == null }
         }
     } catch (e: Throwable) {
         lastError = "${e.javaClass.simpleName}: ${e.message}"

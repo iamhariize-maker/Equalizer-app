@@ -51,6 +51,13 @@ adb shell pm grant app.svan android.permission.DUMP
 
 Then follow [docs/SPIKE.md](docs/SPIKE.md).
 
+For phone-only setup on Android 11+, use Hi-Fi → Music detection and its Shizuku
+guide. Once the user-authorized setup grants detection access, Shizuku and wireless
+debugging can be stopped. See [phone validation](docs/PHONE_VALIDATION.md).
+
+The optional [Shizuku API](https://github.com/RikkaApps/Shizuku-API) is MIT licensed,
+Copyright (c) 2021 RikkaW. Its full notice ships in `assets/licenses/Shizuku-API-MIT.txt`.
+
 ## Licence
 
 Not chosen yet. Note that reusing JamesDSP/ViPER code would require GPL;

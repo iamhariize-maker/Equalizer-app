@@ -20,6 +20,14 @@ measured levels. The app does not automatically send these logs. Share logs or
 screenshots only if you choose to do so. There is no advertising or analytics SDK
 in the current dependency list. Uninstalling the app removes its local data.
 
+Optional enhanced detection uses the Shizuku API after explicit user approval.
+Its short-lived setup service runs a fixed command to grant Svan the Android DUMP
+permission. It accepts no arbitrary shell commands. This lets Svan read Android's
+local audio-session report to find playing apps; the report is not uploaded.
+Shizuku and wireless debugging can be stopped after the grant. Setup links open
+Shizuku's official website in the user's browser. The Shizuku API is MIT licensed;
+its notice is included in the APK's assets/licenses directory.
+
 This describes the current preview implementation. A store release still needs
 an owner-approved policy URL/contact and Play Console disclosures matching the
 final package, including its foreground-service and MediaProjection uses.

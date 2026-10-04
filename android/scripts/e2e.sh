@@ -164,7 +164,23 @@ tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false; sleep 6
 measure "T16 unknown non-broadcasting audio stays single and unprocessed (expect T0)"
 eq stop_capture; sleep 3
 tone $CAP --ez stop true; sleep 3
+
+log "T17 general player broadcasts without DUMP"
+$A logcat -c
+tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez explicit false
+wait_for "route: $CAP .*Engine A" 30; sleep 3
+measure "T17 implicit broadcast connects without enhanced permission"
+tone $CAP --ez stop true; sleep 3
+
+log "T18 already-playing player before a live detection grant"
+tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false; sleep 3
+measure "T18 no detection before permission grant"
+$A logcat -c
 $A shell pm grant $EQ android.permission.DUMP
+eq refresh_detection
+wait_for "route: $CAP .*Engine A" 30; sleep 3
+measure "T19 live permission grant discovers existing playback"
+tone $CAP --ez stop true; sleep 3
 # Restart discovery so screenshots include real detected app rows.
 eq stop_system; sleep 3; eq start_system; sleep 3
 tone $CAP --ef freq 1000 --ef amp 0.05 --ez broadcast true; sleep 4
@@ -211,6 +227,10 @@ check "Returning to Auto restores processed capture" "$(near "$T13" "$T1" 2.0)" 
 check "Global system-only stops processed capture" "$(near "$T14" "$T1" 2.0)" "T14=$T14 vs T1=$T1"
 check "System EQ remains effective behind the launcher" "$(near "$T15" "$T1" 2.0)" "T15=$T15 vs T1=$T1"
 check "Undetected audio is excluded from capture" "$(near "$T16" "$T0" 1.0)" "T16=$T16 vs T0=$T0"
+T17=$(lvl T17); T18=$(lvl T18); T19=$(lvl T19)
+check "General player broadcasts connect without DUMP" "$(near "$T17" "$T1" 1.0)" "T17=$T17 vs T1=$T1"
+check "Missing permission does not pretend to process an unknown player" "$(near "$T18" "$T0" 1.0)" "T18=$T18 vs T0=$T0"
+check "Permission granted during playback takes effect without restarting" "$(near "$T19" "$T1" 1.0)" "T19=$T19 vs T1=$T1"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
 kill $FULLLOG 2>/dev/null

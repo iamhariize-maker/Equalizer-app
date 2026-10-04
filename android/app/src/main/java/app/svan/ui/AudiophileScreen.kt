@@ -73,6 +73,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         ScreenTitle("Hi-Fi", "Choose processing, then check what each app actually uses.")
 
+        DetectionCard()
+
         SectionLabel("Background equalizer")
         SvanCard {
             Column {
@@ -92,9 +94,9 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                     Box(Modifier.size(10.dp).clip(CircleShape).background(if (running) Svan.Glow else Svan.TextFaint))
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(if (running) "Audiophile engine running" else "Audiophile engine off", style = MaterialTheme.typography.titleMedium)
                         val b = routes.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.map { it.pkg }.distinct().size
                         val a = routes.filter { it.owner == SessionRouter.Owner.ENGINE_A }.map { it.pkg }.distinct().size
+                        Text(if (running && b > 0) "Audiophile engine connected" else if (running) "Waiting for a music connection" else "Audiophile engine off", style = MaterialTheme.typography.titleMedium)
                         Text(
                             if (running) "$b app(s) on the full 64-bit chain · $a on system effects"
                             else if (systemRunning) "System effects available. Check app rows for actual processing."
@@ -120,10 +122,11 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             SvanCard {
                 Column {
                     if (routes.none { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }) {
-                        Text("No app is on the audiophile chain yet. Undetected or capture-blocked audio is not processed by it.",
+                        Text("No music connected. Complete Music detection above, then play your song and check Apps & engines. The DSP is idle until a player connects.",
                             style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     }
                     stats?.let { st ->
+                        Text("Signal peak · in %.1f dBFS · out %.1f dBFS".format(st.inputPeakDb, st.outputPeakDb), style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
                         Text("Output queue %.1f ms · buffer %.1f ms".format(st.queuedMs, st.bufferMs), style = MaterialTheme.typography.bodySmall)
                         Text("DSP %.1f ms · load %.1f%% · underruns %d".format(st.dspLatencyMs, st.dspPercent, st.underruns), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                         Text("Applied gain %.1f dB · protection %.1f dB".format(st.gainDb, st.protectionDb), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
