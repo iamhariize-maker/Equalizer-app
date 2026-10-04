@@ -4,7 +4,7 @@ Written at the end of a long Claude Code session so another agent (Codex cloud) 
 Repo: `iamhariize-maker/Equalizer-app`, branch **`ccr-208702a3-2mju42`** (not merged; no PR opened).
 Start with `AGENTS.md`. This file has the detail.
 
-## Clarity follow-up — 2026-10-04 (verification pending)
+## Clarity follow-up — 2026-10-04 (0.3.1 verification pending)
 
 Resumed from Claude's green `e087533` / CI `37176877888`, preserving the foreground
 media test-source fix. The earlier detection setup now passes all seven release
@@ -18,10 +18,15 @@ identity. Three new core regressions pass (47 total). See AUDIOPHILE.md.
 Flat now resets every sound layer, with a visible Reset all sound action in
 Presets and JVM regressions. Fresh defaults use system effects and float output;
 existing saved preferences are preserved. Android system EQ requests a detailed
-40 ms frame (10 ms option available), and UI no longer equates requested band
+80 ms frame (10/40 ms options available), and UI no longer equates requested band
 counts with actual resolution. Quality/dither controls are explicitly capture-only.
 The release emulator script adds three actual-output checks: layered capture reset,
-63 Hz +6 dB boost, and 63 Hz −6 dB cut. CI pending at writing. Follow the required
+63 Hz +6 dB boost, and 63 Hz −6 dB cut. CI `37207558523` passed all prior audio
+checks and reset, but 40 ms bass boost/cut measured +4.9/−4.6 dB and failed the
+unchanged ±1 dB limit. Reviewed all screenshots: boot margins, numeral 9 and
+actual स्व system splash are correct. Reference FFT/window simulation reproduced
+the +4.9 dB result and predicts +5.57 dB at 80 ms; 0.3.1 keeps faster options and
+uses 80 ms for Detailed. New CI pending at writing. Follow the required
 checks, inspect CI/screens, then deliver the tested APK; retest TECNO/YT Music over
 Bluetooth. The user's current sound preference cannot be established by emulator.
 

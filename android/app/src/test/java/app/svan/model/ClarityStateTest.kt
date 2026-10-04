@@ -27,6 +27,6 @@ class ClarityStateTest {
     @Test fun freshSettingsUseSystemEffectsAndFloatOutput() {
         assertEquals(EngineMode.SYSTEM_ONLY, AudioSettings().engineMode)
         assertEquals(DitherChoice.OFF, AudioSettings().dither)
-        assertEquals(40, AudioSettings().systemFrameMs)
+        assertEquals(80, AudioSettings().systemFrameMs)
     }
 }

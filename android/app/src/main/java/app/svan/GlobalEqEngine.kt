@@ -22,7 +22,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
     @Volatile var bandCount: Int = bandCount
         private set
 
-    @Volatile var frameDurationMs: Int = 40
+    @Volatile var frameDurationMs: Int = 80
         private set
 
     private val effects = ConcurrentHashMap<Int, DynamicsProcessing>()

@@ -80,10 +80,17 @@ the device before picking Extreme as a default.
 - Built-in Flat and Reset all sound clear every shaping layer, including headphone
   correction. Other presets continue to preserve independent layers.
 - Fresh settings use system effects and unquantized float capture output. Saved
-  user preferences remain intact. System effects request a 40 ms frame for better
-  bass resolution; a 10 ms option trades resolution for less delay. Actual FFT
+  user preferences remain intact. System effects request an 80 ms frame for better
+  bass resolution; 10 and 40 ms options trade resolution for less delay. Actual FFT
   sizing, response, and end-to-end delay depend on the phone. Increasing curve
   points alone cannot create independently resolved frequency bands.
+- CI `37207558523` exposed insufficient 63 Hz resolution at 40 ms: +6/−6 dB
+  bells produced +4.9/−4.6 dB, outside the unchanged ±1 dB acceptance limit.
+  Android's reference FFT/window model independently predicts +4.90 dB at 40 ms
+  and +5.57 dB at 80 ms for this curve. Version 0.3.1 therefore uses 80 ms for
+  Detailed; actual-output verification is required before delivery. This improves
+  resolution without adding gain compensation or promising perfect parametric
+  response from Android's gain-per-band effect.
 - CI measures post-effect 63 Hz boosts/cuts and a layered capture reset in addition
   to the existing routing and gain checks. Actual TECNO/Bluetooth sound still needs
   the user's retest; no bit-perfect or universally superior-output claim is made.

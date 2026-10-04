@@ -284,7 +284,7 @@ data class AudioSettings(
     val autoHeadroom: Boolean = true,
     val gainProtection: Boolean = true,
     val systemBands: Int = 128,
-    val systemFrameMs: Int = 40,
+    val systemFrameMs: Int = 80,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("engine", engineMode.name).put("quality", quality.name).put("bits", outputBits)
@@ -298,7 +298,7 @@ data class AudioSettings(
             dither = runCatching { DitherChoice.valueOf(o.getString("dither")) }.getOrDefault(DitherChoice.OFF),
             autoHeadroom = o.optBoolean("headroom", true),
             gainProtection = o.optBoolean("agp", true),
-            systemFrameMs = o.optInt("sysFrameMs", 40).takeIf { it in listOf(10, 40) } ?: 40,
+            systemFrameMs = o.optInt("sysFrameMs", 80).takeIf { it in listOf(10, 40, 80) } ?: 80,
             systemBands = o.optInt("sysBands", 128).takeIf { it in listOf(64, 128, 256) } ?: 128,
         )
     }

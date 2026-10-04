@@ -1,10 +1,10 @@
-For version 0.3: in Presets, use **Reset all sound to Flat** to clear headphone
+For version 0.3.1: in Presets, use **Reset all sound to Flat** to clear headphone
 correction and every tuner before comparing. Start with Hi-Fi → **System effects
 only** (recommended). Complete Music detection if the player does not appear.
 Saved settings survive updates, so an existing installation may still have Auto
 or dither selected. Compare the same song at matched loudness, then try one EQ
-change. In system effects, Detailed requests a 40 ms processing window for bass
-resolution; Fast requests 10 ms with less resolution/delay. Neither value is total
+change. In system effects, choose **Detailed · 80 ms** for bass resolution;
+Balanced requests 40 ms and Fast requests 10 ms with less resolution/delay. None is total
 Bluetooth latency. Capture quality controls do not change the system-effects engine.
 
 # Svan phone validation

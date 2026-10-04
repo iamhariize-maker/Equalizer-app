@@ -216,12 +216,14 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
 
         Spacer(Modifier.height(12.dp))
         Text("System processing window", style = MaterialTheme.typography.titleSmall)
-        Text("Detailed improves bass resolution on Android’s reference engine, with more delay. Fast reduces delay. Actual output depends on your phone.",
+        Text("Detailed uses a longer window for bass resolution, with more delay. Fast reduces delay. Actual output depends on your phone.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill("Fast · 10 ms", s.systemFrameMs == 10, { SvanRepository.updateSettings { it.copy(systemFrameMs = 10) } })
-            Pill("Detailed · 40 ms", s.systemFrameMs == 40, { SvanRepository.updateSettings { it.copy(systemFrameMs = 40) } })
+            Pill("Balanced · 40 ms", s.systemFrameMs == 40, { SvanRepository.updateSettings { it.copy(systemFrameMs = 40) } })
         }
+        Spacer(Modifier.height(8.dp))
+        Pill("Detailed · 80 ms", s.systemFrameMs == 80, { SvanRepository.updateSettings { it.copy(systemFrameMs = 80) } })
 
         SectionLabel("Signal path")
         SvanCard {
