@@ -6,9 +6,13 @@ A="adb -s $S"
 mkdir -p "$OUT"
 # Capture Android's system splash before the Compose boot overlay.
 $A shell am force-stop app.svan
-$A shell am start -W -n app.svan/.MainActivity >/dev/null &
+$A shell am start -W --splashscreen-show-icon -a android.intent.action.MAIN -c android.intent.category.LAUNCHER -n app.svan/.MainActivity >/dev/null &
 LAUNCH=$!
-sleep 0.15; $A exec-out screencap -p > "$OUT/system-splash.png"
+sleep 0.1
+for frame in 1 2 3 4 5; do
+  $A exec-out screencap -p > "$OUT/system-splash-$frame.png"
+  sleep 0.1
+done
 wait "$LAUNCH"
 sleep 3
 # Boot animation: cold start, capture mid-morph and at the full name.
@@ -60,5 +64,7 @@ tap_text "Hi-Fi" && shot 4-hifi
 swipe_up; shot 4b-hifi-apps
 swipe_up; shot 4c-hifi-quality
 swipe_up; shot 4d-hifi-gain
+swipe_up; shot 4e-hifi-protection
+swipe_up; shot 4f-hifi-resolution
 tap_text "Lab" && shot 5-lab
 tap_text "EQ"

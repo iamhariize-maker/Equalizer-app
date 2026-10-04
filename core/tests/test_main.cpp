@@ -547,6 +547,62 @@ TEST(automatic_gain_protection_catches_real_overloads) {
   CHECK_NEAR(e.gainProtectionDb(), settled, 0.05);
 }
 
+TEST(protection_recovers_after_overload_and_keeps_stereo_linked) {
+  EngineConfig cfg;
+  cfg.channels = 2;
+  cfg.autoHeadroom = false;
+  Engine e(cfg);
+  e.setBandsAllChannels({{FilterType::Peak, 1000, 12, 1.0, true}});
+  const int n = 48000;
+  std::vector<float> loud(n * 2);
+  for (int i = 0; i < n; ++i) {
+    loud[2*i] = 0.9f * std::sin(2*kPi*1000*i/48000);
+    loud[2*i+1] = loud[2*i] * 0.25f;
+  }
+  e.process(loud.data(), loud.data(), n);
+  CHECK(e.gainProtectionDb() < -10);
+  for (int i = 0; i < n; ++i) {
+    CHECK(std::fabs(loud[2*i]) <= 0.98856f);
+    CHECK_NEAR(loud[2*i+1], loud[2*i] * 0.25, 1e-6);
+  }
+  std::vector<float> quiet(48000 * 3 * 2);
+  for (int i = 0; i < 48000 * 3; ++i)
+    quiet[2*i] = quiet[2*i+1] = 0.05f * std::sin(2*kPi*5000*i/48000);
+  e.process(quiet.data(), quiet.data(), 48000 * 3);
+  CHECK(e.gainProtectionDb() > -0.01);
+  std::vector<double> channel(48000);
+  for (int i = 0; i < 48000; ++i) channel[i] = quiet[(i + 96000)*2];
+  CHECK_NEAR(toDb(sineAmplitude(channel, 5000, 48000, 0, channel.size())/0.05),
+             e.eqResponseDb(0, 5000), 0.02);
+}
+
+TEST(bass_punch_preserves_attack_energy_around_crossover) {
+  for (double fs : {44100.0, 48000.0}) for (double f : {90.0, 120.0, 150.0, 180.0}) {
+    BassShaper b(fs, 1);
+    b.setCharacter(1);
+    std::vector<double> x(static_cast<int>(fs * 0.1));
+    for (size_t i=0;i<x.size();++i) x[i]=0.1*std::sin(2*kPi*f*i/fs);
+    auto y=x;
+    b.process(0,y.data(),y.size());
+    double inEnergy=0,outEnergy=0;
+    for(int i=static_cast<int>(fs*.01);i<static_cast<int>(fs*.03);++i) {
+      inEnergy+=x[i]*x[i];outEnergy+=y[i]*y[i];
+    }
+    CHECK(10*std::log10(outEnergy/inEnergy) >= 0.0);
+  }
+}
+
+TEST(bass_off_restores_identity_after_active_processing) {
+  BassShaper b(48000, 1);
+  b.setCharacter(1);
+  std::vector<double> x(1024);
+  for(size_t i=0;i<x.size();++i)x[i]=0.1*std::sin(2*kPi*120*i/48000);
+  auto y=x;b.process(0,y.data(),y.size());
+  b.setCharacter(0);
+  y=x;b.process(0,y.data(),y.size());
+  CHECK(x==y);
+}
+
 // --------------------------------------------------------------- resampler
 
 namespace {

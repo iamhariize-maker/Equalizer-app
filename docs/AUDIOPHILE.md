@@ -63,6 +63,27 @@ the device before picking Extreme as a default.
 ## 5. Automatic Gain Protection + auto headroom
 
 - **Auto headroom (predictive):** adds only the attenuation still needed after the user/preset preamp. A −6 dB preamp with a +6 dB bell stays at −6 dB, instead of the previous −12 dB.
-- **AGP (reactive):** catches what prediction can't, such as hot masters. It checks output samples, not true inter-sample peaks. On an overload it scales the chunk to −0.1 dBFS and keeps
-  the reduction until an EQ edit or engine restart. Measured: a +12 dB boost on a 0.9 sine reduces by 11.18 dB
-  (theory 11.2 dB). The tested output stays below the sample ceiling. Listening behavior across music is not yet established.
+- **AGP (reactive):** catches sample overloads, links channel gain, and smoothly
+  recovers toward unity with a 250 ms release after overload ends. A sustained
+  +12 dB boost on a 0.9 sine requires about 11.18 dB reduction. The new regression
+  verifies recovery to within 0.01 dB after three seconds of quiet material.
+  This is sample-peak protection, not a true-peak limiter. It adds no lookahead.
+
+## 6. Clarity corrections (0.3)
+
+- Bass character now uses a first-order complementary split. The previous LR4
+  low-pass/dry recombination lost roughly 6 dB during a 120 Hz attack in a host
+  probe. Regressions check attack energy at 90/120/150/180 Hz, 44.1/48 kHz, and
+  exact off-state identity after active shaping. Punch/sustain remain optional.
+- The six-hit synthetic kick test now measures +13.7 dB attack/tail for maximum
+  punch and −8.1 dB for maximum sustain; these are not listening-quality scores.
+- Built-in Flat and Reset all sound clear every shaping layer, including headphone
+  correction. Other presets continue to preserve independent layers.
+- Fresh settings use system effects and unquantized float capture output. Saved
+  user preferences remain intact. System effects request a 40 ms frame for better
+  bass resolution; a 10 ms option trades resolution for less delay. Actual FFT
+  sizing, response, and end-to-end delay depend on the phone. Increasing curve
+  points alone cannot create independently resolved frequency bands.
+- CI measures post-effect 63 Hz boosts/cuts and a layered capture reset in addition
+  to the existing routing and gain checks. Actual TECNO/Bluetooth sound still needs
+  the user's retest; no bit-perfect or universally superior-output claim is made.

@@ -60,7 +60,7 @@ object SvanRepository {
                 }
             }
             applyCurve(_eq.value)
-            EqController.globalEq.reconfigure(_settings.value.systemBands)
+            EqController.globalEq.reconfigure(_settings.value.systemBands, _settings.value.systemFrameMs)
             initialized = true
             scope.launch {
                 // StateFlow is already conflated: a slow binder update never queues stale curves.
@@ -83,8 +83,10 @@ object SvanRepository {
     }
 
     fun applyPreset(p: Preset) = update {
-        it.copy(mode = EqMode.PARAMETRIC, bands = p.bands, preampDb = p.preampDb, presetName = p.name, enabled = true)
+        it.withPreset(p)
     }
+
+    fun resetSound() = update { EqState() }
 
     /** Imports AutoEq / Equalizer APO text. Returns the number of bands, or 0 if nothing parsed. */
     fun importParametric(name: String, text: String): Int {
@@ -124,9 +126,9 @@ object SvanRepository {
         if (next.engineMode == app.svan.model.EngineMode.SYSTEM_ONLY && next.engineMode != old.engineMode) {
             appContext.stopService(android.content.Intent(appContext, CaptureService::class.java))
         }
-        if (next.systemBands != old.systemBands) {
+        if (next.systemBands != old.systemBands || next.systemFrameMs != old.systemFrameMs) {
             scope.launch {
-                EqController.globalEq.reconfigure(next.systemBands)
+                EqController.globalEq.reconfigure(next.systemBands, next.systemFrameMs)
                 EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.gainProtection, _eq.value.enabled)
             }
         }

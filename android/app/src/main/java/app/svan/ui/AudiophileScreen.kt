@@ -138,7 +138,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
         EngineMode.entries.forEach { m ->
             ChoiceRow(m.title, m.detail, s.engineMode == m, onClick = { SvanRepository.updateSettings { it.copy(engineMode = m) } },
-                badge = if (m == EngineMode.AUTO) "Recommended" else null)
+                badge = if (m == EngineMode.SYSTEM_ONLY) "Recommended" else null)
         }
 
         SectionLabel("Apps & engines")
@@ -174,13 +174,17 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             }
         }
 
-        SectionLabel("Processing quality")
+        SectionLabel("Capture processing quality")
+        Text("These quality and dither settings apply to the capture engine. System effects use Android’s own processing.",
+            style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         QualityMode.entries.forEach { q ->
             ChoiceRow(q.title, q.detail, s.quality == q, onClick = { SvanRepository.updateSettings { it.copy(quality = q) } },
                 badge = if (q == QualityMode.AUDIOPHILE) "4× precision" else null)
         }
 
-        SectionLabel("Output word length & dither")
+        SectionLabel("Float output & optional dither")
+        Text("Float output is recommended. Selecting 16 or 24 bits quantizes Svan’s signal; it does not change the Bluetooth codec or DAC format.",
+            style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(16, 24).forEach { bits ->
                 Pill("$bits-bit", s.outputBits == bits, { SvanRepository.updateSettings { it.copy(outputBits = bits) } })
@@ -196,18 +200,27 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             Column {
                 SettingSwitchRow("Auto headroom", "Lowers gain only as much as the EQ boost requires. Existing negative preamp counts toward headroom. Applies to both engines.",
                     s.autoHeadroom, { on -> SvanRepository.updateSettings { it.copy(autoHeadroom = on) } })
-                SettingSwitchRow("Automatic gain protection", "Capture: reduces gain when output samples overload, until the next EQ edit. System effects: Android's limiter. Does not measure true inter-sample peaks.",
+                SettingSwitchRow("Automatic gain protection", "Capture: catches sample overloads and smoothly restores gain with a 250 ms release. System effects: Android's limiter. Does not measure true inter-sample peaks.",
                     s.gainProtection, { on -> SvanRepository.updateSettings { it.copy(gainProtection = on) } })
             }
         }
 
         SectionLabel("System effects resolution")
-        Text("Bands used when an app runs on Android's DynamicsProcessing. More bands follow your curve more closely; each update costs ~1 ms per band.",
+        Text("Curve points sent to Android. Effective resolution depends on its processing window and the device; accepted settings do not guarantee independent bands.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted, modifier = Modifier.padding(bottom = 8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(64, 128, 256).forEach { n ->
                 Pill("$n bands", s.systemBands == n, { SvanRepository.updateSettings { it.copy(systemBands = n) } })
             }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text("System processing window", style = MaterialTheme.typography.titleSmall)
+        Text("Detailed improves bass resolution on Android’s reference engine, with more delay. Fast reduces delay. Actual output depends on your phone.",
+            style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Pill("Fast · 10 ms", s.systemFrameMs == 10, { SvanRepository.updateSettings { it.copy(systemFrameMs = 10) } })
+            Pill("Detailed · 40 ms", s.systemFrameMs == 40, { SvanRepository.updateSettings { it.copy(systemFrameMs = 40) } })
         }
 
         SectionLabel("Signal path")

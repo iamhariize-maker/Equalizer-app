@@ -39,7 +39,7 @@ struct EngineConfig {
   DitherMode ditherMode = DitherMode::Tpdf;
   bool autoHeadroom = true;  // pre-attenuate by the curve's max boost (predictive)
   bool gainProtection = true; // Automatic Gain Protection (reactive):
-                              // on an actual overload, lower the gain and keep it lowered
+                              // on overload lower gain; recover smoothly with 250 ms release
   int maxBlock = 1024;       // frames per internal chunk
 
   static EngineConfig forQuality(QualityMode mode, double sampleRate, int channels, int outputBits);
@@ -70,7 +70,7 @@ class Engine {
   // Response of the bands alone (no preamp/headroom): what a UI draws.
   double eqResponseDb(int channel, double freqHz) const { return eq_.responseDb(channel, freqHz); }
   double appliedGainDb() const { return gainDb_.load(); }
-  // Extra attenuation Automatic Gain Protection has applied so far (<= 0 dB).
+  // Current attenuation from Automatic Gain Protection (<= 0 dB).
   double gainProtectionDb() const { return agpDb_.load(); }
   void resetGainProtection() { agpDb_.store(0.0); }
   int latencyFrames() const;

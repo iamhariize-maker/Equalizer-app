@@ -22,6 +22,9 @@ class GlobalEqEngine(bandCount: Int = 128) {
     @Volatile var bandCount: Int = bandCount
         private set
 
+    @Volatile var frameDurationMs: Int = 40
+        private set
+
     private val effects = ConcurrentHashMap<Int, DynamicsProcessing>()
     private val lastSent = ConcurrentHashMap<DynamicsProcessing, FloatArray>()
     @Volatile private var centersHz: DoubleArray = logSpaced(bandCount, 20.0, 20000.0)
@@ -73,11 +76,12 @@ class GlobalEqEngine(bandCount: Int = 128) {
 
     /** Changes the band count; attached sessions are re-created with the new layout. */
     @Synchronized
-    fun reconfigure(bands: Int) {
-        if (bands == bandCount) return
+    fun reconfigure(bands: Int, frameMs: Int = frameDurationMs) {
+        if (bands == bandCount && frameMs == frameDurationMs) return
         val sessions = effects.keys.toList()
         sessions.forEach(::detach)
         bandCount = bands
+        frameDurationMs = frameMs
         centersHz = logSpaced(bands, 20.0, 20000.0)
         gainsDb = DoubleArray(bands)
         sessions.forEach { attach(it) }
@@ -116,7 +120,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             mbcInUse, if (mbcInUse) 4 else 0, // MBC: bass feel + vocal smoothness (see setDynamics)
             false, 0,          // post-EQ
             true,              // limiter
-        ).build()
+        ).setPreferredFrameDuration(frameDurationMs.toFloat()).build()
 
     /**
      * Dynamics on system effects, via DynamicsProcessing's multiband compressor

@@ -52,6 +52,7 @@ jobs:
   # runners expose /dev/kvm). Results + screenshots are uploaded as artifacts
   # and the results table is printed in the log.
   emulator-e2e:
+    needs: android
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -68,6 +69,13 @@ jobs:
       - name: Build APKs
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug assembleRelease :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
+      - name: Download the phone preview for release validation
+        uses: actions/download-artifact@v4
+        with:
+          name: Svan-preview
+          path: tested-preview
+      - name: Use the exact downloadable APK in release tests
+        run: cp tested-preview/Svan-preview.apk android/app/build/outputs/apk/release/app-release.apk
       - name: Prepare output dir
         run: |
           mkdir -p e2e-out
@@ -96,7 +104,7 @@ jobs:
           grep -q '^PASS sound scroll preserves EQ settings' e2e-out/screens/interaction.txt
           cat e2e-out/detection/detection.txt
           ! grep -q '^FAIL' e2e-out/detection/detection.txt
-          test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 7
+          test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 10
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -3,7 +3,7 @@
 // (long, blooming bass). Level and focus are plain EQ; this is the part EQ
 // can't do — it shapes the bass *envelope* over time.
 //
-// The bass band is split off subtractively (low = LR4 low-pass of x,
+// The bass band is split off subtractively (low = first-order low-pass of x,
 // rest = x - low), so with character 0 the output is bit-for-bit x.
 // A transient shaper then compares a fast and a slow envelope of the bass:
 //   gain = (fast / slow) ^ k,   k > 0 punch, k < 0 sustain
@@ -19,7 +19,7 @@ class BassShaper {
 
   // character in [-1, 1]: -1 = max sustain, 0 = off, +1 = max punch.
   void setCharacter(double character);
-  // Upper edge of the bass band (LR4 crossover), 60..250 Hz.
+  // Transition frequency of the complementary bass split, 60..250 Hz.
   void setCrossoverHz(double hz);
 
   double character() const { return character_; }
@@ -29,9 +29,9 @@ class BassShaper {
   void reset();
 
  private:
-  struct Section { double b0, b1, b2, a1, a2; };
+  struct Section { double b0, b1, a1; };
   struct ChannelState {
-    double z[2][2] = {{0, 0}, {0, 0}};  // two cascaded TDF2 low-pass sections
+    double lowState = 0.0;
     double fast = 1e-9, slow = 1e-9, gain = 1.0;
   };
   void design();

@@ -28,11 +28,12 @@ void BassShaper::setCrossoverHz(double hz) {
 }
 
 void BassShaper::design() {
-  // Butterworth low-pass section; two in cascade = Linkwitz-Riley 4th order.
-  const double w0 = 2.0 * kPi * crossoverHz_ / fs_;
-  const double cw = std::cos(w0), alpha = std::sin(w0) / (2.0 * 0.7071067811865476);
-  const double a0 = 1.0 + alpha;
-  lp_ = {(1.0 - cw) / 2.0 / a0, (1.0 - cw) / a0, (1.0 - cw) / 2.0 / a0, -2.0 * cw / a0, (1.0 - alpha) / a0};
+  // A first-order complementary split has Hlow + Hhigh = 1. With
+  // positive bass gain G, |G*Hlow + Hhigh| has no crossover notch.
+  // The previous LR4 low-pass mixed with dry audio cancelled near crossover.
+  const double k = std::tan(kPi * crossoverHz_ / fs_);
+  const double b = k / (1.0 + k);
+  lp_ = {b, b, (k - 1.0) / (k + 1.0)};
 }
 
 void BassShaper::reset() {
@@ -50,21 +51,15 @@ void BassShaper::process(int channel, double* data, int frames) {
   constexpr double kMaxGain = 3.981071706;   // +12 dB
   for (int i = 0; i < frames; ++i) {
     const double x = data[i];
-    // LR4 low band (always run so the filter state stays warm when toggled).
-    double v = x;
-    for (int st = 0; st < 2; ++st) {
-      const double y = lp_.b0 * v + s.z[st][0];
-      s.z[st][0] = lp_.b1 * v - lp_.a1 * y + s.z[st][1];
-      s.z[st][1] = lp_.b2 * v - lp_.a2 * y;
-      v = y;
-    }
-    const double low = v;
+    // Keep the detector/filter warm even with the character control off.
+    const double low = lp_.b0 * x + s.lowState;
+    s.lowState = lp_.b1 * x - lp_.a1 * low;
     const double a = std::fabs(low) + 1e-12;
     s.fast = a > s.fast ? aFast_ * s.fast + (1 - aFast_) * a : rFast_ * s.fast + (1 - rFast_) * a;
     s.slow = a > s.slow ? aSlow_ * s.slow + (1 - aSlow_) * a : rSlow_ * s.slow + (1 - rSlow_) * a;
     double target = 1.0;
     if (active) target = std::clamp(std::pow(s.fast / s.slow, k), kMinGain, kMaxGain);
-    s.gain = gainSmooth_ * s.gain + (1 - gainSmooth_) * target;
+    s.gain = active ? gainSmooth_ * s.gain + (1 - gainSmooth_) * target : 1.0;
     // x - low + gain*low: exact identity when gain == 1.
     data[i] = x + (s.gain - 1.0) * low;
   }

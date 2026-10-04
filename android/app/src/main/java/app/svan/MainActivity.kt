@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
                 val r = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
                 EqController.log("preset bands=$n response@1kHz=%.2f dB".format(r))
             }
+            "reset_sound" -> SvanRepository.resetSound()
             "state" -> EqController.log("EQ_STATE " + SvanRepository.eq.value.toJson().toString())
             "setup_detection" -> DetectionSetup.enable()
             "refresh_detection" -> SystemEqService.refreshDetection(this)
@@ -106,7 +107,10 @@ class MainActivity : ComponentActivity() {
             }
             "start_system" -> SystemEqService.start(this)
             "stop_system" -> SystemEqService.stop(this)
-            "start_capture" -> startCapture()
+            "start_capture" -> {
+                SvanRepository.updateSettings { it.copy(engineMode = app.svan.model.EngineMode.AUTO) }
+                startCapture()
+            }
             "stop_capture" -> stopCapture()
             "measure_mix" -> thread {
                 EqController.log(try { MixMeter.measure(intent.getFloatExtra("seconds", 3f).toDouble()) } catch (e: Exception) { "MIX error $e" })

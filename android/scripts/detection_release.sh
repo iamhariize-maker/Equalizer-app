@@ -126,5 +126,26 @@ tap 'Hi-Fi'; sleep 2
 # Connected status and signal readings are below the detection card.
 $A shell input swipe 160 500 160 140 500; sleep 2
 $A exec-out screencap -p > "$OUT/connected-audiophile.png"
-eq stop_capture; tone --ez stop true
+# A full reset must remove hidden tuning layers as well as the manual EQ.
+eq bass --es preset Punchy
+eq tuners --ef warmth 1 --ef smooth 1 --ef space 1
+sleep 3
+eq reset_sound; sleep 3
+RESET=$(level)
+check_delta 'reset all sound restores capture level after layered effects' "$RESET" "$BASE" 0
+
+# Exercise bass resolution on the actual system-effect output, beyond 1 kHz.
+eq stop_capture; sleep 3
+tone --ez stop true; sleep 2
+tone --ef freq 63 --ef amp 0.1 --ez broadcast true; sleep 4
+LOWBASE=$(level)
+eq eq_band --ef frequency 63 --ef gain 6; sleep 3
+LOWBOOST=$(level)
+check_delta 'system EQ produces a 6 dB bass boost at 63 Hz' "$LOWBOOST" "$LOWBASE" 6
+eq reset_sound; sleep 3
+eq eq_band --ef frequency 63 --ef gain -6; sleep 3
+LOWCUT=$(level)
+check_delta 'system EQ produces a 6 dB bass cut at 63 Hz' "$LOWCUT" "$LOWBASE" -6
+eq reset_sound
+tone --ez stop true
 $A uninstall app.svan >/dev/null

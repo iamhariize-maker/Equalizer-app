@@ -75,6 +75,10 @@ fun PresetsScreen() {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
         item {
             ScreenTitle("Presets", "Now: ${eq.presetName}")
+            TextButton(onClick = {
+                SvanRepository.resetSound()
+                message = "All sound layers reset: EQ, headphone correction, bass, vocals and stereo."
+            }, modifier = Modifier.fillMaxWidth()) { Text("Reset all sound to Flat") }
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ActionTile("Import AutoEq", "ParametricEQ.txt", Icons.Outlined.FileOpen, Modifier.weight(1f)) {

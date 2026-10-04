@@ -109,6 +109,7 @@ void Engine::reset() {
   eq_.reset();
   bass_.reset();
   stereo_.reset();
+  resetGainProtection();
   for (auto& o : os_) o->reset();
   for (auto& d : dither_) d.reset();
 }
@@ -153,17 +154,20 @@ void Engine::process(const float* in, float* out, int frames) {
       const double* y = &outBuf_[static_cast<size_t>(ch) * cfg_.maxBlock];
       for (int i = 0; i < n; ++i) peak = std::max(peak, std::fabs(y[i]));
     }
-    double scale = agpGain;
-    if (cfg_.gainProtection && peak * agpGain > kAgpCeiling) {
-      // Fix the overloaded chunk now and keep the reduction for what follows.
-      scale = kAgpCeiling / peak;
-      agpDb_.store(20.0 * std::log10(scale), std::memory_order_relaxed);
+    // Block peak detection gives a conservative target shared by both channels.
+    // Release continuously toward that target so a past overload cannot leave
+    // later music permanently attenuated. No extra lookahead buffer is added.
+    const double target = cfg_.gainProtection && peak > kAgpCeiling ? kAgpCeiling / peak : 1.0;
+    double scale = cfg_.gainProtection ? std::min(agpGain, target) : 1.0;
+    const double release = std::exp(-1.0 / (0.250 * cfg_.sampleRate));
+    for (int i = 0; i < n; ++i) {
+      scale = target + release * (scale - target);
+      for (int ch = 0; ch < C; ++ch) {
+        const double y = outBuf_[static_cast<size_t>(ch) * cfg_.maxBlock + i];
+        dst[i * C + ch] = static_cast<float>(dither_[ch].process(y * scale));
+      }
     }
-    for (int ch = 0; ch < C; ++ch) {
-      const double* y = &outBuf_[static_cast<size_t>(ch) * cfg_.maxBlock];
-      Dither& d = dither_[ch];
-      for (int i = 0; i < n; ++i) dst[i * C + ch] = static_cast<float>(d.process(y[i] * scale));
-    }
+    agpDb_.store(20.0 * std::log10(scale), std::memory_order_relaxed);
   }
 }
 

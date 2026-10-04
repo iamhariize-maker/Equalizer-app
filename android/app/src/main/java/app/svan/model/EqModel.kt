@@ -110,6 +110,10 @@ data class EqState(
     val vocal: VocalTuner = VocalTuner(),
     val instrument: InstrumentTuner = InstrumentTuner(),
 ) {
+    /** Built-in Flat is a complete audible reset, including independent layers. */
+    fun withPreset(p: Preset): EqState = if (p.builtIn && p.name == "Flat") EqState() else
+        copy(mode = EqMode.PARAMETRIC, bands = p.bands, preampDb = p.preampDb, presetName = p.name, enabled = true)
+
     /** Bands for system effects: the same layers plus static stand-ins for the vocal tuner. */
     fun systemEffectsBands(): List<Band> = if (!enabled) emptyList() else effectiveBands() + vocal.systemEffectsBands()
 
@@ -268,31 +272,33 @@ enum class DitherChoice(val title: String, val nativeMode: Int, val detail: Stri
 
 enum class EngineMode(val title: String, val detail: String) {
     AUTO("Auto", "Audiophile engine for apps that allow capture, system effects for the rest."),
-    SYSTEM_ONLY("System effects only", "Android DynamicsProcessing on each app. Lowest latency and battery; gain-per-band only."),
+    SYSTEM_ONLY("System effects only", "Android DynamicsProcessing on each app. Avoids capture and replay; gain-per-band EQ."),
 }
 
 /** Svan processing settings. */
 data class AudioSettings(
-    val engineMode: EngineMode = EngineMode.AUTO,
+    val engineMode: EngineMode = EngineMode.SYSTEM_ONLY,
     val quality: QualityMode = QualityMode.AUDIOPHILE,
     val outputBits: Int = 24,
-    val dither: DitherChoice = DitherChoice.TPDF,
+    val dither: DitherChoice = DitherChoice.OFF,
     val autoHeadroom: Boolean = true,
     val gainProtection: Boolean = true,
     val systemBands: Int = 128,
+    val systemFrameMs: Int = 40,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("engine", engineMode.name).put("quality", quality.name).put("bits", outputBits)
-        .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands)
+        .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs)
 
     companion object {
         fun fromJson(o: JSONObject) = AudioSettings(
-            engineMode = runCatching { EngineMode.valueOf(o.getString("engine")) }.getOrDefault(EngineMode.AUTO),
+            engineMode = runCatching { EngineMode.valueOf(o.getString("engine")) }.getOrDefault(EngineMode.SYSTEM_ONLY),
             quality = runCatching { QualityMode.valueOf(o.getString("quality")) }.getOrDefault(QualityMode.AUDIOPHILE),
             outputBits = o.optInt("bits", 24).takeIf { it == 16 || it == 24 } ?: 24,
-            dither = runCatching { DitherChoice.valueOf(o.getString("dither")) }.getOrDefault(DitherChoice.TPDF),
+            dither = runCatching { DitherChoice.valueOf(o.getString("dither")) }.getOrDefault(DitherChoice.OFF),
             autoHeadroom = o.optBoolean("headroom", true),
             gainProtection = o.optBoolean("agp", true),
+            systemFrameMs = o.optInt("sysFrameMs", 40).takeIf { it in listOf(10, 40) } ?: 40,
             systemBands = o.optInt("sysBands", 128).takeIf { it in listOf(64, 128, 256) } ?: 128,
         )
     }
