@@ -1,6 +1,6 @@
 # AGENTS.md — Svan (Svanam Shreshtham: Ultimate Sound)
 
-Read this first, then `docs/HANDOFF.md` (full state, open items, gotchas).
+Read this first, then `docs/CODEX_SVARAMANAS.md` (newest brief) and `docs/HANDOFF.md` (full state, open items, gotchas).
 
 ## What this is
 **Svan** is a system-wide audiophile equalizer for **Android** (iOS cannot do global EQ; out of scope).

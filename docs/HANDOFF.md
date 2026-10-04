@@ -4,6 +4,9 @@ Written at the end of a long Claude Code session so another agent (Codex cloud) 
 Repo: `iamhariize-maker/Equalizer-app`, branch **`ccr-208702a3-2mju42`** (not merged; no PR opened).
 Start with `AGENTS.md`. This file has the detail.
 
+> **Newest brief: `docs/CODEX_SVARAMANAS.md`** (Svaramanas sound intelligence: what's built, what's unverified,
+> research agenda, next increments). Paste-in prompt: `docs/CODEX_PROMPT.md`.
+
 ## Clarity follow-up — 2026-10-04 (0.3.1 verification pending)
 
 Resumed from Claude's green `e087533` / CI `37176877888`, preserving the foreground
