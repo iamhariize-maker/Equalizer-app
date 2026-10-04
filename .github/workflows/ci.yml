@@ -39,6 +39,28 @@ jobs:
         run: |
           mkdir -p android/build-kit
           cp android/app/build/outputs/apk/release/app-release.apk android/build-kit/Svan-preview.apk
+      - name: APK install sanity (manifest, signature, alignment)
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=android/build-kit/Svan-preview.apk
+          "$BT/aapt2" dump badging "$APK" > badging.txt
+          grep -E "^package|sdkVersion|native-code" badging.txt
+          ! grep -q testOnly badging.txt
+          ! grep -q "application-debuggable" badging.txt
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee sig.txt
+          grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" sig.txt
+          # The fixed preview key keeps updates installable over earlier previews.
+          grep -q "CN=Svan Preview" sig.txt
+          python3 - "$APK" <<'PY'
+          import struct, sys, zipfile
+          z = zipfile.ZipFile(sys.argv[1]); f = open(sys.argv[1], 'rb')
+          for i in z.infolist():
+              if i.filename.endswith('.so') and i.compress_type == 0:
+                  f.seek(i.header_offset); h = f.read(30)
+                  n, e = struct.unpack('<HH', h[26:30])
+                  assert (i.header_offset + 30 + n + e) % 4096 == 0, 'unaligned ' + i.filename
+          print('native libs page-aligned')
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: Svan-preview
@@ -110,4 +132,50 @@ jobs:
         with:
           name: e2e-results
           if-no-files-found: warn
+          path: e2e-out/
+
+  # Install + launch the release APK on several Android versions (the user's phones run 10-15 and
+  # vendor skins on top). Emulators cannot reproduce OEM skins; this catches OS-version breakage.
+  compat:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [29, 30, 33, 35]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/download-artifact@v4
+        with:
+          name: Svan-preview
+          path: tested-preview
+      - run: |
+          mkdir -p android/app/build/outputs/apk/release e2e-out
+          cp tested-preview/Svan-preview.apk android/app/build/outputs/apk/release/app-release.apk
+      - name: Install and smoke test on API ${{ matrix.api }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
+          working-directory: android
+          script: bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; adb logcat -d > "$GITHUB_WORKSPACE/e2e-out/logcat.txt" ; adb shell getprop ro.build.version.release > "$GITHUB_WORKSPACE/e2e-out/android.txt"
+      - name: Result
+        if: always()
+        run: |
+          echo "Android $(cat e2e-out/android.txt 2>/dev/null) (API ${{ matrix.api }})"
+          cat e2e-out/smoke.txt
+          grep -q '^PASS release smoke test' e2e-out/smoke.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compat-api${{ matrix.api }}
           path: e2e-out/

@@ -39,14 +39,23 @@ android {
         }
     }
 
+    // Preview builds (CI artifact, sideloaded testers) share ONE fixed key so each new APK updates the
+    // previous one in place. This key is public on purpose and is NOT the Play release key.
+    signingConfigs.create("preview") {
+        storeFile = rootProject.file("preview.keystore")
+        storePassword = "svanpreview"
+        keyAlias = "svanpreview"
+        keyPassword = "svanpreview"
+    }
+
     buildTypes {
         release {
             // R8 shrinks Compose and icons from ~57 MB (debug) to a phone-friendly size.
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Preview builds are signed with the debug key so they install over debug builds.
-            signingConfig = signingConfigs.getByName(if (productionBuild) "production" else "debug")
+            // Preview builds use the fixed preview key (stable across CI runs, so updates install over each other).
+            signingConfig = signingConfigs.getByName(if (productionBuild) "production" else "preview")
         }
     }
     compileOptions {
