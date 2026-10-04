@@ -52,16 +52,20 @@ class TonePlayerService : Service() {
         val amp = intent.getFloatExtra("amp", 0.25f)
         val broadcast = intent.getBooleanExtra("broadcast", true)
         explicitBroadcast = intent.getBooleanExtra("explicit", true)
+        // Simulates a stream that opts out of playback capture mid-session (DRM'd track, ad, ...).
+        val noCapture = intent.getBooleanExtra("nocapture", false)
         playing = true
-        thread = Thread { play(freq, amp, broadcast) }.also { it.start() }
+        thread = Thread { play(freq, amp, broadcast, noCapture) }.also { it.start() }
     }
 
-    private fun play(freq: Double, amp: Float, broadcast: Boolean) {
+    private fun play(freq: Double, amp: Float, broadcast: Boolean, noCapture: Boolean) {
         val rate = 48000
         val track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build(),
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setAllowedCapturePolicy(if (noCapture) AudioAttributes.ALLOW_CAPTURE_BY_NONE else AudioAttributes.ALLOW_CAPTURE_BY_ALL)
+                    .build(),
             )
             .setAudioFormat(
                 AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
@@ -71,7 +75,7 @@ class TonePlayerService : Service() {
             .build()
         val session = track.audioSessionId
         if (broadcast) sendSession(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION, session)
-        Log.i(TAG, "playing ${freq}Hz amp=$amp session=$session broadcast=$broadcast pkg=$packageName")
+        Log.i(TAG, "playing ${freq}Hz amp=$amp session=$session broadcast=$broadcast noCapture=$noCapture pkg=$packageName")
         val n = 960
         val buf = FloatArray(n * 2)
         var phase = 0.0

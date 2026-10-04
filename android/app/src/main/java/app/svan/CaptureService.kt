@@ -10,6 +10,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioTrack
@@ -39,6 +41,14 @@ class CaptureService : Service() {
     private var projection: MediaProjection? = null
     @Volatile private var activeRecord: AudioRecord? = null
     private var systemPackages: Set<String> = emptySet()
+    /** Other (non-Svan) active media players, from the public playback callback. */
+    @Volatile private var otherActivePlayers = 0
+    private val playbackCallback = object : AudioManager.AudioPlaybackCallback() {
+        override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>) {
+            // Svan's own output track is one of them while capture runs.
+            otherActivePlayers = (configs.count { it.audioAttributes.usage in CaptureCompat.MIX_USAGES } - 1).coerceAtLeast(0)
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -140,6 +150,10 @@ class CaptureService : Service() {
             var writtenFrames = 0L
             var dspNanos = 0L
             var processedFrames = 0L
+            // Frames of exact digital silence in a row (a capture-blocked or paused source).
+            var silentRun = 0L
+            var watchdogFired = false
+            getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(playbackCallback, null)
             while (running) {
                 val next = SessionRouter.captureUids
                 if (next !== allowed) {
@@ -147,6 +161,7 @@ class CaptureService : Service() {
                     // occurs in steady playback. Never capture unknown/unmuted apps.
                     input.stop(); input.release(); record = null; activeRecord = null
                     allowed = next
+                    silentRun = 0; watchdogFired = false
                     input = openRecord(mp, allowed)
                     record = input; activeRecord = input
                     input.startRecording()
@@ -169,15 +184,29 @@ class CaptureService : Service() {
                 val n = input.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                 if (n < 0) { if (running) EqController.log("capture: read failed ($n)"); break }
                 if (n == 0) continue
-                for (i in 0 until n) levelPeak = maxOf(levelPeak, kotlin.math.abs(buf[i]))
+                var blockPeak = 0f
+                for (i in 0 until n) blockPeak = maxOf(blockPeak, kotlin.math.abs(buf[i]))
+                levelPeak = maxOf(levelPeak, blockPeak)
                 levelFrames += n / 2
-                if (allowed.isNotEmpty()) {
+                if (blockPeak == 0f) silentRun += n / 2 else { silentRun = 0; watchdogFired = false }
+                // Fail open: a muted source whose capture stays all-zero while other media is
+                // playing means its audio is not reaching us (capture opt-out mid-session, a
+                // DRM stream...). Silence forever is the worst outcome, so hand it back to
+                // Engine A. Paused sources are indistinguishable from blocked ones without
+                // another active player, hence the otherActivePlayers condition.
+                if (allowed.isNotEmpty() && !watchdogFired && silentRun >= rate * SILENCE_FAILOPEN_S && otherActivePlayers > 0) {
+                    watchdogFired = true
+                    EqController.log("capture: muted source delivers only silence for ${SILENCE_FAILOPEN_S}s while other media plays → failing open")
+                    SessionRouter.onCaptureSilent()
+                }
+                if (allowed.isNotEmpty() && silentRun < rate) {
                     val begin = System.nanoTime()
                     dsp.process(buf, buf, n / 2)
                     dspNanos += System.nanoTime() - begin
                 } else {
-                    // No admitted source: do not spend phone CPU oversampling
-                    // silence or let dither/filter tails masquerade as music.
+                    // No admitted source, or >1 s of digital silence (filter state has fully
+                    // decayed): do not spend phone CPU oversampling silence or let dither/filter
+                    // tails masquerade as music. Processing resumes with the next non-zero block.
                     java.util.Arrays.fill(buf, 0, n, 0f)
                 }
                 for (i in 0 until n) outputPeak = maxOf(outputPeak, kotlin.math.abs(buf[i]))
@@ -198,7 +227,8 @@ class CaptureService : Service() {
                         dsp.appliedGainDb, dsp.gainProtectionDb,
                         20.0 * kotlin.math.log10(maxOf(levelPeak.toDouble(), 1e-6)),
                         20.0 * kotlin.math.log10(maxOf(outputPeak.toDouble(), 1e-6)))
-                    EqController.log("capture level: peak=%.4f over %d frames; output queued=%.1f ms, underruns=%d, DSP=%.1f%%".format(levelPeak, levelFrames, stats!!.queuedMs, stats!!.underruns, stats!!.dspPercent))
+                    val muted = SessionRouter.snapshot.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.joinToString { it.pkg }
+                    EqController.log("capture level: peak=%.4f over %d frames; output queued=%.1f ms, underruns=%d, DSP=%.1f%%, muted=[%s], otherPlayers=%d".format(levelPeak, levelFrames, stats!!.queuedMs, stats!!.underruns, stats!!.dspPercent, muted, otherActivePlayers))
                     levelPeak = 0f; outputPeak = 0f; levelFrames = 0; dspNanos = 0; processedFrames = 0
                 }
             }
@@ -206,6 +236,7 @@ class CaptureService : Service() {
             EqController.log("capture: audio loop failed: $e")
         } finally {
             running = false
+            runCatching { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(playbackCallback) }
             activeRecord = null
             record?.let { runCatching { it.stop() }; it.release() }
             track?.let { runCatching { it.pause(); it.flush(); it.stop() }; it.release() }
@@ -293,6 +324,7 @@ class CaptureService : Service() {
         private const val TAG = "CaptureService"
         private const val CHANNEL = "capture"
         private const val NOTIF_ID = 1
+        private const val SILENCE_FAILOPEN_S = 4
         const val ACTION_STOP = "app.svan.STOP_CAPTURE"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"

@@ -47,6 +47,31 @@ object SessionRouter {
 
     val snapshot: Collection<Route> get() = routes.values.toList()
 
+    /** Packages whose capture proved silent while playing: Engine A only, until the expiry (ms). */
+    private val tempBlocked = ConcurrentHashMap<String, Long>()
+    private const val TEMP_BLOCK_MS = 3 * 60_000L
+
+    /**
+     * Engine B muted sources but their capture stayed digital silence while other media played:
+     * unmute them and give them to Engine A so the listener is never left in silence.
+     * Not cached as BLOCKED — the cause may be transient (one stream, an ad, a track).
+     */
+    fun onCaptureSilent() {
+        worker.execute {
+            routes.values.filter { it.owner == Owner.ENGINE_B_MUTED && it.playing != false }.forEach {
+                tempBlocked[it.pkg] = System.currentTimeMillis() + TEMP_BLOCK_MS
+                EqController.log("fail-open: ${it.pkg} (session ${it.sessionId}) → Engine A for a while")
+                toEngineA(it.sessionId, it.pkg, it.uid, it.playing)
+            }
+        }
+    }
+
+    private fun tempBlockedNow(pkg: String): Boolean {
+        val until = tempBlocked[pkg] ?: return false
+        if (System.currentTimeMillis() < until) return true
+        tempBlocked.remove(pkg); return false
+    }
+
     @Synchronized
     fun init(context: Context) {
         if (!::compatStore.isInitialized) {
@@ -165,7 +190,7 @@ object SessionRouter {
     private fun reroute(sid: Int, pkg: String, uid: Int, playing: Boolean?) {
         if (!enabled) return
         val mp = projection
-        if (mp == null || pkg in captureSystemPackages) {
+        if (mp == null || pkg in captureSystemPackages || tempBlockedNow(pkg)) {
             toEngineA(sid, pkg, uid, playing)
             return
         }

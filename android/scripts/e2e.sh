@@ -181,6 +181,14 @@ eq refresh_detection
 wait_for "route: $CAP .*Engine A" 30; sleep 3
 measure "T19 live permission grant discovers existing playback"
 tone $CAP --ez stop true; sleep 3
+log "T20 muted source whose capture goes silent mid-playback must fail open to Engine A"
+eq engine_mode --ez system_only false
+$A logcat -c; eq start_capture --es quality EFFICIENT; wait_for "capture: started" 120
+tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true; sleep 8
+tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez nocapture true; sleep 14
+measure "T20 capture-opt-out stream after Engine B muted it (expect T1, not silence)"
+eq stop_capture; sleep 3
+tone $CAP --ez stop true; sleep 3
 # Restart discovery so screenshots include real detected app rows.
 eq stop_system; sleep 3; eq start_system; sleep 3
 tone $CAP --ef freq 1000 --ef amp 0.05 --ez broadcast true; sleep 4
@@ -231,6 +239,9 @@ T17=$(lvl T17); T18=$(lvl T18); T19=$(lvl T19)
 check "General player broadcasts connect without DUMP" "$(near "$T17" "$T1" 1.0)" "T17=$T17 vs T1=$T1"
 check "Missing permission does not pretend to process an unknown player" "$(near "$T18" "$T0" 1.0)" "T18=$T18 vs T0=$T0"
 check "Permission granted during playback takes effect without restarting" "$(near "$T19" "$T1" 1.0)" "T19=$T19 vs T1=$T1"
+T20=$(lvl T20)
+check "Silent capture fails open to Engine A (never leaves silence)" "$(near "$T20" "$T1" 3.0)" "T20=$T20 vs T1=$T1 ±3 dB"
+check "Watchdog logged the fail-open" "$(grep -q 'failing open' "$FULL" && echo 1 || echo 0)" "log line present"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
 kill $FULLLOG 2>/dev/null
