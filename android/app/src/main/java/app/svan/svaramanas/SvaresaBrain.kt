@@ -172,8 +172,8 @@ object SvaresaBrain {
                 .format(nightSub * 1.0, nightPresence * 1.0)
         }
         val bands = ContextLayer.skeleton(bass, treble, nightSub, nightPresence)
-        // Part of the added bass/treble is returned as level, so quiet listening is not just "louder".
-        val preamp = -0.35 * maxOf(bass, treble)
-        return ContextLayer(bands, preamp, levelling, reasons, bass, treble, n)
+        // The controller computes one K-weighted trim for the combined, slewed
+        // curve. A fixed fraction of the largest shelf was not a loudness match.
+        return ContextLayer(bands, 0.0, levelling, reasons, bass, treble, n)
     }
 }

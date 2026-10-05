@@ -1166,6 +1166,18 @@ TEST(analyzer_stereo_image) {
   CHECK(wide.sideToMidDb > -6.0);
 }
 
+TEST(analyzer_hears_side_only_music_and_its_tonal_balance) {
+  auto mid = multisine(48000, 6, 20000, [](double f) { return f > 180 && f < 560 ? 6.0 : 0.0; });
+  auto side = mid;
+  for (size_t i = 1; i < side.size(); i += 2) side[i] = -side[i];
+  const auto m = analyse(mid), s = analyse(side);
+  CHECK(s.valid);
+  CHECK_NEAR(s.loudnessLufs, m.loudnessLufs, 0.01);
+  CHECK_NEAR(s.mudDb, m.mudDb, 0.01);
+  CHECK_NEAR(s.cutoffHz, m.cutoffHz, 1.0);
+  CHECK(s.correlation < -0.99 && !s.monoLike);
+}
+
 TEST(analyzer_pauses_do_not_wash_out_the_picture) {
   auto x = multisine(48000, 7, 20000, flatShape);
   const auto before = analyse(x);
@@ -1194,6 +1206,8 @@ TEST(analyzer_features_round_trip_through_the_packed_layout) {
   f.pack(packed.data());
   const auto g = SourceFeatures::unpack(packed.data(), static_cast<int>(packed.size()));
   CHECK(g.valid == f.valid && g.cutoffHz == f.cutoffHz && g.mudDb == f.mudDb && g.bandDb == f.bandDb);
+  CHECK(g.hasStereoSpectrum && g.midBandDb == f.midBandDb && g.sideBandDb == f.sideBandDb);
+  CHECK(!SourceFeatures::unpack(packed.data(), SourceFeatures::kLegacyPacked).hasStereoSpectrum);
 }
 
 // ---- Svaramanas: policy + guardrails --------------------------------------------
@@ -1224,6 +1238,16 @@ TEST(svaramanas_three_always_four_only_without_a_clash) {
   CHECK(c.rejected == sv::kSynth);
 }
 
+TEST(svaramanas_strength_controls_the_entire_guide) {
+  const auto zero = sv::plan(req(sv::Feel::Intimate, {sv::kVocals, sv::kStrings, sv::kSpace}, 0.0), nullptr);
+  for (const auto& b : zero.bands) CHECK(b.gainDb == 0.0);
+  CHECK(zero.stereo.isOff() && zero.bassCharacter == 0.0);
+  const auto gentle = sv::plan(req(sv::Feel::Balanced, {sv::kStrings}, 0.5), nullptr);
+  const auto bold = sv::plan(req(sv::Feel::Balanced, {sv::kStrings}, 1.5), nullptr);
+  CHECK(bold.stereo.instruments > gentle.stereo.instruments);
+  CHECK(bold.stereo.space > gentle.stereo.space);
+}
+
 TEST(svaramanas_guardrails_hold_for_every_combination) {
   int plans = 0, failures = 0;
   for (int feel = 0; feel <= 5; ++feel)
@@ -1252,7 +1276,7 @@ TEST(svaramanas_guardrails_hold_for_every_combination) {
         ok = ok && positive <= sv::kEmphasisBudgetDb + 1e-9;
         ok = ok && peak <= 6.0;
         // Loudness matched: trim cancels the predicted change (unless clamped).
-        if (p.preampDb > -8.0 && p.preampDb < 1.5) ok = ok && std::fabs(p.preampDb + p.predictedDeltaDb) < 1e-9;
+        if (p.preampDb > -18.0 && p.preampDb < 1.5) ok = ok && std::fabs(p.preampDb + p.predictedDeltaDb) < 1e-9;
         ok = ok && p.stereo.intimacy >= 0 && p.stereo.intimacy <= 1 && p.stereo.space >= -1 && p.stereo.space <= 1;
         ok = ok && __builtin_popcount(p.categories.accepted) <= sv::kMaxCategories;
         if (!ok) ++failures;
@@ -1272,6 +1296,8 @@ std::pair<double, double> measureThroughEngine(const std::vector<float>& x, cons
   Engine e(c);
   e.setBandsAllChannels(p.bands);
   e.setPreampDb(p.preampDb);
+  e.setStereoTuner(p.stereo);
+  e.setBassCharacter(p.bassCharacter);
   std::vector<float> y(x.size());
   for (size_t i = 0; i < x.size() / 2; i += 512) {
     const int n = static_cast<int>(std::min<size_t>(512, x.size() / 2 - i));
@@ -1299,6 +1325,115 @@ TEST(svaramanas_is_loudness_matched_when_measured) {
       std::printf("    delta %.2f dB (predicted %.2f before trim)\n", out - in, p.predictedDeltaDb);
       CHECK_NEAR(out - in, 0.0, 0.5);
     }
+  }
+}
+
+TEST(svaramanas_instrument_presence_has_measured_contrast) {
+  // Shared-band tone shaping, not source separation. Measure actual output
+  // spectrum contrast against the nearby masking region at matched level.
+  const auto x = multisine(48000, 6, 20000, flatShape, -24);
+  const auto heard = analyse(x);
+  struct Focus { uint32_t category; double front, mask; };
+  for (const auto focus : {Focus{sv::kVocals, 3000, 250}, Focus{sv::kGuitars, 2400, 350},
+                          Focus{sv::kStrings, 2200, 300}, Focus{sv::kBrass, 1000, 300},
+                          Focus{sv::kBass, 80, 250}, Focus{sv::kPiano, 4500, 400}}) {
+    const auto p = sv::plan(req(sv::Feel::Balanced, {focus.category}), &heard);
+    EngineConfig c; c.autoHeadroom = false; c.gainProtection = false;
+    Engine engine(c); engine.setBandsAllChannels(p.bands); engine.setPreampDb(p.preampDb);
+    engine.setBassCharacter(p.bassCharacter); engine.setStereoTuner(p.stereo);
+    auto y = x;
+    for (size_t i = 0; i < y.size() / 2; i += 512)
+      engine.process(&x[i * 2], &y[i * 2], static_cast<int>(std::min<size_t>(512, y.size() / 2 - i)));
+    const auto after = analyse(y);
+    auto index = [](double hz) { return static_cast<size_t>(std::round(3 * std::log2(hz / 25))); };
+    const auto a = index(focus.front), b = index(focus.mask);
+    const double contrast = (after.bandDb[a] - after.bandDb[b]) - (heard.bandDb[a] - heard.bandDb[b]);
+    std::printf("    category %u foreground contrast %+.2f dB, level %+.2f dB\n", focus.category, contrast, after.loudnessLufs - heard.loudnessLufs);
+    CHECK(contrast > 1.2 && contrast < 5.0);
+    CHECK_NEAR(after.loudnessLufs, heard.loudnessLufs, .5);
+  }
+}
+
+TEST(stereo_level_model_matches_actual_complex_crossover_and_focus) {
+  // Mid and side individually: the LR4 phase sum must match, not just the
+  // magnitudes of its low and high branches. Includes the crossover itself.
+  StereoTunerParams p{.7, .3, 0, .6, .8};
+  for (double hz : {80., 180., 500., 1200., 3000., 10000.}) {
+    const auto predicted = stereoResponsePower(p, hz, 48000);
+    for (int mode = 0; mode < 2; ++mode) {
+      StereoTuner tuner(48000); tuner.setParams(p);
+      std::vector<double> l(48000), r(48000);
+      double in = 0, out = 0;
+      for (size_t i = 0; i < l.size(); ++i) { l[i] = .01 * std::sin(2 * kPi * hz * i / 48000); r[i] = mode ? -l[i] : l[i]; }
+      for (size_t i = 12000; i < l.size(); ++i) in += l[i] * l[i];
+      tuner.process(l.data(), r.data(), static_cast<int>(l.size()));
+      for (size_t i = 12000; i < l.size(); ++i) out += .5 * (l[i] * l[i] + r[i] * r[i]);
+      CHECK_NEAR(10 * std::log10(out / in), 10 * std::log10(predicted[static_cast<size_t>(mode)]), .02);
+    }
+  }
+}
+
+TEST(svaramanas_matches_frequency_dependent_stereo_energy) {
+  const auto mid = multisine(48000, 6, 20000, [](double f) { return -3 * std::log2(f / 1000); }, -28);
+  const auto side = multisine(48000, 6, 20000, [](double f) { return f < 1000 ? -25 : 0; }, -28, 0, 123);
+  auto x = mid;
+  for (size_t i = 0; i < x.size(); i += 2) { x[i] = mid[i] + side[i]; x[i + 1] = mid[i] - side[i]; }
+  const auto heard = analyse(x);
+  CHECK(heard.hasStereoSpectrum);
+  for (const auto r : {req(sv::Feel::Spacious, {sv::kStrings, sv::kSpace}, 1.5),
+                       req(sv::Feel::Intimate, {sv::kVocals, sv::kBrass}, 1.5)}) {
+    const auto p = sv::plan(r, &heard);
+    const auto [before, after] = measureThroughEngine(x, p);
+    std::printf("    split-spectrum full-guide level %+.2f dB\n", after - before);
+    CHECK_NEAR(after, before, .5);
+  }
+}
+
+TEST(svaresa_corrects_side_only_masking_without_inventing_instrument_picks) {
+  auto x = multisine(48000, 6, 20000, [](double f) { return f > 180 && f < 560 ? 6 : 0; }, -24);
+  for (size_t i = 1; i < x.size(); i += 2) x[i] = -x[i];
+  const auto heard = analyse(x);
+  sv::Request r; r.svaresaMode = true;
+  const auto p = sv::plan(r, &heard);
+  CHECK(p.categories.accepted == 0 && p.bassCharacter == 0);
+  EngineConfig c; c.autoHeadroom = false; c.gainProtection = false;
+  Engine e(c); e.setBandsAllChannels(p.bands); e.setPreampDb(p.preampDb); e.setStereoTuner(p.stereo);
+  auto y = x;
+  for (size_t i = 0; i < y.size() / 2; i += 512)
+    e.process(&x[i * 2], &y[i * 2], static_cast<int>(std::min<size_t>(512, y.size() / 2 - i)));
+  const auto corrected = analyse(y);
+  std::printf("    side-only mud %.2f -> %.2f dB, level %+.2f dB\n", heard.mudDb, corrected.mudDb, corrected.loudnessLufs - heard.loudnessLufs);
+  CHECK(corrected.mudDb < heard.mudDb - 1);
+  CHECK_NEAR(corrected.loudnessLufs, heard.loudnessLufs, .5);
+}
+
+TEST(guide_gain_protection_covers_strong_intimacy_and_ambience) {
+  const auto p = sv::plan(req(sv::Feel::Spacious, {sv::kVocals, sv::kStrings, sv::kSpace}, 1.5), nullptr);
+  Engine e(EngineConfig{}); e.setBandsAllChannels(p.bands); e.setPreampDb(p.preampDb);
+  e.setStereoTuner(p.stereo); e.setBassCharacter(p.bassCharacter);
+  std::vector<float> x(96000), y(x.size());
+  for (size_t i = 0; i < x.size(); i += 2) {
+    x[i] = float(.95 * std::sin(2 * kPi * 3000 * (i / 2) / 48000));
+    x[i + 1] = -x[i];
+  }
+  e.process(x.data(), y.data(), static_cast<int>(x.size() / 2));
+  for (float v : y) CHECK(std::isfinite(v) && std::fabs(v) <= .989);
+}
+
+TEST(svaresa_combined_context_is_loudness_matched_in_the_signal_path) {
+  const auto x = multisine(48000, 6, 20000, flatShape, -24, .5);
+  const auto heard = analyse(x);
+  for (bool stereo : {false, true}) {
+    auto r = req(sv::Feel::Intimate, {sv::kVocals}); r.stereoEngine = stereo;
+    auto p = sv::plan(r, &heard);
+    p.bands.push_back({FilterType::LowShelf, 110, 6, .71, true});
+    p.bands.push_back({FilterType::HighShelf, 7500, 3, .71, true});
+    p.bands.push_back({FilterType::Peak, 3800, -1, 1, true});
+    p.predictedDeltaDb = sv::predictedGuideLoudnessDeltaDb(p.bands, p.stereo, &heard);
+    p.preampDb = std::clamp(-p.predictedDeltaDb, -18., 1.5);
+    const auto [before, after] = measureThroughEngine(x, p);
+    std::printf("    combined context full-path level %+.2f dB\n", after - before);
+    CHECK_NEAR(after, before, .5);
   }
 }
 

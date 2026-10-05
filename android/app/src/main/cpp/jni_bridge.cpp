@@ -291,6 +291,30 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
   return res;
 }
 
+// Match the combined/slewed guide and context curve, not two independent trims.
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeSmartLoudnessDelta(
+    JNIEnv* env, jclass, jdoubleArray bands, jdoubleArray features,
+    jdouble intimacy, jdouble space, jdouble instruments) {
+  const jsize n = bands ? env->GetArrayLength(bands) : 0;
+  std::vector<jdouble> raw(static_cast<size_t>(n));
+  if (n) env->GetDoubleArrayRegion(bands, 0, n, raw.data());
+  std::vector<BandParams> bs;
+  for (jsize i = 0; i + 4 < n; i += 5) {
+    const int type = static_cast<int>(raw[i]);
+    if (type < 0 || type > static_cast<int>(FilterType::AllPass)) continue;
+    bs.push_back({static_cast<FilterType>(type), raw[i + 1], raw[i + 2], raw[i + 3], raw[i + 4] != 0});
+  }
+  SourceFeatures f;
+  if (features) {
+    const jsize count = env->GetArrayLength(features);
+    std::vector<jdouble> packed(static_cast<size_t>(count));
+    if (count) env->GetDoubleArrayRegion(features, 0, count, packed.data());
+    f = SourceFeatures::unpack(packed.data(), count);
+  }
+  const StereoTunerParams stereo{intimacy, 0, 0, space, instruments};
+  return svaramanas::predictedGuideLoudnessDeltaDb(bs, stereo, f.valid ? &f : nullptr);
+}
+
 JNIEXPORT jint JNICALL Java_app_svan_NativeEngine_nativeLatency(JNIEnv*, jclass, jlong h) {
   return fromHandle(h)->latencyFrames();
 }

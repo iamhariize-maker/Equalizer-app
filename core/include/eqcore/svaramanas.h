@@ -87,7 +87,7 @@ CategoryCheck checkCategories(const Request& r);
 struct Plan {
   std::vector<BandParams> bands;  // the smart layer (fixed skeleton per request)
   double preampDb = 0.0;          // loudness-matching trim (<= 0 for boosts)
-  double predictedDeltaDb = 0.0;  // loudness change of the bands before the trim
+  double predictedDeltaDb = 0.0;  // estimated static guide loudness change before trim
   double bassCharacter = 0.0;     // suggestion, -1..1
   StereoTunerParams stereo{};     // suggestion (Engine B only)
   CategoryCheck categories;
@@ -109,6 +109,11 @@ Plan plan(const Request& r, const SourceFeatures* features);
 
 // K-weighted loudness change of `bands` on a third-octave power spectrum
 // (dB levels at SourceFeatures::bandCentreHz). Pink when spectrumDb is null.
+// Full static guide (EQ + M/S), using measured M/S spectra when available.
+// Without audio, pink with a 25% side-energy reference is an estimate only.
+double predictedGuideLoudnessDeltaDb(const std::vector<BandParams>& bands, const StereoTunerParams& stereo,
+                                     const SourceFeatures* features, double sampleRate = 48000.0);
+
 double predictedLoudnessDeltaDb(const std::vector<BandParams>& bands, const double* spectrumDb,
                                 double sampleRate = 48000.0);
 

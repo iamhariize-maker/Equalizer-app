@@ -4,6 +4,32 @@ Written at the end of a long Claude Code session so another agent (Codex cloud) 
 Repo: `iamhariize-maker/Equalizer-app`, current branch **`ccr-f859b567-dgrdoj`** (not merged; PR #1 is open for it).
 Start with `AGENTS.md`. This file has the detail.
 
+## Combined sound refinement — 2026-10-05 (0.5.2 preview)
+
+The owner reports 0.5.1 detection working so far, currently listening with Fosi IM4 and starting to
+be impressed. They requested stronger, clearer instrument/vocal/ambience results in both the guide
+and Auto master. This build combines the permission removal below with targeted sound refinements.
+No new permission is added; working streaming-session discovery is preserved.
+
+Built: total mid + side spectral analysis with allocation-free dual FFTs, appended M/S feature
+packing (legacy prefix accepted); accurate static M/S level model sharing live filter coefficients
+and complex crossover sum; strength now scales all guide processors; paired presence/masking
+profiles; stronger measured Svaresa excess correction with unchanged 4 dB bounds/dead bands.
+The controller matches the combined, slewed guide/context bands instead of adding two guesses.
+Negative smart trim can reach -18 dB for extreme stereo requests; positive makeup remains capped
+at +1.5 dB. Guide-only transient suggestions are restrained (max 0.15); the manual processor is
+unchanged. Runtime/UI matching is explicitly estimated when no audio has been captured.
+
+Tests first exposed side-only music being missed, ineffective stereo strength and up to +2.58 dB
+unintended full-guide loudness. Native validation now enables every suggested processor. Checked
+synthetic cases stay within 0.25 dB; six foreground/masking contrasts are 1.70–3.02 dB. Side-only
+mud is reduced 4.03 → 2.96 dB at unchanged loudness. Details, reproducible cases and limits:
+[Sound validation](SOUND_VALIDATION_0.5.2.md). The combined local/CI results will accompany the APK.
+No IM4-specific measured correction was invented. Engine A still lacks live analysis; blocked streams
+receive the selected guide and output/volume/night context, not fabricated mix intelligence. Stronger
+contrast is measured; listening quality, commercial streaming/TECNO behavior and Play Protect
+classification of this APK still need phone validation. Do not claim unparalleled quality.
+
 ## Notification-access removal — 2026-10-05 (0.5.2 preview)
 
 The owner explicitly requested removal of player recognition's setting and
@@ -17,7 +43,7 @@ Removed the notification-listener service/manifest declaration, optional card,
 consent/settings links, media-session reader, identity/state models, diagnostic
 fields, health logic and recognition-only checks. Retained the working direct
 Shizuku grant, audio reports, callbacks, broadcasts, parser hardening and silent
-capture startup guard. No DSP changes. Synthetic test players still publish media
+capture startup guard. The combined build also refines sound (see below). Synthetic test players still publish media
 sessions, but Svan does not read them. The APK permission gate checks the compiled
 manifest, including service permissions, to prevent notification/SMS/accessibility
 capabilities returning through dependencies.
@@ -31,8 +57,8 @@ certification. Keep Play Protect enabled. If the replacement is blocked, obtain
 the exact message and follow Google's developer investigation/appeal path.
 No external scanner or appeal was submitted in this session.
 
-Local debug/release builds, lint and 74 JVM tests passed; the native suite remains
-65/65. The compiled 0.5.2 APK passes the capability gate and the actual 0.5.1 APK
+Local debug/release builds, lint and 74 JVM tests passed; the permission-only native suite was
+65/65; the combined sound refinement now has 73 tests. The compiled 0.5.2 APK passes the capability gate and the actual 0.5.1 APK
 fails it for its listener service/permission. Preview signing matches the installed
 0.5.1 certificate. New CI is pending at writing. The prior 0.5.1 exact
 release passed [CI 37288622066](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37288622066):

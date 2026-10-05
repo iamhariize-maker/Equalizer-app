@@ -208,3 +208,13 @@ solo instruments, wide stereo material and mono material. Mid/side processing
 cannot identify voices or individual instruments. Orchestral controls have no
 processing path on Engine A. Keep timestamps and level-matched comparisons before
 changing thresholds or advertising perceptual benefits.
+
+## 0.5.2 listening reference
+
+The owner is currently listening with Fosi IM4 and reports 0.5.1 detection working so far.
+For 0.5.2 compare guide Natural and Bold at the same perceived level on one familiar passage,
+then toggle original with the bubble. Start with guitars/brass-winds/strings separately, then
+voice + Intimate, bass, and ambience. Judge attack definition, masking, sibilance and image stability.
+Use Spotify, Amazon Music and YouTube Music first. Record the actual engine/output shown in Hi-Fi.
+On system effects Auto master has output/volume/night context but no live music analysis.
+Keep Play Protect enabled; this preview has no notification-access setting or service.

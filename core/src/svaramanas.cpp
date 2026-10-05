@@ -30,24 +30,24 @@ struct CategoryDef {
 const std::vector<CategoryDef>& categoryDefs() {
   static const std::vector<CategoryDef> defs = {
       {kVocals, 1500, 4000,
-       {{{FilterType::Peak, 3000, 2.0, 1.0}, {FilterType::Peak, 250, -0.6, 1.0}}, 0.0, {0.4, 0.0, 0.2, 0.0, 0.0}}},
+       {{{FilterType::Peak, 3000, 2.2, 1.0}, {FilterType::Peak, 250, -1.0, 1.0}}, 0.0, {0.4, 0.0, 0.2, 0.0, 0.0}}},
       {kStrings, 300, 700,
-       {{{FilterType::Peak, 450, 1.0, 0.8}, {FilterType::Peak, 7000, 1.2, 0.9}}, 0.0, {0.0, 0.0, 0.0, 0.2, 0.6}}},
+       {{{FilterType::Peak, 450, 1.0, 0.8}, {FilterType::Peak, 7000, 1.2, 0.9}, {FilterType::Peak, 2200, 2.0, 1.0}, {FilterType::Peak, 250, -0.6, 1.0}}, 0.0, {0.0, 0.0, 0.0, 0.2, 0.6}}},
       {kPiano, 120, 300,
-       {{{FilterType::Peak, 200, 1.2, 0.9}, {FilterType::Peak, 4500, 1.0, 1.2}}, 0.0, {}}},
+       {{{FilterType::Peak, 200, 1.2, 0.9}, {FilterType::Peak, 4500, 1.6, 1.2}, {FilterType::Peak, 400, -0.7, 1.0}}, 0.0, {}}},
       {kGuitars, 1800, 3000,
-       {{{FilterType::Peak, 110, 0.8, 1.0}, {FilterType::Peak, 2400, 1.5, 1.0}, {FilterType::Peak, 8000, 0.8, 1.0}},
+       {{{FilterType::Peak, 110, 0.6, 1.0}, {FilterType::Peak, 2400, 2.2, 1.0}, {FilterType::Peak, 8000, 0.8, 1.0}, {FilterType::Peak, 350, -0.8, 1.0}},
         0.0, {0.0, 0.0, 0.0, 0.0, 0.2}}},
       {kDrums, 4500, 6500,
-       {{{FilterType::Peak, 60, 1.5, 1.2}, {FilterType::Peak, 5500, 1.5, 1.2}}, 0.3, {}}},
+       {{{FilterType::Peak, 60, 1.8, 1.2}, {FilterType::Peak, 5500, 1.8, 1.2}, {FilterType::Peak, 250, -0.7, 1.0}}, 0.08, {}}},
       {kBass, 45, 150,
-       {{{FilterType::LowShelf, 90, 2.0, 0.71}, {FilterType::Peak, 800, 0.8, 1.0}}, 0.0, {}}},
+       {{{FilterType::LowShelf, 90, 2.4, 0.71}, {FilterType::Peak, 800, 1.1, 1.0}, {FilterType::Peak, 250, -0.8, 1.0}}, 0.0, {}}},
       {kBrass, 700, 1400,
-       {{{FilterType::Peak, 1000, 1.5, 0.9}, {FilterType::Peak, 3200, 0.8, 1.2}}, 0.0, {}}},
+       {{{FilterType::Peak, 1000, 2.0, 0.9}, {FilterType::Peak, 3200, 1.1, 1.2}, {FilterType::Peak, 300, -0.7, 1.0}}, 0.0, {}}},
       {kSynth, 9000, 14000,
        {{{FilterType::LowShelf, 45, 1.2, 0.71}, {FilterType::HighShelf, 11000, 1.5, 0.71}}, 0.0, {}}},
       {kSpace, 0, 0,
-       {{{FilterType::HighShelf, 13000, 0.6, 0.71}}, 0.0, {0.0, 0.0, 0.0, 0.5, 0.3}}},
+       {{{FilterType::HighShelf, 13000, 0.8, 0.71}, {FilterType::Peak, 300, -0.6, 1.0}}, 0.0, {0.0, 0.0, 0.0, 0.5, 0.3}}},
   };
   return defs;
 }
@@ -65,12 +65,12 @@ Sound feelSound(Feel f) {
     case Feel::Bright:
       return {{{FilterType::Peak, 250, -0.5, 1.0}, {FilterType::HighShelf, 6000, 1.5, 0.71}}, 0.0, {}};
     case Feel::Punchy:
-      return {{{FilterType::Peak, 70, 1.5, 1.1}, {FilterType::Peak, 350, -1.0, 1.0}}, 0.4, {}};
+      return {{{FilterType::Peak, 70, 1.8, 1.1}, {FilterType::Peak, 350, -1.2, 1.0}}, 0.08, {}};
     case Feel::Spacious:
       return {{{FilterType::Peak, 300, -0.5, 1.0}, {FilterType::HighShelf, 12000, 1.0, 0.71}}, 0.0,
               {0.0, 0.0, 0.0, 0.5, 0.0}};
     case Feel::Intimate:
-      return {{{FilterType::Peak, 1500, 0.8, 0.7}, {FilterType::HighShelf, 9000, -0.5, 0.71}}, 0.0,
+      return {{{FilterType::Peak, 1500, 1.2, 0.7}, {FilterType::Peak, 350, -0.6, 1.0}, {FilterType::HighShelf, 9000, -0.5, 0.71}}, 0.0,
               {0.5, 0.0, 0.0, -0.2, 0.0}};
     case Feel::Balanced:
     default:
@@ -167,6 +167,34 @@ double predictedLoudnessDeltaDb(const std::vector<BandParams>& bands, const doub
   return den > 0 ? 10.0 * std::log10(num / den) : 0.0;
 }
 
+double predictedGuideLoudnessDeltaDb(const std::vector<BandParams>& bands, const StereoTunerParams& stereo,
+                                     const SourceFeatures* features, double fs) {
+  const bool heard = features && features->valid;
+  const auto ks = kShelf(fs), kh = kHigh(fs);
+  std::vector<BiquadCoeffs> cs;
+  for (const auto& b : bands) if (!isIdentityBand(b)) cs.push_back(designBiquad(b, fs));
+  // Fallback is explicit: use overall side ratio for legacy snapshots, otherwise
+  // a stereo pink reference. New snapshots keep frequency-dependent placement.
+  const double ratio = heard ? std::pow(10.0, std::clamp(features->sideToMidDb, -120.0, 120.0) / 10.0) : 1.0 / 3.0;
+  const double sideFraction = ratio / (1.0 + ratio);
+  double num = 0, den = 0;
+  for (int i = 0; i < SourceFeatures::kBands; ++i) {
+    const double fc = SourceFeatures::bandCentreHz(i);
+    if (fc >= .49 * fs) break;
+    const auto j = static_cast<size_t>(i);
+    const double total = heard ? std::pow(10.0, features->bandDb[j] / 10.0) : 1.0;
+    const double mid = heard && features->hasStereoSpectrum ? std::pow(10.0, features->midBandDb[j] / 10.0) : total * (1 - sideFraction);
+    const double side = heard && features->hasStereoSpectrum ? std::pow(10.0, features->sideBandDb[j] / 10.0) : total * sideFraction;
+    const double w = std::pow(10.0, (magnitudeDb(ks, fc, fs) + magnitudeDb(kh, fc, fs)) / 10.0);
+    double eqDb = 0;
+    for (const auto& c : cs) eqDb += magnitudeDb(c, fc, fs);
+    const auto h = stereoResponsePower(stereo, fc, fs);
+    den += w * (mid + side);
+    num += w * std::pow(10.0, eqDb / 10.0) * (mid * h[0] + side * h[1]);
+  }
+  return den > 0 && num > 0 ? 10 * std::log10(num / den) : 0;
+}
+
 Plan plan(const Request& r, const SourceFeatures* features) {
   Plan p;
   // Svaresa does not infer taste or instruments: it corrects what was measured
@@ -192,9 +220,9 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   if (!r.svaresaMode && r.feel != Feel::Balanced) addNote(p, kNoteFeel);
   for (const auto& s : feel.bands) slots.push_back({{s.type, s.freqHz, s.gainDb * strength, s.q, true}, true});
   bassChar += feel.bassCharacter * strength;
-  st.intimacy += feel.stereo.intimacy;
-  st.space += feel.stereo.space;
-  st.instruments += feel.stereo.instruments;
+  st.intimacy += feel.stereo.intimacy * strength;
+  st.space += feel.stereo.space * strength;
+  st.instruments += feel.stereo.instruments * strength;
 
   std::vector<double> acceptedFreqs;  // positive request bands already placed by earlier picks
   const std::vector<uint32_t> noCategories;
@@ -219,10 +247,10 @@ Plan plan(const Request& r, const SourceFeatures* features) {
     }
     acceptedFreqs.insert(acceptedFreqs.end(), mine.begin(), mine.end());
     bassChar += d->sound.bassCharacter * strength;
-    st.intimacy += d->sound.stereo.intimacy;
-    st.smoothness += d->sound.stereo.smoothness;
-    st.space += d->sound.stereo.space;
-    st.instruments += d->sound.stereo.instruments;
+    st.intimacy += d->sound.stereo.intimacy * strength;
+    st.smoothness += d->sound.stereo.smoothness * strength;
+    st.space += d->sound.stereo.space * strength;
+    st.instruments += d->sound.stereo.instruments * strength;
   }
 
   // ---- 1. budget + per-band cap on the request ---------------------------------
@@ -260,7 +288,7 @@ Plan plan(const Request& r, const SourceFeatures* features) {
     const double cs = std::min(strength, 1.0);
     const bool sv = r.svaresaMode;
     const double maxCorr = sv ? kSvaresaMaxCorrectionDb : kMaxCorrectionDb;
-    const double slope = sv ? 0.75 : 0.6;
+    const double slope = sv ? 1.1 : 0.6;
     auto excess = [&](double x, double thr) { return x > thr ? std::min(maxCorr, slope * (x - thr)) * cs : 0.0; };
     const double boom = excess(features->boomDb, sv ? 2.0 : 3.0);
     const double mud = excess(features->mudDb, sv ? 1.5 : 2.0);
@@ -327,7 +355,9 @@ Plan plan(const Request& r, const SourceFeatures* features) {
     s.band.gainDb = std::clamp(s.band.gainDb, -bandCap, bandCap);
     p.bands.push_back(s.band);
   }
-  p.bassCharacter = std::clamp(bassChar, -1.0, 1.0);
+  // The manual bass shaper remains available at full strength. Automatic guide
+  // suggestions are small: its dynamic envelope gain cannot be level-predicted.
+  p.bassCharacter = std::clamp(bassChar, -0.15, 0.15);
   if (r.stereoEngine) {
     p.stereo.intimacy = clampStereo(st.intimacy, 0.0);
     p.stereo.smoothness = clampStereo(st.smoothness, 0.0);
@@ -339,8 +369,8 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   if (r.svaresaMode) p.stereo.smoothness = clampStereo(svaresaSmooth, 0.0);
 
   // ---- 1. loudness match: never win by being louder ------------------------------
-  p.predictedDeltaDb = predictedLoudnessDeltaDb(p.bands, heard ? features->bandDb.data() : nullptr);
-  p.preampDb = std::clamp(-p.predictedDeltaDb, -8.0, 1.5);
+  p.predictedDeltaDb = predictedGuideLoudnessDeltaDb(p.bands, p.stereo, heard ? features : nullptr);
+  p.preampDb = std::clamp(-p.predictedDeltaDb, -18.0, 1.5);
   if (std::fabs(p.predictedDeltaDb) > 0.05) addNote(p, kNoteLoudnessMatched);
   return p;
 }

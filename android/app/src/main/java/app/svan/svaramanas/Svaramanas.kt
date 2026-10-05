@@ -251,15 +251,26 @@ object Svaramanas {
         _listening.value = engineB
         // Features only count once enough music was heard; before that the plan is static.
         val p = SmartPlan.compute(r, packed?.takeIf { heard?.valid == true }, engineB)
-        _plan.value = p
         if (r.mode == SmartMode.SVARESA) AutoHeadphone.check(appContext, r)
         val ctx = if (r.mode == SmartMode.SVARESA) SvaresaBrain.layer(SvaresaSensors.read(appContext, r)) else null
         _context.value = ctx
         val target = p.toLayer(ctx)
         val prev = SvanRepository.eq.value.smart
-        val next = if (immediate || prev == null) target else slew(prev, target)
+        val drifted = if (immediate || prev == null) target else slew(prev, target)
+        // Match the bands actually applied after slewing, including quiet/night
+        // context. Separate preamp estimates cannot account for stacked filters.
+        val bands = DoubleArray(drifted.bands.size * 5) { i ->
+            val b = drifted.bands[i / 5]
+            when (i % 5) { 0 -> b.type.ordinal.toDouble(); 1 -> b.freqHz; 2 -> b.gainDb; 3 -> b.q; else -> if (b.enabled) 1.0 else 0.0 }
+        }
+        val delta = NativeEngine.nativeSmartLoudnessDelta(bands, packed?.takeIf { heard?.valid == true },
+            drifted.intimacy, drifted.space, drifted.instruments)
+        val next = drifted.copy(preampDb = (-delta).coerceIn(-18.0, 1.5))
+        val applied = p.copy(preampDb = next.preampDb, predictedDeltaDb = delta,
+            notes = if (abs(delta) > 0.05 && 30 !in p.notes) p.notes + 30 else p.notes)
+        _plan.value = applied
         if (next != prev) SvanRepository.update { it.copy(smart = next) }
-        if (immediate) logPlan(p, heard)
+        if (immediate) logPlan(applied, heard)
     }
 
     private var heardLogs = 0
@@ -302,7 +313,7 @@ object Svaramanas {
             when {
                 !listening -> out += "Output, volume and night adaptation are live. Measured tone corrections also need Hi-Fi and a player that allows audio capture; your chosen EQ and tuners still work."
                 h?.valid != true -> out += "Auto master is listening for a few seconds before making any change."
-                else -> out += "Auto master is checking the mix and making only small, measured corrections."
+                else -> out += "Auto master is checking the full stereo mix and correcting measured masking, harshness and tonal imbalance."
             }
         } else if (!listening) out += "On system effects I shape by your choices. Turn on Hi-Fi and I'll listen to the music itself."
         else if (h?.valid != true) out += "Listening… give me a few seconds of music and I'll fine-tune."
@@ -321,7 +332,7 @@ object Svaramanas {
             20 -> out += "Your picks asked for a lot, so I fit them into a 6 dB emphasis budget."
             21 -> out += "${Category.fromMask(p.rejected).joinToString { it.title }} clashes with ${Category.fromMask(p.conflictWith).joinToString { it.title }} in the same range. I kept your first picks."
             22 -> out += "Overlapping picks share their range; the later one yields."
-            30 -> out += "Level-matched (%+.1f dB) so you judge the tone, not the volume.".format(p.preampDb)
+            30 -> out += (if (h?.valid == true) "Source-based level trim (%+.1f dB), including instrument focus and intimacy." else "Estimated level trim (%+.1f dB) against a reference spectrum; live matching needs captured audio.").format(p.preampDb)
         }
         if (r.mode == SmartMode.SVARESA && h?.valid != true && listening) out += "No automatic change yet; I need a capturable music session first."
         else if (out.isEmpty() || (p.notes.none { it in 10..16 } && h?.valid == true)) {

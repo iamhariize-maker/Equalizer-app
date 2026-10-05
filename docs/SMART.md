@@ -7,28 +7,29 @@ and build plan. Every claim about sound quality must be measured (rule 2 in `AGE
 appears in the app or Play listing. See [`RESEARCH_SVARAMANAS.md`](RESEARCH_SVARAMANAS.md) for the
 evidence review and ranked recommendations.
 
-## Status (0.4.0-svaramanas-preview)
+## Status (0.5.2-detection-preview)
 
 Built and tested:
 - `core/…/analyzer.h` **SourceAnalyzer**: gated K-weighted loudness (EBU 3341 sine reads −23.0 LUFS),
   peak, PLR, clipping rate, stereo correlation / mono detection, source bandwidth estimate (a synthetic 16 kHz source found at
   15.5–16.8 kHz), third-octave balance and mud/boom/harsh/air deviations from the mix's own tilt
   (a −3 dB/oct dark mix is not flagged). Pauses don't wash out the picture. Runs inside `Engine` on the
-  *input* (Engine B), allocation-free; one 4096-point FFT per 85 ms.
+  *input* (Engine B), allocation-free; two 4096-point FFTs per 85 ms (mid and side).
 - `core/…/svaramanas.h` **policy + guardrails**: feel × categories (3 always, a 4th only without a range
   clash, never 5), 6 dB emphasis budget, ±3 dB per band, overlap softening, analyser-driven trims (≤2.5 dB),
   bandwidth-estimate/mono/crushed-master respect rules, fixed band skeleton, reason codes.
-  Tested on all 6876 feel × category × strength combinations; **loudness-matched within 0.1 dB measured
-  through the real engine** (target ±0.5 dB).
+  Tested on all 6876 feel × category × strength combinations; **full-guide loudness within 0.25 dB on the checked synthetic mixes** (target ±0.5 dB),
+  including stereo tuners and bass character; older tests exercised only EQ and preamp.
+  See [0.5.2 sound validation](SOUND_VALIDATION_0.5.2.md) for cases and limits.
 - App: `svaramanas/` (controller, dialog activity, overlay bubble service, Quick Settings tile),
   in-app bubble (tap = open, hold = hear the original), notification action. Static plan on system
   effects (Engine A); adaptive on the audiophile engine (re-planned every 3 s, slewed ≤0.5 dB per band).
 - Emulator e2e: T21 the plan reaches system effects at the predicted level; T22 the analyser hears the
   captured source on a real device image.
 
-Not built yet (next increments, in order): Test Pilot report + AppProfile/player coach; fast
-masking-aware dynamic EQ and resonance suppression; noise-aware lift (mic); loudness compensation by
-volume; hearing test + headphone auto-ID; opt-in track memory; blind A/B tool; small ML controllers.
+Not built yet: player coaching; masking-aware dynamic EQ and resonance suppression; calibrated quiet
+listening; hearing test; blind A/B tool; small ML controllers. Track memory is deferred without
+notification access. Volume compensation and conservative exact headphone lookup are already built.
 Known limits: detection thresholds are first guesses, not yet tuned by ear; with auto headroom on,
 Engine A can end up quieter than loudness-matched (safety wins); the overlay bubble does not yet hide
 itself over full-screen video. The owner has reported delay/echo-like playback on YouTube Music over
@@ -45,13 +46,26 @@ ID, and a parsed media session. It also adds one-tick listening callouts, a cont
 starting preset and saveable tab state. Neither the new detection path nor this bass profile has been
 verified on the TECNO yet; listing an app package is not proof that its session is visible or captured.
 
+## 0.5.2 sound refinement
+
+The owner now reports working music detection and promising listening with the Fosi IM4 on 0.5.1.
+That is listener feedback, not a full route/app matrix. Streaming apps remain first priority.
+
+Guide profiles now pair foreground presence with low-mid masking cuts for voice, guitar, strings,
+piano, brass/winds and bass. Strength scales intimacy and stereo focus as well as EQ; zero is truly
+neutral. Svaresa analyses total M/S energy, so widely mixed instruments and ambience no longer vanish
+from its tonal analysis. Measured excess correction is more assertive, with unchanged dead bands and
+4 dB limits. It still does not invent instrument labels, add ambience to mono, or reshape clean masters
+without evidence. Complete guide/context matching uses the live frequency-dependent M/S spectrum
+when available; system effects explicitly label the reference-based match as an estimate.
+
 ## Svaresa 0.5 — what changed
 
 Svaresa used to be inert on system effects (the default) because it had no audio to analyse there. It now has three
 layers that need no capture, and a stronger measured layer when Hi-Fi can listen:
 1. **Quiet listening** (`SvaresaBrain`): ISO 226 contour difference between the current assumed loudness
    (30–80 phon mapped from the volume setting) and a 65-phon reference → bass shelf ≤ 6 dB, treble shelf ≤ 3 dB
-   (bass ≤ 1.5 dB on the phone speaker), partly returned as level. The mapping ignores headphone sensitivity: a rough guide.
+   (bass ≤ 1.5 dB on the phone speaker), matched with the combined guide/context curve. The mapping ignores headphone sensitivity: a rough guide.
 2. **Night comfort**: auto by clock (full 22:30–05:30, one-hour ramps), on or off: −2.5 dB sub-bass shelf,
    −1 dB at 3.8 kHz and a gentle 1.5:1 multiband level-evening (system effects; the capture engine does tone only).
 3. **Headphone recognition**: connected device name → AutoEq entry (exact/unambiguous only) → Harman correction;

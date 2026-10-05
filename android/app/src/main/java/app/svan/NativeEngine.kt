@@ -156,6 +156,9 @@ class NativeEngine(
         @JvmStatic external fun nativeLatency(handle: Long): Int
         @JvmStatic external fun nativeSetAnalysis(handle: Long, on: Boolean)
         @JvmStatic external fun nativeAnalysis(handle: Long): DoubleArray
+        @JvmStatic external fun nativeSmartLoudnessDelta(
+            bands: DoubleArray, features: DoubleArray?, intimacy: Double, space: Double, instruments: Double,
+        ): Double
         @JvmStatic external fun nativeSvaramanasPlan(
             features: DoubleArray?, feel: Int, order: IntArray, strength: Double, stereoEngine: Boolean,
             svaresaMode: Boolean,

@@ -1,12 +1,10 @@
 #pragma once
 // Vocal tuner + instrument amplifier, using mid/side processing.
 //
-// In a stereo mix the lead vocal (and bass) sit in the centre (mid = L+R),
-// while strings, guitars, orchestra, backing vocals and ambience are spread
-// to the sides (side = L-R). Processing them separately lets the vocal tuner
-// shape the voice without touching the instruments, and the instrument
-// amplifier widen or narrow the band without touching the voice — no
-// artificial reverb or delay involved.
+// Lead vocals and bass often sit near the centre (mid = L+R), while
+// instruments and ambience may spread to the sides (side = L-R). M/S filters
+// target these parts of the mix separately; they do not isolate instruments
+// or vocals. Shared content is affected too. No artificial reverb or delay.
 //
 // Vocal tuner (mid only):
 //   intimacy   0..1  voice body & formants forward
@@ -17,6 +15,7 @@
 //   space      -1..1 caved in .. spacious (side level, +-6 dB)
 //   instruments 0..1 string/sax presence, body and air on the sides
 #include <atomic>
+#include <array>
 
 #include "eqcore/biquad.h"
 
@@ -29,6 +28,10 @@ struct StereoTunerParams {
     return intimacy == 0 && warmth == 0 && smoothness == 0 && space == 0 && instruments == 0;
   }
 };
+
+// Power response of the static M/S filters, including the complex LR4 sum.
+// Dynamic de-harshing is signal-dependent and is not modelled here.
+std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double freqHz, double sampleRate);
 
 class StereoTuner {
  public:
