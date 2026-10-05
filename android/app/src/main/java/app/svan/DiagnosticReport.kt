@@ -26,7 +26,6 @@ object DiagnosticReport {
         appendLine("== Permissions and background ==")
         appendLine("DUMP (music detection): ${st.dumpPermission}")
         appendLine(DetectionSetup.diagnostics())
-        appendLine("Player recognition access: ${st.media.access} · available: ${st.media.available} · ${st.media.error ?: ""}")
         appendLine("RECORD_AUDIO: ${context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED}")
         appendLine("Battery optimisation ignored: ${runCatching { context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName) }.getOrNull()}")
         appendLine("System equalizer service running: ${SystemEqService.isRunning} · last started ${SystemEqService.lastStartedMs(context).let { if (it == 0L) "never" else DateFormat.getTimeInstance().format(Date(it)) }}")
@@ -40,9 +39,6 @@ object DiagnosticReport {
         appendLine("Player list (dumpsys audio): ${if (!st.dumpPermission) "NOT REQUESTED: detection permission missing" else if (st.playersOk) "ok" else "FAILED ${st.playersError ?: ""}"}")
         appendLine("Audio server (dumpsys media.audio_flinger): ${if (!st.dumpPermission) "NOT REQUESTED: detection permission missing" else if (st.serverOk) "ok${if (st.serverPartial) " (partial)" else ""}" else "FAILED ${st.serverError ?: ""}"}")
         appendLine("Android public API says active players: ${st.publicActive ?: "unavailable"}")
-        appendLine("== Optional media-session player recognition (not audio-session IDs) ==")
-        st.media.players.forEach { appendLine("- ${it.packageName} uid=${it.uid} state=${it.state ?: "unknown"} local=${it.local}") }
-        appendLine()
         appendLine("== Sessions Svan found (${st.sessions.size}) ==")
         st.sessions.forEach {
             val s = it.session

@@ -294,13 +294,15 @@ separate evaluation.
 - **Overlay:** `SYSTEM_ALERT_WINDOW` is special Settings access and must remain optional. Keep in-app,
   Quick Settings and notification controls complete when overlay is denied. Review the exact current
   Play policy/disclosure before listing.
-- **Track memory:** adding session-history access introduces notification-listener user approval and
-  separate disclosure. It is not needed for the EQ core; do not couple it to first-run setup.
+- **Track memory:** the owner rejected notification-listener access on 5 October 2026.
+  Do not restore that permission for session history. Defer this research or use only
+  manually labelled profiles and explicitly authorized playback-capture evidence.
 - **Package visibility:** use narrow `<queries>` already present in the manifest. Avoid a broad installed-
   app inventory permission unless Play explicitly approves the user-facing core-function justification.
 - **OEM:** Android emulators cannot certify TECNO/ColorOS/MIUI background behavior. Keep OEM tips as
-  device-specific, optional deep links; never tell users to disable protections until a repro shows it is
-  needed. Validate 30-minute screen-off playback and battery on the actual phone.
+  device-specific, optional deep links. Keep Play Protect enabled; investigate or appeal
+  blocked builds through Google's developer flow. Validate 30-minute screen-off playback
+  and battery on the actual phone.
 - **CPU/latency:** benchmark the existing 1×/2×/4×/8× modes on arm64 and Bluetooth/wired routes. Keep
   “output queue” separate from end-to-end delay. Avoid changing to AAudio or exclusive modes without a
   before/after acoustic measurement on the target phone.

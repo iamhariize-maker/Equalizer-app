@@ -275,33 +275,6 @@ sleep 8
 measure "T29 night comfort on the same tone (bounded, audible)"
 eq svaramanas --ez on false; sleep 3
 tone $CAP --ez stop true; sleep 3
-# Streaming-style media sessions recognize players independently, but cannot fabricate audio-session IDs.
-log "T30 optional media-session recognition, recovery and revocation"
-eq stop_system; sleep 3
-$A shell cmd notification allow_listener app.svan/.PlayerRecognitionService
-eq test_blind_reports --ez players true --ez server true
-eq start_system; sleep 3
-$A logcat -c
-tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false
-wait_for "media=$CAP health=BLIND" 30 > "$TMP/e2e_t30_recognized.txt"
-eq sessions; wait_for "routes:" 15 > "$TMP/e2e_t30_routes.txt"
-# Restore reports while the same player stays active: normal routing must recover.
-$A logcat -c
-eq test_blind_reports --ez players false --ez server false
-wait_for "route: $CAP .*Engine A" 40 > "$TMP/e2e_t30_recovered.txt"
-sleep 3
-tone $CAP --ez stop true; sleep 3
-wait_for "media= health=" 30 > "$TMP/e2e_t30_stopped.txt"
-$A logcat -c
-$A shell cmd notification disallow_listener app.svan/.PlayerRecognitionService
-eq refresh_detection
-wait_for "media=unavailable" 30 > "$TMP/e2e_t30_revoked.txt"
-# Normal audio detection still works without recognition.
-$A logcat -c
-tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false
-wait_for "route: $CAP .*Engine A" 40 > "$TMP/e2e_t30_optional.txt"
-tone $CAP --ez stop true; sleep 3
-
 # Restart discovery so screenshots include real detected app rows.
 eq stop_system; sleep 3; eq start_system; sleep 3
 tone $CAP --ef freq 1000 --ef amp 0.05 --ez broadcast true; sleep 4
@@ -317,12 +290,6 @@ check() { # name ok? detail
 }
 near() { awk -v a="$1" -v b="$2" -v t="$3" 'BEGIN { d = a - b; if (d < 0) d = -d; print (a != "" && b != "" && d <= t) ? 1 : 0 }'; }
 check "Missing detection permission and no source block silent capture startup" "$(grep -q 'capture: start blocked' "$TMP/e2e_t16_blocked.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t16_blocked.txt")"
-check "Media sessions recognize a player when both audio reports fail" "$(grep -q "media=$CAP health=BLIND" "$TMP/e2e_t30_recognized.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t30_recognized.txt")"
-check "Media recognition alone never fabricates an audio route" "$(grep -q 'routes:' "$TMP/e2e_t30_routes.txt" && ! grep -q "$CAP" "$TMP/e2e_t30_routes.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t30_routes.txt")"
-check "Audio reports recover the recognized player without restarting it" "$(grep -q "route: $CAP .*Engine A" "$TMP/e2e_t30_recovered.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t30_recovered.txt")"
-check "Stopped media sessions do not remain playing" "$(grep -q 'media= health=' "$TMP/e2e_t30_stopped.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t30_stopped.txt")"
-check "Revoking recognition clears its playback signal" "$(grep -q 'media=unavailable' "$TMP/e2e_t30_revoked.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t30_revoked.txt")"
-check "Detection still routes audio without optional recognition" "$(grep -q "route: $CAP .*Engine A" "$TMP/e2e_t30_optional.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t30_optional.txt")"
 EXP1=$(awk -v a="$T0" -v r="$RESP" 'BEGIN { print a + r }')
 check "Engine A applies the curve" "$(near "$T1" "$EXP1" 1.0)" "T1=$T1, expected T0+($RESP)=$EXP1 ±1 dB"
 B_ROUTE=$(grep -cE "route: $CAP .*Engine B" "$FULL")

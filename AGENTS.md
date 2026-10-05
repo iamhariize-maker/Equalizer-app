@@ -20,6 +20,11 @@ come later. Do not claim commercial-player or TECNO compatibility from synthetic
 `SessionRouter` gives every audio session to exactly ONE engine (they share one `DynamicsProcessing`
 instance per session; never attach both).
 
+Owner decision (5 October 2026): remove notification-access player recognition entirely.
+Do not reintroduce a notification listener, SMS access or accessibility permission for
+player discovery. Keep Play Protect enabled; do not ask users to bypass its warnings.
+The fixed Shizuku DUMP grant and real audio-session detection remain available.
+
 ## Repo map
 | Path | What |
 |---|---|

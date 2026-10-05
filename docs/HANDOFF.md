@@ -4,6 +4,50 @@ Written at the end of a long Claude Code session so another agent (Codex cloud) 
 Repo: `iamhariize-maker/Equalizer-app`, current branch **`ccr-f859b567-dgrdoj`** (not merged; PR #1 is open for it).
 Start with `AGENTS.md`. This file has the detail.
 
+## Notification-access removal — 2026-10-05 (0.5.2 preview)
+
+The owner explicitly requested removal of player recognition's setting and
+permission. They reported the **latest 0.5.1 APK** was blocked by Play Protect
+with a possible security/financial-fraud warning, requiring protection to be
+turned off to install. They also report music recognition/detection working in
+this version so far; no new DUMP/session report was supplied, so this is listener
+feedback, not a complete commercial-player/route validation matrix.
+
+Removed the notification-listener service/manifest declaration, optional card,
+consent/settings links, media-session reader, identity/state models, diagnostic
+fields, health logic and recognition-only checks. Retained the working direct
+Shizuku grant, audio reports, callbacks, broadcasts, parser hardening and silent
+capture startup guard. No DSP changes. Synthetic test players still publish media
+sessions, but Svan does not read them. The APK permission gate checks the compiled
+manifest, including service permissions, to prevent notification/SMS/accessibility
+capabilities returning through dependencies.
+
+Google's [developer warning guidance](https://developers.google.com/android/play-protect/warning-dev-guidance)
+identifies notification-listener access as a trigger for financial-fraud installation
+blocking of internet-sideloaded APKs in supported markets. The 0.5.1 declaration
+matches those criteria; this is a **likely explanation**, not proof of the phone's
+exact classification. Removing it is not a Play Protect approval or malware
+certification. Keep Play Protect enabled. If the replacement is blocked, obtain
+the exact message and follow Google's developer investigation/appeal path.
+No external scanner or appeal was submitted in this session.
+
+Local debug/release builds, lint and 74 JVM tests passed; the native suite remains
+65/65. The compiled 0.5.2 APK passes the capability gate and the actual 0.5.1 APK
+fails it for its listener service/permission. Preview signing matches the installed
+0.5.1 certificate. New CI is pending at writing. The prior 0.5.1 exact
+release passed [CI 37288622066](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37288622066):
+65 native tests plus sanitizers, 81 JVM tests, 10 release checks, 45 e2e checks,
+compat API 29/30/33/35; small-screen screenshots inspected. New e2e retains 39
+checks (the six removed checks existed only for the deleted permission feature).
+`detection_release.sh` still requires exactly 10 passes, including the real direct
+Shizuku grant and measured output after Shizuku stops.
+
+Preview signing is still the public development key for in-place updates; it
+cannot establish exclusive publisher identity. A private production/Play signing
+key is a separate release requirement; do not distribute it or copy the preview
+key into production. No signing rotation was performed in this permission-removal
+patch. Remaining permission purposes and limits are in `docs/PERMISSIONS.md`.
+
 ## Streaming-first detection continuation — 2026-10-05 (0.5.1 preview)
 
 Owner clarified: Spotify, Amazon Music, YouTube Music and other popular streaming

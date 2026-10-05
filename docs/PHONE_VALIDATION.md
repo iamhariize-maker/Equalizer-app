@@ -9,7 +9,15 @@ Bluetooth latency. Capture quality controls do not change the system-effects eng
 
 # Svan phone validation
 
-## Current priority: streaming detection (0.5.1)
+## Current priority: streaming detection (0.5.2)
+
+The owner reports music detection working in 0.5.1, but Play Protect flagged that
+APK for security/financial-fraud risk. 0.5.2 removes notification-access player
+recognition entirely and preserves the working audio-session detection grant.
+Test installation with **Play Protect enabled**. If it blocks the APK, retain the
+exact message and stop the install; the developer must investigate or appeal.
+Do not enable restricted settings or disable protection to install/test Svan.
+
 
 Test Spotify, Amazon Music and YouTube Music first, then Apple Music and other
 popular streaming apps. Neutron/Poweramp/HiBy/Onkyo come later.
@@ -32,11 +40,7 @@ includes the setup stage, authorization and the retained grant error.
 2. Play a song in the streaming app; scan, then **Share report**. It must show
    **DUMP=true**. Include the actual app and route; a cached compatibility verdict
    is not the active player. If setup never enables, report the setup error text.
-3. Optional **Player recognition** can name a media-session player independently.
-   Read its explanation and grant Notification access only if desired. "Recognized"
-   does not mean EQ is connected; verify the audio-session row separately. Confirm
-   stopping playback clears the playing signal and revoking access clears recognition.
-4. Keep the same song playing through track change, screen-off and output change.
+3. Keep the same song playing through track change, screen-off and output change.
    Record whether its session stays connected and whether processing is verified.
    Compare a small EQ cut at fixed volume; do not use louder-is-better comparisons.
 
@@ -83,9 +87,9 @@ Use the same short, familiar passage and keep phone/headphone volume fixed. In P
 3. Stop System effects. Start the **Audiophile engine** and confirm YouTube Music is shown under that
    engine with non-silent input/output peaks. Note whether you hear one copy, an echo/two copies, or a
    single copy that is only delayed.
-4. Stop Engine B before switching route. Repeat its comparison on the phone speaker or a wired output
+3. Stop Engine B before switching route. Repeat its comparison on the phone speaker or a wired output
    if one is available. This separates a Bluetooth-specific problem from the capture/replay path.
-5. Save the player/engine row, route, quality mode, output queue, peaks, underruns, and what you heard.
+4. Save the player/engine row, route, quality mode, output queue, peaks, underruns, and what you heard.
    The queue is not total Bluetooth latency. Do not change EQ or oversampling while isolating routing.
 
 If System effects is single and Engine B is doubled, keep using System effects for that player while
@@ -119,7 +123,7 @@ appear as an app row.
    or bit-perfect option separately. Those are different player paths; record
    the exact option. Do not assume LHDC is the cause if LHDC on/off gives the
    same result.
-4. For each attempt, note the detected app row and engine, last-scan counts,
+3. For each attempt, note the detected app row and engine, last-scan counts,
    route type (wired / Bluetooth / phone speaker), codec if the phone reports it,
    and whether playback continued normally. The expandable local audio details
    may help diagnose a parser miss; they are not uploaded by Svan.
@@ -154,11 +158,11 @@ Before listening in 0.2:
    this Android 14 phone. Pairing/start requires the user's Android UI actions.
 3. Return to Svan and tap Enable music detection. Approve Svan in Shizuku's dialog.
    Svan's single-purpose setup service grants only its own DUMP permission.
-4. After Enhanced detection enabled appears, Shizuku and wireless debugging can
+3. After Enhanced detection enabled appears, Shizuku and wireless debugging can
    be stopped. The grant persists until revoked or Svan is uninstalled. An update
    signed with the same key preserves it; a different preview key may require a
    reinstall and therefore setup again.
-5. Keep a song playing and check the YouTube Music row. A running capture service
+4. Keep a song playing and check the YouTube Music row. A running capture service
    without a connected player is not working EQ. On Engine B, input/output peaks
    near −120 dBFS mean silence; the output-queue reading alone never proves music
    is being processed. Report the app row, signal peaks and any detection error.
@@ -181,10 +185,10 @@ bass, vocal and orchestral controls off initially, with a flat EQ and 0 dB pream
 3. Note quality, output queue/buffer, DSP load and underruns. These are local
    diagnostics; they do not measure end-to-end Bluetooth latency. Compare
    Efficient and High quality, then Audiophile. Keep Extreme for a later test.
-4. Choose System effects for YouTube Music. This stops capture; restart it if
+3. Choose System effects for YouTube Music. This stops capture; restart it if
    desired. Compare sound while the app's status says system effects. Record
    whether the echo disappears and whether timing improves.
-5. Test a clear +6 dB bell around 1 kHz with low source volume. Compare bypass,
+4. Test a clear +6 dB bell around 1 kHz with low source volume. Compare bypass,
    headroom on and headroom off. With headroom on, boosts can reduce overall
    level; the applied preamp readout explains this. Headroom off permits actual
    boost, but gain protection may still reduce hot signals to prevent overload.

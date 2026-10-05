@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Real Shizuku authorization + R8 user service, then measured music routing.
+# Real Shizuku authorization + direct fixed grant, then measured music routing.
 set -uo pipefail   # no -e: keep going after a failed check so one run shows every problem
 FAILED=0
 cd "$(dirname "$0")/.."

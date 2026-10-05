@@ -119,7 +119,7 @@ fun SvanApp(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (tab != 3 && detection.atMs > 0 && !detection.dumpPermission && detection.knownAudioSessions == 0 &&
-                ((detection.publicActive ?: 0) > 0 || detection.media.playing.isNotEmpty())) {
+                (detection.publicActive ?: 0) > 0) {
                 androidx.compose.material3.TextButton(onClick = { tab = 3 }) {
                     Text("Music is playing · enable detection in Hi-Fi", color = Svan.Ember)
                 }

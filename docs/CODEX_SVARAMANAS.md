@@ -89,8 +89,9 @@ tested code. Prioritise by user-audible value, then by risk.
    allowed?, normalisation default, own EQ, exclusive/bit-perfect USB mode (Neutron/HiBy/Onkyo bypass the
    mixer — Svan can't touch them). Research real behaviour; probe results come from the owner's V60
    via a **Test Pilot** report (to be built).
-6. **Track memory** (opt-in): replay/seek-back → most-replayed segments; MediaSession/notification-listener
-   permission implications, Play policy, privacy (see `docs/PRIVACY.md` to update).
+6. **Track memory** (opt-in): the owner rejected notification-listener access on 5 October 2026.
+   Do not restore it for metadata or replay inference; defer this feature until an approved
+   source of evidence exists. See the current restriction in `docs/SMART.md`.
 7. **OEM skins / Play policy**: battery-optimisation and autostart handling per OEM (dontkillmyapp-style
    data), "Pause app activity if unused" (the owner's TECNO has it ON for Svan — it can revoke the mic
    permission), `SYSTEM_ALERT_WINDOW` and MediaProjection/foreground-service justification text,

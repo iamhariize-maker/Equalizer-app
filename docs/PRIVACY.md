@@ -36,19 +36,9 @@ This describes the current preview implementation. A store release still needs
 an owner-approved policy URL/contact and Play Console disclosures matching the
 final package, including its foreground-service and MediaProjection uses.
 
-Optional **Player recognition** requires Android's Notification access, which is
-a broad system permission. Svan explains this before opening Android settings;
-access is off unless you grant it there. Svan's listener uses only
-`MediaSessionManager` to read player package names, package UIDs, playback state,
-and whether output is local or remote. It does not read notification contents,
-media metadata (song/album/artist/artwork), playback positions, or audio. It sends
-no media transport commands. Recognition does not grant playback capture or an
-attachable audio-session ID. Existing detection works without this option.
-
-Recognition is used in memory for the current scan and player-change callbacks.
-Package names and state can appear in the local diagnostic log and in reports
-you explicitly share; no listening history is saved. Disconnection, a failed
-query, or revocation clears the recognition signal. Remote playback (such as
-casting) and paused/buffering sessions do not count as local playing music.
-Use Hi-Fi → Music detection → Manage player recognition to revoke access in
-Android settings. Play disclosure review remains required before store release.
+Svan 0.5.2 removes player recognition and notification-listener access entirely.
+There is no notification-listener service, settings link or notification-reading
+permission. POST_NOTIFICATIONS is retained only to show Svan's own foreground
+service/status notifications; it does not allow reading other apps' notifications.
+Music discovery uses Android audio reports, playback callbacks and player
+session broadcasts. The working Shizuku detection grant remains available.

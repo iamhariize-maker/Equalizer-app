@@ -204,12 +204,13 @@ Goal: after explicit opt-in, infer which tracks or moments a listener returns to
 per-track profile. A replay cue is not proof that the listener likes a track or wants it processed
 differently.
 
-- **Signals**: track identity from MediaSession metadata (title/artist/duration) → store only a
-  per-install keyed hash; replay count, completion, repeated seek-backs to the same position range →
-  "most replayed segments" via playback-position history. Engine B may add an on-device audio
-  fingerprint to identify tracks when metadata is missing.
-- **Permission**: reading other apps' media sessions needs notification-listener access. That is
-  sensitive: **explicit opt-in, plain-language explanation, off by default, one-tap wipe**.
+- **Owner restriction (5 October 2026)**: no notification-listener access for this feature.
+  Cross-app track metadata and seek/replay history are unavailable through the current
+  approved sources. Defer automatic replay inference rather than restoring that permission.
+- **Possible signals**: manually labelled profiles or an explicitly opted-in, on-device
+  fingerprint using the already authorized Engine B playback capture. Neither is built yet.
+- **Permission**: use existing playback-capture consent only; no additional notification,
+  SMS or accessibility permission. Explicit opt-in, off by default, one-tap wipe.
 - **Privacy rules**: all on-device; no upload; no raw titles stored unless the user enables
   "show my favourites"; documented in `docs/PRIVACY.md` before shipping.
 - **Behaviour limits**: it may only *shape bounded Svaramanas parameters for that track/segment*, never
@@ -281,13 +282,13 @@ panel study is required before a public quality claim.
 
 ## 9. Constraints and open questions
 
-0.5.1 adds optional media-session identity/playback recognition, with no track
-metadata or audio analysis. It helps detection health and naming, but is not
-Svaramanas's listen-only analysis tap and does not give Svaresa ears on Engine A.
+0.5.2 removes notification-access player recognition by owner request. Do not
+restore this permission for player naming or track memory. Audio-session discovery
+and Shizuku's fixed DUMP grant remain. Svaresa's Engine A analysis tap is still unbuilt.
 
 - No root, no Shizuku dependency for the default path (Shizuku stays an optional extra).
-- Play: MediaProjection + foreground-service disclosure, overlay and notification-listener
-  justification, privacy policy covering mic/media-session use.
+- Play: MediaProjection + foreground-service disclosure, overlay
+  justification, privacy policy covering playback-capture use.
 - Unknown until probed on the V60: which of Apple Music / Amazon Music / HiBy / Onkyo allow capture.
 - The TECNO's reported YouTube Music/Bluetooth delay or echo is not resolved by the emulator suite; the
   output queue is not end-to-end Bluetooth latency.

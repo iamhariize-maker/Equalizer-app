@@ -30,3 +30,7 @@ Do, in order:
    Amazon Music or YouTube Music active; record the output route. Apple Music follows, then advanced
    local-player tests such as Neutron's *DSP Effect (Device)* off/on. Turn evidence into fixtures.
 5. Deliver the CI `Svan-preview` APK (fixed preview key) with screenshots and a plain-language status.
+
+Owner update: notification-access player recognition was removed in 0.5.2 after a
+Play Protect financial-fraud warning. Do not restore it or suggest disabling Play
+Protect. Preserve the working Shizuku/audio-report detection path.

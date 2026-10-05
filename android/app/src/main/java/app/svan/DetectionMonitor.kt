@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.asStateFlow
  *  - the AudioService player list (`dumpsys audio`),
  *  - the audio server's tracks, effect chains and session owners (`dumpsys media.audio_flinger`),
  *  - the public, permission-free active-playback count (used only to notice a blind spot).
- *  - optional media sessions (player identity/playback only; never an invented audio-session ID).
  */
 object DetectionMonitor {
     private val mutableStatus = MutableStateFlow(DetectionStatus())
@@ -62,10 +61,9 @@ object DetectionMonitor {
         var af: AfSnapshot? = null
         var afError: String? = null
         val publicActive = publicActiveCount(context)
-        val media = MediaSessionSource.read(context)
         // The audio-server report is bigger and holds a global lock while it is written, so it is read only
         // while Android says something is playing (or every 30 s, or whenever it has never worked).
-        val needServer = perm && (media.playing.isNotEmpty() || publicActive == null || publicActive > 0 || now - lastServerReadMs > IDLE_SERVER_READ_MS ||
+        val needServer = perm && (publicActive == null || publicActive > 0 || now - lastServerReadMs > IDLE_SERVER_READ_MS ||
             lastServerOk != true || debugBlindServer)
         if (perm) {
             players = runCatching { PlaybackSessions.queryPlayers(context) }.getOrNull()
@@ -90,10 +88,9 @@ object DetectionMonitor {
             if (needServer) lastAfSnapshot = af
         }
         val pm = context.packageManager
-        val merged = SessionLedger.merge(players, af, ownPid, ownUid) { uid ->
+        val ledger = SessionLedger.merge(players, af, ownPid, ownUid) { uid ->
             runCatching { pm.getPackagesForUid(uid)?.firstOrNull() }.getOrNull()
         }
-        val ledger = MediaPlayers.name(merged, media)
         val ownActive = when {
             players != null -> players.count { it.uid == ownUid && it.state == "started" }
             CaptureService.isRunning -> 1
@@ -107,14 +104,13 @@ object DetectionMonitor {
         }
         val (health, headline, advice) = DetectionStatus.assess(
             perm, players != null, if (needServer) af != null else lastServerOk == true, publicActive, ownActive, ledger.sessions, ledger.unresolved, verification,
-            mediaPlayers = media.playing,
         ) { pkg -> runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrNull() }
         val status = DetectionStatus(
             atMs = now, dumpPermission = perm, serviceRunning = SystemEqService.isRunning,
             playersOk = players != null, playersError = playersError,
             serverOk = if (needServer) af != null else lastServerOk == true,
             serverError = if (needServer) afError else lastServerError, serverPartial = af?.partial == true,
-            publicActive = publicActive, media = media,
+            publicActive = publicActive,
             knownAudioSessions = SessionRouter.snapshot.count { it.sessionId > 0 && it.uid >= 0 && it.uid != ownUid && it.playing != false },
             sessions = ledger.sessions, unresolved = ledger.unresolved,
             verification = verification, health = health, headline = headline, advice = advice,
@@ -122,7 +118,7 @@ object DetectionMonitor {
         mutableStatus.value = status
         val summary = "players=${if (players != null) "ok" else "fail"} server=${if (af != null) "ok" else if (needServer) "fail" else "idle"} public=$publicActive " +
             "sessions=[" + ledger.sessions.joinToString { "${it.session.packageName}#${it.session.sessionId}:${it.session.state}:${it.source}:${it.pathLabel.ifEmpty { "?" }}:${verification[it.session.sessionId] ?: "-"}" } + "] " +
-            "unresolved=${ledger.unresolved.size} media=${if (media.available) media.playing.joinToString { it.packageName } else "unavailable"} health=$health"
+            "unresolved=${ledger.unresolved.size} health=$health"
         if (summary != lastSummary) { lastSummary = summary; EqController.log("detect: $summary") }
         val complete = perm && players != null && af != null && !af.partial
         if (complete) lastCompleteScanMs = now

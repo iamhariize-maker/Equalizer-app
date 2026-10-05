@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -43,8 +42,6 @@ import app.svan.DetectionStatus
 import app.svan.DiagnosticReport
 import app.svan.Health
 import app.svan.LedgerSession
-import app.svan.MediaPlayers
-import app.svan.MediaSessionSource
 import app.svan.Verification
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -112,41 +109,6 @@ fun DetectionCard() {
             }
         }
     }
-    PlayerRecognitionCard()
-}
-
-@Composable
-private fun PlayerRecognitionCard() {
-    val context = LocalContext.current
-    val media by MediaSessionSource.snapshot.collectAsState()
-    var explain by remember { mutableStateOf(false) }
-    fun openSettings() {
-        val detail = Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
-            .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME, MediaSessionSource.component(context).flattenToString())
-        runCatching { context.startActivity(detail) }
-            .recoverCatching { context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
-    }
-    SvanCard {
-        Column {
-            Text("Player recognition · optional", style = MaterialTheme.typography.titleMedium)
-            Text(if (media.available) "Enabled · an extra way to recognize music players." else if (media.access)
-                "Access enabled; Android's player list is temporarily unavailable." else
-                "Recognize Spotify, Amazon Music, YouTube Music and other players even when audio reports miss their names.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            Text("Recognition finds the player; an audio session is still needed to apply EQ. Enhanced detection works without this option.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
-            TextButton(onClick = { if (media.access) openSettings() else explain = true }) {
-                Text(if (media.access) "Manage player recognition" else "Enable player recognition")
-            }
-        }
-    }
-    if (explain) AlertDialog(
-        onDismissRequest = { explain = false },
-        title = { Text("Recognize music players") },
-        text = { Text("Android requires Notification access to share active media sessions. This is a broad Android permission. Svan uses only player app names, playback state and local or remote output type; it does not read notification messages, song titles or audio. Nothing is uploaded or saved as listening history. You can turn access off in Android settings at any time.") },
-        confirmButton = { TextButton(onClick = { explain = false; openSettings() }) { Text("Open Android settings") } },
-        dismissButton = { TextButton(onClick = { explain = false }) { Text("Cancel") } },
-    )
 }
 
 @Composable
@@ -250,12 +212,6 @@ private fun DetectionHealthCard() {
                     ". Android has not exposed an attachable audio session in this scan.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
             )
-            val recognized = MediaPlayers.withoutAudioSession(st.media.playing, st.sessions)
-            if (recognized.isNotEmpty()) Text(
-                "Player recognition: " + recognized.joinToString { labelFor(context, it.packageName) } +
-                    " · reports local playback; audio session not found yet.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
-            )
             Spacer(Modifier.height(8.dp))
             // Two equal buttons with slim padding: one line each on a 320 dp phone (CI screenshot); larger font
             // scales wrap instead of clipping.
@@ -286,9 +242,8 @@ private fun DetectionHealthCard() {
 private fun sourceLine(st: DetectionStatus, now: Long): String {
     val age = if (st.atMs == 0L) "no scan yet" else "scanned ${((now - st.atMs) / 1000).coerceAtLeast(0)} s ago"
     fun mark(ok: Boolean) = if (ok) "✓" else "✗"
-    val recognition = if (st.media.available) " · Recognition ${st.media.playing.size} playing" else ""
-    return if (!st.dumpPermission) "Android says ${st.publicActive ?: "?"} playing$recognition · $age · detection setup needed"
-    else "Player list ${mark(st.playersOk)} · Audio server ${mark(st.serverOk)} · Android says ${st.publicActive ?: "?"} playing$recognition · $age"
+    return if (!st.dumpPermission) "Android says ${st.publicActive ?: "?"} playing · $age · detection setup needed"
+    else "Player list ${mark(st.playersOk)} · Audio server ${mark(st.serverOk)} · Android says ${st.publicActive ?: "?"} playing · $age"
 }
 
 @Composable

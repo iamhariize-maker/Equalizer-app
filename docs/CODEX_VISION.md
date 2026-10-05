@@ -1,6 +1,6 @@
 # Codex handoff — the Svan vision: sonic brilliance, unbreakable detection, a brain that earns its name
 
-Fresh session? Read in this order: `AGENTS.md` → this file → `docs/HANDOFF.md` (0.5.0 section = newest truth) →
+Fresh session? Read in this order: `AGENTS.md` → this file → `docs/HANDOFF.md` (0.5.2 section = newest truth) →
 `docs/SMART.md` → `docs/CODEX_SVARAMANAS.md` (older research agenda, still valid) → `docs/AUDIOPHILE.md` (measured numbers)
 → `docs/PHONE_VALIDATION.md`. Repo `iamhariize-maker/Equalizer-app`. Work on the branch your session instructs
 (currently `ccr-f859b567-dgrdoj`, PR #1 open). No other branches, no new PRs.
@@ -101,10 +101,13 @@ test in `core/`. Coding quality matters here: prefer small, tested increments ov
 reveal (OEM column differences, MTK/HiOS quirks, package names absent on Android ≤12, uid filters). Update
 `DetectionStatus.assess` wording to whatever the real failures are. Never guess a root cause the report can show.
 
-**A1. A third, independent source: media sessions.** `MediaSessionManager.getActiveSessions` via an opt-in
-`NotificationListenerService` gives package, playback state and metadata with no DUMP. Use it to (a) name players the
-dumps cannot, (b) cross-check "someone is playing", (c) later feed track memory (Space B6). Must stay optional; the product
-works without it. Document the permission rationale in `docs/PRIVACY.md`.
+**A1. Notification-access player recognition is rejected (owner decision, 5 October 2026).**
+The owner requested its setting, service and permission be removed after the 0.5.1 APK
+raised a Play Protect security/financial-fraud warning. It names players but does not
+unlock audio sessions or improve sound. Do not reintroduce NotificationListenerService,
+notification-access prompts, SMS permissions or accessibility access to recognize players.
+Use the existing audio reports, playback callbacks and session broadcasts; measure
+improvements in real detection/processing. Keep Play Protect enabled during testing.
 
 **A2. Make "unprocessable" explicit and, where possible, fixable.** Per-app coach driven by `LedgerSession.pathLabel` +
 `Verification`: direct / offload / bit-perfect / MMAP / exclusive-USB outputs bypass session effects *and* capture.
