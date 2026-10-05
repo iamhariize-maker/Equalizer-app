@@ -113,8 +113,10 @@ object SvanRepository {
             preampDb=old.preampDb, presetName=old.presetName) }
     }
     fun setSmartEqControl(on: Boolean) {
-        update { it.copy(smartEqControl=on, smartBypass=false) }
+        // The controller publishes ownership and its layer together when disabling.
+        // Never publish manual + stale automatic bands during the handover.
         app.svan.svaramanas.Svaramanas.update { it.copy(enabled=on, mode=app.svan.svaramanas.SmartMode.SVARESA) }
+        if (on && _eq.value.smartBypass) update { it.copy(smartBypass=false) }
     }
     /** Returns the measured fit error when converting a manual curve to graphic. */
     fun setEqMode(mode: EqMode, count: Int = _eq.value.workspaceGraphicCount): NativeEngine.Companion.Fit? {
