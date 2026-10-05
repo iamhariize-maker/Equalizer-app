@@ -75,7 +75,7 @@ object SvanRepository {
                 // StateFlow is already conflated: a slow binder update never queues stale curves.
                 kotlinx.coroutines.flow.combine(_eq, _settings) { state, settings -> state to settings }.collect { (state, _) ->
                     EqController.globalEq.setDynamics(state.bassCharacter, state.bass.crossoverHz, state.activeVocal.smoothness, state.levelling)
-                    EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.gainProtection, _eq.value.enabled)
+                    EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.effectiveFor(state).gainProtection, state.enabled)
                     _engineARevision.update { it + 1 }
                     prefs.edit().putString("eq", state.toJson().toString()).apply()
                 }
@@ -203,7 +203,8 @@ object SvanRepository {
     fun updateSettings(transform: (AudioSettings) -> AudioSettings) {
         val old = _settings.value
         val next = transform(old)
-        EqController.curveEngine.setAutoHeadroom(next.autoHeadroom)
+        EqController.curveEngine.setAutoHeadroom(next.effectiveFor(_eq.value).autoHeadroom)
+        EqController.curveEngine.setGainProtection(next.effectiveFor(_eq.value).gainProtection)
         _settings.value = next
         prefs.edit().putString("settings", next.toJson().toString()).apply()
         if (next.engineMode == app.svan.model.EngineMode.SYSTEM_ONLY && next.engineMode != old.engineMode) {
@@ -212,7 +213,7 @@ object SvanRepository {
         if (next.systemBands != old.systemBands || next.systemFrameMs != old.systemFrameMs) {
             scope.launch {
                 EqController.globalEq.reconfigure(next.systemBands, next.systemFrameMs)
-                EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.gainProtection, _eq.value.enabled)
+                EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.effectiveFor(_eq.value).gainProtection, _eq.value.enabled)
             }
         }
     }
@@ -222,7 +223,8 @@ object SvanRepository {
     private fun applyCurve(s: EqState) {
         val engine = EqController.curveEngine
         // The curve engine renders Engine A's curve, so it gets the system-effects stand-ins.
-        engine.setAutoHeadroom(_settings.value.autoHeadroom)
+        engine.setAutoHeadroom(_settings.value.effectiveFor(s).autoHeadroom)
+        engine.setGainProtection(_settings.value.effectiveFor(s).gainProtection)
         engine.setBands(s.systemEffectsBands().map { it.toNative() })
         engine.setPreampDb(s.effectivePreampDb())
     }

@@ -129,6 +129,8 @@ data class EqState(
 
     /** The smart layer the engines should run right now, if any. */
     val activeSmart: SmartLayer? get() = if (enabled && !smartBypass) smart else null
+    /** Protection remains linked during compare/EQ bypass; it is not a tone effect. */
+    val smartProtection: Boolean get() = smart?.protectEngine == true
 
     /** Built-in Flat is a complete audible reset, including independent layers. */
     fun withPreset(p: Preset): EqState = if (p.builtIn && p.name == "Flat") EqState(smart = smart, smartBypass = smartBypass) else
@@ -241,6 +243,7 @@ data class SmartLayer(
     val graphicFitRmsDb: Double? = null,
     val graphicFitMaxDb: Double? = null,
     val overlapScale: Double = 1.0,
+    val protectEngine: Boolean = false,
 )
 
 /**
@@ -360,6 +363,13 @@ data class AudioSettings(
     val systemBands: Int = 128,
     val systemFrameMs: Int = 80,
 ) {
+    /** Auto master may add protection, but never rewrites the listener's saved choices. */
+    fun effectiveFor(eq: EqState): AudioSettings = if (eq.smartProtection)
+        copy(autoHeadroom=true,gainProtection=true) else this
+
+    fun sameCaptureFormat(other: AudioSettings): Boolean = quality==other.quality &&
+        outputBits==other.outputBits && dither==other.dither
+
     fun toJson(): JSONObject = JSONObject()
         .put("engine", engineMode.name).put("quality", quality.name).put("bits", outputBits)
         .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs)

@@ -1,3 +1,18 @@
+## Engine quality continuation — 2026-10-05 (0.5.4 preview, code 11)
+
+Owner requested the current APK first (0.5.3 was delivered), then broader Svaresa engine authority
+only where it improves audio quality. Built native EQ crossfades and gain ramps, protection authority
+that preserves manual choices, live capture protection updates without rebuilding, and removal of
+per-edit limiter-history resets. See [engine quality](ENGINE_QUALITY_0.5.4.md) for measured transition
+cases, tests and limits. Native/JVM suites are 86/94; EQ workspace checks grow 6→9, retaining the
+eight gesture, 39 audio and ten release checks. CI is pending at writing; inspect it and screenshots.
+
+The delivered 0.5.3 commit `1545af2` passed all seven jobs in
+[CI 37340722679](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37340722679), including
+all gesture/output checks and API 29/30/33/35 compatibility. Touch screenshots were inspected.
+Its 80 native/91 JVM checks and fixed preview signature are verified; TECNO/IM4 listening remains
+owner validation. The final two commits changed test visibility only, not app source.
+
 ## Extended EQ ownership — 2026-10-05 (0.5.3 preview, code 10)
 
 Owner reports 0.5.2 was successful and requests app-wide refinement, specifically usable Extended EQ

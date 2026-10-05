@@ -104,6 +104,9 @@ class MainActivity : ComponentActivity() {
             "eq_workspace" -> {
                 val s=SvanRepository.eq.value
                 val o=org.json.JSONObject().put("state",s.toJson())
+                    .put("protectionRequested",SvanRepository.settings.value.toJson())
+                    .put("protectionEffective",SvanRepository.settings.value.effectiveFor(s).toJson())
+                    .put("smartProtection",s.smartProtection)
                     .put("smartBands",org.json.JSONArray().apply { s.smart?.bands?.forEach { put(it.toJson()) } })
                     .put("appliedBands",org.json.JSONArray().apply { s.effectiveBands().forEach { put(it.toJson()) } })
                     .put("smartPreamp",s.smart?.preampDb ?: 0.0)

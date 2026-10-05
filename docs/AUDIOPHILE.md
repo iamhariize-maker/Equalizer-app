@@ -62,6 +62,11 @@ the device before picking Extreme as a default.
 
 ## 5. Automatic Gain Protection + auto headroom
 
+0.5.4: Svaresa keeps both protections active while controlling the engine; manual choices are
+preserved. Live EQ transitions crossfade over 10 ms and gain changes ramp over 10 ms; editing
+does not reset the protector. Protection changes no longer rebuild capture DSP. See
+[measured transition regressions and limits](ENGINE_QUALITY_0.5.4.md).
+
 - **Auto headroom (predictive):** adds only the attenuation still needed after the user/preset preamp. A −6 dB preamp with a +6 dB bell stays at −6 dB, instead of the previous −12 dB.
 - **AGP (reactive):** catches sample overloads, links channel gain, and smoothly
   recovers toward unity with a 250 ms release after overload ends. A sustained

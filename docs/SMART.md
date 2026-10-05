@@ -1,5 +1,10 @@
 # Svaramanas — Svan's sound intelligence
 
+Latest increment: [0.5.4 engine quality](ENGINE_QUALITY_0.5.4.md). Svaresa now takes effective
+headroom/overload-protection authority without overwriting manual choices. Native EQ and gain
+transitions are smoothed and limiter history persists through adaptation. This is not authority
+to invent source detail, instrument labels or forced stereo effects.
+
 *Svara (sound) + manas (mind).* Svaramanas is the on-device "smart" layer of Svan. It analyzes source
 audio only when Android lets Engine B capture it; on Engine A it uses static route, preference and
 profile information. It drives Svan's measured DSP inside explicit limits. This document is the design

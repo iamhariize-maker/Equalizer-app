@@ -52,6 +52,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     val context = LocalContext.current
     val prefs = SessionRouter.appPreferences()
     val s by SvanRepository.settings.collectAsState()
+    val eq by SvanRepository.eq.collectAsState()
     var stats by remember { mutableStateOf(CaptureService.stats) }
     var systemRunning by remember { mutableStateOf(SystemEqService.isRunning) }
     var knownApps by remember { mutableStateOf(emptySet<String>()) }
@@ -213,12 +214,15 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
 
         SectionLabel("Gain staging")
+        val guarded=s.effectiveFor(eq)
+        if(eq.smartProtection) Text("Svaresa keeps both protections active. Your manual choices return when Auto master is off.",
+            style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted)
         SvanCard {
             Column {
                 SettingSwitchRow("Auto headroom", "Lowers gain only as much as the EQ boost requires. Existing negative preamp counts toward headroom. Applies to both engines.",
-                    s.autoHeadroom, { on -> SvanRepository.updateSettings { it.copy(autoHeadroom = on) } })
+                    guarded.autoHeadroom, { on -> SvanRepository.updateSettings { it.copy(autoHeadroom = on) } }, enabled=!eq.smartProtection)
                 SettingSwitchRow("Automatic gain protection", "Capture: catches sample overloads and smoothly restores gain with a 250 ms release. System effects: Android's limiter. Does not measure true inter-sample peaks.",
-                    s.gainProtection, { on -> SvanRepository.updateSettings { it.copy(gainProtection = on) } })
+                    guarded.gainProtection, { on -> SvanRepository.updateSettings { it.copy(gainProtection = on) } }, enabled=!eq.smartProtection)
             }
         }
 

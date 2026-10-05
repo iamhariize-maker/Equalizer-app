@@ -56,7 +56,8 @@ class Engine {
   void setBands(int channel, const std::vector<BandParams>& bands);
   void setBandsAllChannels(const std::vector<BandParams>& bands);
   void setPreampDb(double db);
-  void setAutoHeadroom(bool enabled) { autoHeadroom_.store(enabled); updateGain(); }
+  void setAutoHeadroom(bool enabled) { if(autoHeadroom_.exchange(enabled)!=enabled) updateGain(); }
+  void setGainProtection(bool enabled) { gainProtection_.store(enabled); }
   // Bass character: -1 sustain .. 0 off .. +1 punch; crossover 60..250 Hz.
   // Thread-safe: applied by the audio thread at the next block.
   void setBassCharacter(double character, double crossoverHz = 120.0);
@@ -87,6 +88,7 @@ class Engine {
 
   EngineConfig cfg_;
   std::atomic<bool> autoHeadroom_;
+  std::atomic<bool> gainProtection_;
   ParametricEq eq_;  // runs at sampleRate * oversample
   std::vector<std::unique_ptr<Oversampler>> os_;
   std::vector<Dither> dither_;
@@ -100,7 +102,10 @@ class Engine {
   StereoTuner stereo_;
   std::atomic<bool> analysisOn_{false};
   SourceAnalyzer analyzer_;
-  std::vector<double> outBuf_, high_;  // per-channel chunk, oversampled scratch
+  double smoothedGain_ = 1.0, gainTarget_ = 1.0, gainStep_ = 0.0;
+  int gainRampRemaining_ = 0;
+  bool gainInitialized_ = false;
+  std::vector<double> outBuf_, high_, gains_;  // preallocated processing scratch
 };
 
 }  // namespace eqcore

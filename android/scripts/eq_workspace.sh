@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests the user-visible EQ owner/layout state against final Android output.
-set -eu
+set -euo pipefail
 S=${1:-emulator-5554}; OUT=${2:-/tmp/eq-workspace}; A="adb -s $S"
 CAP=app.svan.testsource.capturable
 mkdir -p "$OUT"
@@ -47,13 +47,24 @@ sleep 4; state automatic; measure automatic
 tap Graphic
 sleep 4; state graphic; measure graphic
 # Preferences are bounded, reflected in the actual fitted cascade, and persisted locally.
-eq eq_personal_gain --ei index 17 --ef gain 2
+# A cut proves control even with Svaresa's predictive headroom active. At a
+# boosted band's peak, safety may intentionally cancel its absolute boost.
+eq eq_personal_gain --ei index 17 --ef gain -2
 sleep 4; state preference; measure preference
 $A shell am force-stop app.svan
 $A shell am start -n app.svan/.MainActivity >/dev/null
 sleep 8; state restart
 tap EQ; tap 'Your EQ'
 sleep 4; state restored; measure restored
+eq gain_settings --ez headroom false --ez protection false
+state protection_manual
+eq svaramanas --ez on true --es mode SVARESA --es night OFF --ez volume_aware false --ez route_aware false --ez auto_headphone false
+sleep 2; state protection_auto
+eq bypass --ez off true
+state protection_compare
+eq bypass --ez off false
+eq svaramanas --ez on false
+state protection_restored
 python3 - "$OUT" <<'PY' | tee -a "$OUT/results.txt"
 import json,pathlib,sys
 p=pathlib.Path(sys.argv[1]);failures=0
@@ -71,7 +82,14 @@ expected=pref['response']-graphic['response']; actual=level('preference')-level(
 check('personal gain reaches measured output and its native prediction',abs(expected)>.15 and abs(actual-expected)<1, f"measured={actual:.2f}, predicted={expected:.2f} dB")
 check('restart retains ownership layout and preferences',restart['state']['smartEqControl'] and restart['state']['smartEqMode']=='GRAPHIC' and restart['state']['smartGraphicCount']==31 and restart['state']['smartEqOffsets']==pref['state']['smartEqOffsets'] and abs(restart['response']-pref['response'])<.2, 'saved preferences, actual response reproduced')
 check('manual override restores original curve and output',not restored['state']['smartEqControl'] and restored['state']['bands']==manual['state']['bands'] and abs(level('restored')-level('manual'))<1, f"delta={level('restored')-level('manual'):.2f} dB")
+pm,pa,pc,pr=map(load,['protection_manual','protection_auto','protection_compare','protection_restored'])
+unguarded=lambda d:not d['protectionEffective']['headroom'] and not d['protectionEffective']['agp']
+guarded=lambda d:d['protectionEffective']['headroom'] and d['protectionEffective']['agp']
+check('manual protection choices remain explicit',unguarded(pm) and not pm['smartProtection'],'both manual guards off')
+check('Svaresa takes engine protection authority without overwriting manual settings',pa['smartProtection'] and guarded(pa) and not pa['protectionRequested']['headroom'] and not pa['protectionRequested']['agp'],'effective guards on, saved choices off')
+check('protection remains linked through bypass and restores on master exit',guarded(pc) and unguarded(pr) and not pr['smartProtection'],'no bypass toggling, manual choices restored')
 sys.exit(bool(failures))
 PY
 eq reset_sound
+eq gain_settings --ez headroom true --ez protection true
 $A shell am start -n "$CAP"/app.svan.testsource.ToneActivity --ez stop true >/dev/null

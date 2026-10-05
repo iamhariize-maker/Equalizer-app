@@ -264,7 +264,7 @@ object Svaramanas {
         val ctx = if (r.mode == SmartMode.SVARESA) SvaresaBrain.layer(SvaresaSensors.read(appContext, r)) else null
         _context.value = ctx
         val eq = SvanRepository.eq.value
-        var target = p.toLayer(ctx)
+        var target = p.toLayer(ctx).copy(protectEngine=r.mode==SmartMode.SVARESA)
         if (eq.smartEqControl && eq.smartEqMode == app.svan.model.EqMode.GRAPHIC) {
             if (fitInput != target.bands || fitCount != eq.smartGraphicCount) {
                 fitInput=target.bands; fitCount=eq.smartGraphicCount
@@ -340,6 +340,7 @@ object Svaramanas {
         fun gainAt(f: Double) = p.bands.filter { it.freqHz == f }.sumOf { it.gainDb }
         val out = mutableListOf<String>()
         if (r.mode == SmartMode.SVARESA) {
+            out += "Headroom and overload protection stay active across the engine. Your manual protection choices return when Auto master is off."
             ctx?.reasons?.let { out += it }
             when {
                 !listening -> out += "Output, volume and night adaptation are live. Measured tone corrections also need Hi-Fi and a player that allows audio capture; your chosen EQ and tuners still work."

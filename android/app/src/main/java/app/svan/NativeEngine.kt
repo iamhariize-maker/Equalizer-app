@@ -74,6 +74,7 @@ class NativeEngine(
     fun loadParametricPreset(text: String): Int = nativeLoadParametricPreset(handle, text)
 
     fun setAutoHeadroom(enabled: Boolean) = nativeSetAutoHeadroom(handle, enabled)
+    fun setGainProtection(enabled: Boolean) = nativeSetGainProtection(handle, enabled)
     fun resetGainProtection() = nativeResetGainProtection(handle)
 
     fun setPreampDb(db: Double) = nativeSetPreamp(handle, db)
@@ -150,6 +151,7 @@ class NativeEngine(
         @JvmStatic external fun nativeLoadParametricPreset(handle: Long, text: String): Int
         @JvmStatic external fun nativeSetPreamp(handle: Long, db: Double)
         @JvmStatic external fun nativeSetAutoHeadroom(handle: Long, enabled: Boolean)
+        @JvmStatic external fun nativeSetGainProtection(handle: Long, enabled: Boolean)
         @JvmStatic external fun nativeResetGainProtection(handle: Long)
         @JvmStatic external fun nativeProcess(handle: Long, input: FloatArray, output: FloatArray, frames: Int)
         @JvmStatic external fun nativeResponseDb(handle: Long, channel: Int, freqs: DoubleArray): DoubleArray

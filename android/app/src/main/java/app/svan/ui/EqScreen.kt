@@ -207,10 +207,10 @@ fun EqScreen(onOpenDetection: () -> Unit = {}) {
                         onChange = { v -> SvanRepository.editEq { it.copy(preampDb = v) } },
                         entryRange = -24.0..6.0, entryUnit = "dB",
                     )
-                    val hr = if (settings.autoHeadroom) "System preamp ${formatDb(appliedGain)} · includes required headroom"
+                    val hr = if (settings.effectiveFor(eq).autoHeadroom) "System preamp ${formatDb(appliedGain)} · includes required headroom"
                     else if (headroom > 0) "Peak boost ${formatDb(headroom)} — may clip without auto headroom" else "No predicted EQ overload"
-                    Text("Boosts change tonal balance; headroom can lower overall volume to avoid overload. Toggle it in Hi-Fi; gain protection remains separate.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
-                    Text(hr, style = MaterialTheme.typography.bodySmall, color = if (!settings.autoHeadroom && headroom > 0) Svan.Ember else Svan.TextMuted)
+                    Text(if(eq.smartProtection) "Svaresa keeps headroom and overload protection active. Choose Your EQ for manual protection settings." else "Boosts change tonal balance; headroom can lower overall volume to avoid overload. Toggle it in Hi-Fi; gain protection remains separate.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
+                    Text(hr, style = MaterialTheme.typography.bodySmall, color = if (!settings.effectiveFor(eq).autoHeadroom && headroom > 0) Svan.Ember else Svan.TextMuted)
                 }
             }
             Spacer(Modifier.height(24.dp))

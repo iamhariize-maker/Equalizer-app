@@ -82,6 +82,10 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetAutoHeadroom(JNIEnv*,
   fromHandle(h)->setAutoHeadroom(enabled == JNI_TRUE);
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetGainProtection(JNIEnv*, jclass, jlong h, jboolean enabled) {
+  fromHandle(h)->setGainProtection(enabled == JNI_TRUE);
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeResetGainProtection(JNIEnv*, jclass, jlong h) {
   fromHandle(h)->resetGainProtection();
 }

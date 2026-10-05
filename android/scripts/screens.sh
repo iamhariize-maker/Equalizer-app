@@ -74,6 +74,9 @@ swipe_up; shot 4c-hifi-quality
 swipe_up; shot 4d-hifi-gain
 swipe_up; shot 4e-hifi-protection
 swipe_up; shot 4f-hifi-resolution
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on true --es mode SVARESA --es night OFF >/dev/null
+$A shell input swipe $((W / 20)) $((H * 3 / 4)) $((W / 20)) $((H / 5)) 500
+shot 4g-svaresa-protection
 tap_text "Lab" && shot 5-lab
 tap_text "EQ"
 # Svaramanas: the dialog over the app with a real request, scrolled through.

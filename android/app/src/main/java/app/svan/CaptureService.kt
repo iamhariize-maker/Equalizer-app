@@ -133,11 +133,17 @@ class CaptureService : Service() {
             synchronized(engineLock) { current = dsp }
             eqWatcher = Thread({
                 var last: EqState? = null
+                var lastSettings: AudioSettings? = null
                 while (running) {
                     val eq = SvanRepository.eq.value
-                    if (eq !== last) {
-                        synchronized(engineLock) { current?.let { applyEq(it, eq) } }
+                    val audioSettings=SvanRepository.settings.value
+                    if (eq !== last || audioSettings != lastSettings) {
+                        synchronized(engineLock) { current?.let {
+                            applyProtection(it,eq,audioSettings)
+                            if(eq !== last)applyEq(it, eq)
+                        } }
                         last = eq
+                        lastSettings=audioSettings
                     }
                     Thread.sleep(15)
                 }
@@ -179,7 +185,7 @@ class CaptureService : Service() {
                     EqController.log("capture filter: ${allowed.size} muted UID(s)")
                 }
                 val now = SvanRepository.settings.value
-                if (now != settings) {
+                if (!now.sameCaptureFormat(settings)) {
                     // Build before swapping so an unsuccessful rebuild leaves a
                     // valid handle for cleanup. Native parameter edits stay separate.
                     val replacement = buildEngine(now)
@@ -192,6 +198,7 @@ class CaptureService : Service() {
                     }
                     EqController.log("capture: engine rebuilt, quality=${now.quality}")
                 }
+                settings=now
                 val n = input.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                 if (n < 0) { if (running) EqController.log("capture: read failed ($n)"); break }
                 if (n == 0) continue
@@ -289,21 +296,28 @@ class CaptureService : Service() {
             // Dither "off" means no word-length reduction at all: float goes straight out.
             ditherBits = if (s.dither == DitherChoice.OFF) 0 else s.outputBits,
             ditherMode = s.dither.nativeMode,
-            autoHeadroom = s.autoHeadroom,
-            gainProtection = s.gainProtection,
+            autoHeadroom = s.effectiveFor(SvanRepository.eq.value).autoHeadroom,
+            gainProtection = s.effectiveFor(SvanRepository.eq.value).gainProtection,
         ).also {
             it.setAnalysis(true) // Svaramanas listens to the source (preallocated mid/side analysis every 85 ms)
             applyEq(it, SvanRepository.eq.value)
         }
 
     private fun applyEq(engine: NativeEngine, eq: EqState) {
-        engine.resetGainProtection()
+        // Preserve limiter history through adaptation; resetting it would release
+        // attenuation abruptly every time Svaresa publishes a new curve.
         engine.setBands(eq.effectiveBands().map { it.toNative() })
         engine.setPreampDb(eq.effectivePreampDb())
         engine.setBassCharacter(eq.bassCharacter, eq.bass.crossoverHz)
         val v = eq.activeVocal
         val i = eq.activeInstrument
         engine.setStereoTuner(v.intimacy, v.warmth, v.smoothness, i.space, i.instruments)
+    }
+
+    private fun applyProtection(engine: NativeEngine,eq: EqState,settings: AudioSettings) {
+        val effective=settings.effectiveFor(eq)
+        engine.setAutoHeadroom(effective.autoHeadroom)
+        engine.setGainProtection(effective.gainProtection)
     }
 
     override fun onDestroy() {

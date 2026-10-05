@@ -236,6 +236,55 @@ TEST(eq_parameter_updates_from_another_thread_are_safe) {
 
 // --------------------------------------------------------------- AutoEq I/O
 
+TEST(eq_removal_crossfades_without_a_discontinuous_gain_step) {
+  ParametricEq eq(1,48000);
+  eq.setBands(0,{{FilterType::LowShelf,1000,6,.71,true}});
+  std::vector<double> warm(48000,.1); eq.process(0,warm.data(),warm.size());
+  const double before=warm.back();
+  eq.setBands(0,{});
+  std::vector<double> out(4800,.1); eq.process(0,out.data(),out.size());
+  CHECK(std::fabs(out.front()-before)<.001);
+  double jump=0;
+  for(size_t i=1;i<out.size();++i) jump=std::max(jump,std::fabs(out[i]-out[i-1]));
+  CHECK(jump<.001);
+  CHECK_NEAR(out.back(),.1,1e-12);
+  std::printf("    shelf removal: first step %.9f, maximum adjacent step %.9f (old immediate step %.9f)\n",std::fabs(out.front()-before),jump,std::fabs(before-.1));
+}
+
+TEST(eq_transition_is_block_size_independent_and_reaches_the_latest_curve) {
+  ParametricEq a(1,48000),b(1,48000);
+  std::vector<double> warm(4096,.1), other=warm;
+  a.process(0,warm.data(),warm.size()); b.process(0,other.data(),other.size());
+  const std::vector<BandParams> target={{FilterType::LowShelf,500,9,.71,true},{FilterType::Peak,2000,-3,1,true}};
+  a.setBands(0,target); b.setBands(0,target);
+  std::vector<double> x(4800,.1),y=x;
+  a.process(0,x.data(),x.size());
+  for(size_t i=0;i<y.size();i+=13) b.process(0,y.data()+i,std::min<size_t>(13,y.size()-i));
+  for(size_t i=0;i<x.size();++i) CHECK_NEAR(x[i],y[i],1e-12);
+  CHECK_NEAR(toDb(x.back()/.1),9,.01);
+  // Edits arriving during a fade coalesce and eventually reach the latest request.
+  a.setBands(0,{{FilterType::LowShelf,500,-3,.71,true}});
+  std::vector<double> tiny(80,.1); a.process(0,tiny.data(),tiny.size());
+  a.setBands(0,{{FilterType::LowShelf,500,3,.71,true}});
+  for(int i=0;i<100;i++){std::fill(tiny.begin(),tiny.end(),.1);a.process(0,tiny.data(),tiny.size());}
+  CHECK_NEAR(toDb(tiny.back()/.1),3,.01);
+}
+
+TEST(eq_zero_gain_slots_preserve_other_band_history_during_transition) {
+  ParametricEq eq(1,48000),reference(1,48000);
+  std::vector<BandParams> bands={{FilterType::LowShelf,100,0,.71,true},{FilterType::Peak,1000,9,1,true}};
+  eq.setBands(0,bands); reference.setBands(0,bands);
+  std::vector<double> warm(48000);
+  for(size_t i=0;i<warm.size();++i) warm[i]=.1*std::cos(2*kPi*1000*i/48000);
+  auto other=warm;eq.process(0,warm.data(),warm.size());reference.process(0,other.data(),other.size());
+  bands[0].gainDb=6;eq.setBands(0,bands);
+  std::vector<double> out(4800),ref(out.size());
+  for(size_t i=0;i<out.size();++i) out[i]=ref[i]=.1*std::cos(2*kPi*1000*i/48000);
+  eq.process(0,out.data(),out.size());reference.process(0,ref.data(),ref.size());
+  CHECK(std::fabs(out.front()-ref.front())<.001);
+  for(double v:out) CHECK(std::isfinite(v));
+}
+
 TEST(autoeq_parametric_file_parses) {
   const char* text =
       "Preamp: -6.2 dB\n"
@@ -429,6 +478,54 @@ TEST(engine_flat_curve_is_unity_with_exact_latency) {
     CHECK_NEAR(sumL, 1.0, 1e-4);
     CHECK_NEAR(sumR, 0.5, 1e-4);
     CHECK(buf[peak * 2] > 0.95);
+  }
+}
+
+TEST(engine_preamp_changes_are_smoothed_and_stereo_linked) {
+  EngineConfig c;c.autoHeadroom=false;c.gainProtection=false;
+  Engine e(c);std::vector<float> warm(2048,.1f);e.process(warm.data(),warm.data(),1024);
+  e.setPreampDb(6);
+  std::vector<float> out(4800*2,.1f);e.process(out.data(),out.data(),4800);
+  CHECK(std::fabs(out[0]-.1)<.001);
+  CHECK_NEAR(out.back(),.1*std::pow(10.,6./20),1e-7);
+  for(size_t i=0;i<out.size();i+=2) CHECK_NEAR(out[i],out[i+1],1e-12);
+  double jump=0;for(size_t i=2;i<out.size();i+=2)jump=std::max(jump,std::fabs(double(out[i]-out[i-2])));
+  CHECK(jump<.001);
+  std::printf("    preamp +6 dB: maximum adjacent step %.9f (old immediate step %.9f)\n",jump,.1*(std::pow(10.,6./20)-1));
+}
+
+TEST(engine_protection_can_change_live_without_a_rebuild_or_history_reset) {
+  EngineConfig c;c.autoHeadroom=false;c.gainProtection=false;
+  Engine e(c);e.setPreampDb(12);
+  std::vector<float> block(1024*2,.9f);e.process(block.data(),block.data(),1024);
+  CHECK(block.back()>3.0);
+  e.setGainProtection(true);
+  std::fill(block.begin(),block.end(),.9f);e.process(block.data(),block.data(),1024);
+  for(float v:block)CHECK(v<=.98856f);
+  const double reduction=e.gainProtectionDb();CHECK(reduction< -10);
+  e.setBandsAllChannels({});
+  std::fill(block.begin(),block.end(),.9f);e.process(block.data(),block.data(),1024);
+  CHECK_NEAR(e.gainProtectionDb(),reduction,.01);
+  e.setGainProtection(false);
+  std::fill(block.begin(),block.end(),.9f);e.process(block.data(),block.data(),1024);
+  CHECK(block.back()>3.0);
+  CHECK_NEAR(e.gainProtectionDb(),0,1e-12);
+}
+
+TEST(engine_protection_bounds_combined_eq_and_gain_transitions) {
+  for(int factor:{1,4,8}) {
+    EngineConfig c;c.oversample=factor;c.maxBlock=256;
+    Engine e(c);std::vector<float> block(512);
+    int frame=0;
+    for(int edit=0;edit<48;++edit) {
+      e.setBandsAllChannels({{FilterType::Peak,1000,edit%3==0?12.0:(edit%3==1?-6.0:0.0),1,true}});
+      for(int i=0;i<256;++i,++frame)block[2*i]=block[2*i+1]=.95f*std::cos(2*kPi*1000*frame/48000);
+      e.process(block.data(),block.data(),256);
+      for(size_t i=0;i<block.size();i+=2) {
+        CHECK(std::isfinite(block[i]) && std::fabs(block[i])<=.98856f);
+        CHECK_NEAR(block[i],block[i+1],1e-12);
+      }
+    }
   }
 }
 

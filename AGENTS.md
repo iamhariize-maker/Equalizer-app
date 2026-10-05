@@ -28,7 +28,7 @@ The fixed Shizuku DUMP grant and real audio-session detection remain available.
 ## Repo map
 | Path | What |
 |---|---|
-| `core/` | Portable C++17 DSP library `eqcore` (CMake). 80 unit tests in `core/tests/test_main.cpp` (no framework). |
+| `core/` | Portable C++17 DSP library `eqcore` (CMake). 86 unit tests in `core/tests/test_main.cpp` (no framework). |
 | `android/app/src/main/cpp/` | JNI bridge → `eqcore` |
 | `android/app/src/main/java/app/svan/` | Kotlin: engines, routing, repository, UI (Compose); `svaramanas/` = controller, dialog, bubble, QS tile |
 | `android/app/src/main/java/app/svan/ui/` | Screens (Sound, EQ, Presets, Hi-Fi, Lab), `Theme.kt` (gold palette), `Brand.kt` (boot animation, brand line, "EQ exten9ed"), `Knob.kt`, `ResponseGraph.kt` |
@@ -66,6 +66,10 @@ intentionally overlap; never claim overlap-free processing or guaranteed listene
 See `docs/EQ_WORKSPACE_0.5.3.md`.
 Owner's controls follow-up: fine mechanical steps and smooth relative gestures, no vibration.
 See `docs/PRECISION_CONTROLS.md`; preserve centre scrolling while allowing rim rotation.
+
+Owner's engine follow-up: give Svaresa broader authority only where it improves measured quality.
+0.5.4 adds engine protection authority and smooth native EQ/gain transitions, not forced quality-mode
+changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
 1. Verify on the next CI screenshots: boot name fits on one line with margins; the flipped **d** reads as a 9 (not "q"); the स्व icon on the Android 12+ splash.
