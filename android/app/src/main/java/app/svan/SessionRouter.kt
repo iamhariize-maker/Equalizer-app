@@ -4,7 +4,9 @@ import android.content.Context
 import android.media.projection.MediaProjection
 import android.os.Process
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Gives every audio session to exactly one engine:
@@ -31,6 +33,8 @@ object SessionRouter {
     @Volatile private var captureSystemPackages: Set<String> = emptySet()
 
     @Volatile private var projection: MediaProjection? = null
+    /** Standalone per-UID probes are safe only before Engine B opens its main AudioRecord. */
+    @Volatile private var startupProbeWindow = false
     private val muter = SourceMuter { sid -> worker.execute { onMuteLost(sid) } }
 
     @Volatile var captureUids: Set<Int> = emptySet()
@@ -115,16 +119,42 @@ object SessionRouter {
         }
     }
 
-    /** Engine B started: move every capturable session over to it. */
-    fun onCaptureStarted(mp: MediaProjection, systemPackages: Set<String>) {
+    /**
+     * Prepare Engine B's initial UID allowlist before it opens its main AudioRecord.
+     * Android devices commonly refuse a second simultaneous playback-capture record;
+     * after this startup window, unknown apps fail over to Engine A until the next start.
+     */
+    fun onCaptureStarted(mp: MediaProjection, systemPackages: Set<String>): Boolean {
         captureSystemPackages = systemPackages
         projection = mp
-        worker.execute { routes.values.toList().forEach { reroute(it.sessionId, it.pkg, it.uid, it.playing) } }
+        startupProbeWindow = true
+        val routed = CountDownLatch(1)
+        worker.execute {
+            try {
+                routes.values.toList().forEach { reroute(it.sessionId, it.pkg, it.uid, it.playing) }
+            } finally {
+                startupProbeWindow = false
+                routed.countDown()
+            }
+        }
+        return try {
+            routed.await(30, TimeUnit.SECONDS) && projection === mp
+        } catch (e: InterruptedException) {
+            startupProbeWindow = false
+            Thread.currentThread().interrupt()
+            false
+        }.also { ready ->
+            if (!ready) {
+                startupProbeWindow = false
+                EqController.log("capture: startup routing did not finish before the recorder opened")
+            }
+        }
     }
 
     /** Engine B stopped: unmute everything and hand it back to Engine A. */
     fun onCaptureStopped() {
         projection = null
+        startupProbeWindow = false
         captureUids = emptySet()
         worker.execute {
             muter.releaseAll()
@@ -206,6 +236,14 @@ object SessionRouter {
                 }
                 if (playing == false) {
                     // Silence proves nothing; park on Engine A until it plays.
+                    toEngineA(sid, pkg, uid, playing)
+                    return
+                }
+                if (!startupProbeWindow) {
+                    // Never try to open a second playback AudioRecord beside Engine B's
+                    // active recorder. Keep the source audible and let the user restart
+                    // capture with this player already running to run the compatibility probe.
+                    EqController.log("capture check deferred for $pkg while Engine B is active; using Engine A")
                     toEngineA(sid, pkg, uid, playing)
                     return
                 }

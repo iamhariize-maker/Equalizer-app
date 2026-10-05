@@ -1,21 +1,23 @@
 # Svaramanas — Svan's sound intelligence
 
-*Svara (sound) + manas (mind).* Svaramanas is the on-device "smart" layer of Svan: it listens to what is
-actually playing, in any player, and drives Svan's existing measured DSP to get the best sound the
-source allows. This document is the design and build plan. Every claim about sound quality must be
-measured (rule 2 in `AGENTS.md`) before it appears in the app or the Play listing.
+*Svara (sound) + manas (mind).* Svaramanas is the on-device "smart" layer of Svan. It analyzes source
+audio only when Android lets Engine B capture it; on Engine A it uses static route, preference and
+profile information. It drives Svan's measured DSP inside explicit limits. This document is the design
+and build plan. Every claim about sound quality must be measured (rule 2 in `AGENTS.md`) before it
+appears in the app or Play listing. See [`RESEARCH_SVARAMANAS.md`](RESEARCH_SVARAMANAS.md) for the
+evidence review and ranked recommendations.
 
 ## Status (0.4.0-svaramanas-preview)
 
 Built and tested:
 - `core/…/analyzer.h` **SourceAnalyzer**: gated K-weighted loudness (EBU 3341 sine reads −23.0 LUFS),
-  peak, PLR, clipping rate, stereo correlation / mono detection, lossy ceiling (16 kHz source found at
+  peak, PLR, clipping rate, stereo correlation / mono detection, source bandwidth estimate (a synthetic 16 kHz source found at
   15.5–16.8 kHz), third-octave balance and mud/boom/harsh/air deviations from the mix's own tilt
   (a −3 dB/oct dark mix is not flagged). Pauses don't wash out the picture. Runs inside `Engine` on the
   *input* (Engine B), allocation-free; one 4096-point FFT per 85 ms.
 - `core/…/svaramanas.h` **policy + guardrails**: feel × categories (3 always, a 4th only without a range
   clash, never 5), 6 dB emphasis budget, ±3 dB per band, overlap softening, analyser-driven trims (≤2.5 dB),
-  lossy-ceiling/mono/crushed-master respect rules, fixed band skeleton, reason codes.
+  bandwidth-estimate/mono/crushed-master respect rules, fixed band skeleton, reason codes.
   Tested on all 6876 feel × category × strength combinations; **loudness-matched within 0.1 dB measured
   through the real engine** (target ±0.5 dB).
 - App: `svaramanas/` (controller, dialog activity, overlay bubble service, Quick Settings tile),
@@ -29,7 +31,9 @@ masking-aware dynamic EQ and resonance suppression; noise-aware lift (mic); loud
 volume; hearing test + headphone auto-ID; opt-in track memory; blind A/B tool; small ML controllers.
 Known limits: detection thresholds are first guesses, not yet tuned by ear; with auto headroom on,
 Engine A can end up quieter than loudness-matched (safety wins); the overlay bubble does not yet hide
-itself over full-screen video.
+itself over full-screen video. The owner has reported delay/echo-like playback on YouTube Music over
+Bluetooth on the TECNO LH7n; this real-device issue is unresolved and takes priority over new
+sound-changing DSP or ML. Emulator tones do not settle it.
 
 ## 1. Persona and behaviour priority
 
@@ -47,8 +51,10 @@ Decision priority, highest first (a lower rule never overrides a higher one):
    genres, narrow vintage mixes, new and unfamiliar timbres. When intent is unclear, do less and say so.
 5. **Be explicit.** Always able to show what it heard, what it changed and why; one tap to bypass.
 
-Voice in the UI: brief, confident, warm, never jargon-first. It explains in plain words ("the vocal was
-sitting behind the guitars, so I lifted it 2 dB around 3 kHz when it gets buried").
+Voice in the UI: brief, confident, warm, never jargon-first. Explain only what the sensors measured and
+what the policy actually changed. Do not claim to have identified a vocal, guitar, or masking
+relationship until a validated detector supports that explanation. A truthful current example is
+"I reduced a measured low-mid excess slightly; tap to compare or undo."
 
 ## 2. Architecture: sense → decide → act → verify
 
@@ -69,40 +75,53 @@ bounded and testable, and avoids artefacts.
 
 | Input | How | Engine B | Engine A |
 |---|---|---|---|
-| Spectral content: HF cutoff (lossy ceiling), tonal balance, masking margins | `SourceAnalyzer` in `core/` on the captured stream | yes | no (no access to audio) |
+| Spectral content: estimated bandwidth and long-term tonal balance | `SourceAnalyzer` in `core/` on the captured stream | yes | no (no access to audio) |
 | Loudness, dynamic range, crest factor, clipping / inter-sample peaks | `SourceAnalyzer` | yes | no |
 | Stereo width / mono-in-stereo | `SourceAnalyzer` (mid/side energy) | yes | no |
 | App identity and known behaviour | package name → `AppProfile` table | yes | yes |
-| Output route: headphone model, speaker, BT codec, USB DAC, volume | `AudioManager` / device callbacks | yes | yes |
+| Output route: connected device type/name and volume; codec only if reported | `AudioManager` / device callbacks | yes | yes |
 | Ambient noise (optional, opt-in) | mic level in bands, on-device, never stored | yes | yes |
 | Track identity / replays (see §5) | MediaSession metadata + playback position | yes | yes |
 | Listener: hearing profile, A/B choices, instrument priorities | local store | yes | yes |
 
-Capture-blocked apps (e.g. Spotify; Apple and Amazon Music to be probed on the V60) only get the
-non-audio inputs, so Svaramanas there is **static-smart** (route, hearing, loudness, noise, taste).
+Capture-blocked or undetected apps (which may change by app version, route and Android build) only get
+the non-audio inputs, so Svaramanas there is **static-smart** (route, selected profile and taste). A
+cutoff estimate describes observed bandwidth; it does not identify MP3/AAC/Opus or prove the stream is
+lossy. Engine B checks already-playing apps before it opens its main capture recorder. An unknown app
+discovered after Engine B is running stays audible on Engine A until capture is restarted with that app
+playing; this avoids opening a second recorder on Android audio stacks that reject parallel playback
+capture sessions.
 
 ### 2.2 Decide
 
-Phase 1 is a deterministic policy: features in, bounded parameter targets out. Phase 2 adds small
-on-device models (LiteRT, ≲1M parameters), **only where blind tests show they beat the rules**.
-Candidate models: vocal-presence estimator, genre/intent classifier (to implement priority 4),
-bandwidth-extension controller. No cloud, no uploads.
+Phase 1 is a deterministic policy: features in, bounded parameter targets out. Phase 2 may add a small
+on-device controller (LiteRT, ≲1M parameters) **only where held-out and blind tests show it beats the
+deterministic policy**. A model can report confidence for a task such as vocal-presence; it does not
+separate a mix or prove masking. YAMNet is an event-classification baseline, not a production clarity
+model. No cloud, no uploads, no sample-level model output.
 
 ### 2.3 Act — what the existing chain already offers
 Parametric EQ (128 bands, oversampled), bass tuner, vocal tuner, orchestral amplifier, mid/side
 `StereoTuner`, de-harsh band, AutoEq tunings, headroom + Automatic Gain Protection. New DSP needed:
 
-- **Masking-aware dynamic EQ**: Bark-band masking estimate; lift bands with low audibility margin, trim
-  maskers, all time-varying and bounded. Plus automatic **resonance suppression** (narrow, adaptive).
+- **Optional dynamic EQ research**: a Bark/ERB estimate can guide a test, but a mixed stereo spectrum
+  does not identify which instrument masks another. Do not blindly boost low-margin bands. Once routing
+  is stable, test a small reduction-only persistent-peak suppressor with a separate fast feature path,
+  explicit confidence, bounded attack/release and fast bypass. Keep it off by default until listening
+  evidence supports it.
 - **Intelligibility lift** for vocals/detail, gated by the vocal-presence estimate.
 - **Noise-aware lift**: raise the bands that keep detail audible over ambient noise (works on Engine A).
-- **Lossy-artefact softening**: start deterministic (de-ring, gentle harmonic restoration). Honest limit:
-  nothing restores information a lossy file discarded; copy must never claim it.
+- **Lossy-source handling**: treat cutoffs as bandwidth estimates, not codec fingerprints. Optional
+  bandwidth extension can only generate plausible content; it cannot restore missing original
+  information. Do not enable it by default or claim restoration without reference-based blind evidence.
 - **Loudness compensation** tied to system volume (equal-loudness contours).
 
 ### 2.4 Verify
 Guardrails live in one `Guardrails` module that every Decide output passes through: gain/Q limits per
 band, total emphasis budget, headroom check, loudness-match trim, slew-rate limiting, panic bypass.
+BS.1770/EBU loudness is a level guardrail, not a clarity score. PEAQ needs a reference and is scoped to
+perceptual impairment comparisons; STOI/ESTOI and SII are speech measures, not full-music quality
+scores. The blind A/B tool is the evidence gate for listener preference.
 
 ## 3. Instrument priorities (the dialog)
 
@@ -132,11 +151,12 @@ Why the cap: every emphasis costs headroom and masks neighbours; vocals and guit
 
 ## 5. Track memory: favourites and most-replayed parts
 
-Goal: quietly learn which tracks, and which moments within them, a listener returns to, and give those
-a little more care (e.g. a per-track profile, a gentle clarity lift on a replayed chorus).
+Goal: after explicit opt-in, infer which tracks or moments a listener returns to and offer an editable
+per-track profile. A replay cue is not proof that the listener likes a track or wants it processed
+differently.
 
-- **Signals**: track identity from MediaSession metadata (title/artist/duration) → stored only as a
-  salted local hash; replay count, completion, repeated seek-backs to the same position range →
+- **Signals**: track identity from MediaSession metadata (title/artist/duration) → store only a
+  per-install keyed hash; replay count, completion, repeated seek-backs to the same position range →
   "most replayed segments" via playback-position history. Engine B may add an on-device audio
   fingerprint to identify tracks when metadata is missing.
 - **Permission**: reading other apps' media sessions needs notification-listener access. That is
@@ -151,8 +171,10 @@ a little more care (e.g. a per-track profile, a gentle clarity lift on a replaye
 ## 6. Source and app profiles
 
 `AppProfile` (shipped as a versioned JSON in the APK, updated through Play releases, built from our own
-test results, no telemetry): per package, capture allowed/blocked, normalisation/ReplayGain default,
-own-EQ presence, exclusive/bit-perfect USB mode, typical codec. Used for the **player coach**:
+test results, no telemetry): per observed app version, Android build, route and test date, store capture
+result/engine/fallback and confidence. Normalisation, own EQ, exclusive output and codec are
+`user-confirmed` or `unknown` unless directly measured; do not infer them from a package name. Used for
+the **player coach**:
 
 - Player has its own EQ/effects → warn about double processing, suggest turning it off.
 - Exclusive USB / bit-perfect mode (Neutron, HiBy, Onkyo) → Svan cannot touch it; say so and how to fix.
@@ -172,7 +194,7 @@ Poweramp, plus generic local players.
 - Engine A static-smart paths measured with the existing e2e harness.
 
 **Real hardware — the LG V60 ThinQ (arm64, wired DAC) and the user's main phone**
-- **Test Pilot** mode in the app: one tap probes each installed player and exports a report (capture
+- **Test Pilot** mode in the app: one tap probes active or user-selected visible players and exports a report (capture
   allowed, which engine took it, double-audio check, measured level change, route, errors).
   Reads routing facts only — never account data.
 - Matrix per player (YT Music, Neutron, Apple Music, Spotify free tier, Amazon Music free tier, …):
@@ -180,19 +202,26 @@ Poweramp, plus generic local players.
   battery drain · player-side effects/exclusive mode.
 - Streaming apps with DRM/account checks are not tested in CI emulators.
 
-**Human listening** — the only evidence of "sounds better": in-app blind A/B (loudness-matched,
-randomised) with results kept locally; a small panel study before any quality claim is made public.
+**Human listening** — the only evidence of listener preference: in-app blind A/B (loudness-matched,
+randomised) with results kept locally. Use a controlled test method that fits the question; a small
+panel study is required before a public quality claim.
 
 ## 8. Build order
 
-1. `SourceAnalyzer` in `core/` (+ tests): cutoff, loudness, DR, clipping, width, balance.
-2. `Guardrails` + rule-based Svaramanas policy (+ the full combination test).
-3. Test Pilot report and `AppProfile` table; run on the V60.
-4. Bubble, dialog, Quick Settings tile, notification fallback (Compose UI, gold design system).
-5. Masking-aware dynamic EQ, resonance suppression, noise-aware lift, loudness compensation.
-6. Hearing test and headphone auto-ID → personal profile.
-7. Track memory (opt-in) and per-track/segment profiles.
-8. Blind A/B tool; then, if justified, small ML controllers.
+1. Complete review of the current CI run; inspect e2e logs/screenshots and deliver its preview if green.
+2. Isolate the TECNO YT Music/Bluetooth delay or double-copy report using one engine at a time. Keep
+   sound-changing work behind this real-device check.
+3. Build Test Pilot + evidence-backed `AppProfile`; run the player/route matrix on the TECNO and V60.
+4. Build the randomized, level-matched blind A/B tool and retain results locally.
+5. Prototype bounded dynamic EQ/resonance suppression as an optional feature; measure synthetic pairs,
+   Engine loudness/peak/headroom, bypass, and human preference before default-on.
+6. Add hearing/headphone personalization only where the route/profile is known. The current AutoEq index
+   has no exact entry for Fosi Audio IM4 or Realme Buds Air 8; accept imported measurements and do not
+   substitute a nearby product.
+7. Consider volume/noise compensation and track memory after their calibration, permission and privacy
+   design. Track memory remains explicit opt-in and off by default.
+8. Add a LiteRT controller only if held-out listening beats the deterministic policy. Keep it off
+   Engine A, which cannot observe the audio.
 
 ## 9. Constraints and open questions
 
@@ -200,5 +229,7 @@ randomised) with results kept locally; a small panel study before any quality cl
 - Play: MediaProjection + foreground-service disclosure, overlay and notification-listener
   justification, privacy policy covering mic/media-session use.
 - Unknown until probed on the V60: which of Apple Music / Amazon Music / HiBy / Onkyo allow capture.
+- The TECNO's reported YouTube Music/Bluetooth delay or echo is not resolved by the emulator suite; the
+  output queue is not end-to-end Bluetooth latency.
 - App licence still undecided (ask the user).
 - Name/brand: always "Svaramanas" (never "SvanMind"); gold design system, no new hues.

@@ -122,10 +122,10 @@ jobs:
           cat e2e-out/smoke.txt || echo "no smoke output"
           cat e2e-out/e2e_results.txt || { echo "no results"; exit 1; }
           grep -q '^PASS release smoke test' e2e-out/smoke.txt
-          ! grep -q '^FAIL' e2e-out/e2e_results.txt
+          if grep -q '^FAIL' e2e-out/e2e_results.txt; then echo 'e2e results contain a failure'; exit 1; fi
           grep -q '^PASS sound scroll preserves EQ settings' e2e-out/screens/interaction.txt
           cat e2e-out/detection/detection.txt
-          ! grep -q '^FAIL' e2e-out/detection/detection.txt
+          if grep -q '^FAIL' e2e-out/detection/detection.txt; then echo 'release detection results contain a failure'; exit 1; fi
           test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 10
       - uses: actions/upload-artifact@v4
         if: always()

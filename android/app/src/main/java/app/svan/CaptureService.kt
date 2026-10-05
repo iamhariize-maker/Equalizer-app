@@ -135,13 +135,16 @@ class CaptureService : Service() {
                 }
             }, "svan-eq-watch").apply { start() }
 
-            var allowed: Set<Int> = emptySet()
+            // Resolve existing players before the main AudioRecord is opened. Some
+            // Android audio HALs reject a second playback-capture AudioRecord, so
+            // CaptureCompat's startup probes must finish first.
+            check(SessionRouter.onCaptureStarted(mp, systemPackages)) { "session routing failed before capture startup" }
+            var allowed: Set<Int> = SessionRouter.captureUids
             var input = openRecord(mp, allowed)
             record = input
             activeRecord = input
             input.startRecording()
             output.play()
-            SessionRouter.onCaptureStarted(mp, systemPackages)
             EqController.log("capture: started, quality=${settings.quality}, DSP latency=${dsp.latencyFrames} frames, output buffer=${output.bufferSizeInFrames} frames")
             val buf = FloatArray(frames * 2)
             var levelPeak = 0f

@@ -54,6 +54,7 @@ class CaptureCompat(context: Context) {
         val buf = FloatArray(1024)
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         try {
+            check(record.state == AudioRecord.STATE_INITIALIZED) { "capture check recorder is not initialized" }
             record.startRecording()
             while (System.nanoTime() < deadline) {
                 if (!stillActive()) error("capture check cancelled")

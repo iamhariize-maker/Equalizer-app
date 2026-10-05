@@ -13,6 +13,26 @@ Device: TECNO LH7n, Android 14. Current report: Engine B sounds delayed or doubl
 with YouTube Music over Bluetooth; other players and outputs have not been tested.
 This is a real listening report, not an emulator result. The changes below need retesting.
 
+## Isolate delay from doubled playback
+
+Use the same short, familiar passage and keep phone/headphone volume fixed. In Presets, use
+**Reset all sound to Flat**. Do not run Engine A and Engine B together during this comparison.
+
+1. Stop both Svan engines and play the passage. Note the normal Bluetooth timing and whether the
+   original itself has an echo.
+2. Start **System effects only** and repeat. Note whether playback remains single and in sync.
+3. Stop System effects. Start the **Audiophile engine** and confirm YouTube Music is shown under that
+   engine with non-silent input/output peaks. Note whether you hear one copy, an echo/two copies, or a
+   single copy that is only delayed.
+4. Stop Engine B before switching route. Repeat its comparison on the phone speaker or a wired output
+   if one is available. This separates a Bluetooth-specific problem from the capture/replay path.
+5. Save the player/engine row, route, quality mode, output queue, peaks, underruns, and what you heard.
+   The queue is not total Bluetooth latency. Do not change EQ or oversampling while isolating routing.
+
+If System effects is single and Engine B is doubled, keep using System effects for that player while
+the capture/replay path is investigated. If both Svan modes double the signal, stop Svan and report
+that baseline before making further changes.
+
 ## Install
 
 Download `Svan-preview` from the branch's latest successful CI run and unzip
@@ -58,7 +78,11 @@ bass, vocal and orchestral controls off initially, with a flat EQ and 0 dB pream
 2. Start the audiophile engine. The player must appear as **Audiophile engine**,
    rather than just the service saying it is running. Listen for an echo, a
    pause when switching, crackle and persistent delay. A blocked or undetected
-   app stays out of capture so it cannot be duplicated.
+   app stays out of capture so it cannot be duplicated. Start the engine while
+   YouTube Music is already playing: the compatibility check runs before Engine
+   B opens its recorder. If you switch to a player not yet checked while the
+   engine is active, Svan keeps it audible on System effects until Engine B is
+   restarted with that player playing.
 3. Note quality, output queue/buffer, DSP load and underruns. These are local
    diagnostics; they do not measure end-to-end Bluetooth latency. Compare
    Efficient and High quality, then Audiophile. Keep Extreme for a later test.

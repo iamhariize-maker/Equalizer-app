@@ -19,7 +19,9 @@ wait_log() {
     if [ -s "$OUT/match.txt" ]; then cat "$OUT/match.txt"; return 0; fi
     sleep 1
   done
-  echo "FAIL timeout: $1" | tee -a "$OUT/detection.txt"; return 1
+  echo "FAIL timeout: $1" | tee -a "$OUT/detection.txt"
+  FAILED=1
+  return 1
 }
 tap() {
   $A shell uiautomator dump /sdcard/svan-setup.xml >/dev/null 2>&1 || return 1
@@ -110,6 +112,15 @@ check_delta 'detection works after Shizuku stops' "$INDEPENDENT" "$BASE" -6.3
 # Test the shipped 4x path and the same graphic controls shown in the phone report.
 $A logcat -c; eq start_capture --es quality AUDIOPHILE
 wait_log 'capture: started'; wait_log "route: $CAP .*Engine B"; sleep 3
+# Do not measure the release output as an Engine B result unless the expected
+# route log exists. Engine A can produce the same level delta and mask a miss.
+if ! grep -Eq "route: $CAP .*Engine B" < <($A logcat -d -s EqSpike:I); then
+  echo 'FAIL release Engine B route missing; capture level checks are invalid' | tee -a "$OUT/detection.txt"
+  FAILED=1
+  diagnose 'release Engine B route missing'
+  eq stop_capture
+  exit 1
+fi
 CAPTURED=$(level)
 check_delta 'release audiophile output is one processed copy' "$CAPTURED" "$BASE" -6.3
 eq gain_settings --ez headroom false --ez protection true
