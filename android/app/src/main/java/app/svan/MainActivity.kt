@@ -41,6 +41,8 @@ class MainActivity : ComponentActivity() {
                     onStartCapture = { pendingQuality = null; startCapture() },
                     onStopCapture = ::stopCapture,
                     labActions = listOf(
+                        "Blind listening" to { app.svan.listening.BlindLab.open.value=true },
+                        "Run engine checks" to { thread { runCatching { app.svan.listening.QualityLab.verify(this) }.onFailure { EqController.log("QUALITY_LAB_FAILED ${it.message}") } } },
                         "Probe band limits" to { thread { EqController.log(DynamicsProbe.run(this)) } },
                         "Audible resolution" to ::runResolutionProbe,
                         "Sessions" to { thread { EqController.log(sessionReport()) } },
@@ -71,10 +73,13 @@ class MainActivity : ComponentActivity() {
      *           measure_mix, forget_verdicts
      */
     private fun handleCommand(intent: Intent?) {
+        if (!BuildConfig.PHONE_PREVIEW) return
         val cmd = intent?.getStringExtra("cmd") ?: return
         intent.getStringExtra("quality")?.let { pendingQuality = QualityMode.valueOf(it) }
         EqController.log("CMD $cmd")
         when (cmd) {
+            "blind_lab" -> app.svan.listening.BlindLab.open.value=true
+            "quality_lab" -> thread { runCatching {app.svan.listening.QualityLab.verify(this)}.onFailure {EqController.log("QUALITY_LAB_FAILED ${it.message}")} }
             "probe" -> thread { EqController.log(DynamicsProbe.run(this)) }
             "resolution" -> runResolutionProbe()
             "sessions" -> thread { EqController.log(sessionReport()) }

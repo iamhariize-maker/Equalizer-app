@@ -28,7 +28,7 @@ The fixed Shizuku DUMP grant and real audio-session detection remain available.
 ## Repo map
 | Path | What |
 |---|---|
-| `core/` | Portable C++17 DSP library `eqcore` (CMake). 86 unit tests in `core/tests/test_main.cpp` (no framework). |
+| `core/` | Portable C++17 DSP library `eqcore` (CMake). 97 unit tests in `core/tests/test_main.cpp` (no framework). |
 | `android/app/src/main/cpp/` | JNI bridge → `eqcore` |
 | `android/app/src/main/java/app/svan/` | Kotlin: engines, routing, repository, UI (Compose); `svaramanas/` = controller, dialog, bubble, QS tile |
 | `android/app/src/main/java/app/svan/ui/` | Screens (Sound, EQ, Presets, Hi-Fi, Lab), `Theme.kt` (gold palette), `Brand.kt` (boot animation, brand line, "EQ exten9ed"), `Knob.kt`, `ResponseGraph.kt` |
@@ -75,3 +75,10 @@ changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 1. Verify on the next CI screenshots: boot name fits on one line with margins; the flipped **d** reads as a 9 (not "q"); the स्व icon on the Android 12+ splash.
 2. **Real-phone validation** (the user has one phone, a TECNO LH7n, Android 14, no PC): everything so far is emulator-verified only.
 3. Product gaps: per-app engine UI, foreground-service robustness, release signing, Play Store policy (MediaProjection/foreground service), app licence.
+
+0.5.5 adds reconstructed-peak protection, selective dynamic EQ, bounded headphone calibration
+and blind matched listening. See docs/QUALITY_LAB_0.5.5.md. Four release quality checks are required;
+keep the ten detection, 39 routing, nine workspace and eight control checks intact.
+Production signing uses a private owner key outside Git/CI, never preview.keystore. Four additional
+production-mode checks use a disposable CI key. See docs/RELEASE_SIGNING.md; preserve settings
+export/restore and the production Activity's rejection of scripted command extras.

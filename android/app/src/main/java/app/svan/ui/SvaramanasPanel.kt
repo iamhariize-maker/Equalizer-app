@@ -169,6 +169,8 @@ fun SvaramanasPanel(
             Column {
                 Spacer(Modifier.height(10.dp))
                 SectionLabel("Svaresa adapts to")
+                SettingSwitchRow("Selective dynamic EQ","Capture engine only: reduces sustained local resonances without boosting. Up to 1.5 dB per band, 3 dB total; short transients are preserved.",
+                    request.selectiveEq,{on->Svaramanas.update {it.copy(selectiveEq=on,enabled=true)}})
                 SettingSwitchRow(
                     "Quiet listening",
                     "At low volume the ear loses bass and treble (ISO 226 equal-loudness). Svaresa restores them, a little more the quieter you listen.",

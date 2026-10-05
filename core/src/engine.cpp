@@ -10,6 +10,7 @@ EngineConfig EngineConfig::forQuality(QualityMode mode, double sampleRate, int c
   EngineConfig c;
   c.sampleRate = sampleRate;
   c.channels = channels;
+  c.truePeak = true;
   switch (mode) {
     case QualityMode::Efficient:
       c.oversample = 1;
@@ -49,6 +50,8 @@ Engine::Engine(const EngineConfig& cfg)
       gainProtection_(cfg.gainProtection),
       eq_(std::max(1, cfg.channels), cfg.sampleRate * sanitizeFactor(cfg.oversample)),
       bass_(cfg.sampleRate, std::max(1, cfg.channels)),
+      limiter_(cfg.sampleRate,std::max(1,cfg.channels)),
+      dynamic_(cfg.sampleRate),
       stereo_(cfg.sampleRate),
       analyzer_(cfg.sampleRate, std::clamp(cfg.channels, 1, 2)) {
   cfg_.channels = std::max(1, cfg_.channels);
@@ -106,12 +109,13 @@ double Engine::responseDb(int channel, double freqHz) const {
   return eq_.responseDb(channel, freqHz) + gainDb_.load();
 }
 
-int Engine::latencyFrames() const { return os_.empty() ? 0 : os_[0]->latencySamples(); }
+int Engine::latencyFrames() const { return (os_.empty() ? 0 : os_[0]->latencySamples()) + (cfg_.truePeak?limiter_.latencyFrames():0); }
 
 void Engine::reset() {
   gainInitialized_=false;gainRampRemaining_=0;
   eq_.reset();
   bass_.reset();
+  limiter_.reset();dynamic_.reset();
   stereo_.reset();
   analyzer_.reset();
   resetGainProtection();
@@ -157,7 +161,7 @@ void Engine::process(const float* in, float* out, int frames) {
     double peak = 0.0;
     for (int ch = 0; ch < C; ++ch) {
       double* y = &outBuf_[static_cast<size_t>(ch) * cfg_.maxBlock];
-      for (int i = 0; i < n; ++i) y[i] = static_cast<double>(src[i * C + ch]) * gains_[i];
+      for (int i = 0; i < n; ++i) y[i] = std::isfinite(src[i*C+ch]) ? static_cast<double>(src[i*C+ch])*gains_[i] : 0.;
       if (L > 1) {
         os_[ch]->up(y, n, high_.data());
         eq_.process(ch, high_.data(), n * L);
@@ -168,6 +172,15 @@ void Engine::process(const float* in, float* out, int frames) {
       bass_.process(ch, y, n);  // bass needs no oversampling; runs at the base rate
     }
     if (C == 2) stereo_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);
+    dynamic_.process(&outBuf_[0],C==2?&outBuf_[cfg_.maxBlock]:nullptr,n,dynamicAmount_.load(std::memory_order_relaxed));
+    const auto reductions=dynamic_.reductionsDb();for(int b=0;b<4;++b)dynamicDb_[b].store(reductions[b],std::memory_order_relaxed);
+    if(cfg_.truePeak) {
+      if(gainResetPending_.exchange(false))limiter_.resetGain();
+      limiter_.process(outBuf_.data(),cfg_.maxBlock,n,protect);
+      agpDb_.store(limiter_.reductionDb(),std::memory_order_relaxed);
+      for(int ch=0;ch<C;++ch)for(int i=0;i<n;++i)dst[i*C+ch]=static_cast<float>(dither_[ch].process(outBuf_[ch*cfg_.maxBlock+i]));
+      continue;
+    }
     for (int ch = 0; ch < C; ++ch) {
       const double* y = &outBuf_[static_cast<size_t>(ch) * cfg_.maxBlock];
       for (int i = 0; i < n; ++i) peak = std::max(peak, std::fabs(y[i]));

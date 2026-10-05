@@ -1,3 +1,5 @@
+Latest native quality and listening work: [0.5.5 quality lab](QUALITY_LAB_0.5.5.md).
+
 # Svaramanas — Svan's sound intelligence
 
 Latest increment: [0.5.4 engine quality](ENGINE_QUALITY_0.5.4.md). Svaresa now takes effective

@@ -1,3 +1,5 @@
+Latest native quality and listening work: [0.5.5 quality lab](QUALITY_LAB_0.5.5.md).
+
 # Audiophile processing
 
 Svan has an original double precision DSP chain and a separate Android system-effects path.

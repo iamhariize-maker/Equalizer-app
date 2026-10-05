@@ -44,7 +44,7 @@ FrCurve parseCurve(const std::string& text) {
     const double f = std::strtod(a.c_str(), &e1);
     const double g = std::strtod(b.c_str(), &e2);
     if (e1 == a.c_str() || *e1 != '\0' || e2 == b.c_str() || *e2 != '\0') continue;  // header/comment
-    if (!(f > 0) || !std::isfinite(g)) continue;
+    if (!(f > 0) || !std::isfinite(f) || !std::isfinite(g)) continue;
     pts.emplace_back(f, g);
   }
   std::sort(pts.begin(), pts.end());

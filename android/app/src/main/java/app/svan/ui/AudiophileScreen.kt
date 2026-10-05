@@ -221,11 +221,14 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             Column {
                 SettingSwitchRow("Auto headroom", "Lowers gain only as much as the EQ boost requires. Existing negative preamp counts toward headroom. Applies to both engines.",
                     guarded.autoHeadroom, { on -> SvanRepository.updateSettings { it.copy(autoHeadroom = on) } }, enabled=!eq.smartProtection)
-                SettingSwitchRow("Automatic gain protection", "Capture: catches sample overloads and smoothly restores gain with a 250 ms release. System effects: Android's limiter. Does not measure true inter-sample peaks.",
+                SettingSwitchRow("Automatic gain protection", "Capture: 8× reconstructed-peak detection, −1.3 dB detector target, 3 ms lookahead plus 64 detector frames; stereo-linked gain with 250 ms recovery. System effects: Android's sample limiter.",
                     guarded.gainProtection, { on -> SvanRepository.updateSettings { it.copy(gainProtection = on) } }, enabled=!eq.smartProtection)
             }
         }
 
+        SectionLabel("Selective dynamic EQ")
+        Text("Svaresa in the capture engine reduces sustained local resonances at 120, 330, 3000 and 6500 Hz. No automatic boost; up to 1.5 dB per band and 3 dB combined. Short transients are left alone. System effects cannot run this processor.",
+            style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted,modifier=Modifier.padding(4.dp))
         SectionLabel("System effects resolution")
         Text("Curve points sent to Android. Effective resolution depends on its processing window and the device; accepted settings do not guarantee independent bands.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted, modifier = Modifier.padding(bottom = 8.dp))

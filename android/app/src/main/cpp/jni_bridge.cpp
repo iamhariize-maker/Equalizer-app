@@ -5,6 +5,8 @@
 #include <vector>
 
 #include "eqcore/autoeq.h"
+#include "eqcore/calibration.h"
+#include "eqcore/comparison.h"
 #include "eqcore/engine.h"
 #include "eqcore/graphic_eq.h"
 #include "eqcore/svaramanas.h"
@@ -134,6 +136,7 @@ JNIEXPORT jlong JNICALL Java_app_svan_NativeEngine_nativeCreateCustom(
     JNIEnv*, jclass, jint sampleRate, jint channels, jint oversample, jdouble stopbandDb, jint ditherBits,
     jint ditherMode, jboolean autoHeadroom, jboolean gainProtection) {
   EngineConfig c;
+  c.truePeak = true;
   c.sampleRate = sampleRate;
   c.channels = channels;
   c.oversample = oversample;
@@ -351,4 +354,35 @@ JNIEXPORT jint JNICALL Java_app_svan_NativeEngine_nativeLatency(JNIEnv*, jclass,
   return fromHandle(h)->latencyFrames();
 }
 
+
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetDynamicEq(JNIEnv*,jclass,jlong h,jdouble amount) {
+ fromHandle(h)->setDynamicEq(amount);
+}
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeDynamicReductions(JNIEnv* env,jclass,jlong h) {
+ auto r=fromHandle(h)->dynamicReductionsDb();auto out=env->NewDoubleArray(4);env->SetDoubleArrayRegion(out,0,4,r.data());return out;
+}
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeCalibratedTuning(JNIEnv* env,jclass,jstring measurement,jstring target,jboolean published,jdouble amount,jint bands,jdouble bass,jdouble tilt) {
+ const auto text=str(env,measurement);FrCurve m;
+ if(published&&text.find("GraphicEQ")!=std::string::npos)for(const auto& [f,g]:parseGraphicEq(text)){m.hz.push_back(f);m.db.push_back(g);}
+ else m=parseCurve(text);
+ auto result=published?calibratedProfile(m,amount,bands,bass,tilt):calibratedTuning(m,parseCurve(str(env,target)),amount,bands,bass,tilt);
+ if(!result.valid)return env->NewDoubleArray(0);
+ std::vector<double> out={result.fit.rmsErrorDb,result.fit.maxErrorDb,result.lowHz,result.highHz};
+ for(const auto& b:result.fit.bands){out.push_back(b.freqHz);out.push_back(b.gainDb);out.push_back(b.q);}
+ auto r=env->NewDoubleArray(out.size());env->SetDoubleArrayRegion(r,0,out.size(),out.data());return r;
+}
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeMatchComparison(JNIEnv* env,jclass,jfloatArray a,jfloatArray b,jint fs) {
+ auto n=env->GetArrayLength(a);if(fs<16000||fs>96000||n!=env->GetArrayLength(b)||n>fs*2*15||n<fs*2*4)return env->NewDoubleArray(0);
+ std::vector<float> x(n),y(n);env->GetFloatArrayRegion(a,0,n,x.data());env->GetFloatArrayRegion(b,0,n,y.data());std::array<double,6> levels{};
+ if(!matchComparison(x,y,fs,levels))return env->NewDoubleArray(0);
+ env->SetFloatArrayRegion(a,0,n,x.data());env->SetFloatArrayRegion(b,0,n,y.data());auto r=env->NewDoubleArray(6);env->SetDoubleArrayRegion(r,0,6,levels.data());return r;
+}
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeReconstructedPeak(JNIEnv* env,jclass,jfloatArray audio,jint fs) {
+ auto n=env->GetArrayLength(audio);if(n>fs*2*15||fs<16000||fs>96000)return -1;
+ std::vector<float> samples(n);env->GetFloatArrayRegion(audio,0,n,samples.data());
+ OversamplerSpec spec;spec.factor=8;spec.baseSampleRate=fs;spec.passbandHz=fs*.45;spec.stopbandDb=140;spec.maxBlock=512;
+ std::vector<double> block(512),high(4096);double peak=0;
+ for(int ch=0;ch<2;++ch){Oversampler up(spec);for(int start=0;start<n/2;start+=512){int count=std::min(512,n/2-start);for(int k=0;k<count;++k)block[k]=samples[(start+k)*2+ch];up.up(block.data(),count,high.data());for(int k=0;k<count*8;++k)peak=std::max(peak,std::abs(high[k]));}}
+ return peak;
+}
 }  // extern "C"

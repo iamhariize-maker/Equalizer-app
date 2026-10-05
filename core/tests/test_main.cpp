@@ -19,6 +19,8 @@
 #include "eqcore/biquad.h"
 #include "eqcore/dither.h"
 #include "eqcore/engine.h"
+#include "eqcore/calibration.h"
+#include "eqcore/comparison.h"
 #include "eqcore/oversampler.h"
 #include "eqcore/parametric_eq.h"
 #include "eqcore/resampler.h"
@@ -1769,6 +1771,138 @@ TEST(graphic_fit_rejects_invalid_layout_and_limits_unrepresentable_curves) {
   auto fit=fitGraphicEq({{FilterType::Peak,1000,24,12}},10);
   CHECK(fit.maxDb > 5); // Do not pretend a narrow +24 dB filter survived a coarse layout.
   for (const auto& b:fit.bands) CHECK(std::isfinite(b.gainDb) && std::abs(b.gainDb)<=12);
+}
+
+// Independent reconstruction: existing 8x Kaiser FIR, not the limiter's detector.
+static double reconstructedPeak(const std::vector<float>& audio,int channels=2,double fs=48000) {
+  OversamplerSpec spec;spec.factor=8;spec.baseSampleRate=fs;spec.stopbandDb=140;spec.maxBlock=512;
+  double peak=0;std::vector<double> block(512),high(4096);
+  for(int ch=0;ch<channels;++ch) {
+    Oversampler os(spec);
+    for(size_t start=0;start<audio.size()/channels;start+=512) {
+      int n=std::min<size_t>(512,audio.size()/channels-start);
+      for(int j=0;j<n;++j)block[j]=audio[(start+j)*channels+ch];
+      os.up(block.data(),n,high.data());
+      for(int j=0;j<n*8;++j)peak=std::max(peak,std::abs(high[j]));
+    }
+  }
+  return peak;
+}
+TEST(true_peak_protection_catches_intersample_overload) {
+  auto cfg=EngineConfig::forQuality(QualityMode::Efficient,48000,2,24);cfg.autoHeadroom=false;
+  Engine e(cfg);std::vector<float> audio(48000*2);
+  for(int i=0;i<48000;++i)audio[2*i]=audio[2*i+1]=1.35*std::sin(kPi*.5*i+kPi*.25);
+  const double before=reconstructedPeak(audio);e.process(audio.data(),audio.data(),48000);
+  const double after=reconstructedPeak(audio);
+  std::printf("    reconstructed peak %.4f -> %.4f (samples below full scale)\n",before,after);
+  CHECK(before>1.3);CHECK(after<=.92);
+}
+
+TEST(true_peak_is_block_independent_linked_and_bypass_has_fixed_delay) {
+ auto cfg=EngineConfig::forQuality(QualityMode::Efficient,48000,2,24);cfg.autoHeadroom=false;
+ Engine whole(cfg),chunks(cfg);const int n=12000;std::vector<float> a(n*2),b;
+ for(int i=0;i<n;++i) {a[i*2]=i<2000?.02f:1.35f*std::sin(kPi*.5*i+kPi*.25);a[i*2+1]=a[i*2]*.25f;} b=a;
+ whole.process(a.data(),a.data(),n);
+ for(int k=0;k<n;k+=13)chunks.process(b.data()+k*2,b.data()+k*2,std::min(13,n-k));
+ for(int k=0;k<n*2;++k)CHECK_NEAR(a[k],b[k],1e-12);
+ for(int k=0;k<n;++k)CHECK_NEAR(a[k*2+1],a[k*2]*.25,1e-7);
+ CHECK(reconstructedPeak(a)<.93);
+ Engine quiet(cfg);std::vector<float> q(n*2);for(int i=0;i<n;++i)q[i*2]=q[i*2+1]=.1f*std::sin(2*kPi*1000*i/48000);
+ auto original=q;quiet.process(q.data(),q.data(),n);int d=quiet.latencyFrames();CHECK(d==208);
+ for(int i=d;i<n;++i)CHECK_NEAR(q[i*2],original[(i-d)*2],1e-9);
+ quiet.setGainProtection(false);CHECK(quiet.latencyFrames()==d);
+}
+TEST(true_peak_rates_modes_dither_bursts_and_recovery) {
+ for(double fs:{44100.,48000.,96000.})for(auto mode:{QualityMode::Efficient,QualityMode::Audiophile,QualityMode::Extreme}) {
+  auto cfg=EngineConfig::forQuality(mode,fs,2,16);cfg.autoHeadroom=false;Engine e(cfg);
+  int n=int(fs);std::vector<float> v(n*2);
+  for(int i=0;i<n;++i) {double amp=(i>1000&&i<5000)?1.35:.05;v[2*i]=amp*std::sin(kPi*.5*i+kPi*.25);v[2*i+1]=v[2*i]*.5;}
+  e.process(v.data(),v.data(),n);const double peak=reconstructedPeak(v,2,fs);
+  std::printf("    true peak %.0f Hz mode %d: %.4f\n",fs,int(mode),peak);CHECK(peak<.95);
+  std::vector<float> quiet(n*2*3,.01f);e.process(quiet.data(),quiet.data(),n*3);CHECK(e.gainProtectionDb()>-.01);
+ }
+}
+TEST(dynamic_eq_is_reduction_only_selective_linked_and_exactly_bypassable) {
+ const int n=48000*2;EngineConfig cfg;cfg.autoHeadroom=false;cfg.gainProtection=false;
+ Engine e(cfg);e.setDynamicEq(1);std::vector<float> v(n*2);
+ for(int i=0;i<n;++i)v[2*i]=v[2*i+1]=.2*std::sin(2*kPi*330*i/48000)+.04*std::sin(2*kPi*1000*i/48000);
+ auto original=v;e.process(v.data(),v.data(),n);std::vector<double> out(n);
+ for(int i=0;i<n;++i) {out[i]=v[2*i];CHECK_NEAR(v[2*i],v[2*i+1],1e-12);}
+ const double resonance=toDb(sineAmplitude(out,330,48000,n/2,n)/.2);
+ const double target=toDb(sineAmplitude(out,1000,48000,n/2,n)/.04);
+ std::printf("    selective EQ: resonance %.3f dB, unrelated target %.3f dB\n",resonance,target);
+ CHECK(resonance< -1.2 && resonance> -1.7);CHECK(std::abs(target)<.15);
+ double budget=0;for(double db:e.dynamicReductionsDb()){CHECK(db<=0);budget-=db;}CHECK(budget<=3.01);
+ e.setDynamicEq(0);v=original;e.process(v.data(),v.data(),n);CHECK(v==original);
+}
+TEST(dynamic_eq_preserves_short_transients_and_recovers) {
+ EngineConfig cfg;cfg.autoHeadroom=false;cfg.gainProtection=false;Engine e(cfg);e.setDynamicEq(1);
+ std::vector<float> pulse(9600*2,0);for(int i=0;i<960;++i)pulse[i*2]=pulse[i*2+1]=.2*std::sin(2*kPi*3000*i/48000);
+ auto original=pulse;e.process(pulse.data(),pulse.data(),9600);CHECK(pulse==original);
+ std::vector<float> resonance(48000*2);for(int i=0;i<48000;++i)resonance[i*2]=resonance[i*2+1]=.2*std::sin(2*kPi*3000*i/48000);
+ e.process(resonance.data(),resonance.data(),48000);CHECK(e.dynamicReductionsDb()[2]<-1);
+ std::vector<float> silence(48000*3*2);e.process(silence.data(),silence.data(),48000*3);
+ for(double db:e.dynamicReductionsDb())CHECK(db>-.01);
+}
+
+TEST(calibration_is_level_invariant_bounded_and_retains_actual_fit_error) {
+ FrCurve m,t;for(int i=0;i<256;++i){double f=20*std::pow(1000.,i/255.);m.hz.push_back(f);t.hz.push_back(f);m.db.push_back(8*std::exp(-std::pow(std::log2(f/330),2)*2));t.db.push_back(0);}
+ auto a=calibratedTuning(m,t,1,64);CHECK(a.valid);CHECK(a.fit.rmsErrorDb<.4);
+ for(auto& db:m.db)db+=40;auto b=calibratedTuning(m,t,1,64);CHECK(b.valid);
+ for(size_t k=0;k<a.fit.bands.size();++k)CHECK_NEAR(a.fit.bands[k].gainDb,b.fit.bands[k].gainDb,1e-8);
+ auto off=calibratedTuning(m,t,0,64);for(const auto& band:off.fit.bands)CHECK_NEAR(band.gainDb,0,1e-10);
+ auto partial=m;partial.hz.erase(partial.hz.begin(),partial.hz.begin()+40);partial.db.erase(partial.db.begin(),partial.db.begin()+40);CHECK(!calibratedTuning(partial,t,1,64).valid);
+ FrCurve bad=parseCurve("inf 10\n30 0\n10000 1");CHECK(bad.hz.size()==2);
+ for(auto& db:m.db)db=30*std::sin(db);auto bounded=calibratedTuning(m,t,1,64);CHECK(bounded.valid);
+ ParametricEq eq(1,48000);eq.setBands(0,bounded.fit.bands);CHECK(eq.peakGainDb(0,20,20000,4096)<=6.05);
+ CHECK(!calibratedTuning(m,t,1,50000).valid);
+}
+
+TEST(blind_comparison_matches_actual_rendered_loudness_by_attenuating_only) {
+ auto a=multisine(48000,8,20000,flatShape,-24,.5);auto b=a;
+ EngineConfig cfg;cfg.autoHeadroom=false;cfg.gainProtection=false;Engine processed(cfg);
+ processed.setBandsAllChannels({{FilterType::LowShelf,100,6,.71},{FilterType::Peak,3000,-3,1}});processed.process(b.data(),b.data(),int(b.size()/2));
+ std::array<double,6> levels{};CHECK(matchComparison(a,b,48000,levels));
+ std::printf("    blind levels before %.3f / %.3f, after %.3f / %.3f LUFS\n",levels[0],levels[1],levels[2],levels[3]);
+ CHECK(std::abs(levels[2]-levels[3])<.1);CHECK(levels[4]<=0&&levels[5]<=0);
+ std::vector<float> silent(a.size());CHECK(!matchComparison(silent,b,48000,levels));
+}
+
+TEST(true_peak_nonfinite_input_does_not_poison_subsequent_music) {
+ auto cfg=EngineConfig::forQuality(QualityMode::Audiophile,48000,2,24);Engine e(cfg);
+ std::vector<float> v(20000,.1f);v[0]=std::numeric_limits<float>::quiet_NaN();v[2]=std::numeric_limits<float>::infinity();
+ e.process(v.data(),v.data(),10000);for(float x:v)CHECK(std::isfinite(x));CHECK(std::abs(v.back()-.1)<1e-4);
+}
+TEST(dynamic_eq_does_not_chase_filter_tails_after_bass_transients) {
+ for(double f:{120.,330.,3000.,6500.}) {
+  EngineConfig cfg;cfg.autoHeadroom=false;cfg.gainProtection=false;Engine e(cfg);e.setDynamicEq(1);
+  std::vector<float> v(12000*2);for(int i=0;i<960;++i)v[i*2]=v[i*2+1]=.2*std::sin(2*kPi*f*i/48000);
+  auto original=v;e.process(v.data(),v.data(),12000);CHECK(v==original);
+ }
+}
+
+static double referencePeak16(const std::vector<float>& v) {
+ // Independent longer Hann reconstruction, full Nyquist bandwidth.
+ double coefficients[16][192]={};
+ for(int p=0;p<16;++p){double sum=0;for(int k=0;k<192;++k){double x=k-96+p/16.;double w=std::abs(x)<96?.5+.5*std::cos(kPi*x/96):0;coefficients[p][k]=(std::abs(x)<1e-12?1:std::sin(kPi*x)/(kPi*x))*w;sum+=coefficients[p][k];}for(auto& c:coefficients[p])c/=sum;}
+ double peak=0;int frames=v.size()/2;
+ for(int n=0;n<frames+96;++n)for(int ch=0;ch<2;++ch)for(int p=0;p<16;++p){double y=0;for(int k=0;k<192;++k){int j=n-k;if(j>=0&&j<frames)y+=v[j*2+ch]*coefficients[p][k];}peak=std::max(peak,std::abs(y));}
+ return peak;
+}
+TEST(true_peak_dense_reconstruction_checks_transients_and_wideband) {
+ auto c=EngineConfig::forQuality(QualityMode::Efficient,48000,2,24);c.autoHeadroom=false;
+ for(int kind=0;kind<3;++kind){Engine e(c);std::vector<float> v(8192);uint32_t random=31;
+  for(int j=0;j<4096;++j){random=random*1664525+1013904223;double x=kind==0?(.99*(double(random)/4294967295.*2-1)):
+   kind==1?(.99*(j%2?1:-1)*(j>1000&&j<1600?1:0)):(.99*std::sin(2*kPi*.46*j+.41));v[j*2]=x;v[j*2+1]=x*.7;}
+  e.process(v.data(),v.data(),4096);double peak=referencePeak16(v);std::printf("    independent 16x reconstructed peak case %d: %.5f\n",kind,peak);CHECK(peak<.95);
+ }
+}
+TEST(dynamic_eq_budget_survives_changes_of_resonance) {
+ EngineConfig c;c.autoHeadroom=false;c.gainProtection=false;Engine e(c);e.setDynamicEq(1);
+ std::vector<float> v(1024*2);int frame=0;
+ for(int block=0;block<300;++block){for(int j=0;j<1024;++j,++frame){double x=0;for(double f:(block/20)%2?std::initializer_list<double>{120,330}:std::initializer_list<double>{3000,6500})x+=.1*std::sin(2*kPi*f*frame/48000);v[2*j]=v[2*j+1]=x;}
+  e.process(v.data(),v.data(),1024);double sum=0;for(double db:e.dynamicReductionsDb())sum-=db;CHECK(sum<=3.00001);
+ }
 }
 
 int main(int argc, char** argv) {

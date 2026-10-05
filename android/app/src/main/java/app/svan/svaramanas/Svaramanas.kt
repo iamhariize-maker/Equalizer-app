@@ -66,10 +66,11 @@ data class SmartRequest(
     val volumeAware: Boolean = true,
     val routeAware: Boolean = true,
     val autoHeadphone: Boolean = true,
+    val selectiveEq: Boolean = true,
 ) {
     fun toJson(): JSONObject = JSONObject().put("on", enabled).put("mode", mode.name).put("feel", feel.name).put("strength", strength)
         .put("picks", JSONArray().apply { picks.forEach { put(it.name) } })
-        .put("night", night.name).put("volumeAware", volumeAware).put("routeAware", routeAware).put("autoHeadphone", autoHeadphone)
+        .put("night", night.name).put("volumeAware", volumeAware).put("routeAware", routeAware).put("autoHeadphone", autoHeadphone).put("selectiveEq",selectiveEq)
 
     companion object {
         fun fromJson(o: JSONObject) = SmartRequest(
@@ -83,6 +84,7 @@ data class SmartRequest(
             volumeAware = o.optBoolean("volumeAware", true),
             routeAware = o.optBoolean("routeAware", true),
             autoHeadphone = o.optBoolean("autoHeadphone", true),
+            selectiveEq=o.optBoolean("selectiveEq",true),
         )
     }
 }
@@ -264,7 +266,7 @@ object Svaramanas {
         val ctx = if (r.mode == SmartMode.SVARESA) SvaresaBrain.layer(SvaresaSensors.read(appContext, r)) else null
         _context.value = ctx
         val eq = SvanRepository.eq.value
-        var target = p.toLayer(ctx).copy(protectEngine=r.mode==SmartMode.SVARESA)
+        var target = p.toLayer(ctx).copy(protectEngine=r.mode==SmartMode.SVARESA,dynamicEq=if(r.mode==SmartMode.SVARESA&&r.selectiveEq) r.strength.coerceIn(0.0,1.0) else 0.0)
         if (eq.smartEqControl && eq.smartEqMode == app.svan.model.EqMode.GRAPHIC) {
             if (fitInput != target.bands || fitCount != eq.smartGraphicCount) {
                 fitInput=target.bands; fitCount=eq.smartGraphicCount

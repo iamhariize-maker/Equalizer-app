@@ -192,6 +192,12 @@ object SvanRepository {
         persistPresets()
     }
 
+    fun restoreUserPresets(presets: List<Preset>) {
+        _userPresets.value = presets
+        _eqUndo.value = emptyList()
+        persistPresets()
+    }
+
     fun currentAsPreset(name: String): Preset {
         val s = _eq.value
         return if (s.smartEqControl && s.smart != null) Preset(name,s.effectivePreampDb(),s.smart.bands)

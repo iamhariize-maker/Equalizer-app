@@ -1,3 +1,20 @@
+## Quality engine continuation — 2026-10-05 (0.5.5 preview, code 12)
+
+Built true-peak estimation/lookahead, bounded selective dynamic EQ, measurement-derived headphone
+correction with provenance/amount controls, and an attenuation-only blind matched-listening lab.
+See [quality lab](QUALITY_LAB_0.5.5.md) for architecture, proof, CPU/latency tradeoffs and limits.
+The 0.5.4 exact delivered artifact passed all seven jobs in CI 37347862654; native/JVM 86/94,
+39 audio, 9 workspace, 8 controls, 10 release checks. New local/CI results are pending at writing;
+deliver 0.5.5 only after its exact release quality checks and screenshots pass.
+
+Owner then requested their digital signature for the Play route and confirmed no existing key or
+Play upload. A private RSA-4096 upload key and recovery files were created outside Git/GitHub.
+Production mode uses that private identity, version `0.5.5`, code 12, and disables all Activity test
+commands. Settings export/restore is added for the unavoidable preview→private signer migration.
+CI builds production APK/AAB with a disposable test key and checks public UI/native quality paths;
+owner delivery re-signs those exact tested payloads privately. See RELEASE_SIGNING.md. No Play
+publication or approval is claimed. The owner must download and securely back up the private key.
+
 ## Engine quality continuation — 2026-10-05 (0.5.4 preview, code 11)
 
 Owner requested the current APK first (0.5.3 was delivered), then broader Svaresa engine authority

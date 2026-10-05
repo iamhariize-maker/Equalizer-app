@@ -33,6 +33,16 @@ data class Band(
 
 enum class EqMode { PARAMETRIC, GRAPHIC }
 
+data class CorrectionCalibration(val amount: Double = 1.0, val maxErrorDb: Double = 0.0,
+    val lowHz: Double = 20.0, val highHz: Double = 20000.0, val basis: String = "Published profile",
+    val measurementHash: String = "", val targetHash: String = "") {
+    fun toJson()=JSONObject().put("amount",amount).put("max",maxErrorDb).put("low",lowHz).put("high",highHz)
+        .put("basis",basis).put("measurement",measurementHash).put("target",targetHash)
+    companion object {
+        fun fromJson(o: JSONObject)=CorrectionCalibration((o.optDouble("amount",1.0).takeIf(Double::isFinite) ?: 1.0).coerceIn(0.0,1.0),o.optDouble("max",0.0),o.optDouble("low",20.0),o.optDouble("high",20000.0),o.optString("basis","Published profile"),o.optString("measurement"),o.optString("target"))
+    }
+}
+
 /** Headphone correction layer (from AutoEq data), applied under the user's EQ. */
 data class Tuning(
     val enabled: Boolean = true,
@@ -45,16 +55,18 @@ data class Tuning(
     val tiltDbPerOct: Double = 0.0,
     /** How to find the data again for re-tuning: "<source>|<form>|<rig>|<name>|<resultPath>". */
     val ref: String = "",
+    val calibration: CorrectionCalibration? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("on", enabled).put("hp", headphone).put("src", source).put("ref", ref)
         .put("sig", signature).put("rms", fitRmsDb).put("bass", bassDb).put("tilt", tiltDbPerOct)
-        .put("bands", JSONArray().apply { bands.forEach { put(it.toJson()) } })
+        .put("bands", JSONArray().apply { bands.forEach { put(it.toJson()) } }).apply { calibration?.let { put("calibration",it.toJson()) } }
 
     companion object {
         fun fromJson(o: JSONObject) = Tuning(
             o.optBoolean("on", true), o.getString("hp"), o.optString("src"), o.optString("sig"),
             o.optJSONArray("bands")?.let { a -> List(a.length()) { Band.fromJson(a.getJSONObject(it)) } } ?: emptyList(),
             o.optDouble("rms", 0.0), o.optDouble("bass", 0.0), o.optDouble("tilt", 0.0), o.optString("ref"),
+            o.optJSONObject("calibration")?.let { CorrectionCalibration.fromJson(it) },
         )
     }
 }
@@ -131,6 +143,7 @@ data class EqState(
     val activeSmart: SmartLayer? get() = if (enabled && !smartBypass) smart else null
     /** Protection remains linked during compare/EQ bypass; it is not a tone effect. */
     val smartProtection: Boolean get() = smart?.protectEngine == true
+    val dynamicEq: Double get() = activeSmart?.dynamicEq ?: 0.0
 
     /** Built-in Flat is a complete audible reset, including independent layers. */
     fun withPreset(p: Preset): EqState = if (p.builtIn && p.name == "Flat") EqState(smart = smart, smartBypass = smartBypass) else
@@ -141,7 +154,7 @@ data class EqState(
 
     /** Your tuners, with Svaramanas's suggestions added where you left room (yours always win). */
     val activeVocal: VocalTuner get() = if (!enabled) VocalTuner() else activeSmart?.let {
-        VocalTuner(maxOf(vocal.intimacy, it.intimacy), vocal.warmth, maxOf(vocal.smoothness, it.smoothness))
+        VocalTuner(maxOf(vocal.intimacy, it.intimacy), vocal.warmth, maxOf(vocal.smoothness, if(it.dynamicEq>0) 0.0 else it.smoothness))
     } ?: vocal
     val activeInstrument: InstrumentTuner get() = if (!enabled) InstrumentTuner() else activeSmart?.let {
         InstrumentTuner(if (instrument.space != 0.0) instrument.space else it.space, maxOf(instrument.instruments, it.instruments))
@@ -244,6 +257,7 @@ data class SmartLayer(
     val graphicFitMaxDb: Double? = null,
     val overlapScale: Double = 1.0,
     val protectEngine: Boolean = false,
+    val dynamicEq: Double = 0.0,
 )
 
 /**

@@ -83,6 +83,7 @@ fun SoundScreen() {
     var bassDb by remember(tuning?.ref) { mutableDoubleStateOf(tuning?.bassDb ?: 0.0) }
     var tilt by remember(tuning?.ref) { mutableDoubleStateOf(tuning?.tiltDbPerOct ?: 0.0) }
     var bandCount by remember { mutableIntStateOf(64) }
+    var correctionAmount by remember(tuning?.ref) { mutableDoubleStateOf(tuning?.calibration?.amount ?: 1.0) }
     var customTarget by remember { mutableStateOf<String?>(null) }
     var customMeasurement by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -96,21 +97,21 @@ fun SoundScreen() {
         scope.launch {
             val r = TuningController.build(
                 context,
-                TuningController.Request(e, signature, bassDb, tilt, bandCount, customTarget, customMeasurement),
+                TuningController.Request(e, signature, bassDb, tilt, bandCount, customTarget, customMeasurement,correctionAmount),
             )
             busy = false
             r.onSuccess { t ->
                 SvanRepository.update { it.copy(tuning = t, enabled = true) }
-                message = "${t.bands.size} bands · fit accuracy ±%.2f dB".format(t.fitRmsDb)
+                message = "${t.bands.size} bands · RMS fit error %.2f dB".format(t.fitRmsDb)
                 picking = false
             }.onFailure { message = it.message ?: "Couldn't build the tuning" }
         }
     }
 
     // Taste sliders re-tune live (debounced) once a tuning exists.
-    LaunchedEffect(bassDb, tilt, bandCount) {
+    LaunchedEffect(bassDb, tilt, bandCount,correctionAmount,tuning) {
         if (tuning == null || entry == null || busy) return@LaunchedEffect
-        if (bassDb == tuning.bassDb && tilt == tuning.tiltDbPerOct && bandCount == tuning.bands.size) return@LaunchedEffect
+        if (bassDb == tuning.bassDb && tilt == tuning.tiltDbPerOct && bandCount == tuning.bands.size && correctionAmount==(tuning.calibration?.amount ?: 1.0)) return@LaunchedEffect
         delay(350)
         apply()
     }
@@ -232,9 +233,16 @@ fun SoundScreen() {
                     Text("Only the reviewer's profile is available for this measurement (raw data isn't published, or the rig needs its own targets).",
                         style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint, modifier = Modifier.padding(4.dp))
                 }
+                tuning?.calibration?.let { c ->
+                    Text("${c.basis} · %.0f–%.0f Hz\nRMS fit error %.2f dB · maximum %.2f dB. This is frequency-response correction, not a personal hearing or SPL measurement. Use data and targets from compatible measurement rigs.".format(c.lowHz,c.highHz,tuning.fitRmsDb,c.maxErrorDb),
+                        style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted,modifier=Modifier.padding(4.dp))
+                }
                 SectionLabel("Your taste")
                 SvanCard {
                     Column {
+                        ValueSlider("Correction amount",correctionAmount,{"%.0f%%".format(it*100)},
+                            toSlider={it.toFloat()},fromSlider={Math.round(it*100)/100.0},onChange={correctionAmount=it},step=.01,
+                            entryRange=0.0..1.0,entryUnit="0–1")
                         ValueSlider("Bass", bassDb, { formatDb(it) },
                             toSlider = { ((it + 6) / 12).toFloat() }, fromSlider = { Math.round((it * 12 - 6) * 10) / 10.0 },
                             onChange = { bassDb = it }, entryRange = -6.0..6.0, entryUnit = "dB")
@@ -253,7 +261,7 @@ fun SoundScreen() {
                                 Spacer(Modifier.width(8.dp))
                                 Text("Tuning…", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                             } else {
-                                Text(message ?: tuning?.let { "${it.bands.size} bands · fit accuracy ±%.2f dB".format(it.fitRmsDb) } ?: "",
+                                Text(message ?: tuning?.let { "${it.bands.size} bands · RMS fit error %.2f dB".format(it.fitRmsDb) } ?: "",
                                     style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
                             }
                         }

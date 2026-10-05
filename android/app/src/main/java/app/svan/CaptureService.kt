@@ -202,11 +202,13 @@ class CaptureService : Service() {
                 val n = input.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                 if (n < 0) { if (running) EqController.log("capture: read failed ($n)"); break }
                 if (n == 0) continue
+                app.svan.listening.ClipRecorder.offer(buf,n)
                 var blockPeak = 0f
                 for (i in 0 until n) blockPeak = maxOf(blockPeak, kotlin.math.abs(buf[i]))
                 levelPeak = maxOf(levelPeak, blockPeak)
                 levelFrames += n / 2
-                if (blockPeak == 0f) silentRun += n / 2 else { silentRun = 0; watchdogFired = false }
+                if (app.svan.listening.ClipPlayer.playing) silentRun=0
+                else if (blockPeak == 0f) silentRun += n / 2 else { silentRun = 0; watchdogFired = false }
                 // Fail open: a muted source whose capture stays all-zero while other media is
                 // playing means its audio is not reaching us (capture opt-out mid-session, a
                 // DRM stream...). Silence forever is the worst outcome, so hand it back to
@@ -306,6 +308,7 @@ class CaptureService : Service() {
     private fun applyEq(engine: NativeEngine, eq: EqState) {
         // Preserve limiter history through adaptation; resetting it would release
         // attenuation abruptly every time Svaresa publishes a new curve.
+        engine.setDynamicEq(eq.dynamicEq)
         engine.setBands(eq.effectiveBands().map { it.toNative() })
         engine.setPreampDb(eq.effectivePreampDb())
         engine.setBassCharacter(eq.bassCharacter, eq.bass.crossoverHz)

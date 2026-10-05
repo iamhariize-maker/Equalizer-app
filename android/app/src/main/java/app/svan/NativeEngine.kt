@@ -80,6 +80,9 @@ class NativeEngine(
     fun setPreampDb(db: Double) = nativeSetPreamp(handle, db)
 
     /** Svaramanas listening: the engine analyses its *input* (the source app's audio). */
+    fun setDynamicEq(amount: Double) = nativeSetDynamicEq(handle,amount)
+    fun dynamicReductions(): DoubleArray = nativeDynamicReductions(handle)
+
     fun setAnalysis(on: Boolean) = nativeSetAnalysis(handle, on)
 
     /** Long-term features of the input, packed (see eqcore::SourceFeatures). */
@@ -112,6 +115,17 @@ class NativeEngine(
             return raw[0] to bands
         }
 
+        data class CalibrationFit(val fit: Fit, val lowHz: Double, val highHz: Double)
+        fun calibratedTuning(measurement: String,target: String,published: Boolean,amount: Double,bands: Int,bass: Double,tilt: Double): CalibrationFit? {
+            val raw=nativeCalibratedTuning(measurement,target,published,amount,bands,bass,tilt)
+            if(raw.size<4)return null
+            return CalibrationFit(Fit((4 until raw.size step 3).map { Band(FilterType.PEAK,raw[it],raw[it+1],raw[it+2]) },raw[0],raw[1]),raw[2],raw[3])
+        }
+        @JvmStatic external fun nativeSetDynamicEq(handle: Long, amount: Double)
+        @JvmStatic external fun nativeDynamicReductions(handle: Long): DoubleArray
+        @JvmStatic external fun nativeCalibratedTuning(measurement: String,target: String,published: Boolean,amount: Double,bands: Int,bass: Double,tilt: Double): DoubleArray
+        @JvmStatic external fun nativeMatchComparison(a: FloatArray,b: FloatArray,fs: Int): DoubleArray
+        @JvmStatic external fun nativeReconstructedPeak(audio: FloatArray,fs: Int): Double
         @JvmStatic external fun nativeCreate(sampleRate: Int, channels: Int, quality: Int, outputBits: Int): Long
         @JvmStatic external fun nativeDestroy(handle: Long)
         @JvmStatic external fun nativeSetBands(

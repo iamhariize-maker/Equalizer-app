@@ -107,6 +107,8 @@ fun SvanApp(
     onStopCapture: () -> Unit,
     labActions: List<Pair<String, () -> Unit>>,
 ) {
+    val blindOpen by app.svan.listening.BlindLab.open.collectAsState()
+    if(blindOpen) BlindListening()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val detection by app.svan.DetectionMonitor.status.collectAsState()
     val tabState = rememberSaveableStateHolder()

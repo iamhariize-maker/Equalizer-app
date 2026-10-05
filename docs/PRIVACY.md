@@ -42,3 +42,17 @@ permission. POST_NOTIFICATIONS is retained only to show Svan's own foreground
 service/status notifications; it does not allow reading other apps' notifications.
 Music discovery uses Android audio reports, playback callbacks and player
 session broadcasts. The working Shizuku detection grant remains available.
+
+## Optional blind listening and calibration
+
+An explicit eight-second tap uses only already-authorized capture, before DSP; blocked apps remain
+blocked. Captured/WAV excerpts stay in memory and are discarded when the dialog closes. They are
+not uploaded or saved as recordings. Only local votes, measured level match, timestamp, headphone
+name and a frozen-configuration hash are saved; Clear results deletes them. Imported calibration
+curves and their hashes are stored privately for re-tuning. Published AutoEq data are fetched using
+the existing network path; listening recordings and preferences are never sent. No new permission
+or notification access is introduced.
+
+Settings export writes EQ, presets, Svaresa/audio preferences and active calibration curves only
+to a file you choose. The file may identify your headphone. It contains no recordings, listening
+votes, Android permissions or signing keys. Restore validates it locally without uploading it.
