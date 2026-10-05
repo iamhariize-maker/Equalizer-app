@@ -235,7 +235,9 @@ object Svaramanas {
             _context.value = null
             _listening.value = CaptureService.isRunning
             if (SvanRepository.eq.value.smart != null) SvanRepository.update { it.copy(smart = null, smartBypass = false) }
-            if (immediate) EqController.log("svaramanas: resting")
+            if (immediate) EqController.curveEngine.responseDb(doubleArrayOf(63.0, 1000.0)).let { c ->
+                EqController.log("svaramanas: resting response@63Hz=%.2f dB response@1kHz=%.2f dB".format(c[0], c[1]))
+            }
             return
         }
         val engineB = CaptureService.isRunning

@@ -156,7 +156,7 @@ object SvaresaBrain {
             bass = (0.9 * rawBass).coerceIn(0.0, bassCap)
             treble = (0.8 * rawTreble).coerceIn(0.0, MAX_TREBLE_DB)
             if (bass >= 0.5 || treble >= 0.5) {
-                reasons += "Quiet listening: the ear loses bass and treble at low volume, so I lifted bass %.1f dB and treble %.1f dB (equal-loudness curves).".format(bass, treble)
+                reasons += "Quiet listening: the ear loses bass and treble at low volume, so I raised bass %.1f dB and treble %.1f dB against the mids (equal-loudness curves; with clipping protection on, the mids step down rather than the bass going up).".format(bass, treble)
             }
             if (c.routeAware && c.route == RouteKind.SPEAKER && rawBass > SPEAKER_MAX_BASS_DB + 0.5) {
                 reasons += "Phone speaker: bass lift limited to %.1f dB; a small driver would only distort.".format(SPEAKER_MAX_BASS_DB)

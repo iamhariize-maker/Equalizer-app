@@ -243,15 +243,28 @@ tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false
 wait_for "detect: players=ok server=ok .*$CAP#[0-9]+:started:BOTH:mixer:PROCESSING" 40 > "$TMP/e2e_t27_detect.txt" || wait_for "detect: .*$CAP" 5 > "$TMP/e2e_t27_detect.txt"
 tone $CAP --ez stop true; sleep 3
 # Svaresa's quiet-listening adaptation must be audible on system effects (the default engine), not just planned.
-# 63 Hz tone at the test volume; headphone recognition and the clock are switched off to keep it deterministic.
+# Tones at the test volume; headphone recognition and the clock are switched off to keep it deterministic.
+# Auto headroom (default on) never lets a boost raise the absolute level (T9 needs it off), so the lift is a
+# change of BALANCE: 63 Hz against 1 kHz, each measured with Svaresa resting and adapting.
+SVARESA_QUIET="--ez on true --es mode SVARESA --es night OFF --ez auto_headphone false --ez volume_aware true --ez route_aware false"
 eq engine_mode --ez system_only true; sleep 2
 eq preset; sleep 3
-tone $CAP --ef freq 63 --ef amp 0.25 --ez broadcast false
+tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false
 wait_for "route: $CAP .*Engine A" 30; sleep 3
 eq svaramanas --ez on false; sleep 3
+measure "T28_off_1k 1 kHz tone, Svaresa resting"
+eq svaramanas $SVARESA_QUIET; sleep 6
+measure "T28_on_1k 1 kHz tone, Svaresa quiet-listening"
+eq svaramanas --ez on false; sleep 2
+tone $CAP --ez stop true; sleep 3
+tone $CAP --ef freq 63 --ef amp 0.25 --ez broadcast false
+wait_for "route: $CAP .*Engine A" 30; sleep 3
+$A logcat -c
+eq svaramanas --ez on false
+wait_for "svaramanas: resting" 15 > "$TMP/e2e_t28_rest.txt"; cat "$TMP/e2e_t28_rest.txt"; sleep 3
 measure "T28_off 63 Hz tone, Svaresa resting"
 $A logcat -c
-eq svaramanas --ez on true --es mode SVARESA --es night OFF --ez auto_headphone false --ez volume_aware true --ez route_aware false
+eq svaramanas $SVARESA_QUIET
 wait_for "svaramanas plan: mode=SVARESA" 30 > "$TMP/e2e_t28_plan.txt"; cat "$TMP/e2e_t28_plan.txt"
 sleep 4
 measure "T28_on 63 Hz tone, Svaresa quiet-listening lift"
@@ -332,10 +345,15 @@ check "Player found with the player list unreadable (audio-server tables only)" 
 check "Player found with the audio-server report unreadable (player list only)" "$(near "$T26S" "$T1" 1.0)" "measured=$T26S expected=$T1 ±1 dB"
 check "Audio-server report parses here and verifies the attached effect" "$(grep -q 'PROCESSING' "$TMP/e2e_t27_detect.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t27_detect.txt")"
 T28OFF=$(lvl T28_off); T28ON=$(lvl T28_on); T29=$(lvl T29)
-R28=$(grep -oE 'response@63Hz=-?[0-9.]+' "$TMP/e2e_t28_plan.txt" | tail -1 | grep -oE '[-0-9.]+$')
-E28=$(awk -v a="$T28OFF" -v r="$R28" 'BEGIN { print a + r }')
-check "Svaresa quiet-listening bass lift is audible on system effects" "$(near "$T28ON" "$E28" 1.0)" "T28_on=$T28ON, expected off($T28OFF)+response@63Hz($R28)=$E28 ±1 dB ($(sed 's/.*svaramanas plan: //' "$TMP/e2e_t28_plan.txt"))"
-check "Svaresa lifted the bass above the resting level" "$(awk -v on="$T28ON" -v off="$T28OFF" 'BEGIN { print (on != "" && off != "" && on - off > 0.3) ? 1 : 0 }')" "on=$T28ON off=$T28OFF"
+resp() { grep -oE "response@$1=-?[0-9.]+" "$2" | tail -1 | grep -oE '[-0-9.]+$'; }
+R28=$(resp 63Hz "$TMP/e2e_t28_plan.txt"); R28K=$(resp 1kHz "$TMP/e2e_t28_plan.txt")
+R0=$(resp 63Hz "$TMP/e2e_t28_rest.txt"); R0K=$(resp 1kHz "$TMP/e2e_t28_rest.txt")
+E28=$(awk -v a="$T28OFF" -v r="$R28" -v r0="$R0" 'BEGIN { if (r0 == "") { print ""; exit } print a + r - r0 }')
+check "Svaresa quiet-listening bass lift is audible on system effects" "$(near "$T28ON" "$E28" 1.0)" "T28_on=$T28ON, expected off($T28OFF)+response@63Hz(on $R28 − resting $R0)=$E28 ±1 dB ($(sed 's/.*svaramanas plan: //' "$TMP/e2e_t28_plan.txt"))"
+T28OFFK=$(lvl T28_off_1k); T28ONK=$(lvl T28_on_1k)
+REL=$(awk -v a="$T28ON" -v b="$T28OFF" -v c="$T28ONK" -v d="$T28OFFK" 'BEGIN { if (a == "" || b == "" || c == "" || d == "") { print ""; exit } print (a - b) - (c - d) }')
+PREL=$(awk -v a="$R28" -v b="$R0" -v c="$R28K" -v d="$R0K" 'BEGIN { if (a == "" || b == "" || c == "" || d == "") { print ""; exit } print (a - b) - (c - d) }')
+check "Svaresa lifted the bass relative to the mids (measured 63 Hz vs 1 kHz)" "$(awk -v r="$REL" -v p="$PREL" 'BEGIN { d = r - p; if (d < 0) d = -d; print (r != "" && p != "" && r > 2 && d <= 1) ? 1 : 0 }')" "measured balance change=$REL dB, predicted=$PREL dB (63 Hz: off=$T28OFF on=$T28ON; 1 kHz: off=$T28OFFK on=$T28ONK)"
 check "Night comfort keeps the music audible and bounded" "$(awk -v n="$T29" -v off="$T28OFF" 'BEGIN { d = n - off; print (n != "" && off != "" && d > -9 && d < 4) ? 1 : 0 }')" "night=$T29 vs resting=$T28OFF ($(sed 's/.*svaramanas plan: //' "$TMP/e2e_t29_plan.txt"))"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
