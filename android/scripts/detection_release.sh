@@ -92,7 +92,7 @@ for ((attempt=0;attempt<12;attempt++)); do
   if tap 'Allow all the time'; then break; fi
   sleep 1
 done
-if wait_log 'detection setup: granted via Shizuku'; then echo 'PASS release Shizuku permission grant' | tee -a "$OUT/detection.txt"; else FAILED=1; fi
+if wait_log 'detection setup: granted via Shizuku \(direct package binder\)'; then echo 'PASS release Shizuku permission grant' | tee -a "$OUT/detection.txt"; else FAILED=1; fi
 wait_log "route: $CAP .*Engine A"
 sleep 3
 AFTER=$(level)

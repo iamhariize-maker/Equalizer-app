@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -89,6 +90,7 @@ fun SvanApp(
     labActions: List<Pair<String, () -> Unit>>,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val detection by app.svan.DetectionMonitor.status.collectAsState()
     val tabState = rememberSaveableStateHolder()
     // Boot animation once per app start (survives rotation, not a fresh launch).
     var booted by rememberSaveable { mutableStateOf(false) }
@@ -115,7 +117,13 @@ fun SvanApp(
             }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            if (tab != 3 && detection.atMs > 0 && !detection.dumpPermission && detection.knownAudioSessions == 0 &&
+                ((detection.publicActive ?: 0) > 0 || detection.media.playing.isNotEmpty())) {
+                androidx.compose.material3.TextButton(onClick = { tab = 3 }) {
+                    Text("Music is playing · enable detection in Hi-Fi", color = Svan.Ember)
+                }
+            }
             AnimatedContent(tab, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "tab") { t ->
                 tabState.SaveableStateProvider(t) {
                     when (t) {

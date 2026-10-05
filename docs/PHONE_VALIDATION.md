@@ -9,6 +9,41 @@ Bluetooth latency. Capture quality controls do not change the system-effects eng
 
 # Svan phone validation
 
+## Current priority: streaming detection (0.5.1)
+
+Test Spotify, Amazon Music and YouTube Music first, then Apple Music and other
+popular streaming apps. Neutron/Poweramp/HiBy/Onkyo come later.
+
+The owner's 5 October 0.5.0 report confirms **DUMP=false**, zero sessions/routes,
+and a capture engine processing silence with no muted sources. It does not prove
+a Bluetooth/offload failure or permission revocation. On the phone:
+
+The 2:30 PM screenshots additionally show **Shizuku running but Svan's setup
+timing out**; the 2:32 PM report still has DUMP=false. 0.5.1 replaces the separate
+Shizuku helper-process launch with a direct, authorized fixed grant. No need to
+repeat pairing if Shizuku is already running. In the new preview, tap **Enable
+music detection** again, then confirm DUMP=true. If it fails, the new report
+includes the setup stage, authorization and the retained grant error.
+
+1. Select Hi-Fi → **System effects only**. Open **Music detection**, install/start
+   Shizuku and complete the existing wireless-debugging pairing if needed; return
+   to Svan and tap **Enable music detection**. The card must say **Enhanced detection
+   enabled**. Shizuku can then be stopped. No PC or root is needed.
+2. Play a song in the streaming app; scan, then **Share report**. It must show
+   **DUMP=true**. Include the actual app and route; a cached compatibility verdict
+   is not the active player. If setup never enables, report the setup error text.
+3. Optional **Player recognition** can name a media-session player independently.
+   Read its explanation and grant Notification access only if desired. "Recognized"
+   does not mean EQ is connected; verify the audio-session row separately. Confirm
+   stopping playback clears the playing signal and revoking access clears recognition.
+4. Keep the same song playing through track change, screen-off and output change.
+   Record whether its session stays connected and whether processing is verified.
+   Compare a small EQ cut at fixed volume; do not use louder-is-better comparisons.
+
+0.5.1 blocks capture startup when detection access is missing and no source is
+connected, showing the setup action instead of opening capture of silence. This
+does not automatically grant Android's protected discovery permission.
+
 Device reports from the owner, TECNO LH7n (Android 14): Engine B sounded delayed
 or doubled with YouTube Music over Bluetooth; Apple Music was detected earlier
 with Fosi Audio IM4 earbuds but is now missing over a wired connection; Neutron
@@ -28,8 +63,8 @@ session,” and “session found but not routed by Svan.”
 Open Hi-Fi → Music detection. The top card now states, in words, whether Svan sees your player and why not
 (permission, background service stopped by Android, player on a direct/offload output, audio reports unreadable).
 With the player ACTIVE, tap **Share diagnostic report** and send it. It contains app names, session numbers, Android's
-audio tables and Svan's log, no audio and no account data. Do this once per problem app (Neutron, Apple Music,
-YouTube Music) and once on each route (speaker, wired, Bluetooth). For Neutron also note its output setting
+audio tables and Svan's log, no audio and no account data. Do this first for Spotify, Amazon Music and
+YouTube Music, then Apple Music, on each route (speaker, wired, Bluetooth). Later, for Neutron note its output setting
 (standard Android output vs hi-res/bit-perfect/exclusive/USB direct).
 
 **Neutron tip (unconfirmed on this phone):** if Neutron is not detected or not processed, check Neutron's
@@ -76,8 +111,9 @@ appear as an app row.
    playing, and tap Refresh music detection. Read the last-scan summary: Android
    track count, usable media-session count, and any entry that lacked an app or
    session ID.
-2. Repeat with Apple Music on a wired output and on the Realme Buds Air 8 (if
-   available). Then repeat with Neutron on each route. Keep app, track, Android
+2. Repeat first with Spotify, Amazon Music and YouTube Music on a wired output
+   and on the Realme Buds Air 8 (if available), then Apple Music. Advanced players
+   such as Neutron follow later. Keep app, track, Android
    settings, and Svan engine mode constant while changing only the output route.
 3. For Neutron, test both its normal Android output and any exclusive/USB/direct
    or bit-perfect option separately. Those are different player paths; record

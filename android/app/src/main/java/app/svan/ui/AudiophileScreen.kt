@@ -60,6 +60,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     var running by remember { mutableStateOf(CaptureService.isRunning) }
     var routes by remember { mutableStateOf(SessionRouter.snapshot.toList()) }
     val detection by DetectionMonitor.status.collectAsState()
+    val captureStartup by CaptureService.startupMessage.collectAsState()
     LaunchedEffect(Unit) {
         while (true) {
             stats = CaptureService.stats
@@ -110,6 +111,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(12.dp))
+                if (captureStartup.isNotBlank() && !running) Text(captureStartup,
+                    style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                 if (s.engineMode == EngineMode.SYSTEM_ONLY) {
                     Text("Engine mode is “System effects only”.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
                 } else if (running) {
@@ -146,7 +149,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
 
         SectionLabel("Apps & engines")
-        Text("Try Spotify, Amazon Music, Apple Music, Poweramp, Neutron, ONKYO HF Player, VLC, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
+        Text("Try Spotify, Amazon Music, YouTube Music, Apple Music, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         if (knownApps.isEmpty()) Text("No audio apps detected yet.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         val livePkgs = routes.map { it.pkg }.toSet() + detection.sessions.map { it.session.packageName }

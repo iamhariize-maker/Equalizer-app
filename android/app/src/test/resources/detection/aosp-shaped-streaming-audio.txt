@@ -1,0 +1,9 @@
+Playback activity as reported through PlayerBase:
+  AudioPlaybackConfiguration piid:15 deviceId:8 type:exoplayer u/pid:10187/4100 state:started
+    attr:AudioAttributes: usage=USAGE_MEDIA content=CONTENT_TYPE_MUSIC flags=0x800
+    sessionId:1281 mutedState:
+  piid:16 uid=10250 state=2 usage=1 flags=0x400 session_id=2049
+  piid:17 u/pid:10301/6300 state:started usage=1 flags=0x800 sessionId:0
+  piid:18 u/pid:10301/6300 state:paused usage=1 flags=0x400 sessionId:0
+Playback event log:
+  10-05 12:20:00 piid:22 uid=10187 state=started usage=1 session_id=9999

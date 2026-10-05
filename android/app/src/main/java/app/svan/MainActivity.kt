@@ -241,6 +241,14 @@ class MainActivity : ComponentActivity() {
             return
         }
         SystemEqService.start(this)
+        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasDumpPermission(this), SessionRouter.snapshot, android.os.Process.myUid())
+        if (blocker != null) {
+            CaptureService.startupMessage.value = blocker
+            DetectionSetup.refresh()
+            EqController.log("capture: start blocked — $blocker")
+            return
+        }
+        CaptureService.startupMessage.value = ""
         val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
         if (android.os.Build.VERSION.SDK_INT >= 33) perms += Manifest.permission.POST_NOTIFICATIONS
         val missing = perms.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }

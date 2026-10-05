@@ -6,6 +6,10 @@ Read this first, then `docs/CODEX_VISION.md` (newest brief: vision, honest state
 **Svan** is a system-wide audiophile equalizer for **Android** (iOS cannot do global EQ; out of scope).
 Two audio engines share one preset/state:
 
+Current product priority: **streaming and popular apps first** (Spotify, Amazon Music, YouTube Music,
+then Apple Music and other mainstream players). Neutron/Poweramp/HiBy/Onkyo's advanced output modes
+come later. Do not claim commercial-player or TECNO compatibility from synthetic tests.
+
 - **Engine A — system effects.** `DynamicsProcessing` attached to other apps' audio sessions
   (Wavelet-style). Gain-per-band only; low latency; works on capture-blocked apps (Spotify).
 - **Engine B — audiophile engine.** `AudioPlaybackCapture` → native 64-bit C++ chain → `AudioTrack`.

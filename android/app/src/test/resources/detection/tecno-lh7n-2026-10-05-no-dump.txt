@@ -1,0 +1,33 @@
+Svan diagnostic report — Oct 5, 2026 2:17:09 PM
+Svan 0.5.0-detection-svaresa-preview (code 7)
+Device: TECNO TECNO LH7n · Android 14 (API 34)
+Build: LH7n-H894JKLM-U-GL-250416V781
+
+== Permissions and background ==
+DUMP (music detection): false
+RECORD_AUDIO: true
+Battery optimisation ignored: false
+System equalizer service running: true
+Stopped by Android (not by Svan): false
+Capture engine running: true
+
+== Verdict ==
+NO_PERMISSION: Android reports 1 player(s) playing, but Svan cannot see which
+Player list (dumpsys audio): FAILED
+Audio server (dumpsys media.audio_flinger): FAILED
+Android public API says active players: 2
+
+== Sessions Svan found (0) ==
+
+== Svan routes ==
+Capture verdicts: {com.google.android.apps.youtube.music=CAPTURABLE}
+
+== Android player records (dumpsys audio) ==
+(none)
+
+== Audio server excerpt (dumpsys media.audio_flinger) ==
+(none)
+
+== Recent Svan log (selected evidence) ==
+capture: started, quality=EXTREME, DSP latency=67 frames, output buffer=2052 frames
+capture level: peak=0.0000 over 96000 frames; output queued=42.7 ms, underruns=0, DSP=0.0%, muted=[], otherPlayers=1

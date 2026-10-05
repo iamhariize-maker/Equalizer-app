@@ -261,7 +261,9 @@ panel study is required before a public quality claim.
 ## 8. Build order
 
 1. Complete review of the current CI run; inspect e2e logs/screenshots and deliver its preview if green.
-2. On the TECNO, verify Apple Music, Neutron and YT Music discovery on wired and Bluetooth routes; then
+2. On the TECNO, complete the DUMP discovery grant (the owner's 5 October report shows it missing),
+   then verify Spotify, Amazon Music and YouTube Music discovery on wired and Bluetooth routes;
+   Apple Music follows, advanced players such as Neutron later. Then
    isolate the YT Music/Bluetooth delay or double-copy report using one engine at a time. Keep broader
    sound-changing work behind this real-device check.
 3. Build Test Pilot + evidence-backed `AppProfile`; run the player/route matrix on the TECNO and V60.
@@ -278,6 +280,10 @@ panel study is required before a public quality claim.
    Engine A, which cannot observe the audio.
 
 ## 9. Constraints and open questions
+
+0.5.1 adds optional media-session identity/playback recognition, with no track
+metadata or audio analysis. It helps detection health and naming, but is not
+Svaramanas's listen-only analysis tap and does not give Svaresa ears on Engine A.
 
 - No root, no Shizuku dependency for the default path (Shizuku stays an optional extra).
 - Play: MediaProjection + foreground-service disclosure, overlay and notification-listener

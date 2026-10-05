@@ -125,7 +125,8 @@ object PlaybackSessions {
         }
         // One entry per distinct pid is enough to resolve a native player's session later.
         val sessionlessPlayers = sessionless.groupBy { it.pid to it.uid }.values.map { players ->
-            players.firstOrNull { it.state == "started" } ?: players.lastOrNull { it.state != "released" } ?: players.last()
+            val active = players.firstOrNull { it.state == "started" } ?: players.lastOrNull { it.state != "released" } ?: players.last()
+            active.copy(flags = players.fold(0) { flags, player -> flags or player.flags })
         }
         return ParsedDump(configLines, sessions, unparsed, sessionlessPlayers)
     }
@@ -144,8 +145,10 @@ object PlaybackSessions {
         }
         val rawFlags = FLAGS.find(line)?.groupValues?.get(1)
         val flags = rawFlags?.let {
-            if (it.startsWith("0x", ignoreCase = true)) it.drop(2).toLongOrNull(16)?.toInt()
-            else it.toLongOrNull()?.toInt()
+            val parsed = if (it.startsWith("0x", ignoreCase = true)) it.drop(2).toLongOrNull(16) else it.toLongOrNull()
+            // Do not turn an overflowing/malformed policy field into permission to capture.
+            if (parsed != null && parsed in 0L..0xffffffffL) parsed.toInt()
+            else PlaybackSession.FLAG_NO_MEDIA_PROJECTION or PlaybackSession.FLAG_NO_SYSTEM_CAPTURE
         } ?: 0
         val rawState = STATE.find(line)?.groupValues?.get(1)?.lowercase()?.removePrefix("player_state_")
         val state = when (rawState) {

@@ -114,9 +114,15 @@ class SystemEqService : Service() {
                         val outcome = DetectionMonitor.scan(this)
                         if (alive) {
                             val st = outcome.status
+                            // Permission may be revoked while the activity stays open; do not leave setup saying READY.
+                            main.post {
+                                if ((DetectionSetup.state.value.stage == DetectionSetup.Stage.READY) != st.dumpPermission) DetectionSetup.refresh()
+                                if (st.dumpPermission || st.knownAudioSessions > 0) CaptureService.startupMessage.value = ""
+                            }
                             if (st.dumpPermission && (st.playersOk || outcome.serverRead)) {
                                 SessionRouter.sync(
-                                    outcome.ledger.sessions.map { it.session }, st.playersOk, outcome.serverRead,
+                                    // Partial reports supply positive evidence, never proof of absence.
+                                    outcome.ledger.sessions.map { it.session }, st.playersOk, outcome.serverRead && outcome.af?.partial != true,
                                     outcome.ledger.sessions.associateBy { it.session.sessionId }, st.verification,
                                 )
                             } else SessionRouter.repairKnownSessions()

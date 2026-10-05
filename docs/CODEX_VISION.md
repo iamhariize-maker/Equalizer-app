@@ -3,7 +3,7 @@
 Fresh session? Read in this order: `AGENTS.md` → this file → `docs/HANDOFF.md` (0.5.0 section = newest truth) →
 `docs/SMART.md` → `docs/CODEX_SVARAMANAS.md` (older research agenda, still valid) → `docs/AUDIOPHILE.md` (measured numbers)
 → `docs/PHONE_VALIDATION.md`. Repo `iamhariize-maker/Equalizer-app`. Work on the branch your session instructs
-(currently `ccr-f859b567-dgrdoj`, PR #1 open; AGENTS.md's older branch name is stale). No other branches, no new PRs.
+(currently `ccr-f859b567-dgrdoj`, PR #1 open). No other branches, no new PRs.
 
 ---
 
@@ -35,6 +35,15 @@ Three pillars, in the owner's priority order:
 
 Non-negotiables: no root; Play Store target (policy-aware); works across OEM skins; no GPL code copied; honest reporting
 of verified vs unverified; the owner never has to run commands.
+
+**Owner's priority clarification (5 October 2026): streaming and popular apps first.**
+Start with Spotify, Amazon Music, YouTube Music, then Apple Music and other widely
+used streaming players (YouTube, Deezer, Tidal, SoundCloud). These offer fewer
+advanced sound controls and are the main audience for Svan. Neutron, Poweramp,
+HiBy, Onkyo and other advanced local/direct-output players come later because they
+already have extensive native audio settings. Keep existing support, but do not
+let their special output modes displace streaming detection work. Package visibility
+and synthetic fixtures are not compatibility evidence.
 
 ---
 
@@ -224,7 +233,8 @@ permission, release signing inputs (owner-supplied only), licence decision (ask)
 ## 5. Suggested first sequence
 
 1. Check CI on the latest commit; read `docs/HANDOFF.md` 0.5.0. (Green on `f9ec7a5` / `7fe5133` docs-only.)
-2. Ask the owner for diagnostic reports (A0); until they arrive do A5 (fixtures/fuzz) and A2's synthetic tone paths.
+2. Ask the owner for diagnostic reports (A0), starting with Spotify, Amazon Music and YouTube Music;
+   until they arrive do A5 (fixtures/fuzz) and streaming-style media-session scenarios. Never label synthetic inputs as phone reports.
 3. A3 + A4 (survival and time-to-processed), then A1 (media sessions).
 4. B1 listen-only tap, then B4 blind A/B tool — they unlock honest tuning of everything else.
 5. B2/B3 personalisation, C1/C2 on-device measurements, B5–B7, then B8 only with evidence.
@@ -232,7 +242,8 @@ permission, release signing inputs (owner-supplied only), licence decision (ask)
    the CI `Svan-preview` APK with screenshots and a plain verified/unverified list.
 
 ## 6. Questions that need the owner (batch them; they have no PC)
-- Diagnostic reports (Neutron with DSP Effect (Device) off/on; Apple Music; YT Music; speaker/wired/BT).
+- Diagnostic reports first from Spotify, Amazon Music and YouTube Music (then Apple Music), on speaker/wired/BT.
+  Neutron's DSP Effect (Device) off/on tests come later.
 - Which headphone models to prioritise for AutoEq coverage; app licence choice; Play listing intentions.
 - How much consent friction is acceptable for the listen-only tap (Android 14 asks each session).
 - Whether PR #1 is intended (opened 05:52 UTC on 2026-10-05, not by the coding agents; each push now runs CI twice).

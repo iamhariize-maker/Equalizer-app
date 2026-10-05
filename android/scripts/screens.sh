@@ -66,6 +66,18 @@ swipe_up; shot 4c-hifi-quality
 swipe_up; shot 4d-hifi-gain
 swipe_up; shot 4e-hifi-protection
 swipe_up; shot 4f-hifi-resolution
+# Inspect the optional permission explanation on the same 320 dp screen. Recognition is revoked by e2e.
+for attempt in 1 2 3 4 5 6; do
+  $A shell input swipe $((W / 2)) $((H / 4)) $((W / 2)) $((H * 4 / 5)) 500
+done
+for attempt in 1 2 3 4 5 6; do
+  if tap_text "Enable player recognition"; then
+    shot 4g-player-recognition-consent
+    $A shell input keyevent KEYCODE_BACK
+    break
+  fi
+  swipe_up
+done
 tap_text "Lab" && shot 5-lab
 tap_text "EQ"
 # Svaramanas: the dialog over the app with a real request, scrolled through.

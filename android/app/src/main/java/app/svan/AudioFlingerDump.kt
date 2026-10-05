@@ -111,7 +111,7 @@ object AudioFlingerDump {
         }
         fun flushEffect() {
             fx?.let { b ->
-                effects.add(AfEffect(b.session, if (inOrphans) null else threadName.ifEmpty { null }, b.name, b.type, b.enabled, b.suspended, b.pids))
+                if (b.session >= 0) effects.add(AfEffect(b.session, if (inOrphans) null else threadName.ifEmpty { null }, b.name, b.type, b.enabled, b.suspended, b.pids))
             }
             fx = null
             inClients = false
@@ -152,10 +152,13 @@ object AudioFlingerDump {
                 val t = line.trim().split(Regex("""\s+"""))
                 val ok = t.size >= 3 && t.take(3).all { INT.matches(it) }
                 if (!ok) { section = Section.NONE } else {
+                    // A malformed row must not throw away every other player in this report.
+                    val sid = t[0].toIntOrNull()?.takeIf { it > 0 } ?: continue
+                    val pid = t[if (section == Section.REFS_NEW) 2 else 1].toIntOrNull()?.takeIf { it >= 0 } ?: continue
                     if (section == Section.REFS_NEW) {
                         // session cnt pid [uid [name…]]
-                        refs.add(AfSessionRef(t[0].toInt(), t[2].toInt(), t.getOrNull(3)?.toIntOrNull() ?: -1, t.drop(4).joinToString(" ")))
-                    } else refs.add(AfSessionRef(t[0].toInt(), t[1].toInt(), -1, ""))
+                        refs.add(AfSessionRef(sid, pid, t.getOrNull(3)?.toIntOrNull() ?: -1, t.drop(4).joinToString(" ")))
+                    } else refs.add(AfSessionRef(sid, pid, -1, ""))
                     continue
                 }
             }
@@ -175,7 +178,7 @@ object AudioFlingerDump {
             // ---- effect chains ----
             val chain = EFFECT_CHAIN.find(line)
             if (chain != null) {
-                flushEffect(); chainSession = chain.groupValues[2].toInt(); trackMode = TrackMode.NONE; emitThread(); continue
+                flushEffect(); chainSession = chain.groupValues[2].toIntOrNull() ?: -1; trackMode = TrackMode.NONE; emitThread(); continue
             }
             if (EFFECT_ID.containsMatchIn(line)) { flushEffect(); fx = EffectBuilder(chainSession); continue }
             val b = fx
@@ -198,7 +201,7 @@ object AudioFlingerDump {
                 if (CLIENT_HEADER.containsMatchIn(line)) { inClients = true; continue }
                 if (inClients) {
                     val client = CLIENT_ROW.find(line)
-                    if (client != null) { b.pids.add(client.groupValues[1].toInt()); continue }
+                    if (client != null) { client.groupValues[1].toIntOrNull()?.let { b.pids.add(it) }; continue }
                 }
             }
         }
@@ -254,20 +257,27 @@ object AudioFlingerDump {
             // Client Session Port Id Format ChnMask SRate Flags Usg CT
             if (t.size < 4 || !INT.matches(t[0]) || !INT.matches(t[1])) return null
             val usage = t.getOrNull(7)?.takeIf { HEX.matches(it) }?.toIntOrNull(16)
-            return AfTrack(thread, t[0].toInt(), t[1].toInt(), true, usage)
+            val pid = t[0].toIntOrNull()?.takeIf { it >= 0 } ?: return null
+            val sid = t[1].toIntOrNull()?.takeIf { it > 0 } ?: return null
+            return AfTrack(thread, pid, sid, true, usage)
         }
         // [F<n>] [S|P] Id Active Client Session [Port] State Flags Format ChnMask SRate ST Usg CT …
         val a = t.indexOfFirst { it == "yes" || it == "no" }
         if (a < 1) return null
         val need = if (mode == TrackMode.PLAYBACK_PORT) 3 else 2
-        if (t.size < a + 1 + need) return null
+        if (t.size < a + 2 + need) return null
         val ints = t.subList(a + 1, a + 1 + need)
         if (!ints.all { INT.matches(it) }) return null
         val patch = t.subList(0, a).any { it == "P" }
         // After pid, session[, port] comes the state token(s), then 0x flags, format, mask, rate, ST, Usg, CT
         val flagsIdx = t.indexOfFirst { it.startsWith("0x") && it.length >= 3 }
+        // A cut-short header can lose "Port Id" and look like an older layout. Its numeric port
+        // must not be mistaken for the state. A row cut inside a session ID is not a whole track.
+        if (INT.matches(t[a + 1 + need]) || flagsIdx <= a + 1 + need) return null
         var usage: Int? = null
         if (flagsIdx > 0 && t.size > flagsIdx + 5) usage = t[flagsIdx + 5].takeIf { HEX.matches(it) }?.toIntOrNull(16)
-        return AfTrack(thread, ints[0].toInt(), ints[1].toInt(), t[a] == "yes", usage, patch)
+        val pid = ints[0].toIntOrNull()?.takeIf { it >= 0 } ?: return null
+        val sid = ints[1].toIntOrNull()?.takeIf { it > 0 } ?: return null
+        return AfTrack(thread, pid, sid, t[a] == "yes", usage, patch)
     }
 }

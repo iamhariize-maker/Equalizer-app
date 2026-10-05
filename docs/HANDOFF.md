@@ -4,6 +4,82 @@ Written at the end of a long Claude Code session so another agent (Codex cloud) 
 Repo: `iamhariize-maker/Equalizer-app`, current branch **`ccr-f859b567-dgrdoj`** (not merged; PR #1 is open for it).
 Start with `AGENTS.md`. This file has the detail.
 
+## Streaming-first detection continuation — 2026-10-05 (0.5.1 preview)
+
+Owner clarified: Spotify, Amazon Music, YouTube Music and other popular streaming
+players are first. Neutron and advanced local/direct-output players come later.
+Detection remains the top priority, ahead of new sound-changing features.
+
+**New TECNO evidence:** owner pasted the 0.5.0 report at 2:17:09 PM: DUMP=false,
+RECORD_AUDIO=true, service running, no dirty shutdown, battery optimisation not
+ignored; public active=2 including capture output; zero discovered sessions/routes,
+capture peak=0 and `muted=[]`. This establishes missing discovery permission and
+an empty capture allowlist, not a parser, Bluetooth, offload or HiOS-kill cause.
+The cached YouTube Music CAPTURABLE verdict does not identify the active player.
+Selected, sanitized report evidence is a regression fixture under
+`android/app/src/test/resources/detection/`; there are no real raw audio tables yet.
+
+**Follow-up evidence (2:30 PM screenshots / 2:32:09 PM report):** Shizuku 13.5 is
+running under adb and shows an authorized application, while Svan displays
+"Setup timed out. Open Shizuku and check that it is running, then retry."
+DUMP is still false at 486 scans. The previous recommendation to start Shizuku
+does not address this failure. It establishes a setup-helper timeout; why the
+UserService never completed on HiOS is not proven.
+
+**Implemented:**
+- Replaced Shizuku UserService/app_process startup with a fixed, authorized package
+  service shell transaction (`grant --user <app's user> app.svan android.permission.DUMP`).
+  No new process launch, arbitrary commands, caller-supplied targets or new permission
+  scope. Explicit Shizuku authorization remains required. ResultReceiver and actual
+  app DUMP permission determine success. A UI deadline and one in-flight request
+  prevent repeated stuck requests; late grants are recognized. Removed the unused
+  AIDL/UserService/R8 keep rules. Dedicated setup diagnostics retain phase/errors
+  separately from noisy capture logs. Release detection test requires the direct
+  binder grant and still measures processing of an already-playing source.
+- Permission/setup warning while music is playing on Sound/EQ/other tabs; the
+  main setup is shown before optional recognition. Setup state refreshes if DUMP
+  changes during a running scan. Capture startup is blocked (before consent in
+  the activity, checked again in the service) when DUMP is missing and there is
+  no real connected source. Broadcast-discovered sources still work without DUMP.
+- Optional Notification access → MediaSessionManager player recognition, with
+  playback/local-output callbacks triggering recovery scans. Names match by full,
+  unambiguous UID only; remote, paused, buffering, failed/revoked sources do not
+  supply a local-playing signal. No notification text, track metadata, position,
+  audio or transport commands are read/sent. Privacy rationale is in-app and in
+  PRIVACY.md. This source recognizes players, **does not invent audio-session IDs**,
+  prove processing, permit capture, or replace DUMP for non-broadcasting sources.
+- Recognition-driven server scans and explicit missing-player health even if a
+  second player is detected; preserves existing audio-report redundancy and
+  routing/capture flags. No DSP or sound-policy changes.
+- AF oversized integers are rejected row by row instead of losing the entire
+  report; sessionless duplicate records retain capture opt-outs; partial server
+  reports can add positive evidence but cannot establish absence for eviction.
+- Synthetic AOSP-shaped streaming fixtures (clearly marked as synthetic), seeded
+  malformed/truncated-report regressions, UID/work-profile/shared-UID cases, and
+  real TECNO missing-permission/capture-start regressions. Test-source service now
+  publishes a real local media session. Emulator T30 covers both dumps unavailable,
+  no invented route, live recovery, stopped player, revocation and optionality.
+  T16 retains the acoustic no-duplicate check and checks blocked capture startup.
+  `detection_release.sh` remains exactly ten checks.
+
+**Verification so far:** local unchanged native suite: 65 tests, zero failures.
+Final direct-grant debug/release builds, lint and 81 JVM tests passed locally
+(JDK 17 / SDK 35 / NDK 27.0.12077973). Preview certificate SHA-256 matches the
+owner's uploaded 0.5.0 APK, so installation should preserve settings. New
+CI/emulator checks are pending at writing;
+do not distribute this preview until they pass and screenshots are inspected.
+
+**Still unverified:** commercial streaming apps on the TECNO, DUMP grant success
+on this phone (owner has been given the existing phone-only Shizuku steps), media
+recognition on HiOS, any sound preference, Bluetooth timing, screen-off survival.
+Next required phone evidence: report with **DUMP=true**, with Spotify/Amazon/YT
+Music playing, plus route and app name. No PC/commands are required from the owner.
+
+Direct grant protocol references (no GPL source used):
+[AOSP BinderProxy.shellCommand](https://github.com/aosp-mirror/platform_frameworks_base/blob/android14-release/core/java/android/os/BinderProxy.java),
+[AOSP ShellCallback.writeToParcel](https://github.com/aosp-mirror/platform_frameworks_base/blob/android14-release/core/java/android/os/ShellCallback.java),
+[ShizukuBinderWrapper (MIT dependency)](https://github.com/RikkaApps/Shizuku-API/blob/master/api/src/main/java/rikka/shizuku/ShizukuBinderWrapper.java).
+
 ## Redundant detection + Svaresa auto master — 2026-10-05 (0.5.0 preview)
 
 Owner reported (0.4.1 APK, TECNO LH7n): detection is unreliable for every player, not only Neutron. Apple Music

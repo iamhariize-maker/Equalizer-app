@@ -208,6 +208,8 @@ data class DetectionStatus(
     val serverPartial: Boolean = false,
     /** Public API: players Android says are active (anonymized; includes Svan's own output when Hi-Fi runs). */
     val publicActive: Int? = null,
+    val knownAudioSessions: Int = 0,
+    val media: MediaPlayerSnapshot = MediaPlayerSnapshot(),
     val sessions: List<LedgerSession> = emptyList(),
     val unresolved: List<PlaybackSession> = emptyList(),
     val verification: Map<Int, Verification> = emptyMap(),
@@ -220,19 +222,27 @@ data class DetectionStatus(
         fun assess(
             dumpPermission: Boolean, playersOk: Boolean, serverOk: Boolean, publicActive: Int?, ownActive: Int,
             sessions: List<LedgerSession>, unresolved: List<PlaybackSession>, verification: Map<Int, Verification>,
+            mediaPlayers: List<MediaPlayer> = emptyList(),
             /** The installed app's display name for a package, or null (see [appLabel]). */
             labelFor: (String) -> String? = { null },
         ): Triple<Health, String, String> {
             fun labelOf(s: LedgerSession) = appLabel(s.session.packageName, labelFor)
             val other = publicActive?.let { (it - ownActive).coerceAtLeast(0) }
             val playing = sessions.filter { it.session.state == "started" || it.serverActive == true }
+            val missingMedia = MediaPlayers.withoutAudioSession(mediaPlayers, sessions)
+            fun mediaNames() = missingMedia.joinToString { appLabel(it.packageName, labelFor) }
+            val mediaAdvice = "The player reports local playback, but Android's audio reports have not exposed an active audio session for it. " +
+                "Svan is checking again. If this persists, share the diagnostic report; player recognition alone cannot apply EQ."
             if (!dumpPermission) {
+                if (missingMedia.isNotEmpty()) return Triple(Health.NO_PERMISSION, "Recognized: ${mediaNames()} · audio session unavailable",
+                    "Finish the one-time Music detection setup below to look for its audio session. Player recognition alone cannot apply EQ.")
                 return if (other != null && other > 0) Triple(Health.NO_PERMISSION,
                     "Android reports $other player(s) playing, but Svan cannot see which",
-                    "Finish the one-time Music detection setup below. Without it Svan only hears players that announce themselves.")
+                    "Enhanced detection permission is not granted. Complete Music detection below with Shizuku running, then keep your song playing. Capture and sound controls cannot fix a missing audio session.")
                 else Triple(Health.NO_PERMISSION, "Music detection setup is not finished",
-                    "Complete the one-time setup below so Svan can see every player.")
+                    "Complete the one-time setup below to discover players that do not announce their audio session.")
             }
+            if (missingMedia.isNotEmpty() && playing.isEmpty()) return Triple(Health.BLIND, "Recognized: ${mediaNames()} · no active audio session", mediaAdvice)
             if (!playersOk && !serverOk) return Triple(Health.BLIND, "Android would not share the audio report",
                 "Both audio reports failed this scan. Svan retries automatically; if this stays, share the diagnostic report.")
             if (playing.isNotEmpty()) {
@@ -244,6 +254,7 @@ data class DetectionStatus(
                             neutronTip(bypass.map { it.session }))
                     missing.isNotEmpty() -> Triple(Health.DEGRADED, "${labelOf(missing.first())} is detected, but Android is not applying the effect",
                         "Svan is retrying. If it persists the player may use a power-saving offload path." + neutronTip(missing.map { it.session }))
+                    missingMedia.isNotEmpty() -> Triple(Health.DEGRADED, "Recognized: ${mediaNames()} · no active audio session", mediaAdvice)
                     else -> Triple(Health.OK, "Detected: " + playing.map { labelOf(it) }.distinct().joinToString(), "")
                 }
             }
