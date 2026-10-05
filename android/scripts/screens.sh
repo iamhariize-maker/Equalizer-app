@@ -78,4 +78,9 @@ swipe_up; shot 6c-svaramanas
 # The 3-4 rule: a 4th pick that clashes (Guitars vs Vocals) must be refused with a reason.
 tap_text "Guitars" && shot 6d-svaramanas-clash
 $A shell input keyevent KEYCODE_BACK
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on true --es mode SVARESA >/dev/null
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas_panel >/dev/null
+shot 6e-svaresa
+swipe_up; shot 6f-svaresa-details
+$A shell input keyevent KEYCODE_BACK
 $A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on false >/dev/null

@@ -196,6 +196,11 @@ log "T22 Svaramanas hears the captured source"
 eq svaramanas --ez on true --es feel BALANCED --es picks VOCALS
 wait_for "svaramanas heard: valid=true" 40 > "$TMP/e2e_t22_heard.txt"; cat "$TMP/e2e_t22_heard.txt"
 eq svaramanas --ez on false; sleep 3
+log "T23 Svaresa automatic master uses the native plan"
+$A logcat -c
+eq svaramanas --ez on true --es mode SVARESA --es feel BRIGHT --es picks VOCALS
+wait_for "svaramanas plan: mode=SVARESA" 30 > "$TMP/e2e_t23_svaresa.txt"; cat "$TMP/e2e_t23_svaresa.txt"
+eq svaramanas --ez on false; sleep 3
 tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez nocapture true; sleep 14
 measure "T20 capture-opt-out stream after Engine B muted it (expect T1, not silence)"
 eq stop_capture; sleep 3
@@ -258,6 +263,7 @@ T21=$(lvl T21); E21=$(awk -v a="$T0" -v r="$R21" 'BEGIN { print a + r }')
 check "Svaramanas plan reaches system effects" "$(near "$T21" "$E21" 1.0)" "T21=$T21, expected $E21 ±1 dB ($(sed 's/.*svaramanas plan: //' "$TMP/e2e_t21_plan.txt"))"
 H22=$(grep -oE 'loudness=-?[0-9.]+' "$TMP/e2e_t22_heard.txt" | grep -oE '[-0-9.]+$')
 check "Svaramanas hears the captured source" "$(awk -v l="$H22" 'BEGIN { print (l != "" && l > -60 && l < -3) ? 1 : 0 }')" "$(cat "$TMP/e2e_t22_heard.txt")"
+check "Svaresa automatic mode reaches the native planner" "$(grep -q 'mode=SVARESA' "$TMP/e2e_t23_svaresa.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t23_svaresa.txt")"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
 kill $FULLLOG 2>/dev/null

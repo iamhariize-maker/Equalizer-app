@@ -167,8 +167,9 @@ class MainActivity : ComponentActivity() {
                         .onFailure { EqController.log("tune: failed: $it") }
                 }
             }
-            // Svaramanas: --ez on true --es feel BRIGHT --es picks VOCALS,GUITARS --ef strength 1.0
+            // Svaramanas: --ez on true --es mode SVARESA --es feel BRIGHT --es picks VOCALS,GUITARS --ef strength 1.0
             "svaramanas" -> {
+                val mode = intent.getStringExtra("mode")?.let { m -> app.svan.svaramanas.SmartMode.entries.firstOrNull { it.name == m.uppercase() } }
                 val feel = intent.getStringExtra("feel")?.let { f -> app.svan.svaramanas.Feel.entries.firstOrNull { it.name == f.uppercase() } }
                 val picks = intent.getStringExtra("picks")?.split(',')?.mapNotNull { n ->
                     app.svan.svaramanas.Category.entries.firstOrNull { it.name == n.trim().uppercase() }
@@ -176,7 +177,7 @@ class MainActivity : ComponentActivity() {
                 val strength = intent.getFloatExtra("strength", -1f)
                 app.svan.svaramanas.Svaramanas.update { r ->
                     r.copy(
-                        enabled = intent.getBooleanExtra("on", true), feel = feel ?: r.feel, picks = picks ?: r.picks,
+                        enabled = intent.getBooleanExtra("on", true), mode = mode ?: r.mode, feel = feel ?: r.feel, picks = picks ?: r.picks,
                         strength = if (strength >= 0) strength.toDouble() else r.strength,
                     )
                 }
