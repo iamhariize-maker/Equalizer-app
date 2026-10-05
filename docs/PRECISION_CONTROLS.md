@@ -3,6 +3,10 @@
 Owner request: controls should be smooth, easy to move precisely and feel like small mechanical
 steps. No vibration or click sounds are used for these controls.
 
+The in-app master shortcut has its own dock above navigation. The old floating badge intercepted
+right-hand slider taps. Tap-to-open and hold-to-compare remain available without covering controls.
+The optional bubble over other apps is unchanged.
+
 Knobs accept clockwise/counterclockwise motion around the rim and relative sideways dragging
 through the centre. Turning needs 540° for the full range; sideways travel needs 320 dp. Starting
 a vertical gesture in the centre scrolls the page. Amount moves in 0.1 dB ticks, depth in 1 Hz ticks,
