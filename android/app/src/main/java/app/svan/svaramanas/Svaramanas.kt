@@ -335,8 +335,8 @@ object Svaramanas {
             30 -> out += (if (h?.valid == true) "Source-based level trim (%+.1f dB), including instrument focus and intimacy." else "Estimated level trim (%+.1f dB) against a reference spectrum; live matching needs captured audio.").format(p.preampDb)
         }
         if (r.mode == SmartMode.SVARESA && h?.valid != true && listening) out += "No automatic change yet; I need a capturable music session first."
-        else if (out.isEmpty() || (p.notes.none { it in 10..16 } && h?.valid == true)) {
-            out += if (r.mode == SmartMode.SVARESA) "No correction needed. The mix stays as it is." else "The mix sounds healthy. Nothing to police."
+        else if (out.isEmpty() || (p.notes.none { it in 10..18 } && h?.valid == true)) {
+            out += if (r.mode == SmartMode.SVARESA) "No measured mix correction needed. Output, volume and night settings remain active." else "The mix sounds healthy. Nothing to police."
         }
         return out
     }
