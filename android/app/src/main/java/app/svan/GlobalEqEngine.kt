@@ -35,6 +35,8 @@ class GlobalEqEngine(bandCount: Int = 128) {
     @Volatile private var bassCharacter: Double = 0.0
     @Volatile private var bassCrossoverHz: Double = 120.0
     @Volatile private var deharsh: Double = 0.0
+    /** Svaresa's gentle level-evening, 0..1; null = not requested (no MBC just for it). */
+    @Volatile private var levelling: Double? = null
     /** MBC only exists in effects created while a bass feel was set (config is fixed at creation). */
     @Volatile private var mbcInUse = false
 
@@ -154,11 +156,13 @@ class GlobalEqEngine(bandCount: Int = 128) {
      *  bands 1, 3         neutral
      */
     @Synchronized
-    fun setDynamics(character: Double, crossoverHz: Double, smoothness: Double) {
-        val needMbc = character != 0.0 || smoothness > 0.0
+    fun setDynamics(character: Double, crossoverHz: Double, smoothness: Double, levellingAmount: Double? = null) {
+        // Svaresa asks for the compressor up front (even at 0) so night starting never re-creates effects mid-song.
+        val needMbc = character != 0.0 || smoothness > 0.0 || levellingAmount != null
         bassCharacter = character
         bassCrossoverHz = crossoverHz
         deharsh = smoothness
+        levelling = levellingAmount
         if (needMbc != mbcInUse) {
             mbcInUse = needMbc
             EqController.log("system effects: dynamics ${if (needMbc) "on" else "off"} (${effects.size} session(s) re-created)")
@@ -185,10 +189,14 @@ class GlobalEqEngine(bandCount: Int = 128) {
         val d = deharsh.toFloat()
         val harsh = if (d > 0) DynamicsProcessing.MbcBand(true, 6000f, 2f, 80f, 1f + 3f * d, -24f - 8f * d, 6f, -90f, 1f, 0f, 0f)
         else neutral(6000f)
-        dp.setMbcBandAllChannelsTo(0, bass)
-        dp.setMbcBandAllChannelsTo(1, neutral(2500f))
-        dp.setMbcBandAllChannelsTo(2, harsh)
-        dp.setMbcBandAllChannelsTo(3, neutral(20000f))
+        // Svaresa level-evening fills the bands the tuners left alone (the tuners always win).
+        val lv = (levelling ?: 0.0).toFloat().coerceIn(0f, 1f)
+        fun evened(base: DynamicsProcessing.MbcBand, free: Boolean, cutoff: Float) =
+            if (lv > 0f && free) DynamicsProcessing.MbcBand(true, cutoff, 25f, 300f, 1f + 0.8f * lv, -24f, 8f, -90f, 1f, 0f, 2f * lv) else base
+        dp.setMbcBandAllChannelsTo(0, evened(bass, c == 0f, xo))
+        dp.setMbcBandAllChannelsTo(1, evened(neutral(2500f), true, 2500f))
+        dp.setMbcBandAllChannelsTo(2, evened(harsh, d <= 0f, 6000f))
+        dp.setMbcBandAllChannelsTo(3, evened(neutral(20000f), true, 20000f))
     }
 
     private fun neutral(cutoff: Float) = DynamicsProcessing.MbcBand(true, cutoff, 1f, 60f, 1f, 0f, 0f, -90f, 1f, 0f, 0f)

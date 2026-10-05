@@ -169,10 +169,10 @@ double predictedLoudnessDeltaDb(const std::vector<BandParams>& bands, const doub
 
 Plan plan(const Request& r, const SourceFeatures* features) {
   Plan p;
-  // Svaresa is deliberately more conservative than the user-guided mode. It
-  // does not infer taste or instruments: it can only correct measured mix
-  // deviations, and its analyser-driven moves are capped at 85% strength.
-  const double strength = std::clamp(r.svaresaMode ? std::min(r.strength, 0.85) : r.strength, 0.0, 1.5);
+  // Svaresa does not infer taste or instruments: it corrects what was measured
+  // (boom, mud, harshness, overall tonal balance), within bounded limits that
+  // are wider than the guided mode's because nothing it does is a matter of taste.
+  const double strength = std::clamp(r.svaresaMode ? std::min(r.strength, 1.0) : r.strength, 0.0, 1.5);
   const bool heard = features && features->valid;
   if (!heard) addNote(p, kNoteListening);
 
@@ -247,13 +247,43 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   slots.push_back({{FilterType::Peak, 3500, 0.0, 1.2, true}, false});
   const size_t airIdx = slots.size();
   slots.push_back({{FilterType::HighShelf, 11000, 0.0, 0.71, true}, false});
+  size_t tiltLowIdx = 0, tiltHighIdx = 0;
+  if (r.svaresaMode) {
+    tiltLowIdx = slots.size();
+    slots.push_back({{FilterType::LowShelf, 200, 0.0, 0.71, true}, false});
+    tiltHighIdx = slots.size();
+    slots.push_back({{FilterType::HighShelf, 4000, 0.0, 0.71, true}, false});
+  }
+  double svaresaSmooth = 0.0;
 
   if (heard) {
     const double cs = std::min(strength, 1.0);
-    auto excess = [&](double x, double thr) { return x > thr ? std::min(kMaxCorrectionDb, 0.6 * (x - thr)) * cs : 0.0; };
-    const double boom = excess(features->boomDb, 3.0);
-    const double mud = excess(features->mudDb, 2.0);
-    const double harsh = excess(features->harshDb, 2.0);
+    const bool sv = r.svaresaMode;
+    const double maxCorr = sv ? kSvaresaMaxCorrectionDb : kMaxCorrectionDb;
+    const double slope = sv ? 0.75 : 0.6;
+    auto excess = [&](double x, double thr) { return x > thr ? std::min(maxCorr, slope * (x - thr)) * cs : 0.0; };
+    const double boom = excess(features->boomDb, sv ? 2.0 : 3.0);
+    const double mud = excess(features->mudDb, sv ? 1.5 : 2.0);
+    const double harsh = excess(features->harshDb, sv ? 1.5 : 2.0);
+    if (sv) {
+      svaresaSmooth = std::clamp((features->harshDb - 1.5) / 6.0, 0.0, 0.5) * cs;
+      // Overall tonal balance: a thin/bright or dark/heavy mix moves toward a healthy tilt.
+      const double dev = features->tiltDbPerOct - kSvaresaTiltTargetDbPerOct;
+      const double beyond = std::fabs(dev) - kSvaresaTiltDeadbandDbPerOct;
+      if (beyond > 0 && features->tiltDbPerOct != 0.0) {
+        const double move = std::min(kSvaresaMaxTiltDb, 0.55 * beyond) * cs;
+        const bool fullBandForOpening = features->cutoffHz <= 0.0 || features->cutoffHz >= 15000.0;
+        if (dev > 0) {  // too bright / thin: ease the top, restore body
+          slots[tiltHighIdx].band.gainDb = -0.8 * move;
+          slots[tiltLowIdx].band.gainDb = 0.5 * move;
+          addNote(p, kNoteBright);
+        } else if (fullBandForOpening) {  // too dark / heavy: open the top, relieve the body
+          slots[tiltHighIdx].band.gainDb = 0.8 * move;
+          slots[tiltLowIdx].band.gainDb = -0.5 * move;
+          addNote(p, kNoteDark);
+        }
+      }
+    }
     if (boom > 0) { slots[boomIdx].band.gainDb = -boom; addNote(p, kNoteBoom); }
     if (mud > 0) { slots[mudIdx].band.gainDb = -mud; addNote(p, kNoteMud); }
     if (harsh > 0) {
@@ -292,8 +322,9 @@ Plan plan(const Request& r, const SourceFeatures* features) {
     }
   }
 
+  const double bandCap = r.svaresaMode ? kSvaresaMaxCorrectionDb : kMaxBandDb;
   for (auto& s : slots) {
-    s.band.gainDb = std::clamp(s.band.gainDb, -kMaxBandDb, kMaxBandDb);
+    s.band.gainDb = std::clamp(s.band.gainDb, -bandCap, bandCap);
     p.bands.push_back(s.band);
   }
   p.bassCharacter = std::clamp(bassChar, -1.0, 1.0);
@@ -304,6 +335,8 @@ Plan plan(const Request& r, const SourceFeatures* features) {
     p.stereo.space = clampStereo(st.space, -1.0);
     p.stereo.instruments = clampStereo(st.instruments, 0.0);
   }
+  // Harshness smoothing is a measured correction, so Svaresa asks for it on both engines.
+  if (r.svaresaMode) p.stereo.smoothness = clampStereo(svaresaSmooth, 0.0);
 
   // ---- 1. loudness match: never win by being louder ------------------------------
   p.predictedDeltaDb = predictedLoudnessDeltaDb(p.bands, heard ? features->bandDb.data() : nullptr);

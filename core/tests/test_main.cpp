@@ -1321,22 +1321,93 @@ TEST(svaresa_ignores_guided_taste_and_only_corrects_measured_mix_issues) {
 
   auto automatic = req(sv::Feel::Bright, {sv::kVocals, sv::kBass, sv::kSpace}, 1.5);
   automatic.svaresaMode = true;
+  auto plain = req(sv::Feel::Balanced, {}, 1.0);
+  plain.svaresaMode = true;
   const auto p = sv::plan(automatic, &muddy);
-  const auto neutral = sv::plan(req(sv::Feel::Balanced, {}, 0.85), &muddy);
+  const auto q = sv::plan(plain, &muddy);
 
+  // Taste and picks are ignored: identical plan.
   CHECK(p.categories.accepted == 0 && p.categories.rejected == 0);
-  CHECK(p.bands.size() == neutral.bands.size());
-  CHECK(p.notes == neutral.notes);
+  CHECK(p.bands.size() == q.bands.size());
+  CHECK(p.notes == q.notes);
   for (size_t i = 0; i < p.bands.size(); ++i) {
-    CHECK(p.bands[i].type == neutral.bands[i].type);
-    CHECK(p.bands[i].freqHz == neutral.bands[i].freqHz);
-    CHECK_NEAR(p.bands[i].gainDb, neutral.bands[i].gainDb, 1e-12);
-    CHECK(std::fabs(p.bands[i].gainDb) <= sv::kMaxCorrectionDb);
+    CHECK(p.bands[i].type == q.bands[i].type);
+    CHECK(p.bands[i].freqHz == q.bands[i].freqHz);
+    CHECK_NEAR(p.bands[i].gainDb, q.bands[i].gainDb, 1e-12);
+    CHECK(std::fabs(p.bands[i].gainDb) <= sv::kSvaresaMaxCorrectionDb + 1e-9);
   }
-  bool lowMidCut = false;
-  for (const auto& b : p.bands) lowMidCut = lowMidCut || (b.freqHz == 300.0 && b.gainDb < 0.0);
-  CHECK(lowMidCut);
-  CHECK(p.bassCharacter == 0.0 && p.stereo.isOff());
+  // The measured low-mid excess is cut, and harder than guided mode's 2.5 dB cap allows.
+  double cut300 = 0.0;
+  for (const auto& b : p.bands)
+    if (b.freqHz == 300.0) cut300 = b.gainDb;
+  CHECK(cut300 < -2.0);
+  CHECK(p.bassCharacter == 0.0);
+}
+
+TEST(svaresa_moves_a_bright_or_dark_mix_toward_a_healthy_balance_within_bounds) {
+  auto svaresa = [](const SourceFeatures& f, bool stereo) {
+    sv::Request r;
+    r.svaresaMode = true;
+    r.stereoEngine = stereo;
+    return sv::plan(r, &f);
+  };
+  auto gainAt = [](const sv::Plan& p, double hz, FilterType t) {
+    for (const auto& b : p.bands)
+      if (b.freqHz == hz && b.type == t) return b.gainDb;
+    return 0.0;
+  };
+  const auto bright = analyse(multisine(48000, 8, 20000, [](double f) { return 5.0 * std::log2(f / 1000.0); }));
+  const auto dark = analyse(multisine(48000, 8, 20000, [](double f) { return -6.0 * std::log2(f / 1000.0); }));
+  const auto balanced = analyse(multisine(48000, 8, 20000, [](double f) { return -2.5 * std::log2(f / 1000.0); }));
+  CHECK(bright.tiltDbPerOct > dark.tiltDbPerOct + 3.0);
+
+  const auto pb = svaresa(bright, true), pd = svaresa(dark, true);
+  CHECK(bright.tiltDbPerOct - sv::kSvaresaTiltTargetDbPerOct > sv::kSvaresaTiltDeadbandDbPerOct);
+  CHECK(sv::kSvaresaTiltTargetDbPerOct - dark.tiltDbPerOct > sv::kSvaresaTiltDeadbandDbPerOct);
+  CHECK(std::fabs(balanced.tiltDbPerOct - sv::kSvaresaTiltTargetDbPerOct) <= sv::kSvaresaTiltDeadbandDbPerOct);
+  {
+    CHECK(gainAt(pb, 4000.0, FilterType::HighShelf) < -0.5);
+    CHECK(gainAt(pb, 200.0, FilterType::LowShelf) > 0.2);
+    CHECK(std::find(pb.notes.begin(), pb.notes.end(), sv::kNoteBright) != pb.notes.end());
+  }
+  {
+    CHECK(gainAt(pd, 4000.0, FilterType::HighShelf) > 0.5);
+    CHECK(gainAt(pd, 200.0, FilterType::LowShelf) < -0.2);
+    CHECK(std::find(pd.notes.begin(), pd.notes.end(), sv::kNoteDark) != pd.notes.end());
+  }
+  for (const auto* p : {&pb, &pd})
+    for (const auto& b : p->bands) CHECK(std::fabs(b.gainDb) <= sv::kSvaresaMaxCorrectionDb + 1e-9);
+  // A mix already inside the dead band is left alone by the tilt shelves.
+  {
+    const auto pf = svaresa(balanced, true);
+    CHECK(gainAt(pf, 4000.0, FilterType::HighShelf) == 0.0 && gainAt(pf, 200.0, FilterType::LowShelf) == 0.0);
+  }
+  // Loudness-matched like every plan.
+  CHECK(pb.preampDb <= 1.5 && pb.preampDb >= -8.0);
+  CHECK(std::fabs(pb.preampDb + pb.predictedDeltaDb) < 1e-6 || pb.preampDb == 1.5 || pb.preampDb == -8.0);
+}
+
+TEST(svaresa_asks_for_harshness_smoothing_on_both_engines_when_the_mix_is_shrill) {
+  auto bump = [](double lo, double hi, double db) { return [=](double f) { return f >= lo && f <= hi ? db : 0.0; }; };
+  const auto shrill = analyse(multisine(48000, 8, 20000, bump(2300, 5600, 9.0)));
+  CHECK(shrill.harshDb > 3.0);
+  for (bool stereoEngine : {false, true}) {
+    sv::Request r;
+    r.svaresaMode = true;
+    r.stereoEngine = stereoEngine;
+    const auto p = sv::plan(r, &shrill);
+    CHECK(p.stereo.smoothness > 0.05);
+    CHECK(p.stereo.smoothness <= 0.5 + 1e-9);
+  }
+  sv::Request guided;
+  guided.stereoEngine = false;
+  CHECK(sv::plan(guided, &shrill).stereo.smoothness == 0.0);  // guided mode keeps its own rules
+  // Nothing heard: Svaresa changes nothing by itself (context layers are added by the app).
+  sv::Request none;
+  none.svaresaMode = true;
+  none.stereoEngine = false;
+  const auto idle = sv::plan(none, nullptr);
+  for (const auto& b : idle.bands) CHECK(b.gainDb == 0.0);
 }
 
 TEST(svaramanas_respects_lossy_sources_mono_files_and_crushed_masters) {

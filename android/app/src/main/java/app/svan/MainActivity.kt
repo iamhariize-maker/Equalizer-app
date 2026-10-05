@@ -192,10 +192,15 @@ class MainActivity : ComponentActivity() {
                     app.svan.svaramanas.Category.entries.firstOrNull { it.name == n.trim().uppercase() }
                 }
                 val strength = intent.getFloatExtra("strength", -1f)
+                val night = intent.getStringExtra("night")?.let { n -> app.svan.svaramanas.NightMode.entries.firstOrNull { it.name == n.uppercase() } }
                 app.svan.svaramanas.Svaramanas.update { r ->
                     r.copy(
                         enabled = intent.getBooleanExtra("on", true), mode = mode ?: r.mode, feel = feel ?: r.feel, picks = picks ?: r.picks,
                         strength = if (strength >= 0) strength.toDouble() else r.strength,
+                        night = night ?: r.night,
+                        volumeAware = if (intent.hasExtra("volume_aware")) intent.getBooleanExtra("volume_aware", true) else r.volumeAware,
+                        routeAware = if (intent.hasExtra("route_aware")) intent.getBooleanExtra("route_aware", true) else r.routeAware,
+                        autoHeadphone = if (intent.hasExtra("auto_headphone")) intent.getBooleanExtra("auto_headphone", true) else r.autoHeadphone,
                     )
                 }
             }

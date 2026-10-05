@@ -242,6 +242,26 @@ $A logcat -c
 tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false
 wait_for "detect: players=ok server=ok .*$CAP#[0-9]+:started:BOTH:mixer:PROCESSING" 40 > "$TMP/e2e_t27_detect.txt" || wait_for "detect: .*$CAP" 5 > "$TMP/e2e_t27_detect.txt"
 tone $CAP --ez stop true; sleep 3
+# Svaresa's quiet-listening adaptation must be audible on system effects (the default engine), not just planned.
+# 63 Hz tone at the test volume; headphone recognition and the clock are switched off to keep it deterministic.
+eq engine_mode --ez system_only true; sleep 2
+eq preset; sleep 3
+tone $CAP --ef freq 63 --ef amp 0.25 --ez broadcast false
+wait_for "route: $CAP .*Engine A" 30; sleep 3
+eq svaramanas --ez on false; sleep 3
+measure "T28_off 63 Hz tone, Svaresa resting"
+$A logcat -c
+eq svaramanas --ez on true --es mode SVARESA --es night OFF --ez auto_headphone false --ez volume_aware true --ez route_aware false
+wait_for "svaramanas plan: mode=SVARESA" 30 > "$TMP/e2e_t28_plan.txt"; cat "$TMP/e2e_t28_plan.txt"
+sleep 4
+measure "T28_on 63 Hz tone, Svaresa quiet-listening lift"
+$A logcat -c
+eq svaramanas --ez on true --es mode SVARESA --es night ON --ez auto_headphone false
+wait_for "svaramanas plan: mode=SVARESA" 30 > "$TMP/e2e_t29_plan.txt"; cat "$TMP/e2e_t29_plan.txt"
+sleep 8
+measure "T29 night comfort on the same tone (bounded, audible)"
+eq svaramanas --ez on false; sleep 3
+tone $CAP --ez stop true; sleep 3
 # Restart discovery so screenshots include real detected app rows.
 eq stop_system; sleep 3; eq start_system; sleep 3
 tone $CAP --ef freq 1000 --ef amp 0.05 --ez broadcast true; sleep 4
@@ -311,6 +331,12 @@ T26P=$(lvl T26_players); T26S=$(lvl T26_server)
 check "Player found with the player list unreadable (audio-server tables only)" "$(near "$T26P" "$T1" 1.0)" "measured=$T26P expected=$T1 ±1 dB"
 check "Player found with the audio-server report unreadable (player list only)" "$(near "$T26S" "$T1" 1.0)" "measured=$T26S expected=$T1 ±1 dB"
 check "Audio-server report parses here and verifies the attached effect" "$(grep -q 'PROCESSING' "$TMP/e2e_t27_detect.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t27_detect.txt")"
+T28OFF=$(lvl T28_off); T28ON=$(lvl T28_on); T29=$(lvl T29)
+R28=$(grep -oE 'response@63Hz=-?[0-9.]+' "$TMP/e2e_t28_plan.txt" | tail -1 | grep -oE '[-0-9.]+$')
+E28=$(awk -v a="$T28OFF" -v r="$R28" 'BEGIN { print a + r }')
+check "Svaresa quiet-listening bass lift is audible on system effects" "$(near "$T28ON" "$E28" 1.0)" "T28_on=$T28ON, expected off($T28OFF)+response@63Hz($R28)=$E28 ±1 dB ($(sed 's/.*svaramanas plan: //' "$TMP/e2e_t28_plan.txt"))"
+check "Svaresa lifted the bass above the resting level" "$(awk -v on="$T28ON" -v off="$T28OFF" 'BEGIN { print (on != "" && off != "" && on - off > 0.3) ? 1 : 0 }')" "on=$T28ON off=$T28OFF"
+check "Night comfort keeps the music audible and bounded" "$(awk -v n="$T29" -v off="$T28OFF" 'BEGIN { d = n - off; print (n != "" && off != "" && d > -9 && d < 4) ? 1 : 0 }')" "night=$T29 vs resting=$T28OFF ($(sed 's/.*svaramanas plan: //' "$TMP/e2e_t29_plan.txt"))"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
 kill $FULLLOG 2>/dev/null

@@ -144,6 +144,9 @@ data class EqState(
         (tuning?.takeIf { it.enabled }?.bands ?: emptyList()) + manualBands() + bass.bands() +
             (activeSmart?.bands ?: emptyList())
 
+    /** Svaresa's level-evening request for system effects; null when Svaresa is not driving dynamics. */
+    val levelling: Double? get() = if (enabled) activeSmart?.levelling else null
+
     /** Bass shaper amount the engines should run (0 when the EQ is off). */
     val bassCharacter: Double get() = if (enabled) (bass.character + (activeSmart?.bassCharacter ?: 0.0)).coerceIn(-1.0, 1.0) else 0.0
 
@@ -203,6 +206,8 @@ data class SmartLayer(
     val smoothness: Double = 0.0,
     val space: Double = 0.0,
     val instruments: Double = 0.0,
+    /** Svaresa's level-evening amount 0..1 (system effects' compressor); null = not part of this layer. */
+    val levelling: Double? = null,
 )
 
 /**
