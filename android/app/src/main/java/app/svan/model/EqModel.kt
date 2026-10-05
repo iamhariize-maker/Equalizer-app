@@ -156,6 +156,8 @@ data class EqState(
     val activeVocal: VocalTuner get() = if (!enabled) VocalTuner() else activeSmart?.let {
         VocalTuner(maxOf(vocal.intimacy, it.intimacy), vocal.warmth, maxOf(vocal.smoothness, if(it.dynamicEq>0) 0.0 else it.smoothness))
     } ?: vocal
+    /** System effects cannot run native dynamic EQ; keep their automatic smoothing. */
+    val systemSmoothness: Double get() = if (!enabled) 0.0 else maxOf(vocal.smoothness, activeSmart?.smoothness ?: 0.0)
     val activeInstrument: InstrumentTuner get() = if (!enabled) InstrumentTuner() else activeSmart?.let {
         InstrumentTuner(if (instrument.space != 0.0) instrument.space else it.space, maxOf(instrument.instruments, it.instruments))
     } ?: instrument

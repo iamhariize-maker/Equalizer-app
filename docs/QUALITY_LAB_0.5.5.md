@@ -40,7 +40,8 @@ Corrections use fixed parallel bandpass sections: `dry + (gain - 1) * bandpass`.
 magnitude cannot exceed unity. There is no automatic boost. Each lane is limited to 1.5 dB and the
 actual smoothed sum is limited to 3 dB, including overlapping attack/release transitions. This
 complements broad static correction; automatic vocal smoothing is suppressed when dynamic EQ
-is active, while the listener's own smoothing remains. The Svaresa switch allows independent
+is active in the native engine, while the listener's own smoothing remains. Android system effects
+retain their existing automatic smoother, since they cannot run this native replacement. The Svaresa switch allows independent
 opt-out. Guide mode is unchanged. Static response graphs exclude these time-varying cuts.
 Disabling an active cut fades to exact neutral over 10 ms before clearing filter histories;
 the handover is checked across different callback sizes. An already-neutral bypass is exact.
