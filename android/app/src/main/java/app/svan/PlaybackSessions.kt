@@ -62,7 +62,7 @@ object PlaybackSessions {
     // Anchor to the record start: timestamps in the playback event HISTORY must
     // never resurrect a released session or override the current state.
     private val CONFIG = Regex("""^\s*(?:AudioPlaybackConfiguration\b|piid\s*[:=])""", RegexOption.IGNORE_CASE)
-    private val CONTINUATION = Regex("""^\s+(?:u/pid|(?:client)?uid|state|session|attr|AudioAttributes|usage|flags|deviceId|type|content|tags|mutedState)\b""", RegexOption.IGNORE_CASE)
+    private val CONTINUATION = Regex("""^\s+(?:u/pid|(?:client)?uid|state|session(?:Id|_id|\s+id)?|attr|AudioAttributes|usage|flags|deviceId|type|content|tags|mutedState)\b""", RegexOption.IGNORE_CASE)
 
     private val mutableReport = MutableStateFlow(PlaybackScanReport())
     val report = mutableReport.asStateFlow()
