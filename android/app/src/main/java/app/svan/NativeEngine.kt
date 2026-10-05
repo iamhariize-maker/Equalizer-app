@@ -158,6 +158,7 @@ class NativeEngine(
         @JvmStatic external fun nativeAnalysis(handle: Long): DoubleArray
         @JvmStatic external fun nativeSvaramanasPlan(
             features: DoubleArray?, feel: Int, order: IntArray, strength: Double, stereoEngine: Boolean,
+            svaresaMode: Boolean,
         ): DoubleArray
     }
 }

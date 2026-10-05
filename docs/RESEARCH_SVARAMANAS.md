@@ -322,6 +322,28 @@ separate evaluation.
 5. **Privacy/Play:** permission rationale, overlay fallback, track-memory opt-in, deletion, policy URL,
    Data Safety and FGS declaration all match shipped behavior before store submission.
 
+## 9. Svaresa: master mode without fake model training
+
+The first Svaresa implementation uses the existing deterministic `SourceAnalyzer` and native Svaramanas
+policy. It is explicitly a conservative **Auto master** mode, paired with the listener-led **Sound guide**
+mode. Svaresa ignores feel and instrument boosts, caps correction strength at 0.85, and keeps the existing
+bounded boom/mud/harsh/air, lossy-source, dynamics, headroom, loudness-match and slew rules. When Engine B
+cannot provide valid captured samples, Svaresa reports that no source-based correction is available. It
+does not adjust bass-envelope character, vocal intimacy/de-harshing, or stereo space automatically until
+those controls have a validated signal cue and their output level/headroom effects are tested.
+
+This is control software, not a trained neural audio model. YAMNet can provide broad sound-event labels,
+but AudioSet labels do not establish that a particular vocal/instrument is masked, preferred, or safe to
+boost in a mixed recording. A future lightweight model should be trained only for a narrowly defined
+controller target using licensed/local data, opt-in level-matched listener comparisons, and held-out tracks
+and routes. It should output bounded slow control targets—not audio samples—and lose to the deterministic
+policy on low confidence or regression. Measure phone p50/p95 time, battery, loudness and clipping before
+enabling it. Do not use model confidence as a sound-quality score.
+
+The two names are made approachable in the interface: **Sound guide · Svaramanas** and **Auto master ·
+Svaresa**, each with a related gold sound mark and a plain-language function. Their Sanskrit derivations
+are optional identity; the control's purpose and current listening limits are stated directly.
+
 ## Sources
 
 Primary platform, standards, model and service sources reviewed:

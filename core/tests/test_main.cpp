@@ -1315,6 +1315,30 @@ TEST(svaramanas_trims_what_it_hears_and_leaves_a_clean_mix_alone) {
   CHECK(std::find(p.notes.begin(), p.notes.end(), sv::kNoteMud) != p.notes.end());
 }
 
+TEST(svaresa_ignores_guided_taste_and_only_corrects_measured_mix_issues) {
+  auto bump = [](double lo, double hi, double db) { return [=](double f) { return f >= lo && f <= hi ? db : 0.0; }; };
+  const auto muddy = analyse(multisine(48000, 8, 20000, bump(180, 560, 6.0), -20.0, 0.5));
+
+  auto automatic = req(sv::Feel::Bright, {sv::kVocals, sv::kBass, sv::kSpace}, 1.5);
+  automatic.svaresaMode = true;
+  const auto p = sv::plan(automatic, &muddy);
+  const auto neutral = sv::plan(req(sv::Feel::Balanced, {}, 0.85), &muddy);
+
+  CHECK(p.categories.accepted == 0 && p.categories.rejected == 0);
+  CHECK(p.bands.size() == neutral.bands.size());
+  CHECK(p.notes == neutral.notes);
+  for (size_t i = 0; i < p.bands.size(); ++i) {
+    CHECK(p.bands[i].type == neutral.bands[i].type);
+    CHECK(p.bands[i].freqHz == neutral.bands[i].freqHz);
+    CHECK_NEAR(p.bands[i].gainDb, neutral.bands[i].gainDb, 1e-12);
+    CHECK(std::fabs(p.bands[i].gainDb) <= sv::kMaxCorrectionDb);
+  }
+  bool lowMidCut = false;
+  for (const auto& b : p.bands) lowMidCut = lowMidCut || (b.freqHz == 300.0 && b.gainDb < 0.0);
+  CHECK(lowMidCut);
+  CHECK(p.bassCharacter == 0.0 && p.stereo.isOff());
+}
+
 TEST(svaramanas_respects_lossy_sources_mono_files_and_crushed_masters) {
   const auto lossy = analyse(multisine(48000, 8, 16000, flatShape, -20.0, 0.5));
   auto p = sv::plan(req(sv::Feel::Bright, {sv::kSynth, sv::kSpace}), &lossy);

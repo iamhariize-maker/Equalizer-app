@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,6 +50,7 @@ import app.svan.svaramanas.Category
 import app.svan.svaramanas.Feel
 import app.svan.svaramanas.Heard
 import app.svan.svaramanas.SmartPlan
+import app.svan.svaramanas.SmartMode
 import app.svan.svaramanas.Svaramanas
 import kotlinx.coroutines.delay
 
@@ -89,61 +91,76 @@ fun SvaramanasPanel(
                 checked = request.enabled,
                 onCheckedChange = { on -> Svaramanas.update { it.copy(enabled = on) } },
                 colors = SwitchDefaults.colors(checkedThumbColor = Svan.OnGold, checkedTrackColor = Svan.Gold, uncheckedTrackColor = Svan.SurfaceHigher),
-                modifier = Modifier.semantics { contentDescription = "Svaramanas on" },
+                modifier = Modifier.semantics { contentDescription = "${request.mode.plainName} on" },
             )
         }
 
         Spacer(Modifier.height(14.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Feel.entries.forEach { f ->
-                FeelChip(f, selected = request.feel == f) { Svaramanas.update { it.copy(feel = f, enabled = true) } }
+        SectionLabel("Choose your sound style")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ModeCard(SmartMode.GUIDED, request.mode == SmartMode.GUIDED, listening && request.enabled, modifier = Modifier.weight(1f)) {
+                Svaramanas.update { it.copy(mode = SmartMode.GUIDED, enabled = true) }
+            }
+            ModeCard(SmartMode.SVARESA, request.mode == SmartMode.SVARESA, listening && request.enabled, modifier = Modifier.weight(1f)) {
+                Svaramanas.update { it.copy(mode = SmartMode.SVARESA, enabled = true) }
             }
         }
 
-        SectionLabel("Instruments you prioritise")
-        Text(
-            "Up to ${Category.MAX}. Your first three always win; a fourth joins only if it doesn't fight them for the same range.",
-            style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
-        )
-        Spacer(Modifier.height(10.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Category.entries.forEach { c ->
-                val index = request.picks.indexOf(c)
-                Pill(
-                    text = if (index >= 0) "${index + 1} · ${c.title}" else c.title,
-                    selected = index >= 0,
-                    onClick = {
-                        if (index >= 0) {
-                            Svaramanas.update { it.copy(picks = it.picks - c) }
-                        } else if (request.picks.size >= Category.MAX) {
-                            message = "Four is the limit. More would blur everything together."
-                        } else {
-                            val trial = request.copy(picks = request.picks + c, enabled = true)
-                            val check = SmartPlan.compute(trial, null, false)
-                            if (check.rejected and c.bit != 0) {
-                                message = "${c.title} would fight ${Category.fromMask(check.conflictWith).joinToString { it.title.lowercase() }} for the same range. Drop one of those first."
-                            } else {
-                                Svaramanas.update { trial }
-                            }
-                        }
-                    },
+        AnimatedVisibility(request.mode == SmartMode.GUIDED) {
+            Column {
+                Spacer(Modifier.height(14.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Feel.entries.forEach { f ->
+                        FeelChip(f, selected = request.feel == f) { Svaramanas.update { it.copy(feel = f, enabled = true) } }
+                    }
+                }
+
+                SectionLabel("Sounds to bring forward")
+                Text(
+                    "Pick up to ${Category.MAX}. If two compete for the same range, I keep your earlier choice.",
+                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
+                )
+                Spacer(Modifier.height(10.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Category.entries.forEach { c ->
+                        val index = request.picks.indexOf(c)
+                        Pill(
+                            text = if (index >= 0) "${index + 1} · ${c.title}" else c.title,
+                            selected = index >= 0,
+                            onClick = {
+                                if (index >= 0) {
+                                    Svaramanas.update { it.copy(picks = it.picks - c) }
+                                } else if (request.picks.size >= Category.MAX) {
+                                    message = "You can pick four. A shorter list keeps the changes focused."
+                                } else {
+                                    val trial = request.copy(picks = request.picks + c, enabled = true)
+                                    val check = SmartPlan.compute(trial, null, false)
+                                    if (check.rejected and c.bit != 0) {
+                                        message = "${c.title} competes with ${Category.fromMask(check.conflictWith).joinToString { it.title.lowercase() }}. Remove one first."
+                                    } else {
+                                        Svaramanas.update { trial }
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
+                AnimatedVisibility(message != null) {
+                    Text(message ?: "", style = MaterialTheme.typography.bodySmall, color = Svan.Ember, modifier = Modifier.padding(top = 8.dp))
+                }
+
+                Spacer(Modifier.height(8.dp))
+                ValueSlider(
+                    label = "Change amount",
+                    value = request.strength,
+                    display = { s -> when { s < 0.75 -> "Gentle"; s < 1.25 -> "Natural"; else -> "Bold" } },
+                    toSlider = { ((it - 0.5) / 1.0).toFloat() },
+                    fromSlider = { (0.5 + it * 1.0) },
+                    onChange = { v -> Svaramanas.update { it.copy(strength = v) } },
+                    enabled = request.enabled,
                 )
             }
         }
-        AnimatedVisibility(message != null) {
-            Text(message ?: "", style = MaterialTheme.typography.bodySmall, color = Svan.Ember, modifier = Modifier.padding(top = 8.dp))
-        }
-
-        Spacer(Modifier.height(8.dp))
-        ValueSlider(
-            label = "Strength",
-            value = request.strength,
-            display = { s -> when { s < 0.75 -> "Gentle"; s < 1.25 -> "Natural"; else -> "Bold" } },
-            toSlider = { ((it - 0.5) / 1.0).toFloat() },
-            fromSlider = { (0.5 + it * 1.0) },
-            onChange = { v -> Svaramanas.update { it.copy(strength = v) } },
-            enabled = request.enabled,
-        )
 
         SectionLabel("What I heard")
         HeardBlock(heard, listening)
@@ -159,8 +176,8 @@ fun SvaramanasPanel(
 
         Spacer(Modifier.height(12.dp))
         SettingSwitchRow(
-            "Float over other apps",
-            "Keep the Svaramanas bubble on screen in YT Music, Spotify and any player. Tap it to open me; hold it to hear the music without me.",
+            "Show the sound bubble",
+            "Keep a small Svan bubble on screen in your player. Tap to open the sound controls; hold to compare with the original.",
             bubbleOn, onBubbleChange,
         )
 
@@ -200,6 +217,32 @@ fun SvaramanasPanel(
 }
 
 @Composable
+private fun ModeCard(mode: SmartMode, selected: Boolean, listening: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val stroke = if (selected) Svan.Gold else Svan.Outline
+    Row(
+        modifier
+            .heightIn(min = 118.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (selected) Svan.Gold.copy(alpha = 0.10f) else Svan.SurfaceHigh)
+            .border(if (selected) 1.5.dp else 1.dp, stroke, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "${mode.plainName}, ${mode.sanskritName}. ${mode.promise}" }
+            .padding(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        if (mode == SmartMode.GUIDED) SvaramanasMark(38.dp, listening = listening, resting = !selected)
+        else SvaresaMark(38.dp, listening = listening, resting = !selected)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(mode.plainName, style = MaterialTheme.typography.titleSmall, color = if (selected) Svan.Gold else Svan.Text)
+            Text(mode.sanskritName, style = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium, fontSize = 13.sp), color = Svan.Molten)
+            Spacer(Modifier.height(4.dp))
+            Text(mode.promise, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        }
+    }
+}
+
+@Composable
 private fun FeelChip(f: Feel, selected: Boolean, onClick: () -> Unit) {
     Column(
         Modifier
@@ -217,7 +260,7 @@ private fun FeelChip(f: Feel, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun HeardBlock(h: Heard?, listening: Boolean) {
     if (!listening) {
-        Text("I can only hear the music while the audiophile engine (Hi-Fi tab) is on. Until then I work from your choices.",
+        Text("Live listening needs Hi-Fi and a player that allows audio capture. Your chosen sound settings still work without it.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         return
     }

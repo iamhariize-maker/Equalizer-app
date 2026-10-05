@@ -250,7 +250,8 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeAnalysis(JNIEnv*
 // Returns [preamp, predictedDelta, bassChar, intimacy, warmth, smoothness, space, instruments,
 //          accepted, rejected, conflictWith, nNotes, notes..., nBands, (type, freq, gain, q)...].
 JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
-    JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine) {
+    JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine,
+    jboolean svaresaMode) {
   svaramanas::Request r;
   r.feel = static_cast<svaramanas::Feel>(feel < 0 || feel > 5 ? 0 : feel);
   const jsize n = order ? env->GetArrayLength(order) : 0;
@@ -262,6 +263,7 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
   }
   r.strength = strength;
   r.stereoEngine = stereoEngine == JNI_TRUE;
+  r.svaresaMode = svaresaMode == JNI_TRUE;
   SourceFeatures f;
   bool have = false;
   if (features) {

@@ -62,9 +62,13 @@ private fun SvaramanasBubble(modifier: Modifier = Modifier) {
                     },
                 )
             }
-            .semantics { contentDescription = "Svaramanas. Tap to open, hold to compare." },
+            .semantics { contentDescription = "${request.mode.plainName}. Tap to open, hold to compare." },
     ) {
-        SvaramanasMark(58.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
+        if (request.mode == app.svan.svaramanas.SmartMode.SVARESA) {
+            SvaresaMark(58.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
+        } else {
+            SvaramanasMark(58.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
+        }
     }
 }
 

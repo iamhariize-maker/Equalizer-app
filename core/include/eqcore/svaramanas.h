@@ -65,6 +65,9 @@ struct Request {
   std::vector<uint32_t> order;
   double strength = 1.0;    // 0..1.5
   bool stereoEngine = true; // Engine B (mid/side tuners available)
+  // Svaresa is an automatic, conservative master mode. It ignores guided
+  // taste/category lifts and only acts on source evidence that was measured.
+  bool svaresaMode = false;
 };
 
 struct CategoryCheck {

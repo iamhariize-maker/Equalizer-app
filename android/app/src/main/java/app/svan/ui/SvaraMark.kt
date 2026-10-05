@@ -37,6 +37,19 @@ object SvaraMark {
     }
     private val node = Paint(Paint.ANTI_ALIAS_FLAG)
     private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+    private val brain = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val wave = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
+    private val spark = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val brainPath = android.graphics.Path()
+    private val soundPath = android.graphics.Path()
 
     /** [pulse] 0..1 brightens the nodes (Svaramanas is listening); [resting] dims it to ash. */
     fun draw(c: android.graphics.Canvas, cx: Float, cy: Float, r: Float, pulse: Float = 0f, resting: Boolean = false) {
@@ -73,6 +86,56 @@ object SvaraMark {
             c.drawCircle(x, y, r * (0.09f + 0.03f * glow), node)
         }
     }
+
+    /** Svaresa seal: a calm two-lobe "sonic brain" with a sound wave at its centre. */
+    fun drawSvaresa(c: android.graphics.Canvas, cx: Float, cy: Float, r: Float, pulse: Float = 0f, resting: Boolean = false) {
+        val hi = (if (resting) Svan.Ash else Svan.Molten).toArgb()
+        val mid = (if (resting) Svan.TextFaint else Svan.Gold).toArgb()
+        val lo = (if (resting) Svan.SurfaceHigher else Svan.Bronze).toArgb()
+        disc.shader = RadialGradient(cx - 0.35f * r, cy - 0.4f * r, 1.5f * r, intArrayOf(hi, mid, lo), floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+        c.drawCircle(cx, cy, r * 0.86f, disc)
+        ring.strokeWidth = r * 0.04f
+        ring.color = Svan.OnGold.copy(alpha = 0.35f).toArgb()
+        c.drawCircle(cx, cy, r * 0.74f, ring)
+        ring.strokeWidth = r * 0.03f
+        ring.color = mid
+        c.drawCircle(cx, cy, r * 0.97f, ring)
+
+        brainPath.rewind()
+        brainPath.apply {
+            moveTo(cx, cy + r * 0.37f)
+            cubicTo(cx - r * 0.10f, cy + r * 0.47f, cx - r * 0.25f, cy + r * 0.35f, cx - r * 0.22f, cy + r * 0.17f)
+            cubicTo(cx - r * 0.43f, cy + r * 0.19f, cx - r * 0.48f, cy - r * 0.02f, cx - r * 0.36f, cy - r * 0.14f)
+            cubicTo(cx - r * 0.44f, cy - r * 0.34f, cx - r * 0.19f, cy - r * 0.44f, cx - r * 0.07f, cy - r * 0.27f)
+            cubicTo(cx - r * 0.03f, cy - r * 0.42f, cx + r * 0.03f, cy - r * 0.42f, cx + r * 0.07f, cy - r * 0.27f)
+            cubicTo(cx + r * 0.19f, cy - r * 0.44f, cx + r * 0.44f, cy - r * 0.34f, cx + r * 0.36f, cy - r * 0.14f)
+            cubicTo(cx + r * 0.48f, cy - r * 0.02f, cx + r * 0.43f, cy + r * 0.19f, cx + r * 0.22f, cy + r * 0.17f)
+            cubicTo(cx + r * 0.25f, cy + r * 0.35f, cx + r * 0.10f, cy + r * 0.47f, cx, cy + r * 0.37f)
+            close()
+        }
+        brain.color = Svan.OnGold.toArgb()
+        brain.strokeWidth = r * 0.045f
+        c.drawPath(brainPath, brain)
+
+        soundPath.rewind()
+        soundPath.apply {
+            moveTo(cx - r * 0.31f, cy + r * 0.02f)
+            lineTo(cx - r * 0.19f, cy + r * 0.02f)
+            lineTo(cx - r * 0.10f, cy - r * 0.10f)
+            lineTo(cx - r * 0.02f, cy + r * 0.15f)
+            lineTo(cx + r * 0.07f, cy - r * 0.16f)
+            lineTo(cx + r * 0.16f, cy + r * 0.02f)
+            lineTo(cx + r * 0.31f, cy + r * 0.02f)
+        }
+        wave.color = (if (resting) Svan.Ash else Svan.Bronze).copy(alpha = 0.75f + 0.25f * pulse).toArgb()
+        wave.strokeWidth = r * 0.055f
+        c.drawPath(soundPath, wave)
+        if (!resting) {
+            spark.color = (if (pulse > 0.5f) Svan.Glow else Svan.Molten).toArgb()
+            c.drawCircle(cx - r * 0.39f, cy - r * 0.39f, r * 0.055f, spark)
+            c.drawCircle(cx + r * 0.39f, cy - r * 0.39f, r * 0.055f, spark)
+        }
+    }
 }
 
 /** Compose wrapper. Pulses gently while [listening]. */
@@ -84,5 +147,17 @@ fun SvaramanasMark(size: Dp, listening: Boolean, resting: Boolean, modifier: Mod
     )
     Canvas(modifier.size(size)) {
         drawIntoCanvas { SvaraMark.draw(it.nativeCanvas, center.x, center.y, this.size.minDimension / 2f, pulse, resting) }
+    }
+}
+
+/** Svaresa's automatic-master mark. The wave brightens only while it can listen. */
+@Composable
+fun SvaresaMark(size: Dp, listening: Boolean, resting: Boolean, modifier: Modifier = Modifier) {
+    val pulse by rememberInfiniteTransition(label = "svaresa").animateFloat(
+        initialValue = 0f, targetValue = if (listening) 1f else 0f,
+        animationSpec = infiniteRepeatable(tween(1618, easing = LinearEasing), RepeatMode.Reverse), label = "pulse",
+    )
+    Canvas(modifier.size(size)) {
+        drawIntoCanvas { SvaraMark.drawSvaresa(it.nativeCanvas, center.x, center.y, this.size.minDimension / 2f, pulse, resting) }
     }
 }

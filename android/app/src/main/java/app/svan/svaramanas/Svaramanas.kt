@@ -29,6 +29,12 @@ enum class Feel(val title: String, val line: String) {
     INTIMATE("Intimate", "The voice close to you"),
 }
 
+/** Friendly mode names for the sound guide and the automatic master. */
+enum class SmartMode(val plainName: String, val sanskritName: String, val promise: String) {
+    GUIDED("Sound guide", "Svaramanas", "You choose the tone and what to bring forward."),
+    SVARESA("Auto master", "Svaresa", "Measured EQ and level matching when Hi-Fi can listen."),
+}
+
 /** Instrument categories. Bits match eqcore::svaramanas::Category. */
 enum class Category(val bit: Int, val title: String) {
     VOCALS(1, "Vocals"),
@@ -51,20 +57,22 @@ enum class Category(val bit: Int, val title: String) {
 /** What the listener asked Svaramanas for. [picks] keeps pick order: the first three always win. */
 data class SmartRequest(
     val enabled: Boolean = false,
+    val mode: SmartMode = SmartMode.GUIDED,
     val feel: Feel = Feel.BALANCED,
     val picks: List<Category> = emptyList(),
     val strength: Double = 1.0,
 ) {
-    fun toJson(): JSONObject = JSONObject().put("on", enabled).put("feel", feel.name).put("strength", strength)
+    fun toJson(): JSONObject = JSONObject().put("on", enabled).put("mode", mode.name).put("feel", feel.name).put("strength", strength)
         .put("picks", JSONArray().apply { picks.forEach { put(it.name) } })
 
     companion object {
         fun fromJson(o: JSONObject) = SmartRequest(
-            o.optBoolean("on", false),
-            runCatching { Feel.valueOf(o.getString("feel")) }.getOrDefault(Feel.BALANCED),
-            o.optJSONArray("picks")?.let { a -> List(a.length()) { a.getString(it) } }
+            enabled = o.optBoolean("on", false),
+            mode = runCatching { SmartMode.valueOf(o.optString("mode", SmartMode.GUIDED.name)) }.getOrDefault(SmartMode.GUIDED),
+            feel = runCatching { Feel.valueOf(o.optString("feel", Feel.BALANCED.name)) }.getOrDefault(Feel.BALANCED),
+            picks = o.optJSONArray("picks")?.let { a -> List(a.length()) { a.getString(it) } }
                 ?.mapNotNull { n -> Category.entries.firstOrNull { it.name == n } } ?: emptyList(),
-            o.optDouble("strength", 1.0).coerceIn(0.0, 1.5),
+            strength = o.optDouble("strength", 1.0).coerceIn(0.0, 1.5),
         )
     }
 }
@@ -106,6 +114,7 @@ data class SmartPlan(
         fun compute(r: SmartRequest, features: DoubleArray?, stereoEngine: Boolean): SmartPlan {
             val raw = NativeEngine.nativeSvaramanasPlan(
                 features, r.feel.ordinal, IntArray(r.picks.size) { r.picks[it].bit }, r.strength, stereoEngine,
+                r.mode == SmartMode.SVARESA,
             )
             var i = 12
             val nNotes = raw[11].toInt()
@@ -239,7 +248,7 @@ object Svaramanas {
     private fun logPlan(p: SmartPlan, heard: Heard?) {
         val curve = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
         EqController.log(
-            "svaramanas plan: feel=${_request.value.feel} picks=${_request.value.picks} bands=${p.bands.count { it.gainDb != 0.0 }} " +
+            "svaramanas plan: mode=${_request.value.mode} feel=${_request.value.feel} picks=${_request.value.picks} bands=${p.bands.count { it.gainDb != 0.0 }} " +
                 "preamp=%.2f predicted=%.2f notes=${p.notes} heard=${heard?.valid ?: false} response@1kHz=%.2f dB".format(p.preampDb, p.predictedDeltaDb, curve),
         )
     }
@@ -250,7 +259,13 @@ object Svaramanas {
         if (p == null) return emptyList()
         fun gainAt(f: Double) = p.bands.filter { it.freqHz == f }.sumOf { it.gainDb }
         val out = mutableListOf<String>()
-        if (!listening) out += "On system effects I shape by your choices. Turn on the audiophile engine and I'll listen to the music itself."
+        if (r.mode == SmartMode.SVARESA) {
+            when {
+                !listening -> out += "Auto master is ready. Live analysis needs Hi-Fi and a player that allows audio capture; your chosen EQ and tuners still work."
+                h?.valid != true -> out += "Auto master is listening for a few seconds before making any change."
+                else -> out += "Auto master is checking the mix and making only small, measured corrections."
+            }
+        } else if (!listening) out += "On system effects I shape by your choices. Turn on Hi-Fi and I'll listen to the music itself."
         else if (h?.valid != true) out += "Listening… give me a few seconds of music and I'll fine-tune."
         for (n in p.notes) when (n) {
             1 -> out += "Shaping toward a ${r.feel.title.lowercase()} sound."
@@ -267,7 +282,10 @@ object Svaramanas {
             22 -> out += "Overlapping picks share their range; the later one yields."
             30 -> out += "Level-matched (%+.1f dB) so you judge the tone, not the volume.".format(p.preampDb)
         }
-        if (out.isEmpty() || (p.notes.none { it in 10..16 } && h?.valid == true)) out += "The mix sounds healthy. Nothing to police."
+        if (r.mode == SmartMode.SVARESA && h?.valid != true && listening) out += "No automatic change yet; I need a capturable music session first."
+        else if (out.isEmpty() || (p.notes.none { it in 10..16 } && h?.valid == true)) {
+            out += if (r.mode == SmartMode.SVARESA) "No correction needed. The mix stays as it is." else "The mix sounds healthy. Nothing to police."
+        }
         return out
     }
 }

@@ -90,15 +90,19 @@ class SvaramanasBubbleService : Service() {
             override fun run() { invalidate(); postDelayed(this, 1000) }
         }
 
-        init { contentDescription = "Svaramanas. Tap to open, hold to compare." }
+        init { contentDescription = "Sound guide. Tap to open, hold to compare." }
 
         override fun onAttachedToWindow() { super.onAttachedToWindow(); post(tick) }
         override fun onDetachedFromWindow() { removeCallbacks(tick); super.onDetachedFromWindow() }
 
         override fun onDraw(canvas: Canvas) {
             val r = width / 2f
-            val enabled = Svaramanas.request.value.enabled
-            SvaraMark.draw(canvas, r, r, r * 0.98f, if (Svaramanas.listening.value) 0.6f else 0f, resting = !enabled || holding)
+            val request = Svaramanas.request.value
+            val pulse = if (Svaramanas.listening.value) 0.6f else 0f
+            val resting = !request.enabled || holding
+            contentDescription = "${request.mode.plainName}. Tap to open, hold to compare."
+            if (request.mode == SmartMode.SVARESA) SvaraMark.drawSvaresa(canvas, r, r, r * 0.98f, pulse, resting)
+            else SvaraMark.draw(canvas, r, r, r * 0.98f, pulse, resting)
         }
 
         @SuppressLint("ClickableViewAccessibility")

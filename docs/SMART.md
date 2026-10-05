@@ -45,6 +45,29 @@ ID, and a parsed media session. It also adds one-tick listening callouts, a cont
 starting preset and saveable tab state. Neither the new detection path nor this bass profile has been
 verified on the TECNO yet; listing an app package is not proof that its session is visible or captured.
 
+## Sound modes — Svaramanas and Svaresa
+
+The names are paired with everyday labels so listeners can choose by purpose:
+
+- **Sound guide · Svaramanas** (*svara* + *manas*, sound + mind): the listener chooses a feel and
+  priorities; the guide shapes those choices within the existing gain, headroom and loudness limits.
+- **Auto master · Svaresa** (*Svareśa*, master of sound): a conservative automatic mode. It ignores
+  guided taste lifts and only uses measured corrections such as boom, muddiness, harshness and a
+  full-range dullness check. It keeps the correction cap, lossy-ceiling and limited-master guards,
+  loudness matching, and slow adaptive slew. It does not guess instruments or widen stereo.
+
+Both modes use a local rule-based controller, not a newly trained AI model. Svaresa can analyze only
+playback that Android exposes to Engine B; when capture is unavailable it holds the user's selected EQ
+and tuning but has no source measurements to correct. The automatic mode currently avoids changing the
+bass transient shaper, vocal tuner, or stereo width because there is no validated source model to decide
+when those subjective controls would help. A trained controller requires opt-in, level-matched listener
+choices, held-out tracks/routes, and a measured advantage over these rules. No audio samples or preferences
+are uploaded by this work.
+
+The Svaramanas identity is a gold sound-and-mind seal; Svaresa uses a related gold sonic-brain/wave mark.
+The mode cards and accessible names lead with “Sound guide” and “Auto master”; the Sanskrit names are
+identity, not prerequisites for understanding what each control does.
+
 ## 1. Persona and behaviour priority
 
 Svaramanas is a **tonal police** and, underneath, a **passionate audiophile**: it enforces what protects

@@ -169,12 +169,15 @@ double predictedLoudnessDeltaDb(const std::vector<BandParams>& bands, const doub
 
 Plan plan(const Request& r, const SourceFeatures* features) {
   Plan p;
-  const double strength = std::clamp(r.strength, 0.0, 1.5);
+  // Svaresa is deliberately more conservative than the user-guided mode. It
+  // does not infer taste or instruments: it can only correct measured mix
+  // deviations, and its analyser-driven moves are capped at 85% strength.
+  const double strength = std::clamp(r.svaresaMode ? std::min(r.strength, 0.85) : r.strength, 0.0, 1.5);
   const bool heard = features && features->valid;
   if (!heard) addNote(p, kNoteListening);
 
   // ---- 2. the listener's request: feel + accepted categories -----------------
-  p.categories = checkCategories(r);
+  p.categories = r.svaresaMode ? CategoryCheck{} : checkCategories(r);
   if (p.categories.rejected) addNote(p, kNoteConflictDropped);
   struct Slot {
     BandParams band;
@@ -184,8 +187,9 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   StereoTunerParams st{};
   double bassChar = 0.0;
 
-  const Sound feel = feelSound(r.feel);
-  if (r.feel != Feel::Balanced) addNote(p, kNoteFeel);
+  const Feel selectedFeel = r.svaresaMode ? Feel::Balanced : r.feel;
+  const Sound feel = feelSound(selectedFeel);
+  if (!r.svaresaMode && r.feel != Feel::Balanced) addNote(p, kNoteFeel);
   for (const auto& s : feel.bands) slots.push_back({{s.type, s.freqHz, s.gainDb * strength, s.q, true}, true});
   bassChar += feel.bassCharacter * strength;
   st.intimacy += feel.stereo.intimacy;
@@ -193,7 +197,8 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   st.instruments += feel.stereo.instruments;
 
   std::vector<double> acceptedFreqs;  // positive request bands already placed by earlier picks
-  for (uint32_t bit : pickOrder(r)) {
+  const std::vector<uint32_t> noCategories;
+  for (uint32_t bit : r.svaresaMode ? noCategories : pickOrder(r)) {
     if (!(p.categories.accepted & bit)) continue;
     const CategoryDef* d = defFor(bit);
     addNote(p, kNoteCategories);
@@ -261,7 +266,7 @@ Plan plan(const Request& r, const SourceFeatures* features) {
       }
     }
     const bool fullBand = features->cutoffHz >= 17500.0;
-    if (features->airDb < -4.0 && fullBand && r.feel != Feel::Warm) {
+    if (features->airDb < -4.0 && fullBand && selectedFeel != Feel::Warm) {
       slots[airIdx].band.gainDb = std::min(1.5, 0.3 * (-features->airDb - 3.0)) * cs;
       addNote(p, kNoteDull);
     }

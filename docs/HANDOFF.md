@@ -4,7 +4,23 @@ Written at the end of a long Claude Code session so another agent (Codex cloud) 
 Repo: `iamhariize-maker/Equalizer-app`, branch **`ccr-208702a3-2mju42`** (not merged; no PR opened).
 Start with `AGENTS.md`. This file has the detail.
 
-## Player discovery and bass tuner — 2026-10-05 (current continuation)
+## Svaresa mode and visual identity — 2026-10-05 (current continuation)
+
+Adds two plain-language sound modes with distinct gold marks: **Sound guide · Svaramanas** preserves
+listener-directed tone and priority controls; **Auto master · Svaresa** uses a deterministic, conservative
+automatic policy over measured source corrections only. Mode state is saved. Guided choices are preserved
+when switching to Svaresa, and the floating bubble changes to the matching mark. The automatic controller
+ignores taste and instrument lifts, caps analyser corrections at 85% strength, keeps the existing codec,
+mono, limited-master, headroom and loudness guards, and slews adaptive changes. It does not auto-adjust the
+bass transient shaper, vocal tuner or stereo width without validated cues. No new model has been trained;
+the code does not claim one. Training needs opt-in, level-matched preference data and held-out listening
+that demonstrates an advantage over rules.
+
+The core regression checks that Svaresa produces the same plan as a balanced 85%-strength correction
+policy despite arbitrary guided preferences, and that a measured muddy source still receives a bounded
+low-mid cut. CI, phone installation and visual review are pending.
+
+## Player discovery and bass tuner — 2026-10-05
 
 The owner reports that Apple Music was detected earlier with Fosi Audio IM4, but is now missing over a
 wired connection; Neutron has not appeared; and no player session appeared using Realme Buds Air 8
