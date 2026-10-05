@@ -26,7 +26,7 @@ was successful with IM4 listening; that is useful feedback, not a blind comparis
 - After fitting, preferences and slew, level trim is recomputed from the **applied** cascade and static
   mid/side response. Estimated reference-spectrum matching remains labelled when live audio is absent.
 - Saving a preset while automation owns EQ saves its current EQ bands and trim, rather than the hidden manual curve. Separate stereo/dynamic processors are not part of an EQ-only preset.
-- Manual EQ is fully scrollable. Graphic faders have 48 dp touch width, progress accessibility, numeric
+- Manual EQ is fully scrollable. Graphic faders have 56 dp touch width, progress accessibility, numeric
   entry and reset. Parametric gains have fine steps/reset. Undo groups continuous edits and preserves
   live controller state. Graphic→parametric conversion preserves filters exactly; conversion to graphic
   fits the response, reports RMS/max error and permits undo. Extreme/narrow filters cannot always fit.

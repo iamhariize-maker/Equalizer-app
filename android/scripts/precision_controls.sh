@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Real touch gestures, independent of the mathematical detent unit tests.
-set -eu
+set -euo pipefail
 S=${1:-emulator-5554}; OUT=${2:-/tmp/precision-controls}; A="adb -s $S"
 mkdir -p "$OUT"; : > "$OUT/results.txt"
 eq() { $A shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
@@ -16,13 +16,29 @@ tap() {
   read -r x1 y1 x2 y2 <<< "$b"; $A shell input tap $(((x1+x2)/2)) $(((y1+y2)/2)); sleep 1
 }
 find_control() {
-  local b
+  local b viewport_bottom minimum_height
+  minimum_height=0
+  # UIAutomator clips bounds for off-screen nodes. A sliver of a fader is not
+  # enough travel to cross touch slop, and must not be mistaken for a full one.
+  case "$1" in *'Hz gain') minimum_height=$((H/4));; esac
   for attempt in $(seq 1 12); do
     b=$(node content-desc "$1")
+    viewport_bottom=$(python3 - "$OUT/last-ui.xml" "$((H*7/8))" <<'PY'
+import re,sys,xml.etree.ElementTree as E
+bottom=int(sys.argv[2])
+for n in E.parse(sys.argv[1]).getroot().iter('node'):
+    if '. Tap to open, hold to compare.' in n.attrib.get('content-desc',''):
+        bottom=min(bottom,int(re.findall(r'\d+',n.attrib['bounds'])[1]))
+print(bottom)
+PY
+    )
     if [ -n "$b" ]; then
       read -r x1 y1 x2 y2 <<< "$b"
       # A partly visible lazy-list item cannot reliably receive a drag.
-      if [ "$y1" -ge "$((H/12))" ] && [ "$y2" -lt "$((H*7/8))" ]; then echo "$b"; return; fi
+      if [ "$y1" -ge "$((H/12))" ] && [ "$y2" -le "$viewport_bottom" ] && [ "$((y2-y1))" -ge "$minimum_height" ]; then
+        printf '%s: %s; viewport bottom=%s\n' "$1" "$b" "$viewport_bottom" >> "$OUT/target-bounds.txt"
+        echo "$b"; return
+      fi
     fi
     # Scroll in the card margin. A vertical swipe through a fader edits it.
     if [ -n "$b" ] && [ "$y1" -lt "$((H/12))" ]; then
