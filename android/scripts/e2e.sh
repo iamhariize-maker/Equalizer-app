@@ -182,7 +182,7 @@ wait_for "route: $CAP .*Engine A" 30; sleep 3
 measure "T19 live permission grant discovers existing playback"
 log "T21 Svaramanas static plan on system effects"
 $A logcat -c
-eq svaramanas --ez on true --es feel BRIGHT --es picks VOCALS,GUITARS,DRUMS
+eq svaramanas --ez on true --es mode GUIDED --es feel BRIGHT --es picks VOCALS,GUITARS,DRUMS
 wait_for "svaramanas plan" 30 > "$TMP/e2e_t21_plan.txt"; cat "$TMP/e2e_t21_plan.txt"
 sleep 4
 measure "T21 Svaramanas plan on system effects (expect T0 + response@1k)"
@@ -193,7 +193,7 @@ eq engine_mode --ez system_only false
 $A logcat -c; eq start_capture --es quality EFFICIENT; wait_for "capture: started" 120
 tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true; sleep 8
 log "T22 Svaramanas hears the captured source"
-eq svaramanas --ez on true --es feel BALANCED --es picks VOCALS
+eq svaramanas --ez on true --es mode GUIDED --es feel BALANCED --es picks VOCALS
 wait_for "svaramanas heard: valid=true" 40 > "$TMP/e2e_t22_heard.txt"; cat "$TMP/e2e_t22_heard.txt"
 eq svaramanas --ez on false; sleep 3
 log "T23 Svaresa automatic master uses the native plan"
