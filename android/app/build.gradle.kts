@@ -14,14 +14,14 @@ if (productionBuild) {
 
 android {
     namespace = "app.svan"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "app.svan"
         // 29: AudioPlaybackCapture (capture engine). DynamicsProcessing needs 28.
         minSdk = 29
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 12
         versionName = if (productionBuild) "0.5.5" else "0.5.5-quality-preview"
         buildConfigField("boolean", "PHONE_PREVIEW", (!productionBuild).toString())

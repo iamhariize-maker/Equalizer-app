@@ -14,6 +14,11 @@ commands. Settings export/restore is added for the unavoidable preview→private
 CI builds production APK/AAB with a disposable test key and checks public UI/native quality paths;
 owner delivery re-signs those exact tested payloads privately. See RELEASE_SIGNING.md. No Play
 publication or approval is claimed. The owner must download and securely back up the private key.
+The current Play target policy requires API 36 for new submissions; compile/target SDK and build
+tools are updated accordingly (AGP 8.9.2, Gradle 8.11.1), with minimum API 29 retained and a fifth
+compatibility job on API 36. The owner also prioritises LG V60/Android 13; full e2e coverage now runs
+on API 33 and 34. The release verification record must therefore cover nine CI jobs. LG's actual
+Quad DAC, playback routes and OEM background behavior remain real-device validation.
 
 ## Engine quality continuation — 2026-10-05 (0.5.4 preview, code 11)
 

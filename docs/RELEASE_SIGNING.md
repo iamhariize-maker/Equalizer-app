@@ -5,6 +5,13 @@ created privately on 5 October 2026. The key and its passwords are outside the r
 never CI inputs, and must be downloaded and backed up by the owner. The public preview key
 is not a production identity. A brand certificate label does not certify a legal identity.
 
+This release compiles/targets API 36 using AGP 8.9.2 and Gradle 8.11.1, retaining minimum API 29.
+Google's [current target requirement](https://support.google.com/googleplay/android-developer/answer/11926878?hl=en)
+requires API 36 for new mobile-app submissions from 31 August 2026. CI adds Android 16/API 36
+compatibility to the existing API 29/30/33/35 matrix and full Android 13/14 production UI/audio tests.
+The owner specifically targets an LG V60 on Android 13; the actual LG Quad DAC and OEM service
+behavior must still be checked on that phone. No automatic quality-mode escalation is added.
+
 Build with JDK 17 and the Android SDK/NDK described in AGENTS.md:
 
 ```sh

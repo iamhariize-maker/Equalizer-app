@@ -9,6 +9,8 @@ Two audio engines share one preset/state:
 Current product priority: **streaming and popular apps first** (Spotify, Amazon Music, YouTube Music,
 then Apple Music and other mainstream players). Neutron/Poweramp/HiBy/Onkyo's advanced output modes
 come later. Do not claim commercial-player or TECNO compatibility from synthetic tests.
+Owner's additional device priority: LG V60 on Android 13. Run the full routing/control/production
+suite on API 33 as well as API 34; emulators do not verify LG's Quad DAC or background policies.
 
 - **Engine A — system effects.** `DynamicsProcessing` attached to other apps' audio sessions
   (Wavelet-style). Gain-per-band only; low latency; works on capture-blocked apps (Spotify).
@@ -42,12 +44,12 @@ The fixed Shizuku DUMP grant and real audio-session detection remain available.
 ```sh
 # Core (fast, deterministic)
 cmake -S core -B build/core && cmake --build build/core -j && ./build/core/eqcore_tests
-# Android (needs Android SDK 35, NDK 27.0.12077973, CMake 3.22.1, JDK 17)
+# Android (needs Android SDK 36, NDK 27.0.12077973, CMake 3.22.1, JDK 17)
 cd android && ./gradlew assembleDebug :app:assembleRelease lintDebug testDebugUnitTest
 ```
 The emulator tests only run in **GitHub Actions** (`emulator-e2e` job, KVM). Push, then read the job
 log: it prints `PASS`/`FAIL` lines; the job fails on any `FAIL` or if `PASS release smoke test` is
-missing. Artifact `e2e-results` has the log and screenshots (`screens/*.png`, boot frames). **Look at the
+missing. Artifacts `e2e-results-api33` / `e2e-results-api34` have the log and screenshots (`screens/*.png`, boot frames). **Look at the
 screenshots** — layout bugs only show there.
 
 ## Rules that matter
@@ -73,7 +75,7 @@ changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
 1. Verify on the next CI screenshots: boot name fits on one line with margins; the flipped **d** reads as a 9 (not "q"); the स्व icon on the Android 12+ splash.
-2. **Real-phone validation** (the user has one phone, a TECNO LH7n, Android 14, no PC): everything so far is emulator-verified only.
+2. **Real-phone validation** (TECNO LH7n/Android 14 and LG V60/Android 13, no PC): the owner reports earlier listening success; new DSP, player/device coverage and LG Quad DAC behavior still need phone checks.
 3. Product gaps: per-app engine UI, foreground-service robustness, release signing, Play Store policy (MediaProjection/foreground service), app licence.
 
 0.5.5 adds reconstructed-peak protection, selective dynamic EQ, bounded headphone calibration
