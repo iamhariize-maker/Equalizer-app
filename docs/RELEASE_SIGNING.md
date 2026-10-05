@@ -30,7 +30,7 @@ and blind listening. That test key is not used for owner downloads.
 For artifact delivery, the exact tested production APK may be re-signed with the owner's
 private key, preserving every ZIP entry. The tested AAB is similarly signed after removing
 only its disposable JAR signature. Verify signatures, package/version, permission gate,
-16 KB alignment, and equal payload digests before delivery. Owner passwords must be passed
+16 KB ZIP and native ELF load-segment alignment, and equal payload digests before delivery. Owner passwords must be passed
 through environment variables, never command arguments or logs.
 
 ## Moving from previews
@@ -60,3 +60,7 @@ increasing version codes. Signing alone does not mean approval: the privacy poli
 safety answers, foreground-service declarations, MediaProjection explanation, licence choice,
 and required testing still need completion before publishing. This work does not publish the
 app or claim to resolve an earlier Play Protect finding.
+
+NDK 27 builds enable `ANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES`. Release gates check every native
+ELF load segment in APK/AAB as well as uncompressed APK ZIP offsets. ZIP alignment alone is
+insufficient for the Play 16 KB page-size requirement. This also supports existing 4 KB systems.

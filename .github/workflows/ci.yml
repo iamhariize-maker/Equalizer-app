@@ -53,16 +53,8 @@ jobs:
           grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" sig.txt
           # The fixed preview key keeps updates installable over earlier previews.
           grep -q "CN=Svan Preview" sig.txt
-          python3 - "$APK" <<'PY'
-          import struct, sys, zipfile
-          z = zipfile.ZipFile(sys.argv[1]); f = open(sys.argv[1], 'rb')
-          for i in z.infolist():
-              if i.filename.endswith('.so') and i.compress_type == 0:
-                  f.seek(i.header_offset); h = f.read(30)
-                  n, e = struct.unpack('<HH', h[26:30])
-                  assert (i.header_offset + 30 + n + e) % 4096 == 0, 'unaligned ' + i.filename
-          print('native libs page-aligned')
-          PY
+          "$BT/zipalign" -c -P 16 4 "$APK"
+          python3 android/scripts/check_native_alignment.py "$APK"
       - uses: actions/upload-artifact@v4
         with:
           name: Svan-preview
@@ -89,6 +81,8 @@ jobs:
           "$BT/aapt2" dump xmltree build-kit/production-test/Svan-production-test.apk --file AndroidManifest.xml > production-manifest.txt
           python3 scripts/check_manifest_permissions.py production-manifest.txt
           jarsigner -verify build-kit/production-test/Svan-production-test.aab
+          "$BT/zipalign" -c -P 16 4 build-kit/production-test/Svan-production-test.apk
+          python3 scripts/check_native_alignment.py build-kit/production-test/Svan-production-test.apk build-kit/production-test/Svan-production-test.aab
           rm "$SVAN_KEYSTORE"
       - uses: actions/upload-artifact@v4
         with:

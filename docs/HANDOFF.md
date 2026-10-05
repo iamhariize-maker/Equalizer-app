@@ -606,3 +606,7 @@ flipped-d lift (see §6 item 1) — pushed with this file.
 - AutoEq (MIT, Jaakko Pasanen): data/targets fetched at runtime; test fixtures in `core/tests/data/` with README.
 - Poppins SemiBold (SIL OFL 1.1, Indian Type Foundry): launcher-icon glyph outlines. Mukta/Eczar were evaluated, not shipped.
 - JamesDSP/RootlessJamesDSP (GPL-3): **read for technique only; no code copied.**
+
+Play preparation follow-up: native ELF load alignment was still 4 KB despite 16 KB ZIP packaging.
+NDK 27 flexible page-size support now produces 16 KB load segments. The release artifact gate
+checks every shared library in both APK and AAB; older 4 KB Android systems remain supported.
