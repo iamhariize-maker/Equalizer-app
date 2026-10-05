@@ -37,7 +37,9 @@ import app.svan.EqController
 import app.svan.SystemEqService
 import app.svan.CaptureService
 import androidx.compose.ui.platform.LocalContext
+import app.svan.DetectionMonitor
 import app.svan.SessionRouter
+import app.svan.Verification
 import app.svan.SvanRepository
 import app.svan.model.DitherChoice
 import app.svan.model.EngineMode
@@ -57,6 +59,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     var verdicts by remember { mutableStateOf(SessionRouter.compat().all()) }
     var running by remember { mutableStateOf(CaptureService.isRunning) }
     var routes by remember { mutableStateOf(SessionRouter.snapshot.toList()) }
+    val detection by DetectionMonitor.status.collectAsState()
     LaunchedEffect(Unit) {
         while (true) {
             stats = CaptureService.stats
@@ -64,7 +67,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             running = CaptureService.isRunning
             verdicts = SessionRouter.compat().all()
             systemApps = prefs.systemOnlyPackages()
-            knownApps = verdicts.keys + systemApps + SessionRouter.snapshot.map { it.pkg }
+            knownApps = verdicts.keys + systemApps + SessionRouter.snapshot.map { it.pkg } +
+                DetectionMonitor.status.value.sessions.map { it.session.packageName }
             routes = SessionRouter.snapshot.toList()
             delay(700)
         }
@@ -145,7 +149,9 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         Text("Try Spotify, Amazon Music, Apple Music, Poweramp, Neutron, ONKYO HF Player, VLC, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         if (knownApps.isEmpty()) Text("No audio apps detected yet.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
-        knownApps.sorted().forEach { pkg ->
+        val livePkgs = routes.map { it.pkg }.toSet() + detection.sessions.map { it.session.packageName }
+        // Apps with a live session first; everything else is only remembered from earlier.
+        knownApps.sortedWith(compareBy({ it !in livePkgs }, { it })).forEach { pkg ->
             val label = remember(pkg) { runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg) }
             val appRoutes = routes.filter { it.pkg == pkg }
             SvanCard {
@@ -157,9 +163,17 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_B_MUTED } -> "Audiophile engine · full DSP"
                         appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_A && it.sessionId in EqController.globalEq.attachedSessions } -> "System effects · gain per band"
                         appRoutes.isNotEmpty() -> "Unprocessed · system effect unavailable"
-                        else -> "No active audio session"
+                        pkg in livePkgs -> "Detected · attaching…"
+                        else -> "Not playing right now (remembered from earlier)"
                     }
                     Text(status, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+                    appRoutes.firstOrNull { it.owner == SessionRouter.Owner.ENGINE_A }?.let { r ->
+                        val v = SessionRouter.verification[r.sessionId]
+                        val path = SessionRouter.evidence[r.sessionId]?.pathLabel.orEmpty()
+                        val line = listOfNotNull(path.ifEmpty { null }?.let { "$it output" }, v?.takeIf { it != Verification.UNKNOWN }?.summary).joinToString(" · ")
+                        if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodySmall,
+                            color = if (v == Verification.PROCESSING) Svan.Gold else Svan.Ember)
+                    }
                     Text(when (verdicts[pkg]) {
                         "BLOCKED" -> "Capture blocked by this app; system effects remain available."
                         "CAPTURABLE" -> "Capture supported on the last check."

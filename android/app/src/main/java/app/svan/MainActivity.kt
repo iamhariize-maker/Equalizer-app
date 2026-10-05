@@ -116,6 +116,15 @@ class MainActivity : ComponentActivity() {
                     EqController.log("test: system effects dropped; waiting for automatic recovery")
                 }
             }
+            "test_blind_reports" -> {
+                // Debug-only: pretend one Android report is unreadable (--ez players true --ez server true).
+                if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    DetectionMonitor.debugBlindPlayers = intent.getBooleanExtra("players", false)
+                    DetectionMonitor.debugBlindServer = intent.getBooleanExtra("server", false)
+                    EqController.log("test: blind player list=${DetectionMonitor.debugBlindPlayers} audio server=${DetectionMonitor.debugBlindServer}")
+                    SystemEqService.requestScanNow()
+                }
+            }
             "start_capture" -> {
                 SvanRepository.updateSettings { it.copy(engineMode = app.svan.model.EngineMode.AUTO) }
                 startCapture()

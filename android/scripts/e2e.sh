@@ -225,6 +225,23 @@ eq test_drop_system_effects
 wait_for "route: $CAP .*Engine A" 30; sleep 2
 measure "T25 lost effect recovers without player restart or manual refresh"
 tone $CAP --ez stop true; sleep 3
+# Detection must not hinge on ONE Android report: blind the player list, then the audio-server
+# tables, and require a freshly started non-broadcasting player to be processed regardless.
+for blind in "players" "server"; do
+  $A logcat -c
+  if [ "$blind" = players ]; then eq test_blind_reports --ez players true --ez server false; else eq test_blind_reports --ez players false --ez server true; fi
+  sleep 2
+  tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false
+  wait_for "route: $CAP .*Engine A" 40; sleep 3
+  measure "T26_$blind found with the $blind report unreadable"
+  tone $CAP --ez stop true; sleep 3
+done
+eq test_blind_reports --ez players false --ez server false; sleep 2
+# The real report must parse on this Android image, and the effect must be seen in the audio server.
+$A logcat -c
+tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false
+wait_for "detect: players=ok server=ok .*$CAP#[0-9]+:started:BOTH:mixer:PROCESSING" 40 > "$TMP/e2e_t27_detect.txt" || wait_for "detect: .*$CAP" 5 > "$TMP/e2e_t27_detect.txt"
+tone $CAP --ez stop true; sleep 3
 # Restart discovery so screenshots include real detected app rows.
 eq stop_system; sleep 3; eq start_system; sleep 3
 tone $CAP --ef freq 1000 --ef amp 0.05 --ez broadcast true; sleep 4
@@ -290,6 +307,10 @@ for cycle in 1 2 3; do
 done
 T25=$(lvl T25)
 check "Lost system effect recovers automatically on the existing session" "$(near "$T25" "$T1" 1.0)" "T25=$T25 expected=$T1 ±1 dB"
+T26P=$(lvl T26_players); T26S=$(lvl T26_server)
+check "Player found with the player list unreadable (audio-server tables only)" "$(near "$T26P" "$T1" 1.0)" "measured=$T26P expected=$T1 ±1 dB"
+check "Player found with the audio-server report unreadable (player list only)" "$(near "$T26S" "$T1" 1.0)" "measured=$T26S expected=$T1 ±1 dB"
+check "Audio-server report parses here and verifies the attached effect" "$(grep -q 'PROCESSING' "$TMP/e2e_t27_detect.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t27_detect.txt")"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
 kill $FULLLOG 2>/dev/null

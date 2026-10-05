@@ -71,6 +71,20 @@ class GlobalEqEngine(bandCount: Int = 128) {
         }
     }
 
+    /**
+     * Diagnostic only: can this phone create an effect on the global output mix (session 0)? Svan never
+     * relies on it, because such an effect normally reaches a single output, not Bluetooth/USB.
+     */
+    fun probeGlobalMix(): String = try {
+        val cfg = DynamicsProcessing.Config.Builder(DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, CHANNELS, false, 0, false, 0, false, 0, false).build()
+        val dp = DynamicsProcessing(0, 0, cfg)
+        val control = runCatching { dp.hasControl() }.getOrDefault(false)
+        runCatching { dp.release() }
+        "created (control=$control). Output-mix effects usually reach only one output, so Svan does not rely on them."
+    } catch (e: Throwable) {
+        "refused (${e.javaClass.simpleName}); per-session effects are the supported route."
+    }
+
     @Synchronized
     fun detach(sessionId: Int) {
         effects.remove(sessionId)?.let {

@@ -79,6 +79,8 @@ class SystemEqService : Service() {
         alive = true
         isRunning = true
         instance = this
+        // A start that finds this flag still "dirty" means Android (or the OEM's cleaner) killed the last run.
+        prefs().edit().putBoolean(KEY_CLEAN, false).putLong(KEY_STARTED, System.currentTimeMillis()).apply()
         ContextCompat.registerReceiver(this, sessionReceiver, IntentFilter().apply {
             addAction(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION)
             addAction(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION)
@@ -109,10 +111,15 @@ class SystemEqService : Service() {
             do {
                 try {
                     if (alive) {
-                        val sessions = if (PlaybackSessions.hasDumpPermission(this)) PlaybackSessions.query(this) else null
+                        val outcome = DetectionMonitor.scan(this)
                         if (alive) {
-                            if (sessions != null) SessionRouter.sync(sessions)
-                            else SessionRouter.repairKnownSessions()
+                            val st = outcome.status
+                            if (st.dumpPermission && (st.playersOk || st.serverOk)) {
+                                SessionRouter.sync(
+                                    outcome.ledger.sessions.map { it.session }, st.playersOk, st.serverOk,
+                                    outcome.ledger.sessions.associateBy { it.session.sessionId }, st.verification,
+                                )
+                            } else SessionRouter.repairKnownSessions()
                         }
                     }
                 } catch (e: Exception) {
@@ -134,8 +141,11 @@ class SystemEqService : Service() {
         return START_STICKY
     }
 
+    private fun prefs() = getSharedPreferences(CHANNEL, MODE_PRIVATE)
+
     override fun onDestroy() {
         alive = false
+        prefs().edit().putBoolean(KEY_CLEAN, true).apply()
         if (instance === this) { instance = null; isRunning = false }
         main.removeCallbacks(rescan)
         main.removeCallbacks(recoveryScan)
@@ -153,6 +163,19 @@ class SystemEqService : Service() {
     companion object {
         private const val CHANNEL = "system_eq"
         private const val STOP = "app.svan.STOP_EQ"
+        private const val KEY_CLEAN = "clean_shutdown"
+        private const val KEY_STARTED = "last_started_ms"
+
+        /** True if the user wants the service on but Android stopped it without Svan's own shutdown. */
+        fun wasKilledByAndroid(context: Context): Boolean {
+            val p = context.getSharedPreferences(CHANNEL, MODE_PRIVATE)
+            return !isRunning && p.getBoolean("enabled", true) && p.contains(KEY_CLEAN) && !p.getBoolean(KEY_CLEAN, true)
+        }
+
+        fun lastStartedMs(context: Context): Long = context.getSharedPreferences(CHANNEL, MODE_PRIVATE).getLong(KEY_STARTED, 0L)
+
+        /** Scan right now (screen on, app opened, user pressed refresh). */
+        fun requestScanNow() { instance?.let { s -> s.main.post { s.recover("manual or foreground refresh") } } }
         @Volatile var isRunning = false
             private set
         @Volatile private var instance: SystemEqService? = null

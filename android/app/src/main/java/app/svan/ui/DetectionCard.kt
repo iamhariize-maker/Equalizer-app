@@ -2,7 +2,9 @@ package app.svan.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,6 +22,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.provider.Settings
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.Alignment
+import app.svan.DetectionMonitor
+import app.svan.DetectionStatus
+import app.svan.DiagnosticReport
+import app.svan.Health
+import app.svan.LedgerSession
+import app.svan.Verification
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import app.svan.DetectionSetup
 import app.svan.PlaybackSessions
 import app.svan.PlaybackScanReport
@@ -34,6 +59,7 @@ fun DetectionCard() {
     val report by PlaybackSessions.report.collectAsState()
     var showDetails by remember { mutableStateOf(false) }
     SectionLabel("Music detection")
+    DetectionHealthCard()
     SvanCard {
         Column {
             if (state.stage == DetectionSetup.Stage.READY) {
@@ -138,5 +164,98 @@ private fun ScanSummary(report: PlaybackScanReport, showDetails: Boolean, onTogg
             Text("Local diagnostic only · not uploaded", style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint)
             Text(report.configPreview, style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint)
         }
+    }
+}
+
+@Composable
+private fun DetectionHealthCard() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val st by DetectionMonitor.status.collectAsState()
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var killed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        while (true) { now = System.currentTimeMillis(); killed = SystemEqService.wasKilledByAndroid(context); delay(1000) }
+    }
+    val tone = when (st.health) {
+        Health.OK -> Svan.Glow
+        Health.IDLE -> Svan.TextFaint
+        else -> Svan.Ember
+    }
+    SvanCard {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(10.dp).clip(CircleShape).background(tone))
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(st.headline, style = MaterialTheme.typography.titleMedium)
+                    if (st.advice.isNotBlank()) Text(st.advice, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(sourceLine(st, now), style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint)
+            if (killed) {
+                Spacer(Modifier.height(6.dp))
+                Text("Android stopped Svan's background service. On TECNO/Infinix/itel (HiOS), Xiaomi, Oppo, Vivo and Samsung, allow Svan to auto-start and run in the background, lock it in recent apps, and set battery to unrestricted. Without that, no player can be detected while the screen is off.",
+                    style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+                TextButton(onClick = {
+                    runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }
+                }) { Text("Open Svan's Android settings") }
+            }
+            st.sessions.forEach { s -> SessionRow(s, st.verification[s.session.sessionId]) }
+            if (st.unresolved.isNotEmpty()) Text(
+                "Active but no session to attach to: " + st.unresolved.joinToString { it.packageName.ifEmpty { "uid:${it.uid}" } } + ". The player uses an output Android does not expose to effects.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    if (SystemEqService.isRunning) SystemEqService.requestScanNow() else SystemEqService.start(context)
+                }) { Text("Scan now") }
+                OutlinedButton(onClick = {
+                    scope.launch {
+                        val text = withContext(Dispatchers.Default) { DiagnosticReport.build(context).take(180_000) }
+                        runCatching {
+                            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Svan diagnostic report", text))
+                        }
+                        context.startActivity(Intent.createChooser(
+                            Intent(Intent.ACTION_SEND).setType("text/plain")
+                                .putExtra(Intent.EXTRA_SUBJECT, "Svan diagnostic report").putExtra(Intent.EXTRA_TEXT, text),
+                            "Share diagnostic report",
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                }) { Text("Share diagnostic report") }
+            }
+            Text("The report is copied to your clipboard too. It lists app names, session numbers and Android's audio tables; no audio and no account data. It is only shared if you send it.",
+                style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint)
+        }
+    }
+}
+
+private fun sourceLine(st: DetectionStatus, now: Long): String {
+    val age = if (st.atMs == 0L) "no scan yet" else "scanned ${((now - st.atMs) / 1000).coerceAtLeast(0)} s ago"
+    fun mark(ok: Boolean) = if (ok) "✓" else "✗"
+    return if (!st.dumpPermission) "Android says ${st.publicActive ?: "?"} playing · $age · detection setup needed"
+    else "Player list ${mark(st.playersOk)} · Audio server ${mark(st.serverOk)} · Android says ${st.publicActive ?: "?"} playing · $age"
+}
+
+@Composable
+private fun SessionRow(s: LedgerSession, v: Verification?) {
+    val name = s.session.packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+    val state = if (s.session.state == "started" || s.serverActive == true) "playing" else "paused"
+    val route = when {
+        s.devices.contains("BLUETOOTH", true) -> "Bluetooth"
+        s.devices.contains("USB", true) -> "USB"
+        s.devices.contains("SPEAKER", true) -> "speaker"
+        s.devices.contains("WIRED", true) -> "wired"
+        else -> ""
+    }
+    val detail = listOfNotNull(
+        state, route.ifEmpty { null }, s.pathLabel.ifEmpty { null }?.let { "$it output" },
+        v?.takeIf { it != Verification.UNKNOWN }?.summary,
+    ).joinToString(" · ")
+    Column(Modifier.padding(top = 6.dp)) {
+        Text(name, style = MaterialTheme.typography.titleSmall)
+        Text(detail, style = MaterialTheme.typography.bodySmall,
+            color = if (v == Verification.PROCESSING) Svan.Gold else Svan.TextMuted)
     }
 }
