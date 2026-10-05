@@ -18,7 +18,8 @@ EQ nodes use relative movement and freeze the graph scale during a drag.
 
 Sub-tick travel is accumulated, a small deadband prevents boundary jitter, and excess motion at a
 limit is discarded so reversing responds immediately. Pointers use a damped spring without
-overshoot. Local preview is immediate; audio edits are coalesced to one per display frame and
+overshoot. Crossing touch slop starts the knob gesture without advancing several ticks at once.
+Local preview is immediate; audio edits are coalesced to one per display frame and
 the last pending edit is flushed on release/cancellation. This is touch smoothing, not a new
 audio crossfade or proof of click-free coefficient changes on every device.
 

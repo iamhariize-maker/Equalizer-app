@@ -111,7 +111,7 @@ check('horizontal slider tap advances one micro step',abs(delta-.1)<1e-6,f'{delt
 delta=band_gain('slider_drag')-band_gain('slider_tap')
 check('horizontal slider grab adjusts the existing gain relatively',.05<delta<4,f'{delta:.2f} dB')
 delta=bass('knob_sideways')-bass('knob_before')
-check('knob sideways drag makes a small precise change',.05<delta<1.5,f'{delta:.2f} dB')
+check('knob sideways drag makes a small precise change',.05<delta<1.2,f'{delta:.2f} dB')
 delta=bass('knob_rotary')-bass('knob_sideways')
 check('clockwise rim rotation changes actual knob state',1<delta<3.8,f'{delta:.2f} dB')
 check('vertical centre gesture scrolls without editing the knob',state('knob_scroll')==state('knob_rotary'),'EQ state unchanged')

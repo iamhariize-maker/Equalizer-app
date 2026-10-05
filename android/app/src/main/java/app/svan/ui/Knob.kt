@@ -110,7 +110,7 @@ fun Knob(
                             val start = down.position - centre
                             var previous = down.position
                             var kind = DialDrag.WAIT
-                            val acc = DetentAccumulator(current, min, max, step)
+                            var acc = DetentAccumulator(current, min, max, step)
                             try {
                                 while (true) {
                                     val event = awaitPointerEvent()
@@ -122,6 +122,12 @@ fun Knob(
                                         if (kind == DialDrag.WAIT) continue
                                         if (kind == DialDrag.SCROLL) break
                                         interaction.begin()
+                                        acc = DetentAccumulator(current, min, max, step)
+                                        // Crossing touch slop starts the gesture without advancing
+                                        // several ticks at once. Subsequent travel moves the dial.
+                                        previous = pointer.position
+                                        pointer.consume()
+                                        continue
                                     }
                                     val p = pointer.position - centre
                                     val old = previous - centre
