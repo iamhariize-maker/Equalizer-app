@@ -61,7 +61,7 @@ fun SvanCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
 
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
-    Text(text.uppercase(), style = MaterialTheme.typography.labelMedium, color = Svan.TextFaint,
+    Text(text.uppercase(), style = MaterialTheme.typography.labelMedium, color = Svan.TextMuted,
         modifier = modifier.padding(start = 4.dp, top = 20.dp, bottom = 8.dp))
 }
 
