@@ -66,7 +66,7 @@ $A shell cmd media_session volume --stream 3 --set "${VOLUME:-4}" >/dev/null 2>&
   || $A shell media volume --stream 3 --set "${VOLUME:-4}" >/dev/null 2>&1 || true
 
 log "T0 baseline: capturable tone, EQ flat"
-eq forget_verdicts; sleep 3
+eq forget_verdicts; eq reset_sound; sleep 3
 tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true; sleep 6
 measure "T0 one unprocessed copy (Engine A flat)"
 
@@ -248,7 +248,7 @@ tone $CAP --ez stop true; sleep 3
 # change of BALANCE: 63 Hz against 1 kHz, each measured with Svaresa resting and adapting.
 SVARESA_QUIET="--ez on true --es mode SVARESA --es night OFF --ez auto_headphone false --ez volume_aware true --ez route_aware false"
 eq engine_mode --ez system_only true; sleep 2
-eq preset; sleep 3
+eq reset_sound; sleep 3
 tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false
 wait_for "route: $CAP .*Engine A" 30; sleep 3
 eq svaramanas --ez on false; sleep 3

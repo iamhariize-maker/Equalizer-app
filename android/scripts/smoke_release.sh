@@ -19,6 +19,10 @@ tap() {
 }
 ok=1
 for t in EQ Presets Hi-Fi Lab Sound; do tap "$t" || ok=0; done
+# Exercise both automated representations in the exact R8 APK, including the new JNI fitter/guard.
+$A shell am start -n app.svan/.MainActivity --es cmd eq_control --ez auto true --ez graphic true --ei count 31 >/dev/null; sleep 3
+$A shell am start -n app.svan/.MainActivity --es cmd eq_control --ez auto true --ez graphic false >/dev/null; sleep 3
+$A shell am start -n app.svan/.MainActivity --es cmd eq_control --ez auto false >/dev/null; sleep 2
 # Exercise native code paths that R8 could break (JNI, JSON, parsing).
 $A shell am start -n app.svan/.MainActivity --es cmd preset >/dev/null; sleep 3
 $A shell am start -n app.svan/.MainActivity --es cmd bass --es preset Punchy >/dev/null; sleep 3

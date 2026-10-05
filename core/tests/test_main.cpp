@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "eqcore/analyzer.h"
+#include "eqcore/graphic_eq.h"
 #include "eqcore/autoeq.h"
 #include "eqcore/svaramanas.h"
 #include "eqcore/biquad.h"
@@ -1590,6 +1591,87 @@ TEST(engine_analyses_the_source_not_its_own_output) {
   const double in = analyse(x).loudnessLufs;
   for (size_t i = 0; i < x.size() / 2; i += 256) e.process(&x[i * 2], &x[i * 2], 256);  // in place
   CHECK_NEAR(e.analysis().loudnessLufs, in, 0.2);
+}
+
+TEST(graphic_fit_flat_is_neutral_in_all_layouts) {
+  for (int count : {10, 15, 31, 64}) {
+    auto fit = fitGraphicEq({}, count);
+    CHECK(fit.bands.size() == static_cast<size_t>(count));
+    CHECK_NEAR(fit.rmsDb, 0, 1e-8);
+    for (const auto& b : fit.bands) CHECK_NEAR(b.gainDb, 0, 1e-8);
+  }
+}
+TEST(graphic_fit_preserves_its_own_filter_response) {
+  auto base = fitGraphicEq({}, 31).bands;
+  base[5].gainDb = 3; base[13].gainDb = -2; base[25].gainDb = 2;
+  auto fit = fitGraphicEq(base, 31);
+  std::printf("    graphic roundtrip RMS=%.4f max=%.4f dB\n", fit.rmsDb, fit.maxDb);
+  CHECK(fit.rmsDb < 0.03 && fit.maxDb < 0.12);
+}
+TEST(graphic_fit_svaresa_curve_is_bounded_and_measured) {
+  std::vector<BandParams> target = {{FilterType::LowShelf,110,6,.71}, {FilterType::Peak,300,-3,1},
+    {FilterType::Peak,3500,-2,1.2}, {FilterType::HighShelf,7500,2,.71}};
+  for (int count : {10, 15, 31, 64}) {
+    const auto fit = fitGraphicEq(target, count);
+    std::printf("    Svaresa graphic %d RMS=%.3f max=%.3f dB\n", count, fit.rmsDb, fit.maxDb);
+    CHECK(fit.rmsDb < 0.65 && fit.maxDb < 2.5);
+    for (const auto& b : fit.bands) CHECK(std::isfinite(b.gainDb) && std::abs(b.gainDb) <= 12);
+    // Error metadata describes the actual filter cascade (not sampled fader values).
+    double sum = 0, peak = 0;
+    for (int i=0;i<240;++i) {
+      const double f = 20 * std::pow(1000.0, i / 239.0);
+      double err = 0;
+      for (const auto& b : target) err -= magnitudeDb(designBiquad(b,48000),f,48000);
+      for (const auto& b : fit.bands) err += magnitudeDb(designBiquad(b,48000),f,48000);
+      sum += err*err; peak=std::max(peak,std::abs(err));
+    }
+    CHECK_NEAR(fit.rmsDb,std::sqrt(sum/240),1e-7); CHECK_NEAR(fit.maxDb,peak,1e-7);
+  }
+}
+TEST(graphic_fit_level_trim_matches_the_applied_cascade) {
+  const auto source=multisine(48000,8,20000,flatShape,-24,0.5);
+  const auto heard=analyse(source);
+  auto p=sv::plan(req(sv::Feel::Warm,{sv::kVocals,sv::kStrings}),&heard);
+  const auto target=p.bands;
+  for(int count : {10,31,64}) {
+    p.bands=fitGraphicEq(target,count).bands;
+    p.predictedDeltaDb=sv::predictedGuideLoudnessDeltaDb(p.bands,p.stereo,&heard);
+    p.preampDb=std::clamp(-p.predictedDeltaDb,-18.,1.5);
+    const auto levels=measureThroughEngine(source,p);
+    const double delta=levels.second-levels.first;
+    std::printf("    fitted graphic %d full-chain loudness difference=%.3f dB\n",count,delta);
+    CHECK(std::abs(delta)<.3);
+  }
+}
+TEST(overlap_guard_bounds_the_sum_without_flattening_safe_curves) {
+  std::vector<BandParams> bands={{FilterType::Peak,1000,3,1},{FilterType::Peak,1000,3,1},{FilterType::Peak,1000,3,1}, {FilterType::Peak,500,-2,1}};
+  const double scale=positiveEqOverlapScale(bands);
+  CHECK(scale<.75 && scale>0);
+  for(auto& b:bands) if(b.gainDb>0) b.gainDb*=scale;
+  CHECK_NEAR(bands.back().gainDb,-2,1e-9);
+  ParametricEq peq(1,48000);peq.setBands(0,bands);
+  CHECK(peq.peakGainDb(0,20,20000,4096) < 6.02);
+  CHECK_NEAR(positiveEqOverlapScale({{FilterType::Peak,1000,3,1}}),1,1e-9);
+  CHECK_NEAR(positiveEqOverlapScale({{FilterType::Peak,1000,6,1},{FilterType::Peak,1000,-6,1}}),1,1e-9);
+}
+
+TEST(overlapping_eq_headroom_uses_the_combined_curve) {
+  EngineConfig cfg; cfg.gainProtection=false; cfg.oversample=2;
+  Engine e(cfg);
+  e.setBandsAllChannels({{FilterType::Peak,1000,6,.8},{FilterType::Peak,1200,6,.8},{FilterType::LowShelf,150,3,.71}});
+  CHECK(e.appliedGainDb() < -11); // greatest individual band is only +6 dB
+  CHECK(e.responseDb(0,1100)<.02);
+  CHECK(engineGainDb(e,1100,.99) < .02);
+  e.setPreampDb(-20);
+  CHECK_NEAR(e.appliedGainDb(),-20,1e-8); // don't attenuate required overlap headroom twice
+}
+
+TEST(graphic_fit_rejects_invalid_layout_and_limits_unrepresentable_curves) {
+  CHECK(fitGraphicEq({}, 0).bands.empty());
+  CHECK(fitGraphicEq({}, 128).bands.empty());
+  auto fit=fitGraphicEq({{FilterType::Peak,1000,24,12}},10);
+  CHECK(fit.maxDb > 5); // Do not pretend a narrow +24 dB filter survived a coarse layout.
+  for (const auto& b:fit.bands) CHECK(std::isfinite(b.gainDb) && std::abs(b.gainDb)<=12);
 }
 
 int main(int argc, char** argv) {

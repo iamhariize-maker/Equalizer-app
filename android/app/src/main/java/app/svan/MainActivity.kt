@@ -90,10 +90,29 @@ class MainActivity : ComponentActivity() {
             "gain_settings" -> SvanRepository.updateSettings {
                 it.copy(autoHeadroom = intent.getBooleanExtra("headroom", true), gainProtection = intent.getBooleanExtra("protection", true))
             }
-            "eq_band" -> SvanRepository.update {
+            "eq_band" -> SvanRepository.editEq {
                 it.copy(mode = app.svan.model.EqMode.PARAMETRIC, bands = listOf(app.svan.model.Band(freqHz = intent.getFloatExtra("frequency", 1000f).toDouble(), gainDb = intent.getFloatExtra("gain", 0f).toDouble())), preampDb = 0.0, tuning = null, bass = app.svan.model.BassTuner(), vocal = app.svan.model.VocalTuner(), instrument = app.svan.model.InstrumentTuner())
             }
-            "graphic_test" -> SvanRepository.update {
+            "eq_control" -> {
+                SvanRepository.setSmartEqControl(intent.getBooleanExtra("auto",true))
+                SvanRepository.setEqMode(if (intent.getBooleanExtra("graphic",false)) app.svan.model.EqMode.GRAPHIC else app.svan.model.EqMode.PARAMETRIC,
+                    intent.getIntExtra("count",31).takeIf { it in app.svan.model.GraphicLayout.COUNTS } ?: 31)
+                val state=SvanRepository.eq.value
+                EqController.log("eq control: auto=${state.smartEqControl} mode=${state.workspaceMode} appliedBands=${state.smart?.bands?.size} manualBands=${state.manualBands().size} " +
+                    "response@1kHz=%.2f dB fitRms=%.3f".format(EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0],state.smart?.graphicFitRmsDb ?: 0.0))
+            }
+            "eq_workspace" -> {
+                val s=SvanRepository.eq.value
+                val o=org.json.JSONObject().put("state",s.toJson())
+                    .put("smartBands",org.json.JSONArray().apply { s.smart?.bands?.forEach { put(it.toJson()) } })
+                    .put("appliedBands",org.json.JSONArray().apply { s.effectiveBands().forEach { put(it.toJson()) } })
+                    .put("smartPreamp",s.smart?.preampDb ?: 0.0)
+                    .put("response",EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0])
+                EqController.log("EQ_WORKSPACE $o")
+            }
+            "eq_personal_gain" -> SvanRepository.adjustSmartEq(intent.getIntExtra("index",0),intent.getFloatExtra("gain",0f).toDouble())
+            "eq_undo" -> SvanRepository.undoEq()
+            "graphic_test" -> SvanRepository.editEq {
                 it.copy(mode = app.svan.model.EqMode.GRAPHIC, graphicCount = 10,
                     graphicGains = List(10) { band -> if (band == 5) 6.0 else 0.0 }, preampDb = 0.0,
                     tuning = null, bass = app.svan.model.BassTuner(), vocal = app.svan.model.VocalTuner(), instrument = app.svan.model.InstrumentTuner())

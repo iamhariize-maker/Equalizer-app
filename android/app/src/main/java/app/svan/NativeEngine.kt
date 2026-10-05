@@ -156,6 +156,19 @@ class NativeEngine(
         @JvmStatic external fun nativeLatency(handle: Long): Int
         @JvmStatic external fun nativeSetAnalysis(handle: Long, on: Boolean)
         @JvmStatic external fun nativeAnalysis(handle: Long): DoubleArray
+        fun fitGraphic(bands: List<app.svan.model.Band>, count: Int): Fit {
+            val raw = nativeFitGraphic(DoubleArray(bands.size * 5) { i ->
+                val b = bands[i / 5]
+                when (i % 5) { 0 -> b.type.ordinal.toDouble(); 1 -> b.freqHz; 2 -> b.gainDb; 3 -> b.q; else -> if (b.enabled) 1.0 else 0.0 }
+            }, count)
+            return Fit((2 until raw.size step 4).map { i -> Band(FilterType.entries[raw[i].toInt()], raw[i+1], raw[i+2], raw[i+3]) }, raw[0], raw[1])
+        }
+        fun overlapScale(bands: List<app.svan.model.Band>): Double = nativeOverlapScale(DoubleArray(bands.size*5) { i ->
+            val b=bands[i/5]
+            when(i%5) { 0 -> b.type.ordinal.toDouble(); 1 -> b.freqHz; 2 -> b.gainDb; 3 -> b.q; else -> if(b.enabled) 1.0 else 0.0 }
+        })
+        @JvmStatic external fun nativeOverlapScale(bands: DoubleArray): Double
+        @JvmStatic external fun nativeFitGraphic(bands: DoubleArray, count: Int): DoubleArray
         @JvmStatic external fun nativeSmartLoudnessDelta(
             bands: DoubleArray, features: DoubleArray?, intimacy: Double, space: Double, instruments: Double,
         ): Double

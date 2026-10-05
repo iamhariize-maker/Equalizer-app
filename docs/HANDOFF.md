@@ -1,3 +1,35 @@
+## Extended EQ ownership — 2026-10-05 (0.5.3 preview, code 10)
+
+Owner reports 0.5.2 was successful and requests app-wide refinement, specifically usable Extended EQ
+with Svaresa directly controlling its parametric/graphic bands **by default**. They also require careful
+handling of overlap for bass, vocal and treble preferences. No permission changes or new analysis tap.
+
+Svaresa now owns the EQ workspace rather than adding its bands to a hidden manual EQ. Manual bands,
+mode, graphic count and gains remain separately stored. The upgrade/new-install migration selects
+Svaresa once; explicit manual override persists thereafter. Re-enabling Auto master from its panel
+reclaims EQ ownership. Applying a preset is an explicit manual override. Guided mode retains its
+existing taste behavior, and can use the owned workspace if entered from Auto master.
+
+Live nodes/faders are the actual applied automatic filters. Fixed-centre graphic layouts use a native
+response fitter, followed by bounded personal gain preferences, summed-response boost guard and
+level matching of the actual slewed curve. A 6 dB positive-response cap reduces only positive
+assistant gains; cuts remain intact. User tuning/bass layers remain separate, and predictive headroom
+covers their combined system EQ. This is not a guarantee against every transient/intersample overload
+or of listener preference. Capture-only analysis and system-effect limits still apply.
+
+Manual EQ: entire page scrolls, faders have 48 dp touch width and accessibility progress semantics,
+precise value entry, per-band gain steps, grouped undo and response-preserving layout conversion
+(exact graphic→parametric; bounded approximate parametric→graphic with RMS/max error exposed).
+Legacy all-bell graphic layouts retain their sound until explicitly converted; new/fitted layouts use
+shelf endpoints. No overwritten headphone correction or invented IM4 compensation.
+
+Local/CI verification details and listening limits: [EQ workspace](EQ_WORKSPACE_0.5.3.md).
+Native suite grows 73→80, JVM 74→83; existing 39 audio/routing and 10 release detection checks stay,
+plus six new measured EQ workspace checks. CI screenshot script explicitly selects GUIDED before
+guide captures (fixes the misleading prior filenames), and captures auto/manual band controls.
+Final CI and artifact checks are pending at writing; distribute only after all pass and screenshots
+are inspected. Preview signing remains unchanged for in-place updates.
+
 # Handoff — Svan (Svanam Shreshtham: Ultimate Sound)
 
 Written at the end of a long Claude Code session so another agent (Codex cloud) can continue.

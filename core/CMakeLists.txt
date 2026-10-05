@@ -20,6 +20,7 @@ option(EQCORE_BUILD_TESTS "Build eqcore unit tests and benchmark" ${EQCORE_IS_TO
 set(EQCORE_SANITIZE "" CACHE STRING "Sanitizers, e.g. address,undefined or thread")
 
 add_library(eqcore STATIC
+  src/graphic_eq.cpp
   src/biquad.cpp
   src/parametric_eq.cpp
   src/oversampler.cpp

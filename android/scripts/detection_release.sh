@@ -72,7 +72,7 @@ $A shell pm revoke app.svan android.permission.DUMP
 $A shell appops set app.svan PROJECT_MEDIA allow
 $A shell cmd media_session volume --stream 3 --set 4 >/dev/null
 $A logcat -c
-eq preset; sleep 6
+eq reset_sound; eq preset; sleep 6
 tone --ef freq 1000 --ef amp 0.25 --ez broadcast false; sleep 3
 BASE=$(level)
 tap 'Hi-Fi'; sleep 2

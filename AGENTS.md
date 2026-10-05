@@ -28,7 +28,7 @@ The fixed Shizuku DUMP grant and real audio-session detection remain available.
 ## Repo map
 | Path | What |
 |---|---|
-| `core/` | Portable C++17 DSP library `eqcore` (CMake). 73 unit tests in `core/tests/test_main.cpp` (no framework). |
+| `core/` | Portable C++17 DSP library `eqcore` (CMake). 80 unit tests in `core/tests/test_main.cpp` (no framework). |
 | `android/app/src/main/cpp/` | JNI bridge → `eqcore` |
 | `android/app/src/main/java/app/svan/` | Kotlin: engines, routing, repository, UI (Compose); `svaramanas/` = controller, dialog, bubble, QS tile |
 | `android/app/src/main/java/app/svan/ui/` | Screens (Sound, EQ, Presets, Hi-Fi, Lab), `Theme.kt` (gold palette), `Brand.kt` (boot animation, brand line, "EQ exten9ed"), `Knob.kt`, `ResponseGraph.kt` |
@@ -52,12 +52,18 @@ screenshots** — layout bugs only show there.
 
 ## Rules that matter
 1. **Don't push to `main`/other branches.** Work on the branch your session instructs (currently `ccr-f859b567-dgrdoj`; `ccr-208702a3-2mju42` is older). No new PR unless the user asks.
-2. **Never claim sound quality you haven't measured.** Every number in the UI/docs comes from a test. Real-device listening has NOT happened yet.
+2. **Never claim sound quality you haven't measured.** Every number in the UI/docs comes from a test. The owner reports successful listening on TECNO/IM4 with 0.5.2; this does not establish a complete device/player matrix.
 3. **Tests first for DSP.** New processors need a measured test (see existing ones: expected vs measured dB). Keep the audio thread allocation-free and wait-free (see `ParametricEq`, `StereoTuner`).
 4. **Design:** one gold hue on warm charcoal (`Theme.kt` tokens: Gold/Molten/Bronze; Ember ONLY for warnings; Ash for "negative" sides). Serif titles. Polished, not colourful. Don't introduce new hues.
 5. **Brand:** app name "Svan"; full name "Svanam Shreshtham: Ultimate Sound"; EQ screen title is "EQ exten9ed" (the first "d" is a vertically flipped d = a 9; screen readers say "EQ Extended"). Every screen carries the SVANAM SHRESHTHAM brand line.
 6. **Licences:** do NOT copy GPL code (RootlessJamesDSP/JamesDSP are GPL — read-only reference only). AutoEq data/targets are MIT; icon glyphs are SIL OFL (attribution in README). App licence is **not chosen yet** — ask the user.
 7. **Git:** commit messages end with the Co-Authored-By/Claude-Session lines used in `git log`. Use `git -c user.name=iamhariize-maker -c user.email=iamhariize@gmail.com`.
+
+Owner decision (5 October 2026, EQ follow-up): Svaresa controls Extended EQ by default and is
+recommended. Preserve the separate manual curve/layout, expose the real applied automatic bands,
+and check the combined response instead of independently stacking boosts. Adjacent filters may
+intentionally overlap; never claim overlap-free processing or guaranteed listener preference.
+See `docs/EQ_WORKSPACE_0.5.3.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
 1. Verify on the next CI screenshots: boot name fits on one line with margins; the flipped **d** reads as a 9 (not "q"); the स्व icon on the Android 12+ splash.

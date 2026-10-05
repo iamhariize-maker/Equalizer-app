@@ -1,3 +1,12 @@
+## Latest owner priority — 5 October 2026, Extended EQ
+
+After reporting success with 0.5.2 on the IM4, the owner says Extended EQ is not usable enough.
+Make Svaresa its default/recommended controller with direct control of parametric/graphic EQ,
+while preserving an explicit manual override. Avoid uncontrolled overlap throughout the combined
+path; intentional adjacent-band overlap is necessary for smooth responses and must be checked
+as a summed curve. Quality and listening preference remain the goal, not louder output.
+Implementation and limits: [0.5.3 EQ workspace](EQ_WORKSPACE_0.5.3.md).
+
 # Codex handoff — the Svan vision: sonic brilliance, unbreakable detection, a brain that earns its name
 
 Fresh session? Read in this order: `AGENTS.md` → this file → `docs/HANDOFF.md` (0.5.2 section = newest truth) →

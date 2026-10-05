@@ -6,6 +6,7 @@
 
 #include "eqcore/autoeq.h"
 #include "eqcore/engine.h"
+#include "eqcore/graphic_eq.h"
 #include "eqcore/svaramanas.h"
 #include "eqcore/tuning.h"
 
@@ -313,6 +314,33 @@ JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeSmartLoudnessDelta(
   }
   const StereoTunerParams stereo{intimacy, 0, 0, space, instruments};
   return svaramanas::predictedGuideLoudnessDeltaDb(bs, stereo, f.valid ? &f : nullptr);
+}
+
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeOverlapScale(JNIEnv* env, jclass, jdoubleArray bands) {
+  const jsize n=env->GetArrayLength(bands);
+  std::vector<jdouble> raw(static_cast<size_t>(n));env->GetDoubleArrayRegion(bands,0,n,raw.data());
+  std::vector<BandParams> bs;
+  for(jsize i=0;i+4<n;i+=5) {
+    if (!std::isfinite(raw[i]) || raw[i]<0 || raw[i]>static_cast<int>(FilterType::AllPass)) continue;
+    bs.push_back({static_cast<FilterType>(static_cast<int>(raw[i])),raw[i+1],raw[i+2],raw[i+3],raw[i+4]!=0});
+  }
+  return positiveEqOverlapScale(bs);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeFitGraphic(JNIEnv* env, jclass, jdoubleArray bands, jint count) {
+  const jsize n=env->GetArrayLength(bands);
+  std::vector<jdouble> raw(static_cast<size_t>(n));
+  env->GetDoubleArrayRegion(bands,0,n,raw.data());
+  std::vector<BandParams> bs;
+  for(jsize i=0;i+4<n;i+=5) {
+    if (!std::isfinite(raw[i]) || raw[i]<0 || raw[i]>static_cast<int>(FilterType::AllPass)) continue;
+    bs.push_back({static_cast<FilterType>(static_cast<int>(raw[i])),raw[i+1],raw[i+2],raw[i+3],raw[i+4]!=0});
+  }
+  const auto fit=fitGraphicEq(bs,count);
+  std::vector<jdouble> out{fit.rmsDb,fit.maxDb};
+  for(const auto& b:fit.bands) { out.push_back(static_cast<int>(b.type)); out.push_back(b.freqHz); out.push_back(b.gainDb); out.push_back(b.q); }
+  auto r=env->NewDoubleArray(static_cast<jsize>(out.size()));
+  env->SetDoubleArrayRegion(r,0,static_cast<jsize>(out.size()),out.data()); return r;
 }
 
 JNIEXPORT jint JNICALL Java_app_svan_NativeEngine_nativeLatency(JNIEnv*, jclass, jlong h) {

@@ -28,6 +28,12 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.material.icons.automirrored.outlined.Undo
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import app.svan.svaramanas.Svaramanas
+import app.svan.svaramanas.SvaramanasActivity
+import app.svan.model.EqState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,27 +77,54 @@ fun EqScreen(onOpenDetection: () -> Unit = {}) {
     val eq by SvanRepository.eq.collectAsState()
     val settings by SvanRepository.settings.collectAsState()
     val detection by DetectionSetup.state.collectAsState()
+    val undo by SvanRepository.eqUndo.collectAsState()
+    val request by Svaramanas.request.collectAsState()
+    val heard by Svaramanas.heard.collectAsState()
+    val listening by Svaramanas.listening.collectAsState()
+    val context = LocalContext.current
+    var conversion by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableIntStateOf(0) }
-    if (selected >= eq.bands.size) selected = eq.bands.size - 1
+
 
     // The engine already holds this state (SvanRepository applies it synchronously).
     val curve = remember(eq) { EqController.curveEngine.curveDb(CURVE_FREQS) }
-    val displayBands = if (eq.mode == EqMode.PARAMETRIC) eq.bands else GraphicLayout.bands(eq.graphicCount, eq.graphicGains)
+    val displayBands = if (eq.smartEqControl) eq.smart?.bands ?: emptyList() else eq.manualBands()
+    if (selected >= displayBands.size) selected = (displayBands.size - 1).coerceAtLeast(0)
+    fun changeMode(mode: EqMode, count: Int = eq.workspaceGraphicCount) {
+        val fit=SvanRepository.setEqMode(mode,count)
+        conversion=fit?.let { "Curve fitted · %.2f dB RMS · %.2f dB maximum difference. Undo restores the original.".format(it.rmsErrorDb,it.maxErrorDb) }
+    }
     val headroom = max(0.0, (curve.maxOrNull() ?: 0.0) + eq.effectivePreampDb())
     val appliedGain = remember(eq, settings) { EqController.curveEngine.appliedGainDb }
 
-    Column(Modifier.fillMaxSize()) {
-        Header(eq.enabled, eq.presetName, settings.quality.title) { SvanRepository.update { it.copy(enabled = !it.enabled) } }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Header(eq.enabled, if (eq.smartEqControl) "${request.mode.sanskritName} · ${request.mode.plainName}" else eq.presetName, settings.quality.title) { SvanRepository.update { it.copy(enabled = !it.enabled) } }
         if (detection.stage != DetectionSetup.Stage.READY) {
             TextButton(onClick = onOpenDetection, modifier = Modifier.fillMaxWidth()) { Text("Music not detected? Set up in Hi-Fi") }
         }
 
-        // Graph stays pinned while the controls scroll.
+        Row(Modifier.fillMaxWidth().padding(horizontal=12.dp), horizontalArrangement=Arrangement.spacedBy(8.dp), verticalAlignment=Alignment.CenterVertically) {
+            Pill(if (eq.smartEqControl && request.mode == app.svan.svaramanas.SmartMode.GUIDED) "Guide EQ" else "Svaresa EQ", eq.smartEqControl, { SvanRepository.setSmartEqControl(true); conversion=null })
+            Pill("Your EQ", !eq.smartEqControl, { SvanRepository.setSmartEqControl(false); conversion=null })
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick={SvanRepository.undoEq(); conversion=null}, enabled=undo.isNotEmpty() && !eq.smartEqControl) {
+                Icon(Icons.AutoMirrored.Outlined.Undo,"Undo EQ edit",tint=if(undo.isNotEmpty() && !eq.smartEqControl) Svan.Gold else Svan.TextFaint)
+            }
+        }
+        Text(if (eq.smartEqControl) {
+            if (listening && heard?.valid == true) "Recommended · adapting to measured music and listening context"
+            else if (request.mode == app.svan.svaramanas.SmartMode.SVARESA) "Recommended · output, volume & night control; live music analysis unavailable"
+            else "Sound guide · your chosen focus; live music analysis unavailable"
+        } else "Your manual curve · tap a value for precise entry · undo restores edits",
+            style=MaterialTheme.typography.bodySmall, color=Svan.TextMuted,
+            modifier=Modifier.padding(horizontal=16.dp,vertical=6.dp))
+
+        // Graph scrolls with the controls so the editor remains usable on small phones.
         Box(
             Modifier
                 .padding(horizontal = 12.dp)
                 .fillMaxWidth()
-                .height(250.dp)
+                .height(if (LocalConfiguration.current.screenHeightDp < 700) 185.dp else 220.dp)
                 .clip(RoundedCornerShape(22.dp))
                 .background(Brush.verticalGradient(listOf(Svan.Surface, Svan.Black)))
                 .border(1.dp, Svan.Grid, RoundedCornerShape(22.dp)),
@@ -99,24 +132,29 @@ fun EqScreen(onOpenDetection: () -> Unit = {}) {
             ResponseGraph(
                 bands = displayBands,
                 curveDb = curve,
-                selected = if (eq.mode == EqMode.PARAMETRIC) selected else -1,
+                selected = if (eq.workspaceMode == EqMode.PARAMETRIC) selected else -1,
                 enabled = eq.enabled,
-                editable = eq.mode == EqMode.PARAMETRIC,
+                editable = eq.workspaceMode == EqMode.PARAMETRIC,
+                allowAddDelete = !eq.smartEqControl,
+                moveFrequency = !eq.smartEqControl,
                 onSelect = { selected = it },
-                onMove = { i, f, g -> SvanRepository.update { s -> s.copy(bands = s.bands.replace(i) { it.copy(freqHz = f, gainDb = g) }, presetName = "Custom") } },
+                onMove = { i, f, g ->
+                    if (eq.smartEqControl) SvanRepository.adjustSmartEq(i,g)
+                    else SvanRepository.editEq { s -> s.copy(bands=s.bands.replace(i) { it.copy(freqHz=f,gainDb=g) },presetName="Custom") }
+                },
                 onAdd = { f, g ->
-                    if (eq.bands.size < MAX_BANDS) {
-                        SvanRepository.update { s -> s.copy(bands = s.bands + Band(FilterType.PEAK, f, g, 1.0), presetName = "Custom") }
+                    if (!eq.smartEqControl && eq.bands.size < MAX_BANDS) {
+                        SvanRepository.editEq { s -> s.copy(bands = s.bands + Band(FilterType.PEAK, f, g, 1.0), presetName = "Custom") }
                         selected = eq.bands.size
                     }
                 },
                 onDelete = { i ->
-                    SvanRepository.update { s -> s.copy(bands = s.bands.filterIndexed { j, _ -> j != i }, presetName = "Custom") }
+                    SvanRepository.editEq { s -> s.copy(bands = s.bands.filterIndexed { j, _ -> j != i }, presetName = "Custom") }
                     selected = (i - 1).coerceAtLeast(0)
                 },
                 modifier = Modifier.fillMaxSize(),
             )
-            if (eq.mode == EqMode.PARAMETRIC && eq.bands.size <= 5 && eq.bands.all { it.gainDb == 0.0 }) {
+            if (!eq.smartEqControl && eq.workspaceMode == EqMode.PARAMETRIC && eq.bands.size <= 5 && eq.bands.all { it.gainDb == 0.0 }) {
                 Text("Drag a node · tap empty space to add · long-press to remove",
                     style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint,
                     modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp))
@@ -124,24 +162,38 @@ fun EqScreen(onOpenDetection: () -> Unit = {}) {
         }
 
         Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         ) {
             Spacer(Modifier.height(12.dp))
+            Text("Graph: combined EQ response · includes headphone and bass layers · excludes preamp",style=MaterialTheme.typography.bodySmall,color=Svan.TextFaint)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Pill("Parametric", eq.mode == EqMode.PARAMETRIC, { SvanRepository.update { it.copy(mode = EqMode.PARAMETRIC) } })
+                Pill("Parametric", eq.workspaceMode == EqMode.PARAMETRIC, { changeMode(EqMode.PARAMETRIC) })
                 Spacer(Modifier.width(8.dp))
-                Pill("Graphic", eq.mode == EqMode.GRAPHIC, { SvanRepository.update { it.copy(mode = EqMode.GRAPHIC) } })
+                Pill("Graphic", eq.workspaceMode == EqMode.GRAPHIC, { changeMode(EqMode.GRAPHIC) })
             }
 
-            AnimatedContent(eq.mode, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "mode") { mode ->
+            if (eq.smartEqControl) {
+                Row(verticalAlignment=Alignment.CenterVertically) {
+                    TextButton(onClick={SvaramanasActivity.open(context)}) { Text("Master settings") }
+                    TextButton(onClick={SvanRepository.resetSmartEqOffsets()}) { Text("Reset preferences") }
+                }
+                Text("${request.mode.sanskritName} chooses frequency, width and gain. Adjust gain for your preference (±3 dB); adaptation continues. Your manual curve stays saved.",
+                    style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted)
+                if ((eq.smart?.overlapScale ?: 1.0) < 0.99) Text("Svaresa’s shared boosts reduced to keep its summed EQ emphasis within 6 dB.",style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted)
+                eq.smart?.graphicFitRmsDb?.let { rms ->
+                    Text("Layout fit before preferences · %.2f dB RMS · %.2f dB maximum difference".format(rms,eq.smart?.graphicFitMaxDb ?: 0.0),
+                        style=MaterialTheme.typography.bodySmall,color=Svan.TextFaint)
+                }
+            }
+            conversion?.let { Text(it,style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted,modifier=Modifier.padding(vertical=8.dp)) }
+
+            AnimatedContent(eq.workspaceMode, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "mode") { mode ->
                 Column {
                     if (mode == EqMode.PARAMETRIC) {
-                        ParametricControls(eq.bands, selected, onSelect = { selected = it })
+                        if (eq.smartEqControl) AutoParametricControls(displayBands,selected) { selected=it }
+                        else ParametricControls(eq.bands, selected, onSelect = { selected = it })
                     } else {
-                        GraphicControls(eq.graphicCount, eq.graphicGains)
+                        GraphicControls(eq.workspaceGraphicCount, if (eq.smartEqControl) displayBands.map { it.gainDb } else eq.graphicGains, eq.smartEqControl) { changeMode(EqMode.GRAPHIC,it) }
                     }
                 }
             }
@@ -152,7 +204,7 @@ fun EqScreen(onOpenDetection: () -> Unit = {}) {
                     ValueSlider(
                         "Preamp", eq.preampDb, ::formatDb,
                         toSlider = { ((it + 24) / 30).toFloat() }, fromSlider = { Math.round((it * 30 - 24) * 10) / 10.0 },
-                        onChange = { v -> SvanRepository.update { it.copy(preampDb = v) } },
+                        onChange = { v -> SvanRepository.editEq { it.copy(preampDb = v) } },
                         entryRange = -24.0..6.0, entryUnit = "dB",
                     )
                     val hr = if (settings.autoHeadroom) "System preamp ${formatDb(appliedGain)} · includes required headroom"
@@ -265,7 +317,7 @@ private fun ParametricControls(bands: List<Band>, selected: Int, onSelect: (Int)
                         // New band halfway (log) between the selected band and the next one up.
                         val base = bands.getOrNull(selected)?.freqHz ?: 1000.0
                         val f = (base * 1.6).coerceAtMost(18000.0)
-                        SvanRepository.update { s -> s.copy(bands = s.bands + Band(FilterType.PEAK, f, 0.0, 1.0), presetName = "Custom") }
+                        SvanRepository.editEq { s -> s.copy(bands = s.bands + Band(FilterType.PEAK, f, 0.0, 1.0), presetName = "Custom") }
                         onSelect(bands.size)
                     }
                     .padding(horizontal = 12.dp, vertical = 7.dp),
@@ -282,11 +334,11 @@ private fun ParametricControls(bands: List<Band>, selected: Int, onSelect: (Int)
                 Spacer(Modifier.weight(1f))
                 Switch(
                     checked = band.enabled,
-                    onCheckedChange = { on -> SvanRepository.update { s -> s.copy(bands = s.bands.replace(selected) { it.copy(enabled = on) }) } },
+                    onCheckedChange = { on -> SvanRepository.editEq { s -> s.copy(bands = s.bands.replace(selected) { it.copy(enabled = on) }) } },
                     colors = SwitchDefaults.colors(checkedTrackColor = Svan.Gold, checkedThumbColor = Svan.Black, uncheckedTrackColor = Svan.SurfaceHigher),
                 )
                 IconButton(onClick = {
-                    SvanRepository.update { s -> s.copy(bands = s.bands.filterIndexed { j, _ -> j != selected }, presetName = "Custom") }
+                    SvanRepository.editEq { s -> s.copy(bands = s.bands.filterIndexed { j, _ -> j != selected }, presetName = "Custom") }
                     onSelect((selected - 1).coerceAtLeast(0))
                 }) { Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete band", tint = Svan.TextMuted) }
             }
@@ -294,7 +346,7 @@ private fun ParametricControls(bands: List<Band>, selected: Int, onSelect: (Int)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterType.entries.forEach { t ->
                     Pill(Svan.typeShort(t), band.type == t, accent = Svan.typeColor(t), onClick = {
-                        SvanRepository.update { s -> s.copy(bands = s.bands.replace(selected) { it.copy(type = t) }, presetName = "Custom") }
+                        SvanRepository.editEq { s -> s.copy(bands = s.bands.replace(selected) { it.copy(type = t) }, presetName = "Custom") }
                     })
                 }
             }
@@ -303,20 +355,25 @@ private fun ParametricControls(bands: List<Band>, selected: Int, onSelect: (Int)
                 "Frequency", band.freqHz, ::formatHz,
                 toSlider = { (ln(it / 20.0) / ln(1000.0)).toFloat() },
                 fromSlider = { roundHz(20.0 * 1000.0.pow(it.toDouble())) },
-                onChange = { f -> SvanRepository.update { s -> s.copy(bands = s.bands.replace(selected) { it.copy(freqHz = f) }, presetName = "Custom") } },
+                onChange = { f -> SvanRepository.editEq { s -> s.copy(bands = s.bands.replace(selected) { it.copy(freqHz = f) }, presetName = "Custom") } },
                 accent = Svan.typeColor(band.type), entryRange = 10.0..22000.0, entryUnit = "Hz",
             )
             ValueSlider(
                 "Gain", band.gainDb, ::formatDb,
                 toSlider = { ((it + 24) / 48).toFloat() }, fromSlider = { Math.round((it * 48 - 24) * 10) / 10.0 },
-                onChange = { g -> SvanRepository.update { s -> s.copy(bands = s.bands.replace(selected) { it.copy(gainDb = g) }, presetName = "Custom") } },
+                onChange = { g -> SvanRepository.editEq { s -> s.copy(bands = s.bands.replace(selected) { it.copy(gainDb = g) }, presetName = "Custom") } },
                 enabled = band.hasGain, accent = Svan.typeColor(band.type), entryRange = -24.0..24.0, entryUnit = "dB",
             )
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick={SvanRepository.editEq { s -> s.copy(bands=s.bands.replace(selected) { it.copy(gainDb=(it.gainDb-0.5).coerceAtLeast(-24.0)) },presetName="Custom") }}, enabled=band.hasGain) { Text("−0.5 dB") }
+                TextButton(onClick={SvanRepository.editEq { s -> s.copy(bands=s.bands.replace(selected) { it.copy(gainDb=0.0) },presetName="Custom") }}, enabled=band.hasGain) { Text("Zero") }
+                TextButton(onClick={SvanRepository.editEq { s -> s.copy(bands=s.bands.replace(selected) { it.copy(gainDb=(it.gainDb+0.5).coerceAtMost(24.0)) },presetName="Custom") }}, enabled=band.hasGain) { Text("+0.5 dB") }
+            }
             ValueSlider(
                 "Q", band.q, { "%.2f".format(it) },
                 toSlider = { (ln(it / 0.1) / ln(200.0)).toFloat() },
                 fromSlider = { Math.round(0.1 * 200.0.pow(it.toDouble()) * 100) / 100.0 },
-                onChange = { q -> SvanRepository.update { s -> s.copy(bands = s.bands.replace(selected) { it.copy(q = q) }, presetName = "Custom") } },
+                onChange = { q -> SvanRepository.editEq { s -> s.copy(bands = s.bands.replace(selected) { it.copy(q = q) }, presetName = "Custom") } },
                 accent = Svan.typeColor(band.type), entryRange = 0.1..20.0,
             )
             Text(bandwidthHint(band), style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
@@ -325,57 +382,73 @@ private fun ParametricControls(bands: List<Band>, selected: Int, onSelect: (Int)
 }
 
 @Composable
-private fun GraphicControls(count: Int, gains: List<Double>) {
+private fun AutoParametricControls(bands: List<Band>, selected: Int, onSelect: (Int) -> Unit) {
+    SectionLabel("Live bands · ${bands.size}")
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+        bands.forEachIndexed { i,b -> Pill("${i+1} ${shortHz(b.freqHz)} ${formatDb(b.gainDb)}",i==selected,{onSelect(i)}) }
+    }
+    val band=bands.getOrNull(selected) ?: return
+    SvanCard {
+        Column {
+            Text("${Svan.typeShort(band.type)} · ${formatHz(band.freqHz)} · Q %.2f".format(band.q),style=MaterialTheme.typography.titleMedium,color=Svan.Text)
+            Text("Frequency and width follow Svaresa. Drag vertically or adjust gain below.",style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted)
+            ValueSlider("Applied gain",band.gainDb,::formatDb,
+                toSlider={((it+12)/24).toFloat()},fromSlider={Math.round((it*24-12)*10)/10.0},
+                onChange={SvanRepository.adjustSmartEq(selected,it)},entryRange=-12.0..12.0,entryUnit="dB")
+            TextButton(onClick={SvanRepository.resetSmartEqOffset(selected)}) { Text("Restore automatic gain") }
+        }
+    }
+}
+
+@Composable
+private fun GraphicControls(count: Int, gains: List<Double>, automatic: Boolean, onCount: (Int) -> Unit) {
+    var entry by remember { mutableIntStateOf(-1) }
     SectionLabel("Graphic EQ")
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         GraphicLayout.COUNTS.forEach { n ->
             Pill("$n", count == n, {
-                SvanRepository.update { s -> s.copy(graphicCount = n, graphicGains = resample(s.graphicGains, s.graphicCount, n), presetName = "Custom") }
+                onCount(n)
             })
         }
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = { SvanRepository.update { it.copy(graphicGains = List(it.graphicCount) { 0.0 }) } }) {
+        IconButton(onClick = { if (automatic) SvanRepository.resetSmartEqOffsets() else SvanRepository.editEq { it.copy(graphicGains = List(it.graphicCount) { 0.0 }) } }) {
             Icon(Icons.Outlined.RestartAlt, contentDescription = "Reset all", tint = Svan.TextMuted)
         }
     }
     Spacer(Modifier.height(8.dp))
     SvanCard {
         val centers = GraphicLayout.centers(count)
-        val wide = count > 15
         Row(
-            if (wide) Modifier.horizontalScroll(rememberScrollState()) else Modifier.fillMaxWidth(),
-            horizontalArrangement = if (wide) Arrangement.spacedBy(2.dp) else Arrangement.SpaceBetween,
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             centers.forEachIndexed { i, f ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("%+.1f".format(gains[i]).replace("+0.0", "0"), style = MaterialTheme.typography.labelSmall,
-                        color = if (gains[i] == 0.0) Svan.TextFaint else Svan.Text, textAlign = TextAlign.Center)
+                    val gain=gains.getOrElse(i) { 0.0 }
+                    Text("%+.1f".format(gain).replace("+0.0", "0"), style = MaterialTheme.typography.labelSmall,
+                        color = if (gain == 0.0) Svan.TextFaint else Svan.Text, textAlign = TextAlign.Center, modifier=Modifier.clickable { entry=i }.padding(vertical=8.dp))
                     VerticalFader(
-                        value = gains[i], range = 12.0,
-                        onChange = { v -> SvanRepository.update { s -> s.copy(graphicGains = s.graphicGains.replace(i) { v }, presetName = "Custom") } },
+                        value = gain, range = 12.0,
+                        label="${formatHz(f)} gain",
+                        onReset={if (automatic) SvanRepository.resetSmartEqOffset(i) else SvanRepository.editEq { s -> s.copy(graphicGains=s.graphicGains.replace(i) { 0.0 },presetName="Custom") }},
+                        onChange = { v -> if (automatic) SvanRepository.adjustSmartEq(i,v) else SvanRepository.editEq { s -> s.copy(graphicGains = s.graphicGains.replace(i) { v }, presetName = "Custom") } },
                         modifier = Modifier.height(200.dp),
-                        width = if (wide) 30.dp else 28.dp,
+                        width = 48.dp,
                     )
                     Text(GraphicLayout.label(f), style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
                 }
             }
         }
     }
-    Text("Double-tap a fader to reset it. Q = %.2f per band.".format(GraphicLayout.q(count)),
+    if (entry >= 0) NumberEntryDialog("${formatHz(GraphicLayout.centers(count)[entry])} gain", gains.getOrElse(entry) { 0.0 }, -12.0..12.0, "dB", { entry=-1 }) { v ->
+        if (automatic) SvanRepository.adjustSmartEq(entry,v) else SvanRepository.editEq { s -> s.copy(graphicGains=s.graphicGains.replace(entry) { v },presetName="Custom") }
+        entry=-1
+    }
+    Text(if (automatic) "Swipe for more bands · double-tap to restore Svaresa's gain." else "Swipe for more bands · tap gain to enter a value · double-tap to reset.",
         style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
 }
 
 private fun <T> List<T>.replace(i: Int, f: (T) -> T): List<T> = mapIndexed { j, v -> if (j == i) f(v) else v }
-
-/** Keeps the shape of a graphic curve when switching band counts. */
-private fun resample(gains: List<Double>, from: Int, to: Int): List<Double> {
-    if (from == to) return gains
-    val src = GraphicLayout.centers(from)
-    return GraphicLayout.centers(to).map { f ->
-        val j = src.indices.minBy { kotlin.math.abs(ln(src[it] / f)) }
-        gains.getOrElse(j) { 0.0 }
-    }
-}
 
 private fun roundHz(f: Double): Double = when {
     f < 100 -> Math.round(f).toDouble()

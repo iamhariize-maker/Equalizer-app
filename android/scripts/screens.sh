@@ -56,9 +56,17 @@ else
   echo "FAIL sound scroll changed EQ settings" > "$OUT/interaction.txt"
 fi
 cat "$OUT/interaction.txt"
+$A shell am start -n app.svan/.MainActivity --es cmd reset_sound >/dev/null
+$A shell am start -n app.svan/.MainActivity --es cmd eq_control --ez auto true >/dev/null
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on true --es mode SVARESA --es night OFF --ez auto_headphone false >/dev/null
 tap_text "EQ" && shot 1-eq
-tap_text "Graphic" && shot 2-eq-graphic
-tap_text "Parametric"
+swipe_up; shot 1b-eq-live-bands
+$A shell am start -n app.svan/.MainActivity --es cmd eq_control --ez auto true --ez graphic true --ei count 31 >/dev/null
+shot 2-eq-graphic
+swipe_up; shot 2b-eq-graphic-faders
+$A shell am start -n app.svan/.MainActivity --es cmd eq_control --ez auto false >/dev/null
+tap_text "Sound"; tap_text "EQ"; shot 2c-eq-manual
+swipe_up; shot 2d-eq-manual-controls
 tap_text "Presets" && shot 3-presets
 tap_text "Hi-Fi" && shot 4-hifi
 swipe_up; shot 4b-hifi-apps
@@ -69,7 +77,7 @@ swipe_up; shot 4f-hifi-resolution
 tap_text "Lab" && shot 5-lab
 tap_text "EQ"
 # Svaramanas: the dialog over the app with a real request, scrolled through.
-$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on true --es feel WARM --es picks VOCALS,STRINGS,BASS >/dev/null
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on true --es mode GUIDED --es feel WARM --es picks VOCALS,STRINGS,BASS >/dev/null
 sleep 2
 $A shell am start -n app.svan/.MainActivity --es cmd svaramanas_panel >/dev/null
 shot 6-svaramanas

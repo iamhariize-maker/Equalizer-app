@@ -308,3 +308,10 @@ and Shizuku's fixed DUMP grant remain. Svaresa's Engine A analysis tap is still 
   output queue is not end-to-end Bluetooth latency.
 - App licence still undecided (ask the user).
 - Name/brand: always "Svaramanas" (never "SvanMind"); gold design system, no new hues.
+
+## Extended EQ control (0.5.3)
+
+Svaresa now defaults to owning Extended EQ, with live parametric or actually fitted graphic bands,
+bounded listener gain preferences, summed-response boost checks and matching of applied filters.
+Manual curves and layouts are kept separately. See [EQ workspace](EQ_WORKSPACE_0.5.3.md) for
+measured conversion cases, migration/override behavior, UI improvements and engine limits.

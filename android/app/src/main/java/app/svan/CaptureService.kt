@@ -292,7 +292,7 @@ class CaptureService : Service() {
             autoHeadroom = s.autoHeadroom,
             gainProtection = s.gainProtection,
         ).also {
-            it.setAnalysis(true) // Svaramanas listens to the source (cheap: one FFT per 85 ms)
+            it.setAnalysis(true) // Svaramanas listens to the source (preallocated mid/side analysis every 85 ms)
             applyEq(it, SvanRepository.eq.value)
         }
 

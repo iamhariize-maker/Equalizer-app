@@ -217,6 +217,8 @@ object Svaramanas {
     /** UI thread. */
     fun update(transform: (SmartRequest) -> SmartRequest) {
         val next = transform(_request.value)
+        if (next.enabled && next.mode == SmartMode.SVARESA && !SvanRepository.eq.value.smartEqControl)
+            SvanRepository.update { it.copy(smartEqControl=true) }
         _request.value = next
         if (initialized) prefs.edit().putString("request", next.toJson().toString()).apply()
         recompute(immediate = true)
@@ -227,6 +229,13 @@ object Svaramanas {
         if (SvanRepository.eq.value.smartBypass != on) SvanRepository.update { it.copy(smartBypass = on) }
     }
 
+    fun refreshEq() { if (initialized) recompute(immediate = true) }
+    private var fitInput: List<Band>? = null
+    private var fitCount = 0
+    private var cachedFit: NativeEngine.Companion.Fit? = null
+    private var guardInput: List<Band>? = null
+    private var guardScale = 1.0
+
     /** Main thread. */
     private fun recompute(immediate: Boolean) {
         val r = _request.value
@@ -234,7 +243,7 @@ object Svaramanas {
             _plan.value = null
             _context.value = null
             _listening.value = CaptureService.isRunning
-            if (SvanRepository.eq.value.smart != null) SvanRepository.update { it.copy(smart = null, smartBypass = false) }
+            if (SvanRepository.eq.value.smart != null || SvanRepository.eq.value.smartEqControl) SvanRepository.update { it.copy(smart = null, smartBypass = false, smartEqControl=false) }
             if (immediate) EqController.curveEngine.responseDb(doubleArrayOf(63.0, 1000.0)).let { c ->
                 EqController.log("svaramanas: resting response@63Hz=%.2f dB response@1kHz=%.2f dB".format(c[0], c[1]))
             }
@@ -254,9 +263,31 @@ object Svaramanas {
         if (r.mode == SmartMode.SVARESA) AutoHeadphone.check(appContext, r)
         val ctx = if (r.mode == SmartMode.SVARESA) SvaresaBrain.layer(SvaresaSensors.read(appContext, r)) else null
         _context.value = ctx
-        val target = p.toLayer(ctx)
+        val eq = SvanRepository.eq.value
+        var target = p.toLayer(ctx)
+        if (eq.smartEqControl && eq.smartEqMode == app.svan.model.EqMode.GRAPHIC) {
+            if (fitInput != target.bands || fitCount != eq.smartGraphicCount) {
+                fitInput=target.bands; fitCount=eq.smartGraphicCount
+                cachedFit=NativeEngine.fitGraphic(target.bands,eq.smartGraphicCount)
+            }
+            val fit=cachedFit!!
+            target=target.copy(bands=fit.bands.map { Band(it.type,it.freqHz,it.gainDb,it.q,it.enabled) },
+                graphicFitRmsDb=fit.rmsErrorDb, graphicFitMaxDb=fit.maxErrorDb)
+        }
+        if (eq.smartEqControl) {
+            val personalized=eq.personalizeSmartBands(target.bands)
+            if (guardInput != personalized) {
+                guardInput=personalized
+                guardScale=NativeEngine.overlapScale(personalized)
+            }
+            target=target.copy(bands=personalized.map { if(it.gainDb>0) it.copy(gainDb=it.gainDb*guardScale) else it },overlapScale=guardScale)
+        }
         val prev = SvanRepository.eq.value.smart
-        val drifted = if (immediate || prev == null) target else slew(prev, target)
+        var drifted = if (immediate || prev == null) target else slew(prev, target)
+        if (eq.smartEqControl && drifted.bands != target.bands) {
+            val scale=NativeEngine.overlapScale(drifted.bands)
+            drifted=drifted.copy(bands=drifted.bands.map { if(it.gainDb>0) it.copy(gainDb=it.gainDb*scale) else it },overlapScale=minOf(target.overlapScale,scale))
+        }
         // Match the bands actually applied after slewing, including quiet/night
         // context. Separate preamp estimates cannot account for stacked filters.
         val bands = DoubleArray(drifted.bands.size * 5) { i ->
@@ -266,7 +297,7 @@ object Svaramanas {
         val delta = NativeEngine.nativeSmartLoudnessDelta(bands, packed?.takeIf { heard?.valid == true },
             drifted.intimacy, drifted.space, drifted.instruments)
         val next = drifted.copy(preampDb = (-delta).coerceIn(-18.0, 1.5))
-        val applied = p.copy(preampDb = next.preampDb, predictedDeltaDb = delta,
+        val applied = p.copy(bands = if (!eq.smartEqControl || eq.smartEqMode == app.svan.model.EqMode.PARAMETRIC) next.bands.take(p.bands.size) else p.bands, preampDb = next.preampDb, predictedDeltaDb = delta,
             notes = if (abs(delta) > 0.05 && 30 !in p.notes) p.notes + 30 else p.notes)
         _plan.value = applied
         if (next != prev) SvanRepository.update { it.copy(smart = next) }
@@ -282,7 +313,7 @@ object Svaramanas {
         // The measured plan drifts slowly (0.5 dB / 3 s). The context layer (the last bands) answers a volume
         // change or a route switch within a few seconds, since the listener caused it.
         val contextStart = to.bands.size - ContextLayer.BAND_COUNT
-        val hasContext = to.levelling != null && contextStart >= 0
+        val hasContext = to.levelling != null && contextStart >= 0 && to.graphicFitRmsDb == null
         return to.copy(
             bands = from.bands.zip(to.bands).mapIndexed { i, (a, b) ->
                 b.copy(gainDb = step(a.gainDb, b.gainDb, if (hasContext && i >= contextStart) CONTEXT_SLEW_DB else SLEW_DB))

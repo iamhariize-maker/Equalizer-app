@@ -35,6 +35,11 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -258,21 +263,32 @@ fun VerticalFader(
     range: Double,
     onChange: (Double) -> Unit,
     modifier: Modifier = Modifier,
-    width: Dp = 28.dp,
+    width: Dp = 48.dp,
+    label: String = "EQ gain",
+    onReset: (() -> Unit)? = null,
     enabled: Boolean = true,
 ) {
     val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(value)
+    val changeGain by rememberUpdatedState(onChange)
+    val reset by rememberUpdatedState(onReset)
     Canvas(
         modifier
             .width(width)
-            .pointerInput(range) {
+            .semantics {
+                contentDescription = "$label, ${formatDb(value)}"
+                progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), -range.toFloat()..range.toFloat(), (range * 4).toInt() - 1)
+                setProgress { if (enabled) { changeGain(Math.round(it.coerceIn(-range.toFloat(),range.toFloat()) * 2) / 2.0); true } else false }
+            }
+            .pointerInput(range, enabled) {
+                if (!enabled) return@pointerInput
                 detectTapGestures(onDoubleTap = {
-                    onChange(0.0)
+                    reset?.invoke() ?: changeGain(0.0)
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 })
             }
-            .pointerInput(range) {
+            .pointerInput(range, enabled) {
+                if (!enabled) return@pointerInput
                 var lastNotch = current.toInt()
                 detectVerticalDragGestures { change, _ ->
                     change.consume()
@@ -284,7 +300,7 @@ fun VerticalFader(
                         lastNotch = v.toInt()
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     }
-                    onChange(v)
+                    changeGain(v)
                 }
             },
     ) {

@@ -54,6 +54,8 @@ fun ResponseGraph(
     selected: Int,
     enabled: Boolean,
     editable: Boolean,
+    allowAddDelete: Boolean = true,
+    moveFrequency: Boolean = true,
     onSelect: (Int) -> Unit,
     onMove: (index: Int, freqHz: Double, gainDb: Double) -> Unit,
     onAdd: (freqHz: Double, gainDb: Double) -> Unit,
@@ -92,36 +94,40 @@ fun ResponseGraph(
     }
     val currentBands by rememberUpdatedState(bands)
     val currentCurve by rememberUpdatedState(curveDb)
+    val select by rememberUpdatedState(onSelect)
+    val move by rememberUpdatedState(onMove)
+    val add by rememberUpdatedState(onAdd)
+    val delete by rememberUpdatedState(onDelete)
     var dragging by remember { mutableIntStateOf(-1) }
 
     Canvas(
         modifier
-            .pointerInput(editable) {
+            .pointerInput(editable, allowAddDelete, moveFrequency) {
                 if (!editable) return@pointerInput
                 detectTapGestures(
                     onTap = { pos ->
                         val hit = hitTest(pos, currentBands, currentCurve, size.width.toFloat(), size.height.toFloat(), range, hitRadius)
-                        if (hit >= 0) onSelect(hit) else {
-                            onAdd(xToFreq(pos.x, size.width.toFloat()), yToDb(pos.y, size.height.toFloat(), range).coerceIn(-24.0, 24.0))
+                        if (hit >= 0) select(hit) else if (allowAddDelete) {
+                            add(xToFreq(pos.x, size.width.toFloat()), yToDb(pos.y, size.height.toFloat(), range).coerceIn(-24.0, 24.0))
                         }
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     },
                     onLongPress = { pos ->
                         val hit = hitTest(pos, currentBands, currentCurve, size.width.toFloat(), size.height.toFloat(), range, hitRadius)
-                        if (hit >= 0) {
+                        if (hit >= 0 && allowAddDelete) {
                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onDelete(hit)
+                            delete(hit)
                         }
                     },
                 )
             }
-            .pointerInput(editable) {
+            .pointerInput(editable, allowAddDelete, moveFrequency) {
                 if (!editable) return@pointerInput
                 detectDragGestures(
                     onDragStart = { pos ->
                         dragging = hitTest(pos, currentBands, currentCurve, size.width.toFloat(), size.height.toFloat(), range, hitRadius)
                         if (dragging >= 0) {
-                            onSelect(dragging)
+                            select(dragging)
                             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         }
                     },
@@ -136,7 +142,7 @@ fun ResponseGraph(
                         val f = xToFreq(change.position.x.coerceIn(0f, w), w)
                         val b = currentBands[i]
                         val g = if (b.hasGain) yToDb(change.position.y.coerceIn(0f, h), h, range).coerceIn(-24.0, 24.0) else b.gainDb
-                        onMove(i, f, g)
+                        move(i, if (moveFrequency) f else b.freqHz, g)
                     },
                 )
             },
