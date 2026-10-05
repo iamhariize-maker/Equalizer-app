@@ -5,6 +5,7 @@ S=${1:-emulator-5554}; OUT=${2:-/tmp/precision-controls}; A="adb -s $S"
 mkdir -p "$OUT"; : > "$OUT/results.txt"
 eq() { $A shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
 read -r W H < <($A shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr 'x' ' ')
+DENSITY=$($A shell wm density | grep -oE '[0-9]+' | tail -1)
 node() {
   $A shell uiautomator dump /sdcard/precision-ui.xml >/dev/null 2>&1
   $A shell cat /sdcard/precision-ui.xml > "$OUT/last-ui.xml"
@@ -18,9 +19,12 @@ tap() {
 find_control() {
   local b viewport_bottom minimum_height
   minimum_height=0
-  # UIAutomator clips bounds for off-screen nodes. A sliver of a fader is not
-  # enough travel to cross touch slop, and must not be mistaken for a full one.
-  case "$1" in *'Hz gain') minimum_height=$((H/4));; esac
+  # UIAutomator clips off-screen bounds. Use the real widget heights so a
+  # clipped sliver cannot supply a false centre or insufficient drag travel.
+  case "$1" in
+    *'Hz gain') minimum_height=$((200*DENSITY/160));;
+    Gain) minimum_height=$((56*DENSITY/160));;
+  esac
   for attempt in $(seq 1 12); do
     b=$(node content-desc "$1")
     viewport_bottom=$(python3 - "$OUT/last-ui.xml" "$((H*7/8))" <<'PY'
@@ -34,6 +38,8 @@ PY
     )
     if [ -n "$b" ]; then
       read -r x1 y1 x2 y2 <<< "$b"
+      # Dial canvases are square; a clipped height gives a false spindle/rim.
+      if [ "$1" = Amount ]; then minimum_height=$((x2-x1)); fi
       # A partly visible lazy-list item cannot reliably receive a drag.
       if [ "$y1" -ge "$((H/12))" ] && [ "$y2" -le "$viewport_bottom" ] && [ "$((y2-y1))" -ge "$minimum_height" ]; then
         printf '%s: %s; viewport bottom=%s\n' "$1" "$b" "$viewport_bottom" >> "$OUT/target-bounds.txt"
