@@ -33,8 +33,12 @@ object DetectionMonitor {
     @Volatile var debugBlindPlayers = false
     @Volatile var debugBlindServer = false
     private var lastSummary = ""
+    private var lastServerReadMs = 0L
+    private var lastServerOk: Boolean? = null
+    private var lastServerError: String? = null
+    private const val IDLE_SERVER_READ_MS = 30_000L
 
-    data class Outcome(val ledger: Ledger, val complete: Boolean, val af: AfSnapshot?, val status: DetectionStatus)
+    data class Outcome(val ledger: Ledger, val complete: Boolean, val af: AfSnapshot?, val status: DetectionStatus, val serverRead: Boolean)
 
     /** Number of players Android says are active, from the public callback API (no permission). Null if unavailable. */
     fun publicActiveCount(context: Context): Int? = runCatching {
@@ -55,18 +59,30 @@ object DetectionMonitor {
         var playersError: String? = null
         var af: AfSnapshot? = null
         var afError: String? = null
+        val publicActive = publicActiveCount(context)
+        // The audio-server report is bigger and holds a global lock while it is written, so it is read only
+        // while Android says something is playing (or every 30 s, or whenever it has never worked).
+        val needServer = perm && (publicActive == null || publicActive > 0 || now - lastServerReadMs > IDLE_SERVER_READ_MS ||
+            lastServerOk != true || debugBlindServer)
         if (perm) {
             players = runCatching { PlaybackSessions.queryPlayers(context) }.getOrNull()
             if (players == null) playersError = PlaybackSessions.lastError ?: "unavailable"
+        }
+        if (needServer) {
+            lastServerReadMs = now
             val read = runCatching { PlaybackSessions.readService("media.audio_flinger", 4_000L, 3 * 1024 * 1024, keepPartial = true) }
                 .getOrElse { PlaybackSessions.ServiceRead(null, error = it.toString()) }
             if (read.text != null) {
                 af = runCatching { AudioFlingerDump.parse(read.text, read.partial) }.getOrNull()
                 if (af?.usable == true) lastAfExcerpt = AudioFlingerDump.excerpt(read.text) else { afError = "unrecognised audio-server report"; af = null }
             } else afError = read.error
+            lastServerOk = af != null
+            lastServerError = afError
+        }
+        if (perm) {
             if (debugBlindPlayers) { players = null; playersError = "test: player list blinded" }
             if (debugBlindServer) { af = null; afError = "test: audio-server report blinded" }
-            lastAfSnapshot = af
+            if (needServer) lastAfSnapshot = af
         }
         val pm = context.packageManager
         val ledger = SessionLedger.merge(players, af, ownPid, ownUid) { uid ->
@@ -77,17 +93,17 @@ object DetectionMonitor {
             CaptureService.isRunning -> 1
             else -> 0
         }
-        val publicActive = publicActiveCount(context)
         val verification = buildMap {
             EqController.globalEq.attachedSessions.forEach { sid -> put(sid, EffectVerifier.verify(sid, af, ownPid)) }
         }
         val (health, headline, advice) = DetectionStatus.assess(
-            perm, players != null, af != null, publicActive, ownActive, ledger.sessions, ledger.unresolved, verification,
+            perm, players != null, if (needServer) af != null else lastServerOk == true, publicActive, ownActive, ledger.sessions, ledger.unresolved, verification,
         )
         val status = DetectionStatus(
             atMs = now, dumpPermission = perm, serviceRunning = SystemEqService.isRunning,
             playersOk = players != null, playersError = playersError,
-            serverOk = af != null, serverError = afError, serverPartial = af?.partial == true,
+            serverOk = if (needServer) af != null else lastServerOk == true,
+            serverError = if (needServer) afError else lastServerError, serverPartial = af?.partial == true,
             publicActive = publicActive, sessions = ledger.sessions, unresolved = ledger.unresolved,
             verification = verification, health = health, headline = headline, advice = advice,
         )
@@ -98,6 +114,6 @@ object DetectionMonitor {
         if (summary != lastSummary) { lastSummary = summary; EqController.log("detect: $summary") }
         val complete = perm && players != null && af != null
         if (complete) lastCompleteScanMs = now
-        return Outcome(ledger, complete, af, status)
+        return Outcome(ledger, complete, af, status, serverRead = needServer && af != null)
     }
 }

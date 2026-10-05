@@ -157,8 +157,8 @@ object EffectVerifier {
         if (mine.isEmpty()) {
             val tracks = af.tracks.filter { it.sessionId == sessionId && !it.patch }
             if (tracks.isNotEmpty() && tracks.none { it.thread.supportsSessionEffects }) return Verification.BYPASSED
-            // Only claim "missing" if the parser demonstrably sees this app's other effects.
-            return if (ours.isNotEmpty() && af.threads.isNotEmpty()) Verification.MISSING else Verification.UNKNOWN
+            // Only claim "missing" if the report is complete and the parser demonstrably sees this app's other effects.
+            return if (!af.partial && ours.isNotEmpty() && af.threads.isNotEmpty()) Verification.MISSING else Verification.UNKNOWN
         }
         val fx = mine.first()
         if (fx.threadName == null) {

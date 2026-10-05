@@ -114,9 +114,9 @@ class SystemEqService : Service() {
                         val outcome = DetectionMonitor.scan(this)
                         if (alive) {
                             val st = outcome.status
-                            if (st.dumpPermission && (st.playersOk || st.serverOk)) {
+                            if (st.dumpPermission && (st.playersOk || outcome.serverRead)) {
                                 SessionRouter.sync(
-                                    outcome.ledger.sessions.map { it.session }, st.playersOk, st.serverOk,
+                                    outcome.ledger.sessions.map { it.session }, st.playersOk, outcome.serverRead,
                                     outcome.ledger.sessions.associateBy { it.session.sessionId }, st.verification,
                                 )
                             } else SessionRouter.repairKnownSessions()
