@@ -1,11 +1,14 @@
 package app.svan.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,8 +24,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -37,17 +38,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -111,14 +113,24 @@ fun ValueSlider(
     accent: Color = Svan.Gold,
     entryRange: ClosedFloatingPointRange<Double>? = null,
     entryUnit: String = "",
+    step: Double = 0.1,
 ) {
     var editing by remember { mutableStateOf(false) }
+    val current by rememberUpdatedState(toSlider(value).toDouble().coerceIn(0.0, 1.0))
+    val change by rememberUpdatedState(onChange)
+    val decode by rememberUpdatedState(fromSlider)
+    val encode by rememberUpdatedState(toSlider)
+    val actual by rememberUpdatedState(value)
+    val realRange = entryRange ?: fromSlider(0f)..fromSlider(1f)
+    val interaction = rememberPrecisionInteraction(current) { change(decode(it.toFloat())) }
+    val shown = if (interaction.dragging) decode(interaction.preview.toFloat()) else value
+    val fraction by animateFloatAsState(encode(shown).coerceIn(0f, 1f), spring(dampingRatio = 1f, stiffness = 1800f), label = "sliderThumb")
     Column(modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(label, style = MaterialTheme.typography.bodyMedium, color = if (enabled) Svan.TextMuted else Svan.TextFaint)
             Spacer(Modifier.weight(1f))
             Text(
-                display(value),
+                display(shown),
                 style = MaterialTheme.typography.labelLarge,
                 color = if (enabled) Svan.Text else Svan.TextFaint,
                 modifier = Modifier
@@ -128,19 +140,51 @@ fun ValueSlider(
                     .padding(horizontal = 10.dp, vertical = 4.dp),
             )
         }
-        Slider(
-            value = toSlider(value).coerceIn(0f, 1f),
-            onValueChange = { onChange(fromSlider(it)) },
-            enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor = accent,
-                activeTrackColor = accent,
-                inactiveTrackColor = Svan.SurfaceHigher,
-                disabledThumbColor = Svan.TextFaint,
-                disabledActiveTrackColor = Svan.Outline,
-                disabledInactiveTrackColor = Svan.SurfaceHigh,
-            ),
-        )
+        Canvas(Modifier.fillMaxWidth().height(56.dp)
+            .semantics {
+                contentDescription = label
+                stateDescription = display(value)
+                progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(),realRange.start.toFloat()..realRange.endInclusive.toFloat(),
+                    ((realRange.endInclusive-realRange.start)/step).toInt()-1)
+                if (!enabled) disabled()
+                setProgress { if (enabled) { change(snap(it.toDouble(),realRange.start,realRange.endInclusive,step)); true } else false }
+            }
+            .pointerInput(enabled, step, realRange) {
+                if (!enabled) return@pointerInput
+                detectTapGestures(onTap = { position ->
+                    // A tap nudges one small tick; touching away from the thumb never jumps.
+                    val thumb = 14.dp.toPx() + current.toFloat() * (size.width - 28.dp.toPx())
+                    if (kotlin.math.abs(position.x-thumb) > 12.dp.toPx())
+                        change(snap(actual+if(position.x > thumb) step else -step,realRange.start,realRange.endInclusive,step))
+                })
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                var acc = DetentAccumulator(current,0.0,1.0,0.001)
+                detectHorizontalDragGestures(
+                    onDragStart = { interaction.begin(); acc = DetentAccumulator(current,0.0,1.0,0.001) },
+                    onDragEnd = { interaction.finish() }, onDragCancel = { interaction.finish() },
+                ) { pointer, delta ->
+                    pointer.consume()
+                    // Pull away from the track while dragging to slow the adjustment further.
+                    val fine = (kotlin.math.abs(pointer.position.y-size.height/2f) / 48.dp.toPx()).coerceIn(1f,6f)
+                    interaction.move(acc.move((delta / (size.width * 1.5f * fine).coerceAtLeast(1f)).toDouble()))
+                }
+            }) {
+            val pad = 14.dp.toPx(); val span = size.width-2*pad
+            val y = center.y; val x = pad + fraction * span
+            val alpha = if(enabled) 1f else 0.35f
+            for(tick in 0..30) {
+                val tx = pad+span*tick/30
+                drawLine(Svan.Outline,Offset(tx,y+10.dp.toPx()),Offset(tx,y+(if(tick%5==0) 15 else 12).dp.toPx()),1.dp.toPx())
+            }
+            drawLine(Svan.SurfaceHigher,Offset(pad,y),Offset(size.width-pad,y),6.dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
+            drawLine(accent.copy(alpha=alpha),Offset(pad,y),Offset(x,y),6.dp.toPx(), androidx.compose.ui.graphics.StrokeCap.Round)
+            if(interaction.dragging) drawCircle(accent.copy(alpha=0.10f),23.dp.toPx(),Offset(x,y))
+            drawCircle(Svan.SurfaceHigh,12.dp.toPx(),Offset(x,y))
+            drawCircle(accent.copy(alpha=alpha),12.dp.toPx(),Offset(x,y),style=Stroke(2.dp.toPx()))
+            drawCircle(accent.copy(alpha=alpha),4.dp.toPx(),Offset(x,y))
+        }
     }
     if (editing && entryRange != null) {
         NumberEntryDialog(label, value, entryRange, entryUnit, onDismiss = { editing = false }) {
@@ -255,7 +299,7 @@ private fun Modifier.size22() = this.then(Modifier.width(22.dp).height(22.dp))
 private fun Modifier.size10() = this.then(Modifier.width(10.dp).height(10.dp))
 
 /**
- * Vertical gain fader for the graphic EQ. Drag to set, double-tap to reset to 0.
+ * Relative graphic-EQ fader: 0.1 dB detents, no jump on grabbing, double-tap reset.
  */
 @Composable
 fun VerticalFader(
@@ -263,59 +307,71 @@ fun VerticalFader(
     range: Double,
     onChange: (Double) -> Unit,
     modifier: Modifier = Modifier,
-    width: Dp = 48.dp,
+    width: Dp = 56.dp,
     label: String = "EQ gain",
     onReset: (() -> Unit)? = null,
     enabled: Boolean = true,
 ) {
-    val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(value)
     val changeGain by rememberUpdatedState(onChange)
     val reset by rememberUpdatedState(onReset)
+    val interaction = rememberPrecisionInteraction(value, onChange)
+    val shown = if(interaction.dragging) interaction.preview else value
+    val displayed by animateFloatAsState(shown.toFloat(), spring(dampingRatio=1f,stiffness=1800f),label="faderThumb")
     Canvas(
         modifier
             .width(width)
             .semantics {
-                contentDescription = "$label, ${formatDb(value)}"
-                progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), -range.toFloat()..range.toFloat(), (range * 4).toInt() - 1)
-                setProgress { if (enabled) { changeGain(Math.round(it.coerceIn(-range.toFloat(),range.toFloat()) * 2) / 2.0); true } else false }
+                contentDescription = label
+                stateDescription = formatDb(value)
+                progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), -range.toFloat()..range.toFloat(), (range * 20).toInt() - 1)
+                if (!enabled) disabled()
+                setProgress { if (enabled) { changeGain(snap(it.toDouble(),-range,range,0.1)); true } else false }
             }
             .pointerInput(range, enabled) {
                 if (!enabled) return@pointerInput
-                detectTapGestures(onDoubleTap = {
+                detectTapGestures(onTap = { pos ->
+                    val pad = 14.dp.toPx()
+                    val thumbY = pad+((range-current)/(2*range)*(size.height-2*pad)).toFloat()
+                    if(kotlin.math.abs(pos.y-thumbY)>14.dp.toPx())
+                        changeGain(snap(current+if(pos.y<thumbY) 0.1 else -0.1,-range,range,0.1))
+                }, onDoubleTap = {
                     reset?.invoke() ?: changeGain(0.0)
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                 })
             }
             .pointerInput(range, enabled) {
                 if (!enabled) return@pointerInput
-                var lastNotch = current.toInt()
-                detectVerticalDragGestures { change, _ ->
+                var acc = DetentAccumulator(current,-range,range,0.1)
+                detectVerticalDragGestures(
+                    onDragStart={ interaction.begin(); acc=DetentAccumulator(current,-range,range,0.1) },
+                    onDragEnd={ interaction.finish() },onDragCancel={ interaction.finish() },
+                ) { change, delta ->
                     change.consume()
-                    val pad = 10.dp.toPx()
-                    val h = size.height - 2 * pad
-                    val frac = ((change.position.y - pad) / h).coerceIn(0f, 1f)
-                    val v = Math.round((range - frac * 2 * range) * 2) / 2.0 // 0.5 dB steps
-                    if (v.toInt() != lastNotch) {
-                        lastNotch = v.toInt()
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                    }
-                    changeGain(v)
+                    val fine=(kotlin.math.abs(change.position.x-size.width/2f)/56.dp.toPx()).coerceIn(1f,6f)
+                    interaction.move(acc.move(-delta/480.dp.toPx()/fine*(2*range)))
                 }
             },
     ) {
-        val pad = 10.dp.toPx()
+        val pad = 14.dp.toPx()
         val h = size.height - 2 * pad
         val cx = size.width / 2
         val trackW = 4.dp.toPx()
         val zeroY = pad + h / 2
-        val y = pad + ((range - value) / (2 * range) * h).toFloat()
+        val y = pad + ((range - displayed) / (2 * range) * h).toFloat()
+        for(tick in 0..(range*4).toInt()) {
+            val ty=pad+tick/(range*4).toFloat()*h
+            val major=tick%6==0
+            val length=(if(major) 8 else 4).dp.toPx()
+            drawLine(Svan.Outline.copy(alpha=if(major) 0.8f else 0.4f),Offset(cx-length,ty),Offset(cx+length,ty),1.dp.toPx())
+        }
         drawRoundRect(Svan.SurfaceHigher, Offset(cx - trackW / 2, pad), Size(trackW, h), CornerRadius(trackW))
-        val accent = if (value >= 0) Svan.Gold else Svan.Ash
+        val accent = if (displayed >= 0) Svan.Gold else Svan.Ash
         val top = minOf(y, zeroY)
         drawRoundRect(accent.copy(alpha = if (enabled) 1f else 0.4f), Offset(cx - trackW / 2, top), Size(trackW, kotlin.math.abs(y - zeroY)), CornerRadius(trackW))
         drawLine(Svan.Outline, Offset(cx - 8.dp.toPx(), zeroY), Offset(cx + 8.dp.toPx(), zeroY), strokeWidth = 1.5f)
-        drawCircle(Svan.Black, radius = 9.dp.toPx(), center = Offset(cx, y))
-        drawCircle(accent.copy(alpha = if (enabled) 1f else 0.4f), radius = 7.dp.toPx(), center = Offset(cx, y))
+        if(interaction.dragging) drawCircle(accent.copy(alpha=0.1f),radius=23.dp.toPx(),center=Offset(cx,y))
+        drawCircle(Svan.SurfaceHigh, radius = 12.dp.toPx(), center = Offset(cx, y))
+        drawCircle(accent.copy(alpha = if (enabled) 1f else 0.4f),radius=12.dp.toPx(),center=Offset(cx,y),style=Stroke(2.dp.toPx()))
+        drawLine(accent,Offset(cx-5.dp.toPx(),y),Offset(cx+5.dp.toPx(),y),2.dp.toPx())
     }
 }

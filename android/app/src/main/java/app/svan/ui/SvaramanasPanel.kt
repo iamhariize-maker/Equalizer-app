@@ -155,11 +155,12 @@ fun SvaramanasPanel(
                 ValueSlider(
                     label = "Change amount",
                     value = request.strength,
-                    display = { s -> when { s < 0.75 -> "Gentle"; s < 1.25 -> "Natural"; else -> "Bold" } },
+                    display = { s -> (when { s < 0.75 -> "Gentle"; s < 1.25 -> "Natural"; else -> "Bold" }) + " · ${Math.round(s*100)}%" },
                     toSlider = { ((it - 0.5) / 1.0).toFloat() },
-                    fromSlider = { (0.5 + it * 1.0) },
+                    fromSlider = { Math.round((0.5 + it) * 100) / 100.0 },
                     onChange = { v -> Svaramanas.update { it.copy(strength = v) } },
                     enabled = request.enabled,
+                    step = 0.01,
                 )
             }
         }

@@ -92,14 +92,16 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Build APKs
         working-directory: android
-        run: ./gradlew --no-daemon assembleDebug assembleRelease :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
+        run: ./gradlew --no-daemon assembleDebug :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
       - name: Download the phone preview for release validation
         uses: actions/download-artifact@v4
         with:
           name: Svan-preview
           path: tested-preview
       - name: Use the exact downloadable APK in release tests
-        run: cp tested-preview/Svan-preview.apk android/app/build/outputs/apk/release/app-release.apk
+        run: |
+          mkdir -p android/app/build/outputs/apk/release
+          cp tested-preview/Svan-preview.apk android/app/build/outputs/apk/release/app-release.apk
       - name: Prepare output dir
         run: |
           mkdir -p e2e-out
@@ -117,7 +119,7 @@ jobs:
           # No -noaudio: the test needs the emulator's audio HAL.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
-          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/e2e.sh emulator-5554 ; bash scripts/eq_workspace.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/workspace" ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" || true
+          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/e2e.sh emulator-5554 ; bash scripts/eq_workspace.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/workspace" ; bash scripts/precision_controls.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/precision" ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" || true
       - name: Results
         if: always()
         run: |
@@ -129,6 +131,9 @@ jobs:
           cat e2e-out/workspace/results.txt
           if grep -q '^FAIL' e2e-out/workspace/results.txt; then exit 1; fi
           test "$(grep -c '^PASS' e2e-out/workspace/results.txt)" -eq 6
+          cat e2e-out/precision/results.txt
+          if grep -q '^FAIL' e2e-out/precision/results.txt; then exit 1; fi
+          test "$(grep -c '^PASS' e2e-out/precision/results.txt)" -eq 8
           cat e2e-out/detection/detection.txt
           if grep -q '^FAIL' e2e-out/detection/detection.txt; then echo 'release detection results contain a failure'; exit 1; fi
           test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 10

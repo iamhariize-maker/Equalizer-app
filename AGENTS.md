@@ -64,6 +64,8 @@ recommended. Preserve the separate manual curve/layout, expose the real applied 
 and check the combined response instead of independently stacking boosts. Adjacent filters may
 intentionally overlap; never claim overlap-free processing or guaranteed listener preference.
 See `docs/EQ_WORKSPACE_0.5.3.md`.
+Owner's controls follow-up: fine mechanical steps and smooth relative gestures, no vibration.
+See `docs/PRECISION_CONTROLS.md`; preserve centre scrolling while allowing rim rotation.
 
 ## Top open items (details in docs/HANDOFF.md)
 1. Verify on the next CI screenshots: boot name fits on one line with margins; the flipped **d** reads as a 9 (not "q"); the स्व icon on the Android 12+ splash.

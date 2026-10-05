@@ -7,11 +7,16 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -22,10 +27,9 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
+import kotlinx.coroutines.flow.first
 import app.svan.model.Band
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -62,14 +66,15 @@ fun ResponseGraph(
     onDelete: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptics = LocalHapticFeedback.current
+    var dragging by remember { mutableIntStateOf(-1) }
+    var dragRange by remember { mutableFloatStateOf(12f) }
     val density = LocalDensity.current
     val nodeRadius = with(density) { 9f * this.density }
     val hitRadius = with(density) { 28f * this.density }
 
     // Vertical range follows the curve so big boosts never clip off the top.
     val peak = max(curveDb.maxOfOrNull { abs(it) } ?: 0.0, bands.filter { it.hasGain }.maxOfOrNull { abs(it.gainDb) } ?: 0.0)
-    val targetRange = when {
+    val targetRange = if(dragging >= 0) dragRange else when {
         peak > 18 -> 30f
         peak > 12 -> 18f
         else -> 12f
@@ -98,7 +103,18 @@ fun ResponseGraph(
     val move by rememberUpdatedState(onMove)
     val add by rememberUpdatedState(onAdd)
     val delete by rememberUpdatedState(onDelete)
-    var dragging by remember { mutableIntStateOf(-1) }
+    var pendingMove by remember { mutableStateOf<Triple<Int,Double,Double>?>(null) }
+    fun flushMove() {
+        pendingMove?.let { move(it.first,it.second,it.third) }
+        pendingMove=null
+    }
+    LaunchedEffect(Unit) {
+        while(true) {
+            snapshotFlow { pendingMove }.first { it != null }
+            withFrameNanos { }
+            flushMove()
+        }
+    }
 
     Canvas(
         modifier
@@ -110,12 +126,10 @@ fun ResponseGraph(
                         if (hit >= 0) select(hit) else if (allowAddDelete) {
                             add(xToFreq(pos.x, size.width.toFloat()), yToDb(pos.y, size.height.toFloat(), range).coerceIn(-24.0, 24.0))
                         }
-                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                     },
                     onLongPress = { pos ->
                         val hit = hitTest(pos, currentBands, currentCurve, size.width.toFloat(), size.height.toFloat(), range, hitRadius)
                         if (hit >= 0 && allowAddDelete) {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             delete(hit)
                         }
                     },
@@ -123,26 +137,31 @@ fun ResponseGraph(
             }
             .pointerInput(editable, allowAddDelete, moveFrequency) {
                 if (!editable) return@pointerInput
+                var gain = DetentAccumulator(0.0,-24.0,24.0,0.1)
+                var logFrequency = DetentAccumulator(0.0,0.0,1.0,0.001)
                 detectDragGestures(
                     onDragStart = { pos ->
                         dragging = hitTest(pos, currentBands, currentCurve, size.width.toFloat(), size.height.toFloat(), range, hitRadius)
                         if (dragging >= 0) {
+                            val b=currentBands[dragging]
+                            gain=DetentAccumulator(b.gainDb,-24.0,24.0,0.1)
+                            logFrequency=DetentAccumulator(log10(b.freqHz/F_MIN)/3.0,0.0,1.0,0.001)
+                            dragRange=range
                             select(dragging)
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         }
                     },
-                    onDragEnd = { dragging = -1 },
-                    onDragCancel = { dragging = -1 },
-                    onDrag = { change, _ ->
+                    onDragEnd = { flushMove(); dragging = -1 },
+                    onDragCancel = { flushMove(); dragging = -1 },
+                    onDrag = { change, delta ->
                         val i = dragging
                         if (i < 0 || i >= currentBands.size) return@detectDragGestures
                         change.consume()
                         val w = size.width.toFloat()
                         val h = size.height.toFloat()
-                        val f = xToFreq(change.position.x.coerceIn(0f, w), w)
+                        val f = F_MIN*1000.0.pow(logFrequency.move((delta.x/(w*1.5f)).toDouble()))
                         val b = currentBands[i]
-                        val g = if (b.hasGain) yToDb(change.position.y.coerceIn(0f, h), h, range).coerceIn(-24.0, 24.0) else b.gainDb
-                        move(i, if (moveFrequency) f else b.freqHz, g)
+                        val g = if (b.hasGain) gain.move((-delta.y / (h*0.88f) * 2*dragRange).toDouble()) else b.gainDb
+                        pendingMove=Triple(i,if(moveFrequency) f else b.freqHz,g)
                     },
                 )
             },

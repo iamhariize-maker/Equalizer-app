@@ -236,11 +236,11 @@ fun SoundScreen() {
                 SvanCard {
                     Column {
                         ValueSlider("Bass", bassDb, { formatDb(it) },
-                            toSlider = { ((it + 6) / 12).toFloat() }, fromSlider = { Math.round((it * 12 - 6) * 2) / 2.0 },
+                            toSlider = { ((it + 6) / 12).toFloat() }, fromSlider = { Math.round((it * 12 - 6) * 10) / 10.0 },
                             onChange = { bassDb = it }, entryRange = -6.0..6.0, entryUnit = "dB")
                         ValueSlider("Brightness", tilt, { v -> if (v == 0.0) "Neutral" else if (v > 0) "Brighter %.1f".format(v * 10) else "Warmer %.1f".format(-v * 10) },
-                            toSlider = { ((it + 0.6) / 1.2).toFloat() }, fromSlider = { Math.round((it * 1.2 - 0.6) * 20) / 20.0 },
-                            onChange = { tilt = it })
+                            toSlider = { ((it + 0.6) / 1.2).toFloat() }, fromSlider = { Math.round((it * 1.2 - 0.6) * 100) / 100.0 },
+                            onChange = { tilt = it }, step = 0.01)
                         Text("Resolution (bands)", style = MaterialTheme.typography.bodyMedium, color = Svan.TextMuted)
                         Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -298,19 +298,19 @@ private fun <T> PresetRow(presets: List<Pair<String, T>>, current: T, onPick: (T
     Spacer(Modifier.height(10.dp))
 }
 
-private fun pct(v: Double) = "%d%%".format((v * 100).toInt())
+private fun pct(v: Double) = "%d%%".format(Math.round(v * 100))
 
 @Composable
 private fun BassTunerCard(b: BassTuner) {
     TunerHeader("Bass tuner", "Level, depth and feel of the low end.")
-    TuningGuidance("Start with one tick: Amount +0.5 dB, Depth +1 Hz, or Feel +5%. Presets apply a full profile. Compare the same passage at matched loudness; boosts use headroom, so back off if bass gets rough, boomy, or tiring.")
+    TuningGuidance("Start with one tick: Amount +0.1 dB, Depth +1 Hz, or Feel +1%. Presets apply a full profile. Compare the same passage at matched loudness; boosts use headroom, so back off if bass gets rough, boomy, or tiring.")
     PresetRow(BassTuner.PRESETS, b) { p -> SvanRepository.update { it.copy(bass = p) } }
     SvanCard {
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Knob("Amount", b.amountDb, -6.0, 12.0, ::formatDb, step = 0.5,
+                Knob("Amount", b.amountDb, -6.0, 12.0, ::formatDb, step = 0.1, entryUnit = "dB",
                     onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(amountDb = v)) } })
-                Knob("Depth", b.focusHz, 40.0, 160.0, { f -> "%.0f Hz".format(f) }, default = 80.0, step = 1.0,
+                Knob("Depth", b.focusHz, 40.0, 160.0, { f -> "%.0f Hz".format(f) }, default = 80.0, step = 1.0, entryUnit = "Hz",
                     onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(focusHz = v)) } })
                 Knob("Feel", b.character, -1.0, 1.0, { c ->
                     when {
@@ -318,11 +318,11 @@ private fun BassTunerCard(b: BassTuner) {
                         c > 0 -> "Punch ${pct(c)}"
                         else -> "Sustain ${pct(-c)}"
                     }
-                }, step = 0.05, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
+                }, step = 0.01, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
             }
             Spacer(Modifier.height(6.dp))
             Text("Depth: deep sub (40 Hz) ↔ mid-bass (160 Hz). Feel: sustain lets notes bloom; punch sharpens kicks and " +
-                "tightens tails. Drag dials sideways; double-tap to reset. A native transient shaper in the audiophile engine; an approximation on system effects. Tuned on synthetic signals; results vary with music.",
+                "tightens tails. Turn the rim or drag sideways; tap the value for exact entry. Double-tap to reset. A native transient shaper in the audiophile engine; an approximation on system effects. Tuned on synthetic signals; results vary with music.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         }
     }
@@ -331,16 +331,16 @@ private fun BassTunerCard(b: BassTuner) {
 @Composable
 private fun VocalTunerCard(v: app.svan.model.VocalTuner) {
     TunerHeader("Vocal tuner", "Centre tone and upper-mid dynamics.")
-    TuningGuidance("Move one dial by one tick (5%) at a time. Presets change several controls together. Compare the same short passage at matched loudness; double-tap a dial to reset it.")
+    TuningGuidance("Move one dial by one tick (1%) at a time. Presets change several controls together. Compare the same short passage at matched loudness; double-tap a dial to reset it.")
     PresetRow(app.svan.model.VocalTuner.PRESETS, v) { p -> SvanRepository.update { it.copy(vocal = p) } }
     SvanCard {
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Knob("Intimacy", v.intimacy, 0.0, 1.0, ::pct, step = 0.05,
+                Knob("Intimacy", v.intimacy, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(intimacy = x)) } })
-                Knob("Warmth", v.warmth, 0.0, 1.0, ::pct, step = 0.05,
+                Knob("Warmth", v.warmth, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(warmth = x)) } })
-                Knob("Smooth", v.smoothness, 0.0, 1.0, ::pct, step = 0.05,
+                Knob("Smooth", v.smoothness, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(smoothness = x)) } })
             }
             Spacer(Modifier.height(6.dp))
@@ -353,7 +353,7 @@ private fun VocalTunerCard(v: app.svan.model.VocalTuner) {
 @Composable
 private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
     TunerHeader("Orchestral amplifier", "Stereo width and side energy above the bass.")
-    TuningGuidance("Move one dial by one tick (5%) at a time. Presets change several controls together. Compare the same short passage at matched loudness; double-tap a dial to reset it.")
+    TuningGuidance("Move one dial by one tick (1%) at a time. Presets change several controls together. Compare the same short passage at matched loudness; double-tap a dial to reset it.")
     PresetRow(app.svan.model.InstrumentTuner.PRESETS, i) { p -> SvanRepository.update { it.copy(instrument = p) } }
     SvanCard {
         Column {
@@ -364,8 +364,8 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
                         s > 0 -> "Spacious ${pct(s)}"
                         else -> "Intimate ${pct(-s)}"
                     }
-                }, step = 0.05, onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(space = x)) } })
-                Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.05,
+                }, step = 0.01, onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(space = x)) } })
+                Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(instruments = x)) } })
             }
             Spacer(Modifier.height(6.dp))

@@ -86,7 +86,9 @@ object SvanRepository {
     // ---- EQ edits (call from the UI thread) ----
 
     fun update(transform: (EqState) -> EqState) {
-        val next = transform(_eq.value)
+        val old = _eq.value
+        val next = transform(old)
+        if (next == old) return
         applyCurve(next)
         _eq.value = next
     }

@@ -354,9 +354,9 @@ private fun ParametricControls(bands: List<Band>, selected: Int, onSelect: (Int)
             ValueSlider(
                 "Frequency", band.freqHz, ::formatHz,
                 toSlider = { (ln(it / 20.0) / ln(1000.0)).toFloat() },
-                fromSlider = { roundHz(20.0 * 1000.0.pow(it.toDouble())) },
+                fromSlider = { Math.round(20.0 * 1000.0.pow(it.toDouble())).toDouble() },
                 onChange = { f -> SvanRepository.editEq { s -> s.copy(bands = s.bands.replace(selected) { it.copy(freqHz = f) }, presetName = "Custom") } },
-                accent = Svan.typeColor(band.type), entryRange = 10.0..22000.0, entryUnit = "Hz",
+                accent = Svan.typeColor(band.type), entryRange = 10.0..22000.0, entryUnit = "Hz", step = 1.0,
             )
             ValueSlider(
                 "Gain", band.gainDb, ::formatDb,
@@ -365,16 +365,16 @@ private fun ParametricControls(bands: List<Band>, selected: Int, onSelect: (Int)
                 enabled = band.hasGain, accent = Svan.typeColor(band.type), entryRange = -24.0..24.0, entryUnit = "dB",
             )
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick={SvanRepository.editEq { s -> s.copy(bands=s.bands.replace(selected) { it.copy(gainDb=(it.gainDb-0.5).coerceAtLeast(-24.0)) },presetName="Custom") }}, enabled=band.hasGain) { Text("−0.5 dB") }
+                TextButton(onClick={SvanRepository.editEq { s -> s.copy(bands=s.bands.replace(selected) { it.copy(gainDb=(it.gainDb-0.1).coerceAtLeast(-24.0)) },presetName="Custom") }}, enabled=band.hasGain) { Text("−0.1 dB") }
                 TextButton(onClick={SvanRepository.editEq { s -> s.copy(bands=s.bands.replace(selected) { it.copy(gainDb=0.0) },presetName="Custom") }}, enabled=band.hasGain) { Text("Zero") }
-                TextButton(onClick={SvanRepository.editEq { s -> s.copy(bands=s.bands.replace(selected) { it.copy(gainDb=(it.gainDb+0.5).coerceAtMost(24.0)) },presetName="Custom") }}, enabled=band.hasGain) { Text("+0.5 dB") }
+                TextButton(onClick={SvanRepository.editEq { s -> s.copy(bands=s.bands.replace(selected) { it.copy(gainDb=(it.gainDb+0.1).coerceAtMost(24.0)) },presetName="Custom") }}, enabled=band.hasGain) { Text("+0.1 dB") }
             }
             ValueSlider(
                 "Q", band.q, { "%.2f".format(it) },
                 toSlider = { (ln(it / 0.1) / ln(200.0)).toFloat() },
                 fromSlider = { Math.round(0.1 * 200.0.pow(it.toDouble()) * 100) / 100.0 },
                 onChange = { q -> SvanRepository.editEq { s -> s.copy(bands = s.bands.replace(selected) { it.copy(q = q) }, presetName = "Custom") } },
-                accent = Svan.typeColor(band.type), entryRange = 0.1..20.0,
+                accent = Svan.typeColor(band.type), entryRange = 0.1..20.0, step = 0.01,
             )
             Text(bandwidthHint(band), style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         }
@@ -433,7 +433,7 @@ private fun GraphicControls(count: Int, gains: List<Double>, automatic: Boolean,
                         onReset={if (automatic) SvanRepository.resetSmartEqOffset(i) else SvanRepository.editEq { s -> s.copy(graphicGains=s.graphicGains.replace(i) { 0.0 },presetName="Custom") }},
                         onChange = { v -> if (automatic) SvanRepository.adjustSmartEq(i,v) else SvanRepository.editEq { s -> s.copy(graphicGains = s.graphicGains.replace(i) { v }, presetName = "Custom") } },
                         modifier = Modifier.height(200.dp),
-                        width = 48.dp,
+                        width = 56.dp,
                     )
                     Text(GraphicLayout.label(f), style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
                 }
@@ -444,18 +444,11 @@ private fun GraphicControls(count: Int, gains: List<Double>, automatic: Boolean,
         if (automatic) SvanRepository.adjustSmartEq(entry,v) else SvanRepository.editEq { s -> s.copy(graphicGains=s.graphicGains.replace(entry) { v },presetName="Custom") }
         entry=-1
     }
-    Text(if (automatic) "Swipe for more bands · double-tap to restore Svaresa's gain." else "Swipe for more bands · tap gain to enter a value · double-tap to reset.",
+    Text(if (automatic) "Drag for 0.1 dB steps; swipe sideways for more bands · double-tap to restore Svaresa's gain." else "Drag for 0.1 dB steps; swipe sideways for more bands · tap gain to enter a value · double-tap to reset.",
         style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
 }
 
 private fun <T> List<T>.replace(i: Int, f: (T) -> T): List<T> = mapIndexed { j, v -> if (j == i) f(v) else v }
-
-private fun roundHz(f: Double): Double = when {
-    f < 100 -> Math.round(f).toDouble()
-    f < 1000 -> Math.round(f / 5) * 5.0
-    f < 10000 -> Math.round(f / 10) * 10.0
-    else -> Math.round(f / 100) * 100.0
-}
 
 private fun shortHz(f: Double) = if (f >= 1000) "%.1fk".format(f / 1000).replace(".0k", "k") else "%.0f".format(f)
 
