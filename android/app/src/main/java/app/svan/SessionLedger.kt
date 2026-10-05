@@ -155,6 +155,17 @@ enum class Verification(val summary: String) {
 }
 
 object EffectVerifier {
+    /** An effect younger than this when the report started may not be enabled/listed yet. */
+    const val SETTLE_MS = 1_500L
+
+    /**
+     * The report can only judge an effect that already existed, settled, when the report was requested.
+     * Judging a just-created one (a route change, a dynamics re-creation) reads as MISSING/SUSPENDED and
+     * would tear down the brand-new effect (seen in CI: "dynamics on (6 sessions re-created)" → MISSING → re-attach).
+     */
+    fun judgeable(attachedAtMs: Long?, reportStartMs: Long): Boolean =
+        attachedAtMs != null && attachedAtMs + SETTLE_MS <= reportStartMs
+
     /** [af] must come from a successful report. Returns UNKNOWN whenever the server's tables cannot prove anything. */
     fun verify(sessionId: Int, af: AfSnapshot?, ownPid: Int): Verification {
         if (af == null || !af.usable) return Verification.UNKNOWN

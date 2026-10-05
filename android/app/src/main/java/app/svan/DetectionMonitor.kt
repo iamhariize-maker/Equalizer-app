@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.os.Process
+import android.os.SystemClock
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -68,8 +69,10 @@ object DetectionMonitor {
             players = runCatching { PlaybackSessions.queryPlayers(context) }.getOrNull()
             if (players == null) playersError = PlaybackSessions.lastError ?: "unavailable"
         }
+        var serverReadStartMs = Long.MIN_VALUE
         if (needServer) {
             lastServerReadMs = now
+            serverReadStartMs = SystemClock.elapsedRealtime()
             val read = runCatching { PlaybackSessions.readService("media.audio_flinger", 4_000L, 3 * 1024 * 1024, keepPartial = true) }
                 .getOrElse { PlaybackSessions.ServiceRead(null, error = it.toString()) }
             if (read.text != null) {
@@ -94,7 +97,10 @@ object DetectionMonitor {
             else -> 0
         }
         val verification = buildMap {
-            EqController.globalEq.attachedSessions.forEach { sid -> put(sid, EffectVerifier.verify(sid, af, ownPid)) }
+            EqController.globalEq.attachedSessions.forEach { sid ->
+                val judgeable = EffectVerifier.judgeable(EqController.globalEq.attachedAtMs(sid), serverReadStartMs)
+                put(sid, if (judgeable) EffectVerifier.verify(sid, af, ownPid) else Verification.UNKNOWN)
+            }
         }
         val (health, headline, advice) = DetectionStatus.assess(
             perm, players != null, if (needServer) af != null else lastServerOk == true, publicActive, ownActive, ledger.sessions, ledger.unresolved, verification,

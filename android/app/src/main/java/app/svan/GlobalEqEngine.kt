@@ -1,6 +1,7 @@
 package app.svan
 
 import android.media.audiofx.DynamicsProcessing
+import android.os.SystemClock
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
@@ -41,6 +42,9 @@ class GlobalEqEngine(bandCount: Int = 128) {
     @Volatile private var mbcInUse = false
 
     val attachedSessions: Set<Int> get() = effects.keys
+    /** elapsedRealtime when each session's current effect started being created (for audio-server verification). */
+    private val attachedAt = ConcurrentHashMap<Int, Long>()
+    fun attachedAtMs(sessionId: Int): Long? = attachedAt[sessionId]
 
     @Synchronized
     fun isHealthy(sessionId: Int): Boolean = effects[sessionId]?.let { dp ->
@@ -55,6 +59,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
         // remains in our map. Re-create it instead of reporting false success.
         detach(sessionId)
         var candidate: DynamicsProcessing? = null
+        val startedMs = SystemClock.elapsedRealtime()
         return try {
             val dp = DynamicsProcessing(PRIORITY, sessionId, buildConfig())
             candidate = dp
@@ -62,6 +67,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             dp.enabled = true
             check(dp.hasControl() && dp.enabled) { "Android did not enable the session effect" }
             effects[sessionId] = dp
+            attachedAt[sessionId] = startedMs
             Log.i(TAG, "attached to session $sessionId ($bandCount bands)")
             true
         } catch (e: RuntimeException) {
@@ -89,6 +95,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
 
     @Synchronized
     fun detach(sessionId: Int) {
+        attachedAt.remove(sessionId)
         effects.remove(sessionId)?.let {
             lastSent.remove(it)
             runCatching { it.enabled = false }

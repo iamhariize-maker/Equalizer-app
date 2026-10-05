@@ -202,16 +202,21 @@ private fun DetectionHealthCard() {
                     runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }
                 }) { Text("Open Svan's Android settings") }
             }
-            st.sessions.forEach { s -> SessionRow(s, st.verification[s.session.sessionId]) }
-            if (st.unresolved.isNotEmpty()) Text(
-                "Active but no session to attach to: " + st.unresolved.joinToString { it.packageName.ifEmpty { "uid:${it.uid}" } } + ". The player uses an output Android does not expose to effects.",
+            st.sessions.forEach { s -> SessionRow(labelFor(context, s.session.packageName), s, st.verification[s.session.sessionId]) }
+            // Only players that are actually playing: an idle record without a session is not a problem.
+            val stuck = st.unresolved.filter { it.state == "started" }
+            if (stuck.isNotEmpty()) Text(
+                "Playing but no session to attach to: " + stuck.joinToString { labelFor(context, it.packageName.ifEmpty { "uid:${it.uid}" }) } +
+                    ". The player uses an output Android does not expose to effects.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
+            Spacer(Modifier.height(8.dp))
+            // Two equal buttons with one-line labels: fits a 320 dp phone without wrapping.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(modifier = Modifier.weight(1f), onClick = {
                     if (SystemEqService.isRunning) SystemEqService.requestScanNow() else SystemEqService.start(context)
-                }) { Text("Scan now") }
-                OutlinedButton(onClick = {
+                }) { Text("Scan now", maxLines = 1) }
+                OutlinedButton(modifier = Modifier.weight(1f), onClick = {
                     scope.launch {
                         val text = withContext(Dispatchers.Default) { DiagnosticReport.build(context).take(180_000) }
                         runCatching {
@@ -223,9 +228,9 @@ private fun DetectionHealthCard() {
                             "Share diagnostic report",
                         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
-                }) { Text("Share diagnostic report") }
+                }) { Text("Share report", maxLines = 1) }
             }
-            Text("The report is copied to your clipboard too. It lists app names, session numbers and Android's audio tables; no audio and no account data. It is only shared if you send it.",
+            Text("Share report sends a diagnostic report and copies it to your clipboard. It lists app names, session numbers and Android's audio tables; no audio and no account data. It is only shared if you send it.",
                 style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint)
         }
     }
@@ -239,8 +244,7 @@ private fun sourceLine(st: DetectionStatus, now: Long): String {
 }
 
 @Composable
-private fun SessionRow(s: LedgerSession, v: Verification?) {
-    val name = s.session.packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+private fun SessionRow(name: String, s: LedgerSession, v: Verification?) {
     val state = if (s.session.state == "started" || s.serverActive == true) "playing" else "paused"
     val route = when {
         s.devices.contains("BLUETOOTH", true) -> "Bluetooth"
@@ -259,3 +263,8 @@ private fun SessionRow(s: LedgerSession, v: Verification?) {
             color = if (v == Verification.PROCESSING) Svan.Gold else Svan.TextMuted)
     }
 }
+
+/** The installed app's name, else the last package segment (same rule as the health headline). */
+private fun labelFor(context: android.content.Context, pkg: String): String = DetectionStatus.appLabel(pkg) { p ->
+    context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(p, 0)).toString()
+}.replaceFirstChar { it.uppercase() }

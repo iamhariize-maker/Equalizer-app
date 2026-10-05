@@ -185,4 +185,13 @@ class SessionLedgerTest {
         val direct = DetectionStatus.assess(true, true, true, 2, 0, merge(null).sessions, emptyList(), emptyMap()) { labels[it] }
         assertTrue(direct.second.startsWith("Neutron is playing on a direct output"))
     }
+
+    @Test fun onlyEffectsThatPredateTheReportAreJudged() {
+        // CI (API 34): re-creating effects for dynamics, then a report read 250 ms later, said MISSING and the
+        // router tore down the brand-new effect. A just-created effect must not be judged by that report.
+        assertFalse(EffectVerifier.judgeable(attachedAtMs = 10_000, reportStartMs = 10_250))
+        assertFalse(EffectVerifier.judgeable(attachedAtMs = null, reportStartMs = 10_250))
+        assertFalse(EffectVerifier.judgeable(attachedAtMs = 10_000, reportStartMs = Long.MIN_VALUE)) // no read this scan
+        assertTrue(EffectVerifier.judgeable(attachedAtMs = 10_000, reportStartMs = 11_500))
+    }
 }

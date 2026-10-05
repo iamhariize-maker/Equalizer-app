@@ -144,8 +144,12 @@ data class EqState(
         (tuning?.takeIf { it.enabled }?.bands ?: emptyList()) + manualBands() + bass.bands() +
             (activeSmart?.bands ?: emptyList())
 
-    /** Svaresa's level-evening request for system effects; null when Svaresa is not driving dynamics. */
-    val levelling: Double? get() = if (enabled) activeSmart?.levelling else null
+    /**
+     * Svaresa's level-evening request for system effects; null when Svaresa is not driving dynamics.
+     * Hold-to-compare and the EQ switch give 0.0 (neutral), not null: the compressor stage must stay
+     * configured, or every system effect would be torn down and re-created (an audible gap) on each press.
+     */
+    val levelling: Double? get() = smart?.levelling?.let { if (activeSmart != null) it else 0.0 }
 
     /** Bass shaper amount the engines should run (0 when the EQ is off). */
     val bassCharacter: Double get() = if (enabled) (bass.character + (activeSmart?.bassCharacter ?: 0.0)).coerceIn(-1.0, 1.0) else 0.0
