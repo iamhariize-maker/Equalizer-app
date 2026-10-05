@@ -97,11 +97,11 @@ fun SvaramanasPanel(
 
         Spacer(Modifier.height(14.dp))
         SectionLabel("Choose your sound style")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ModeCard(SmartMode.GUIDED, request.mode == SmartMode.GUIDED, listening && request.enabled, modifier = Modifier.weight(1f)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ModeCard(SmartMode.GUIDED, request.mode == SmartMode.GUIDED, listening && request.enabled, modifier = Modifier.fillMaxWidth()) {
                 Svaramanas.update { it.copy(mode = SmartMode.GUIDED, enabled = true) }
             }
-            ModeCard(SmartMode.SVARESA, request.mode == SmartMode.SVARESA, listening && request.enabled, modifier = Modifier.weight(1f)) {
+            ModeCard(SmartMode.SVARESA, request.mode == SmartMode.SVARESA, listening && request.enabled, modifier = Modifier.fillMaxWidth()) {
                 Svaramanas.update { it.copy(mode = SmartMode.SVARESA, enabled = true) }
             }
         }
@@ -221,21 +221,26 @@ private fun ModeCard(mode: SmartMode, selected: Boolean, listening: Boolean, mod
     val stroke = if (selected) Svan.Gold else Svan.Outline
     Row(
         modifier
-            .heightIn(min = 118.dp)
+            .heightIn(min = 86.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(if (selected) Svan.Gold.copy(alpha = 0.10f) else Svan.SurfaceHigh)
             .border(if (selected) 1.5.dp else 1.dp, stroke, RoundedCornerShape(18.dp))
             .clickable(onClick = onClick)
             .semantics { contentDescription = "${mode.plainName}, ${mode.sanskritName}. ${mode.promise}" }
             .padding(10.dp),
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (mode == SmartMode.GUIDED) SvaramanasMark(38.dp, listening = listening, resting = !selected)
         else SvaresaMark(38.dp, listening = listening, resting = !selected)
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
             Text(mode.plainName, style = MaterialTheme.typography.titleSmall, color = if (selected) Svan.Gold else Svan.Text)
-            Text(mode.sanskritName, style = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium, fontSize = 13.sp), color = Svan.Molten)
+            Text(
+                mode.sanskritName,
+                style = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium, fontSize = 13.sp),
+                color = Svan.Molten,
+                maxLines = 1,
+            )
             Spacer(Modifier.height(4.dp))
             Text(mode.promise, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         }
