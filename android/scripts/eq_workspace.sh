@@ -17,8 +17,12 @@ state() {
   $A logcat -c; eq eq_workspace
   for attempt in $(seq 1 10); do
     local value
-    value=$($A logcat -d -s EqSpike:I | sed -n 's/.*EQ_WORKSPACE //p' | tail -1)
-    if [ -n "$value" ]; then echo "$value" > "$OUT/$1.json"; return; fi
+    value=$($A logcat -d -s EqSpike:I | sed -n '/EQ_WORKSPACE_READY/p' | tail -1)
+    if [ -n "$value" ]; then
+      $A shell run-as app.svan cat files/eq-workspace.json > "$OUT/$1.json"
+      python3 -m json.tool "$OUT/$1.json" >/dev/null
+      return
+    fi
     sleep 1
   done
   echo "FAIL workspace state unavailable" >> "$OUT/results.txt"; exit 1

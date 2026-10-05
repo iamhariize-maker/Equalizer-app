@@ -65,6 +65,8 @@ layers, shelf endpoint compatibility and EQ-off behavior.
 `eq_workspace.sh` measures final output for manual gain, automatic ownership replacing that gain,
 fitted graphic filters, personal gain versus native response prediction, persisted preferences after
 restart, and manual restoration. CI must pass all six alongside existing audio/detection checks.
+The debug harness reads full reports from app-private storage with `run-as`; logcat truncates
+31/64-band JSON reports. This requires no additional permission.
 R8 release smoke exercises both new JNI functions and automated layouts. Screenshots cover the
 real auto/manual EQ controls on the small emulator; GUIDED/SVARESA captures explicitly set mode.
 

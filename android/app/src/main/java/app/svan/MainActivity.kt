@@ -108,7 +108,10 @@ class MainActivity : ComponentActivity() {
                     .put("appliedBands",org.json.JSONArray().apply { s.effectiveBands().forEach { put(it.toJson()) } })
                     .put("smartPreamp",s.smart?.preampDb ?: 0.0)
                     .put("response",EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0])
-                EqController.log("EQ_WORKSPACE $o")
+                // A 31/64-band report exceeds logcat's per-message limit. Keep the
+                // complete diagnostic in app-private storage; debug tests use run-as.
+                java.io.File(filesDir,"eq-workspace.json").writeText(o.toString())
+                EqController.log("EQ_WORKSPACE_READY")
             }
             "eq_personal_gain" -> SvanRepository.adjustSmartEq(intent.getIntExtra("index",0),intent.getFloatExtra("gain",0f).toDouble())
             "eq_undo" -> SvanRepository.undoEq()
