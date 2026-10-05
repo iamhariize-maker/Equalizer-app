@@ -87,11 +87,14 @@ data class BassTuner(
 
         val PRESETS = listOf(
             "Off" to BassTuner(),
-            "Deep & warm" to BassTuner(6.0, 55.0, -0.4),
-            "Punchy" to BassTuner(4.0, 85.0, 0.7),
-            "Tight & precise" to BassTuner(2.0, 70.0, 1.0),
-            "Club rumble" to BassTuner(9.0, 45.0, -0.8),
-            "Bass-light fix" to BassTuner(5.0, 110.0, 0.3),
+            // Starter presets are deliberately restrained; users can add more
+            // after listening instead of jumping straight to large boosts.
+            "Clean impact" to BassTuner(1.5, 75.0, 0.4),
+            "Deep & warm" to BassTuner(2.0, 55.0, -0.25),
+            "Punchy" to BassTuner(2.0, 85.0, 0.45),
+            "Tight & precise" to BassTuner(1.5, 70.0, 0.6),
+            "Club rumble" to BassTuner(2.5, 45.0, -0.35),
+            "Bass-light fix" to BassTuner(2.0, 110.0, 0.2),
         )
     }
 }

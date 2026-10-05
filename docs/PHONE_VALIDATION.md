@@ -9,9 +9,19 @@ Bluetooth latency. Capture quality controls do not change the system-effects eng
 
 # Svan phone validation
 
-Device: TECNO LH7n, Android 14. Current report: Engine B sounds delayed or doubled
-with YouTube Music over Bluetooth; other players and outputs have not been tested.
-This is a real listening report, not an emulator result. The changes below need retesting.
+Device reports from the owner, TECNO LH7n (Android 14): Engine B sounded delayed
+or doubled with YouTube Music over Bluetooth; Apple Music was detected earlier
+with Fosi Audio IM4 earbuds but is now missing over a wired connection; Neutron
+has not appeared; no player session was shown while using Realme Buds Air 8, with
+LHDC both enabled and disabled. These are real listening observations. No audio
+service dump or device logs are available yet, so their causes remain unknown.
+
+The music player owns the playback session; IM4 and Realme Buds Air 8 are output
+routes. A route change should not normally create or remove the player's session,
+but player-specific direct/offload output or an OEM audio-service report may
+change what Svan can observe or process. The diagnostics below are intended to
+separate “Android reported no player track,” “track found but no attachable
+session,” and “session found but not routed by Svan.”
 
 ## Isolate delay from doubled playback
 
@@ -42,7 +52,34 @@ reports an incompatible signature, uninstall the older preview before installing
 this deletes its saved settings and presets. Do not uninstall without saving any
 settings you need. No ADB commands are required for the listening checklist.
 
-## YouTube Music / Bluetooth first
+## Check player detection on wired and Bluetooth routes
+
+Use one music app that is actively playing; the earbud name is not expected to
+appear as an app row.
+
+1. Install the latest `Svan-preview`, open Hi-Fi → Music detection, keep a song
+   playing, and tap Refresh music detection. Read the last-scan summary: Android
+   track count, usable media-session count, and any entry that lacked an app or
+   session ID.
+2. Repeat with Apple Music on a wired output and on the Realme Buds Air 8 (if
+   available). Then repeat with Neutron on each route. Keep app, track, Android
+   settings, and Svan engine mode constant while changing only the output route.
+3. For Neutron, test both its normal Android output and any exclusive/USB/direct
+   or bit-perfect option separately. Those are different player paths; record
+   the exact option. Do not assume LHDC is the cause if LHDC on/off gives the
+   same result.
+4. For each attempt, note the detected app row and engine, last-scan counts,
+   route type (wired / Bluetooth / phone speaker), codec if the phone reports it,
+   and whether playback continued normally. The expandable local audio details
+   may help diagnose a parser miss; they are not uploaded by Svan.
+
+If Android sees a usable media session, check Apps & engines to see whether Svan
+attached Engine A or Engine B. If it sees an entry but no usable session ID, the
+player may be using an output path Svan cannot attach to. If no track is reported,
+capture the expanded local audio details while music is still playing. These
+outcomes require different fixes.
+
+## YouTube Music / Bluetooth echo first
 
 The 0.1 preview was installed and tested: screenshots show zero detected apps,
 so none of its EQ changes reached YouTube Music. Version 0.2 repairs the runtime

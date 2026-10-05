@@ -308,6 +308,9 @@ private fun BassTunerCard(b: BassTuner) {
                 }, step = 0.05, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
             }
             Spacer(Modifier.height(6.dp))
+            Text("Start with one tick at a time: Amount +0.5 dB, Depth +1 Hz, or Feel +5%. Replay the same passage at matched loudness. Bass boosts use headroom; back off if it turns rough, boomy, or tiring.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+            Spacer(Modifier.height(6.dp))
             Text("Depth: deep sub (40 Hz) ↔ mid-bass (160 Hz). Feel: sustain lets notes bloom; punch sharpens kicks and " +
                 "tightens tails. Drag dials sideways; double-tap to reset. A native transient shaper in the audiophile engine; an approximation on system effects. Tuned on synthetic signals; results vary with music.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
@@ -329,6 +332,9 @@ private fun VocalTunerCard(v: app.svan.model.VocalTuner) {
                 Knob("Smooth", v.smoothness, 0.0, 1.0, ::pct, step = 0.05,
                     onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(smoothness = x)) } })
             }
+            Spacer(Modifier.height(6.dp))
+            Text("Change one dial by one tick (5%) at a time. Compare the same short passage at matched loudness; double-tap a dial to reset it.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
             Spacer(Modifier.height(6.dp))
             Text("Shapes the centre of the stereo mix, which can include vocals and centred instruments. Smooth reacts to upper-mid energy, not voice recognition. System effects use a coarse approximation; music listening tests are pending.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
@@ -353,6 +359,9 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
                 Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.05,
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(instruments = x)) } })
             }
+            Spacer(Modifier.height(6.dp))
+            Text("Change one dial by one tick (5%) at a time. Compare the same short passage at matched loudness; double-tap a dial to reset it.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
             Spacer(Modifier.height(6.dp))
             Text("Shapes stereo side energy above the bass range. It cannot identify individual instruments; a centred instrument will not be boosted. No added reverb. Requires an app actively using the audiophile engine; has no effect on system effects.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)

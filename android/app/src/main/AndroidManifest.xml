@@ -21,6 +21,10 @@
          media browser service; this avoids the Play-restricted QUERY_ALL_PACKAGES. -->
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
+        <!-- Explicitly keep the owner's known players resolvable even when an
+             OEM omits their launcher/media-browser filter from package queries. -->
+        <package android:name="com.apple.android.music" />
+        <package android:name="com.neutroncode.mp" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

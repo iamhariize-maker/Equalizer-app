@@ -19,6 +19,15 @@ class BassTunerTest {
     }
 
     @Test
+    fun starterBassPresetsUseSmallBoostsAndOfferCleanImpactShape() {
+        assertTrue(BassTuner.PRESETS.filter { it.first != "Off" }.all { it.second.amountDb in 0.0..2.5 })
+        val clean = BassTuner.PRESETS.first { it.first == "Clean impact" }.second
+        assertEquals(1.5, clean.amountDb, 0.0)
+        assertTrue(clean.bands().any { it.type == FilterType.LOW_SHELF && it.freqHz == 75.0 && it.gainDb == 1.5 })
+        assertTrue(clean.bands().any { it.type == FilterType.PEAK && it.freqHz == 250.0 && it.gainDb == -0.8 })
+    }
+
+    @Test
     fun layersStackInOrder() {
         val t = Tuning(headphone = "X", source = "s", signature = "Harman", bands = listOf(Band(gainDb = 1.0)), fitRmsDb = 0.1)
         val s = EqState(bands = listOf(Band(gainDb = 2.0)), tuning = t, bass = BassTuner(3.0, 80.0, 0.0))

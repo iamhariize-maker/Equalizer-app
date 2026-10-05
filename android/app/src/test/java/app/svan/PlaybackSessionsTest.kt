@@ -49,4 +49,24 @@ class PlaybackSessionsTest {
         assertEquals("started", s.state)
         assertTrue(s.flagsBlockCapture)
     }
+
+    @Test
+    fun acceptsAlternateUidAndFieldSeparators() {
+        val line = "AudioPlaybackConfiguration piid:9 clientUid=10109 state=STARTED usage=1 flags:1024 sessionId=65535"
+        val s = PlaybackSessions.parse(line).single()
+        assertEquals(10109, s.uid)
+        assertEquals(65535, s.sessionId)
+        assertEquals("started", s.state)
+        assertEquals("USAGE_MEDIA", s.usage)
+        assertTrue(s.flagsBlockCapture)
+    }
+
+    @Test
+    fun ignoresSessionlessDirectTrackAndSessionZero() {
+        val dump = """
+            |AudioPlaybackConfiguration piid:1 u/pid:10109/22 state:started usage=USAGE_MEDIA flags=0x0
+            |AudioPlaybackConfiguration piid:2 u/pid:10109/22 state:started usage=USAGE_MEDIA flags=0x0 sessionId:0
+        """.trimMargin()
+        assertTrue(PlaybackSessions.parse(dump).isEmpty())
+    }
 }

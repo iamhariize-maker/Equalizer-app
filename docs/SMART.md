@@ -35,6 +35,15 @@ itself over full-screen video. The owner has reported delay/echo-like playback o
 Bluetooth on the TECNO LH7n; this real-device issue is unresolved and takes priority over new
 sound-changing DSP or ML. Emulator tones do not settle it.
 
+New real-phone detection evidence (5 October 2026): Apple Music was detected earlier with Fosi Audio
+IM4 but is now missing over wired output; Neutron has not appeared; no player session appeared using
+Realme Buds Air 8 with LHDC either on or off. These are user-reported and have not been reproduced from
+device logs. Player-session discovery and headphone/output routing are separate questions. The current
+increment adds explicit visibility for Apple Music/Neutron, tolerant parsing of playback-report field
+variants, and a local scan summary that distinguishes no track, no usable session ID, and a parsed media
+session. A conservative Clean impact starter preset and one-tick directions are being added. Neither
+the new detection path nor this bass profile has been verified on the TECNO yet.
+
 ## 1. Persona and behaviour priority
 
 Svaramanas is a **tonal police** and, underneath, a **passionate audiophile**: it enforces what protects
@@ -209,10 +218,12 @@ panel study is required before a public quality claim.
 ## 8. Build order
 
 1. Complete review of the current CI run; inspect e2e logs/screenshots and deliver its preview if green.
-2. Isolate the TECNO YT Music/Bluetooth delay or double-copy report using one engine at a time. Keep
+2. On the TECNO, verify Apple Music, Neutron and YT Music discovery on wired and Bluetooth routes; then
+   isolate the YT Music/Bluetooth delay or double-copy report using one engine at a time. Keep broader
    sound-changing work behind this real-device check.
 3. Build Test Pilot + evidence-backed `AppProfile`; run the player/route matrix on the TECNO and V60.
-4. Build the randomized, level-matched blind A/B tool and retain results locally.
+4. Level-match and compare the Clean impact preset against Flat on bass-rich and vocal-led passages;
+   revise it only from real listening results. Then build the randomized, level-matched blind A/B tool.
 5. Prototype bounded dynamic EQ/resonance suppression as an optional feature; measure synthetic pairs,
    Engine loudness/peak/headroom, bypass, and human preference before default-on.
 6. Add hearing/headphone personalization only where the route/profile is known. The current AutoEq index

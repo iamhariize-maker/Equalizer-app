@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import java.io.FileInputStream
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /** One player as seen by the audio service. */
 data class PlaybackSession(
@@ -29,6 +31,17 @@ data class PlaybackSession(
     }
 }
 
+/** Local-only summary of the most recent Android audio-service scan. */
+data class PlaybackScanReport(
+    val scannedAtMs: Long = 0L,
+    val playbackConfigCount: Int = 0,
+    val parsedSessionCount: Int = 0,
+    val mediaSessions: List<PlaybackSession> = emptyList(),
+    val unparsedConfigCount: Int = 0,
+    val configPreview: String = "",
+    val error: String? = null,
+)
+
 /**
  * Finds other apps' audio sessions without relying on their OPEN broadcasts,
  * by reading the `audio` system service dump. DUMP is granted once through
@@ -36,39 +49,71 @@ data class PlaybackSession(
  */
 object PlaybackSessions {
 
-    private val UID_PID = Regex("""u/pid:(-?\d+)/(-?\d+)""")
-    private val USAGE = Regex("""usage=(\w+)""")
-    private val STATE = Regex("""state:(\w+)""")
-    private val FLAGS = Regex("""flags=0x([0-9A-Fa-f]+)""")
-    private val SESSION = Regex("""sessionId:(\d+)""")
+    private val UID = Regex("""(?:u/pid\s*:\s*|(?:client)?uid\s*[:=]\s*)(-?\d+)""", RegexOption.IGNORE_CASE)
+    private val USAGE = Regex("""\busage\s*[:=]\s*([\w]+)""", RegexOption.IGNORE_CASE)
+    private val STATE = Regex("""\bstate\s*[:=]\s*([\w]+)""", RegexOption.IGNORE_CASE)
+    private val FLAGS = Regex("""\bflags\s*[:=]\s*(0[xX][0-9A-Fa-f]+|\d+)""", RegexOption.IGNORE_CASE)
+    private val SESSION = Regex("""\bsessionId\s*[:=]\s*(\d+)""", RegexOption.IGNORE_CASE)
+    private val CONFIG = Regex("""AudioPlaybackConfiguration|\bpiid\s*:""", RegexOption.IGNORE_CASE)
+
+    private val mutableReport = MutableStateFlow(PlaybackScanReport())
+    val report = mutableReport.asStateFlow()
 
     /**
      * Parses the AudioPlaybackConfiguration lines of `dumpsys audio` (API 31+
      * format, which carries the session id). Field order differs between
      * releases, so each field is matched independently.
      */
-    fun parse(dump: String): List<PlaybackSession> =
-        dump.lineSequence()
-            .filter { "AudioPlaybackConfiguration" in it && "sessionId:" in it }
-            .mapNotNull { line ->
-                val uid = UID_PID.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
-                val sid = SESSION.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
-                if (sid <= 0) return@mapNotNull null
-                PlaybackSession(
-                    sessionId = sid,
-                    uid = uid,
-                    usage = USAGE.find(line)?.groupValues?.get(1) ?: "USAGE_UNKNOWN",
-                    state = STATE.find(line)?.groupValues?.get(1) ?: "unknown",
-                    flags = FLAGS.find(line)?.groupValues?.get(1)?.toLongOrNull(16)?.toInt() ?: 0,
-                )
-            }
-            .groupBy { it.sessionId }
-            .values.map { players ->
-                // A released/paused track can appear after a playing track on
-                // the same session. Preserve activity and every capture opt-out.
-                val active = players.firstOrNull { it.state == "started" } ?: players.last()
-                active.copy(flags = players.fold(0) { flags, player -> flags or player.flags })
-            }
+    fun parse(dump: String): List<PlaybackSession> = parseDump(dump).sessions
+
+    private data class ParsedDump(
+        val configLines: List<String>,
+        val sessions: List<PlaybackSession>,
+        val unparsedConfigCount: Int,
+    )
+
+    private fun parseDump(dump: String): ParsedDump {
+        val configLines = dump.lineSequence().filter { CONFIG.containsMatchIn(it) }.toList()
+        var unparsed = 0
+        val records = configLines.mapNotNull { line ->
+            val session = parseConfigLine(line)
+            if (session == null) unparsed++
+            session
+        }
+        val sessions = records.groupBy { it.sessionId }.values.map { players ->
+            // A released/paused track can appear after a playing track on
+            // the same session. Preserve activity and every capture opt-out.
+            val active = players.firstOrNull { it.state == "started" } ?: players.last()
+            active.copy(flags = players.fold(0) { flags, player -> flags or player.flags })
+        }
+        return ParsedDump(configLines, sessions, unparsed)
+    }
+
+    private fun parseConfigLine(line: String): PlaybackSession? {
+        if (!CONFIG.containsMatchIn(line)) return null
+        val uid = UID.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+        val sid = SESSION.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+        if (sid <= 0) return null // session 0 cannot be attached to a player effect
+        val rawUsage = USAGE.find(line)?.groupValues?.get(1)?.uppercase()
+        val usage = when (rawUsage) {
+            "1", "MEDIA" -> "USAGE_MEDIA"
+            "14", "GAME" -> "USAGE_GAME"
+            "0", "UNKNOWN", null -> "USAGE_UNKNOWN"
+            else -> if (rawUsage.startsWith("USAGE_")) rawUsage else "USAGE_$rawUsage"
+        }
+        val rawFlags = FLAGS.find(line)?.groupValues?.get(1)
+        val flags = rawFlags?.let {
+            if (it.startsWith("0x", ignoreCase = true)) it.drop(2).toLongOrNull(16)?.toInt()
+            else it.toLongOrNull()?.toInt()
+        } ?: 0
+        return PlaybackSession(
+            sessionId = sid,
+            uid = uid,
+            usage = usage,
+            state = STATE.find(line)?.groupValues?.get(1)?.lowercase() ?: "unknown",
+            flags = flags,
+        )
+    }
 
     fun hasDumpPermission(context: Context): Boolean =
         context.checkSelfPermission(android.Manifest.permission.DUMP) == PackageManager.PERMISSION_GRANTED
@@ -77,13 +122,29 @@ object PlaybackSessions {
     fun query(context: Context): List<PlaybackSession>? {
         if (!hasDumpPermission(context)) {
             lastError = "Enhanced detection is not enabled. Open Hi-Fi → Music detection."
+            mutableReport.value = mutableReport.value.copy(error = lastError)
             return null
         }
-        val dump = dumpService("audio") ?: return null
-        val pm = context.packageManager
-        return parse(dump).map { s ->
-            s.copy(packageName = pm.getPackagesForUid(s.uid)?.firstOrNull() ?: "uid:${s.uid}")
+        val dump = dumpService("audio")
+        if (dump == null) {
+            mutableReport.value = mutableReport.value.copy(scannedAtMs = System.currentTimeMillis(), error = lastError)
+            return null
         }
+        val parsed = parseDump(dump)
+        val pm = context.packageManager
+        val sessions = parsed.sessions.map { s ->
+            val packages = runCatching { pm.getPackagesForUid(s.uid) }.getOrNull()
+            s.copy(packageName = packages?.firstOrNull() ?: "uid:${s.uid}")
+        }
+        mutableReport.value = PlaybackScanReport(
+            scannedAtMs = System.currentTimeMillis(),
+            playbackConfigCount = parsed.configLines.size,
+            parsedSessionCount = sessions.size,
+            mediaSessions = sessions.filter { it.usageCapturable },
+            unparsedConfigCount = parsed.unparsedConfigCount,
+            configPreview = parsed.configLines.take(5).joinToString("\n").take(1600),
+        )
+        return sessions
     }
 
     @Volatile var lastError: String? = null

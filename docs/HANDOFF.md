@@ -4,6 +4,27 @@ Written at the end of a long Claude Code session so another agent (Codex cloud) 
 Repo: `iamhariize-maker/Equalizer-app`, branch **`ccr-208702a3-2mju42`** (not merged; no PR opened).
 Start with `AGENTS.md`. This file has the detail.
 
+## Player discovery and bass tuner — 2026-10-05 (current continuation)
+
+The owner reports that Apple Music was detected earlier with Fosi Audio IM4, but is now missing over a
+wired connection; Neutron has not appeared; and no player session appeared using Realme Buds Air 8
+with LHDC either on or off. This is user-reported; no TECNO dump or logs are available. Treat the buds
+as output routes and the player as the source session. The cause could be Android's report format,
+session visibility, or an app-specific output path; it is not established.
+
+The current source changes add explicit package visibility for Apple Music and Neutron, accept more
+playback-dump field formats, and show local scan counts plus optional raw playback-config lines in
+Hi-Fi → Music detection. This should distinguish no track, an unattachable track, and a parsed session
+that has not been routed. Bass starter presets are reduced to +1.5–2.5 dB, with a new Clean impact
+profile (+1.5 dB at 75 Hz, −0.8 dB at 250 Hz) and small-step, level-matched listening guidance on all
+tuners. This is an experimental listening starting point, not a proven sound-quality improvement.
+
+Verification for this continuation is pending. The local checkout is based on `b0527c3`, while the
+remote feature branch has the previously validated routing/CI fixes through `36525ab`. Build and
+review the new changes on that remote branch before delivering another preview. Physical TECNO and LG
+V60 checks remain outstanding; do not claim Apple/Neutron or Realme-route compatibility until the
+owner tests it.
+
 > **Newest brief: `docs/CODEX_SVARAMANAS.md`** (Svaramanas sound intelligence: what's built, what's unverified,
 > research agenda, next increments). Paste-in prompt: `docs/CODEX_PROMPT.md`.
 

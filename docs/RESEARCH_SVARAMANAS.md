@@ -70,6 +70,34 @@ latency, especially on Bluetooth. AAudio's low-latency mode can reduce buffers f
 it does not prove that a playback-capture → DSP → Bluetooth route is low-latency. Measure before
 migrating APIs or promising video sync.
 
+### New player and route evidence from the TECNO
+
+On 5 October 2026 the owner reported: Apple Music had worked earlier with Fosi Audio IM4, but was no
+longer detected on a wired connection; Neutron had not been detected; no music session appeared while
+using Realme Buds Air 8, regardless of LHDC setting. This is **user-reported, not independently
+reproduced**. The earbuds are output routes; the player app creates the audio session. A route or codec
+name cannot be used to infer that the player session exists, that Engine B can capture it, or that
+Engine A's session effect is attached.
+
+The current detector reads the audio-service dump because Android does not offer a normal third-party
+API for enumerating arbitrary players' session IDs. `dumpsys` line formatting is an implementation
+detail rather than a compatibility guarantee. A missing app row therefore needs three separate facts:
+number of playback-configuration entries, number with both a package UID and a nonzero session ID, and
+which of those Svan routed. The UI now exposes those counts and an optional local sample of the lines,
+so a parser miss can be distinguished from an absent or sessionless track. The parser accepts alternate
+field separators and numeric usage/flag values seen across system dumps. Package visibility is explicit
+for Apple Music and Neutron; broad `QUERY_ALL_PACKAGES` access remains inappropriate.
+
+Android's playback-capture contract depends on source usage, app capture policy, profile and projection
+grant—not the name of an earbud or advertised Bluetooth codec. Neutron's direct/USB/bit-perfect settings
+are a hypothesis to test separately, not a diagnosis from the missing row. Record the active player,
+output route and player output mode while comparing wired and Bluetooth. If no attachable session exists,
+Svan cannot attach a per-session system effect; if a session exists, the capture probe must still establish
+whether Engine B receives non-silent samples.
+
+References: [Android playback capture](https://developer.android.com/media/platform/av-capture) and
+[AudioPlaybackConfiguration](https://developer.android.com/reference/android/media/AudioPlaybackConfiguration).
+
 Android 14's USB mixer-attribute support is useful for apps that own their output stream. It does not
 give Svan a general bit-perfect tap into another player's audio. Any active EQ changes the samples, and
 an exclusive/direct player path may bypass system effects. Do not promise both bit-perfect output and
@@ -123,6 +151,17 @@ Suggested test-only suppressor protocol:
 
 This is an original DSP direction; commercial processors' behavior can be studied, but do not copy their
 code, presets, model weights, or undocumented internals. Keep the repo's existing no-GPL-copy rule.
+
+### Bass controls: small starting moves, preference still unverified
+
+The existing bass control combines a static low shelf with a transient attack/sustain shaper; positive
+character also reduces a fixed 250 Hz band. That creates a sensible route to a more articulated bass
+*shape*, but a synthetic kick response cannot establish that a listener hears it as better bass. The
+updated `Clean impact` starter uses a +1.5 dB, 75 Hz low shelf and a −0.8 dB, 250 Hz peak, with a
+moderate punch setting. Other bass preset starting gains are capped at +2.5 dB, and the UI recommends
+one tick at a time, same-passage and loudness-matched comparisons. Larger manual changes remain
+available; this is not a claim that any preset is preferred. The owner should compare it at matched
+loudness on both known earbud routes, then retain or revise it based on listening.
 
 ## 3. Clarity metrics: describe the signal; do not manufacture a clarity score
 
