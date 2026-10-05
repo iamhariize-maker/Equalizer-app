@@ -21,10 +21,31 @@
          media browser service; this avoids the Play-restricted QUERY_ALL_PACKAGES. -->
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
-        <!-- Explicitly keep the owner's known players resolvable even when an
-             OEM omits their launcher/media-browser filter from package queries. -->
+        <!-- Explicit visibility for common streaming and offline players. The
+             launcher/media-browser queries below still cover other players;
+             do not request broad QUERY_ALL_PACKAGES inventory access. -->
+        <package android:name="com.google.android.apps.youtube.music" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.spotify.music" />
+        <package android:name="com.amazon.mp3" />
+        <package android:name="deezer.android.app" />
+        <package android:name="com.aspiro.tidal" />
+        <package android:name="com.qobuz.music" />
         <package android:name="com.apple.android.music" />
+        <package android:name="com.soundcloud.android" />
+        <package android:name="com.pandora.android" />
+        <package android:name="com.maxmpz.audioplayer" />
+        <package android:name="com.onkyo.jp.musicplayer" />
         <package android:name="com.neutroncode.mp" />
+        <package android:name="com.hiby.music" />
+        <package android:name="com.fiio.music" />
+        <package android:name="com.extreamsd.usbaudioplayerpro" />
+        <package android:name="org.videolan.vlc" />
+        <package android:name="com.foobar2000.foobar2000" />
+        <package android:name="com.aimp.player" />
+        <package android:name="in.krosbits.musicolet" />
+        <package android:name="com.rhmsoft.pulsar" />
+        <package android:name="com.plexapp.android" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

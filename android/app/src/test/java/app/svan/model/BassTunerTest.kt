@@ -28,6 +28,16 @@ class BassTunerTest {
     }
 
     @Test
+    fun fullImpactPresetAddsControlledLowShelfAndMudCut() {
+        val full = BassTuner.PRESETS.first { it.first == "Full impact" }.second
+        assertEquals(2.5, full.amountDb, 0.0)
+        assertEquals(68.0, full.focusHz, 0.0)
+        assertTrue(full.character in 0.0..1.0)
+        assertTrue(full.bands().any { it.type == FilterType.LOW_SHELF && it.freqHz == 68.0 && it.gainDb == 2.5 })
+        assertTrue(full.bands().any { it.type == FilterType.PEAK && it.freqHz == 250.0 && it.gainDb < 0.0 })
+    }
+
+    @Test
     fun layersStackInOrder() {
         val t = Tuning(headphone = "X", source = "s", signature = "Harman", bands = listOf(Band(gainDb = 1.0)), fitRmsDb = 0.1)
         val s = EqState(bands = listOf(Band(gainDb = 2.0)), tuning = t, bass = BassTuner(3.0, 80.0, 0.0))

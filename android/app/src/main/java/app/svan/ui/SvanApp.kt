@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -84,6 +85,7 @@ fun SvanApp(
     labActions: List<Pair<String, () -> Unit>>,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val tabState = rememberSaveableStateHolder()
     // Boot animation once per app start (survives rotation, not a fresh launch).
     var booted by rememberSaveable { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
@@ -111,12 +113,14 @@ fun SvanApp(
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             AnimatedContent(tab, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "tab") { t ->
-                when (t) {
-                    0 -> SoundScreen()
-                    1 -> EqScreen(onOpenDetection = { tab = 3 })
-                    2 -> PresetsScreen()
-                    3 -> AudiophileScreen(onStartCapture, onStopCapture)
-                    else -> LabScreen(labActions)
+                tabState.SaveableStateProvider(t) {
+                    when (t) {
+                        0 -> SoundScreen()
+                        1 -> EqScreen(onOpenDetection = { tab = 3 })
+                        2 -> PresetsScreen()
+                        3 -> AudiophileScreen(onStartCapture, onStopCapture)
+                        else -> LabScreen(labActions)
+                    }
                 }
             }
         }

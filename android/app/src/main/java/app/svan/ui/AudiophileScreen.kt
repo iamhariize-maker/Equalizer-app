@@ -142,7 +142,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
 
         SectionLabel("Apps & engines")
-        Text("Play audio in an app to see it here. Auto uses the audiophile engine when capture is allowed. Changing a choice stops that engine; start it again to apply.",
+        Text("Try Spotify, Amazon Music, Apple Music, Poweramp, Neutron, ONKYO HF Player, VLC, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         if (knownApps.isEmpty()) Text("No audio apps detected yet.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         knownApps.sorted().forEach { pkg ->

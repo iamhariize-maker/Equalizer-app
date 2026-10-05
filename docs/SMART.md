@@ -39,10 +39,11 @@ New real-phone detection evidence (5 October 2026): Apple Music was detected ear
 IM4 but is now missing over wired output; Neutron has not appeared; no player session appeared using
 Realme Buds Air 8 with LHDC either on or off. These are user-reported and have not been reproduced from
 device logs. Player-session discovery and headphone/output routing are separate questions. The current
-increment adds explicit visibility for Apple Music/Neutron, tolerant parsing of playback-report field
-variants, and a local scan summary that distinguishes no track, no usable session ID, and a parsed media
-session. A conservative Clean impact starter preset and one-tick directions are being added. Neither
-the new detection path nor this bass profile has been verified on the TECNO yet.
+increment adds explicit package visibility for common streaming/local players, tolerant parsing of
+playback-report field variants, and a local scan summary that distinguishes no track, no usable session
+ID, and a parsed media session. It also adds one-tick listening callouts, a controlled Full impact
+starting preset and saveable tab state. Neither the new detection path nor this bass profile has been
+verified on the TECNO yet; listing an app package is not proof that its session is visible or captured.
 
 ## 1. Persona and behaviour priority
 
@@ -189,8 +190,11 @@ the **player coach**:
 - Exclusive USB / bit-perfect mode (Neutron, HiBy, Onkyo) → Svan cannot touch it; say so and how to fix.
 - Normalisation on → explain interaction with Svaramanas's loudness match.
 
-Initial list: YT Music, Spotify, Apple Music, Amazon Music, Neutron, HiBy Music, ONKYO HF Player,
-Poweramp, plus generic local players.
+Declared visibility list: YouTube Music, YouTube, Spotify, Amazon Music, Apple Music, Tidal, Deezer,
+Qobuz, SoundCloud, Pandora, Neutron, HiBy, FiiO Music, ONKYO HF Player, Poweramp, USB Audio Player Pro,
+VLC, foobar2000, AIMP, Musicolet, Pulsar and Plex. This list allows UID/name resolution when the system
+reports a package; capture/session support remains unknown until probed on a particular phone and output
+mode.
 
 ## 7. Test plan
 
@@ -222,8 +226,8 @@ panel study is required before a public quality claim.
    isolate the YT Music/Bluetooth delay or double-copy report using one engine at a time. Keep broader
    sound-changing work behind this real-device check.
 3. Build Test Pilot + evidence-backed `AppProfile`; run the player/route matrix on the TECNO and V60.
-4. Level-match and compare the Clean impact preset against Flat on bass-rich and vocal-led passages;
-   revise it only from real listening results. Then build the randomized, level-matched blind A/B tool.
+4. Level-match and compare Clean impact and Full impact against Flat on bass-rich and vocal-led passages;
+   revise presets only from real listening results. Then build the randomized, level-matched blind A/B tool.
 5. Prototype bounded dynamic EQ/resonance suppression as an optional feature; measure synthetic pairs,
    Engine loudness/peak/headroom, bypass, and human preference before default-on.
 6. Add hearing/headphone personalization only where the route/profile is known. The current AutoEq index

@@ -90,6 +90,7 @@ data class BassTuner(
             // Starter presets are deliberately restrained; users can add more
             // after listening instead of jumping straight to large boosts.
             "Clean impact" to BassTuner(1.5, 75.0, 0.4),
+            "Full impact" to BassTuner(2.5, 68.0, 0.55),
             "Deep & warm" to BassTuner(2.0, 55.0, -0.25),
             "Punchy" to BassTuner(2.0, 85.0, 0.45),
             "Tight & precise" to BassTuner(1.5, 70.0, 0.6),

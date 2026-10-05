@@ -86,7 +86,10 @@ number of playback-configuration entries, number with both a package UID and a n
 which of those Svan routed. The UI now exposes those counts and an optional local sample of the lines,
 so a parser miss can be distinguished from an absent or sessionless track. The parser accepts alternate
 field separators and numeric usage/flag values seen across system dumps. Package visibility is explicit
-for Apple Music and Neutron; broad `QUERY_ALL_PACKAGES` access remains inappropriate.
+for common streaming players (including Apple Music, Amazon Music, Spotify, Tidal, Qobuz and SoundCloud)
+and local players (including Neutron, Poweramp, ONKYO HF Player, HiBy, FiiO Music, USB Audio Player Pro,
+VLC, foobar2000, AIMP and Musicolet). This improves UID-to-name resolution only. Every app/route/mode
+still needs its own observation; broad `QUERY_ALL_PACKAGES` access remains inappropriate.
 
 Android's playback-capture contract depends on source usage, app capture policy, profile and projection
 grant—not the name of an earbud or advertised Bluetooth codec. Neutron's direct/USB/bit-perfect settings
@@ -157,8 +160,9 @@ code, presets, model weights, or undocumented internals. Keep the repo's existin
 The existing bass control combines a static low shelf with a transient attack/sustain shaper; positive
 character also reduces a fixed 250 Hz band. That creates a sensible route to a more articulated bass
 *shape*, but a synthetic kick response cannot establish that a listener hears it as better bass. The
-updated `Clean impact` starter uses a +1.5 dB, 75 Hz low shelf and a −0.8 dB, 250 Hz peak, with a
-moderate punch setting. Other bass preset starting gains are capped at +2.5 dB, and the UI recommends
+`Clean impact` starter uses a +1.5 dB, 75 Hz low shelf and a −0.8 dB, 250 Hz peak. A new `Full impact`
+option moves that profile to +2.5 dB at 68 Hz with a stronger punch setting and a small 250 Hz cut.
+Other bass preset starting gains are capped at +2.5 dB, and the UI recommends
 one tick at a time, same-passage and loudness-matched comparisons. Larger manual changes remain
 available; this is not a claim that any preset is preferred. The owner should compare it at matched
 loudness on both known earbud routes, then retain or revise it based on listening.

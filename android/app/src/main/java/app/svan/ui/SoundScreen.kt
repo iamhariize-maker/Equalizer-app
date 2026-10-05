@@ -280,8 +280,14 @@ private fun TunerHeader(title: String, subtitle: String) {
 
 @Composable
 private fun TuningGuidance(text: String) {
-    Text(text, style = MaterialTheme.typography.bodySmall, color = Svan.Ember,
-        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
+    Column(
+        Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(12.dp))
+            .background(Svan.SurfaceHigh).border(1.dp, Svan.Outline, RoundedCornerShape(12.dp)).padding(10.dp),
+    ) {
+        Text("LISTENING TIP", style = MaterialTheme.typography.labelSmall, color = Svan.Gold)
+        Spacer(Modifier.height(3.dp))
+        Text(text, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+    }
 }
 
 @Composable

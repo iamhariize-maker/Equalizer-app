@@ -47,10 +47,11 @@ that baseline before making further changes.
 
 Download `Svan-preview` from the branch's latest successful CI run and unzip
 `Svan-preview.apk` on the phone. It is a minified preview with arm64 and x86_64,
-not a store release. Each environment's debug signing key may differ. If Android
-reports an incompatible signature, uninstall the older preview before installing;
-this deletes its saved settings and presets. Do not uninstall without saving any
-settings you need. No ADB commands are required for the listening checklist.
+not a store release. Current previews use the same preview signing key and should
+update in place. If Android reports an incompatible signature, it may be an older
+preview signed with the earlier per-runner key; uninstalling that build deletes
+saved settings and presets, so export or note anything you need first. No ADB
+commands are required for the listening checklist.
 
 ## Check player detection on wired and Bluetooth routes
 
@@ -72,6 +73,13 @@ appear as an app row.
    route type (wired / Bluetooth / phone speaker), codec if the phone reports it,
    and whether playback continued normally. The expandable local audio details
    may help diagnose a parser miss; they are not uploaded by Svan.
+
+The visibility list now covers common streaming players (YouTube Music, YouTube, Spotify, Amazon Music,
+Apple Music, Tidal, Deezer, Qobuz, SoundCloud, Pandora) and offline players (Poweramp, Neutron, ONKYO
+HF Player, HiBy, FiiO Music, USB Audio Player Pro, VLC, foobar2000, AIMP, Musicolet, Pulsar and Plex).
+That lets Svan resolve app names and UIDs when Android reports them; it is not a certification or promise
+that every output mode exposes a session or permits capture. Test only the apps installed on the phone,
+and compare a player's ordinary Android output separately from any exclusive/direct/bit-perfect mode.
 
 If Android sees a usable media session, check Apps & engines to see whether Svan
 attached Engine A or Engine B. If it sees an entry but no usable session ID, the

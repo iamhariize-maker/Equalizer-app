@@ -12,18 +12,32 @@ with LHDC either on or off. This is user-reported; no TECNO dump or logs are ava
 as output routes and the player as the source session. The cause could be Android's report format,
 session visibility, or an app-specific output path; it is not established.
 
-The current source changes add explicit package visibility for Apple Music and Neutron, accept more
-playback-dump field formats, and show local scan counts plus optional raw playback-config lines in
-Hi-Fi → Music detection. This should distinguish no track, an unattachable track, and a parsed session
-that has not been routed. Bass starter presets are reduced to +1.5–2.5 dB, with a new Clean impact
-profile (+1.5 dB at 75 Hz, −0.8 dB at 250 Hz) and small-step, level-matched listening guidance on all
-tuners. This is an experimental listening starting point, not a proven sound-quality improvement.
+The source adds explicit package visibility for common streaming/offline players, accepts more
+playback-dump field formats, and shows local scan counts plus optional raw playback-config lines in
+Hi-Fi → Music detection. This separates no reported track, a track with no usable session, and a parsed
+session that has not been routed. Bass starter presets are capped at +2.5 dB. In addition to the +1.5 dB
+Clean impact profile, Full impact offers +2.5 dB at 68 Hz with restrained upper-bass shaping. Small-step,
+level-matched advice is presented as a gold-accent listening-tip callout. These are starting points,
+not proven sound-quality improvements.
 
-Verification for this continuation is pending. The local checkout is based on `b0527c3`, while the
-remote feature branch has the previously validated routing/CI fixes through `36525ab`. Build and
-review the new changes on that remote branch before delivering another preview. Physical TECNO and LG
-V60 checks remain outstanding; do not claim Apple/Neutron or Realme-route compatibility until the
-owner tests it.
+Verification for this continuation is pending. The local checkout is based on `b0527c3`; its edits are
+being consolidated on the existing branch after `cdd0cfb`, which already passed Android build/lint/unit
+and API 29/30/33/35 install checks. Review the new consolidated run and screenshots before delivering
+its preview. Physical TECNO and LG V60 checks remain outstanding; do not claim Apple/Neutron or
+Realme-route compatibility until the owner tests it.
+
+Further 2026-10-05 polish adds explicit package visibility for common streaming and local players
+(YouTube Music/YouTube, Spotify, Amazon Music, Apple Music, Tidal, Deezer, Qobuz, SoundCloud, Pandora,
+Poweramp, Neutron, ONKYO HF Player, HiBy, FiiO, USB Audio Player Pro, VLC, foobar2000, AIMP, Musicolet,
+Pulsar and Plex). The Hi-Fi screen names examples and states that direct/bit-perfect output can bypass
+system effects and capture. These package declarations improve UID/name resolution; they do not prove
+session visibility or processing for each app.
+
+Sound polish adds the controlled `Full impact` bass preset (2.5 dB low shelf at 68 Hz plus the existing
+punch shaping / upper-bass cut), retains the one-tick listening guidance, and styles that guidance as a
+gold-accent callout. Navigation now retains saveable tab state so the user's scroll position and other
+saveable screen state survive tab changes. CI and screenshots are required before distributing this
+build; the preset's listening preference remains unverified on either phone.
 
 > **Newest brief: `docs/CODEX_SVARAMANAS.md`** (Svaramanas sound intelligence: what's built, what's unverified,
 > research agenda, next increments). Paste-in prompt: `docs/CODEX_PROMPT.md`.
