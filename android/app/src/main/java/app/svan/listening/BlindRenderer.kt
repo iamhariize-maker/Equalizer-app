@@ -44,7 +44,10 @@ object BlindRenderer {
         val original=process(EqState(bands=emptyList()));val enhanced=process(snapshot)
         val levels=NativeEngine.nativeMatchComparison(original,enhanced,clip.rate)
         check(levels.size==6&&abs(levels[2]-levels[3])<=.1) {"This excerpt is too quiet or could not be matched. Choose another."}
-        val description=snapshot.toJson().toString()+settings.toJson().toString()+request.toJson().toString()
+        val applied=org.json.JSONObject().put("bands",org.json.JSONArray().apply {snapshot.effectiveBands().forEach {put(it.toJson())}})
+            .put("preamp",snapshot.effectivePreampDb()).put("dynamic",snapshot.dynamicEq)
+            .put("vocal",snapshot.activeVocal.toJson()).put("instrument",snapshot.activeInstrument.toJson()).put("bassCharacter",snapshot.bassCharacter)
+        val description=snapshot.toJson().toString()+settings.toJson().toString()+request.toJson().toString()+applied.toString()
         val hash=java.security.MessageDigest.getInstance("SHA-256").digest(description.toByteArray()).joinToString("") {"%02x".format(it)}
         return Render(clip.rate,original,enhanced,levels,snapshot.tuning?.headphone ?: "Uncalibrated",hash)
     }

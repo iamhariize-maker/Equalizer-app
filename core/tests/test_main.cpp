@@ -1833,7 +1833,24 @@ TEST(dynamic_eq_is_reduction_only_selective_linked_and_exactly_bypassable) {
  std::printf("    selective EQ: resonance %.3f dB, unrelated target %.3f dB\n",resonance,target);
  CHECK(resonance< -1.2 && resonance> -1.7);CHECK(std::abs(target)<.15);
  double budget=0;for(double db:e.dynamicReductionsDb()){CHECK(db<=0);budget-=db;}CHECK(budget<=3.01);
- e.setDynamicEq(0);v=original;e.process(v.data(),v.data(),n);CHECK(v==original);
+ e.setDynamicEq(0);v=original;e.process(v.data(),v.data(),n);
+ for(int i=480*2;i<n*2;++i)CHECK(v[i]==original[i]); // exact bypass after the 10 ms handover
+}
+TEST(dynamic_eq_disable_is_smooth_and_block_independent) {
+ EngineConfig cfg;cfg.autoHeadroom=false;cfg.gainProtection=false;Engine a(cfg),b(cfg);
+ a.setDynamicEq(1);b.setDynamicEq(1);
+ const int n=96000;std::vector<float> input(n*2);
+ for(int i=0;i<n;++i)input[2*i]=input[2*i+1]=.2*std::sin(2*kPi*330*i/48000+.7);
+ auto other=input;a.process(input.data(),input.data(),n);b.process(other.data(),other.data(),n);
+ CHECK(a.dynamicReductionsDb()[1]<-1.4);a.setDynamicEq(0);b.setDynamicEq(0);
+ std::vector<float> v(2048),w;
+ for(int i=0;i<1024;++i)v[2*i]=v[2*i+1]=.2*std::sin(2*kPi*330*(n+i)/48000+.7);
+ auto dry=v;w=v;a.process(v.data(),v.data(),1024);
+ for(int i=0;i<1024;i+=13)b.process(w.data()+2*i,w.data()+2*i,std::min(13,1024-i));
+ for(int i=0;i<2048;++i)CHECK_NEAR(v[i],w[i],1e-12);
+ CHECK_NEAR(v[0],dry[0]*std::pow(10.,-1.5/20),1e-4); // no immediate jump to dry
+ for(int i=480*2;i<2048;++i)CHECK(v[i]==dry[i]);
+ for(double db:a.dynamicReductionsDb())CHECK(db==0);
 }
 TEST(dynamic_eq_preserves_short_transients_and_recovers) {
  EngineConfig cfg;cfg.autoHeadroom=false;cfg.gainProtection=false;Engine e(cfg);e.setDynamicEq(1);
@@ -1900,7 +1917,8 @@ TEST(true_peak_dense_reconstruction_checks_transients_and_wideband) {
 TEST(dynamic_eq_budget_survives_changes_of_resonance) {
  EngineConfig c;c.autoHeadroom=false;c.gainProtection=false;Engine e(c);e.setDynamicEq(1);
  std::vector<float> v(1024*2);int frame=0;
- for(int block=0;block<300;++block){for(int j=0;j<1024;++j,++frame){double x=0;for(double f:(block/20)%2?std::initializer_list<double>{120,330}:std::initializer_list<double>{3000,6500})x+=.1*std::sin(2*kPi*f*frame/48000);v[2*j]=v[2*j+1]=x;}
+ for(int block=0;block<300;++block){const std::array<double,2> frequencies=(block/20)%2?std::array<double,2>{120,330}:std::array<double,2>{3000,6500};
+  for(int j=0;j<1024;++j,++frame){double x=0;for(double f:frequencies)x+=.1*std::sin(2*kPi*f*frame/48000);v[2*j]=v[2*j+1]=x;}
   e.process(v.data(),v.data(),1024);double sum=0;for(double db:e.dynamicReductionsDb())sum-=db;CHECK(sum<=3.00001);
  }
 }

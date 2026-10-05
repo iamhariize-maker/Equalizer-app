@@ -42,6 +42,8 @@ actual smoothed sum is limited to 3 dB, including overlapping attack/release tra
 complements broad static correction; automatic vocal smoothing is suppressed when dynamic EQ
 is active, while the listener's own smoothing remains. The Svaresa switch allows independent
 opt-out. Guide mode is unchanged. Static response graphs exclude these time-varying cuts.
+Disabling an active cut fades to exact neutral over 10 ms before clearing filter histories;
+the handover is checked across different callback sizes. An already-neutral bypass is exact.
 
 A 330 Hz sustained resonance is reduced 1.50 dB with only 0.011 dB change to the separate 1 kHz
 component in the tested signal. Short bass/treble transients, bypass, recovery and moving-resonance

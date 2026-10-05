@@ -28,7 +28,7 @@ The fixed Shizuku DUMP grant and real audio-session detection remain available.
 ## Repo map
 | Path | What |
 |---|---|
-| `core/` | Portable C++17 DSP library `eqcore` (CMake). 97 unit tests in `core/tests/test_main.cpp` (no framework). |
+| `core/` | Portable C++17 DSP library `eqcore` (CMake). 98 unit tests in `core/tests/test_main.cpp` (no framework). |
 | `android/app/src/main/cpp/` | JNI bridge → `eqcore` |
 | `android/app/src/main/java/app/svan/` | Kotlin: engines, routing, repository, UI (Compose); `svaramanas/` = controller, dialog, bubble, QS tile |
 | `android/app/src/main/java/app/svan/ui/` | Screens (Sound, EQ, Presets, Hi-Fi, Lab), `Theme.kt` (gold palette), `Brand.kt` (boot animation, brand line, "EQ exten9ed"), `Knob.kt`, `ResponseGraph.kt` |
