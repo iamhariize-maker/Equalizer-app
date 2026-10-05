@@ -4,7 +4,12 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
-import java.io.FileInputStream
+import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
+import android.system.StructPollfd
+import java.io.ByteArrayOutputStream
+import java.io.IOException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -53,8 +58,11 @@ object PlaybackSessions {
     private val USAGE = Regex("""\busage\s*[:=]\s*([\w]+)""", RegexOption.IGNORE_CASE)
     private val STATE = Regex("""\bstate\s*[:=]\s*([\w]+)""", RegexOption.IGNORE_CASE)
     private val FLAGS = Regex("""\bflags\s*[:=]\s*(0[xX][0-9A-Fa-f]+|\d+)""", RegexOption.IGNORE_CASE)
-    private val SESSION = Regex("""\bsessionId\s*[:=]\s*(\d+)""", RegexOption.IGNORE_CASE)
-    private val CONFIG = Regex("""AudioPlaybackConfiguration|\bpiid\s*:""", RegexOption.IGNORE_CASE)
+    private val SESSION = Regex("""\bsession(?:Id|_id|\s+id)?\s*[:=]\s*(\d+)""", RegexOption.IGNORE_CASE)
+    // Anchor to the record start: timestamps in the playback event HISTORY must
+    // never resurrect a released session or override the current state.
+    private val CONFIG = Regex("""^\s*(?:AudioPlaybackConfiguration\b|piid\s*[:=])""", RegexOption.IGNORE_CASE)
+    private val CONTINUATION = Regex("""^\s+(?:u/pid|(?:client)?uid|state|session|attr|AudioAttributes|usage|flags|deviceId|type|content|tags|mutedState)\b""", RegexOption.IGNORE_CASE)
 
     private val mutableReport = MutableStateFlow(PlaybackScanReport())
     val report = mutableReport.asStateFlow()
@@ -73,7 +81,17 @@ object PlaybackSessions {
     )
 
     private fun parseDump(dump: String): ParsedDump {
-        val configLines = dump.lineSequence().filter { CONFIG.containsMatchIn(it) }.toList()
+        val configLines = mutableListOf<String>()
+        var record: StringBuilder? = null
+        fun flush() { record?.let { configLines.add(it.toString()) }; record = null }
+        dump.lineSequence().forEach { line ->
+            when {
+                CONFIG.containsMatchIn(line) -> { flush(); record = StringBuilder(line) }
+                record != null && CONTINUATION.containsMatchIn(line) -> record!!.append(' ').append(line.trim())
+                else -> flush()
+            }
+        }
+        flush()
         var unparsed = 0
         val records = configLines.mapNotNull { line ->
             val session = parseConfigLine(line)
@@ -83,7 +101,8 @@ object PlaybackSessions {
         val sessions = records.groupBy { it.sessionId }.values.map { players ->
             // A released/paused track can appear after a playing track on
             // the same session. Preserve activity and every capture opt-out.
-            val active = players.firstOrNull { it.state == "started" } ?: players.last()
+            val active = players.firstOrNull { it.state == "started" }
+                ?: players.lastOrNull { it.state != "released" } ?: players.last()
             active.copy(flags = players.fold(0) { flags, player -> flags or player.flags })
         }
         return ParsedDump(configLines, sessions, unparsed)
@@ -92,6 +111,7 @@ object PlaybackSessions {
     private fun parseConfigLine(line: String): PlaybackSession? {
         if (!CONFIG.containsMatchIn(line)) return null
         val uid = UID.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: return null
+        if (uid < 0) return null // anonymized playback is not an attachable app identity
         val sid = SESSION.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: return null
         if (sid <= 0) return null // session 0 cannot be attached to a player effect
         val rawUsage = USAGE.find(line)?.groupValues?.get(1)?.uppercase()
@@ -106,11 +126,20 @@ object PlaybackSessions {
             if (it.startsWith("0x", ignoreCase = true)) it.drop(2).toLongOrNull(16)?.toInt()
             else it.toLongOrNull()?.toInt()
         } ?: 0
+        val rawState = STATE.find(line)?.groupValues?.get(1)?.lowercase()?.removePrefix("player_state_")
+        val state = when (rawState) {
+            "0" -> "released"
+            "1" -> "idle"
+            "2", "playing", "active" -> "started"
+            "3" -> "paused"
+            "4" -> "stopped"
+            else -> rawState ?: "unknown"
+        }
         return PlaybackSession(
             sessionId = sid,
             uid = uid,
             usage = usage,
-            state = STATE.find(line)?.groupValues?.get(1)?.lowercase() ?: "unknown",
+            state = state,
             flags = flags,
         )
     }
@@ -122,7 +151,7 @@ object PlaybackSessions {
     fun query(context: Context): List<PlaybackSession>? {
         if (!hasDumpPermission(context)) {
             lastError = "Enhanced detection is not enabled. Open Hi-Fi → Music detection."
-            mutableReport.value = mutableReport.value.copy(error = lastError)
+            mutableReport.value = mutableReport.value.copy(scannedAtMs = System.currentTimeMillis(), error = lastError)
             return null
         }
         val dump = dumpService("audio")
@@ -170,13 +199,35 @@ object PlaybackSessions {
             lastError = "service '$name' not found"
             null
         } else {
-            val (read, write) = ParcelFileDescriptor.createPipe()
-            binder.dumpAsync(write.fileDescriptor, arrayOf())
-            write.close()
-            FileInputStream(read.fileDescriptor).bufferedReader().use { it.readText() }.also {
-                read.close()
+            val pipe = ParcelFileDescriptor.createPipe()
+            val read = pipe[0]
+            val write = pipe[1]
+            // An OEM dump can stall or keep its writer open. A bounded poll/read
+            // lets the next scan recover instead of occupying the discovery worker forever.
+            val dump = read.use {
+                write.use { binder.dumpAsync(it.fileDescriptor, arrayOf()) }
+                val poll = StructPollfd().apply { fd = read.fileDescriptor; events = OsConstants.POLLIN.toShort() }
+                val deadline = SystemClock.elapsedRealtime() + 3_000L
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(8192)
+                while (true) {
+                    if (Thread.currentThread().isInterrupted) throw IOException("Audio scan cancelled")
+                    val remaining = deadline - SystemClock.elapsedRealtime()
+                    if (remaining <= 0) throw IOException("Audio scan timed out; retrying automatically")
+                    if (Os.poll(arrayOf(poll), remaining.coerceAtMost(200).toInt()) == 0) continue
+                    val events = poll.revents.toInt()
+                    if (events and (OsConstants.POLLERR or OsConstants.POLLNVAL) != 0) throw IOException("Audio report pipe closed unexpectedly")
+                    if (events and (OsConstants.POLLIN or OsConstants.POLLHUP) == 0) continue
+                    val count = Os.read(read.fileDescriptor, buffer, 0, buffer.size)
+                    if (count == 0) break
+                    if (output.size() + count > 2 * 1024 * 1024) throw IOException("Audio report exceeded scan limit")
+                    output.write(buffer, 0, count)
+                }
+                output.toString(Charsets.UTF_8.name())
+            }
+            dump.also {
                 lastDumpSize = it.length
-                lastConfigLines = it.lineSequence().filter { l -> "AudioPlaybackConfiguration" in l }.take(6).joinToString("\n")
+                lastConfigLines = it.lineSequence().filter { l -> CONFIG.containsMatchIn(l) }.take(6).joinToString("\n")
                 lastError = when {
                     it.isBlank() -> "Android returned an empty audio report."
                     it.contains("Permission Denial", ignoreCase = true) -> "Android denied the audio report. Re-enable music detection."

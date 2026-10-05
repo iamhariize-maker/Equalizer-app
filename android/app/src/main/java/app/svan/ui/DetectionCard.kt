@@ -38,7 +38,7 @@ fun DetectionCard() {
         Column {
             if (state.stage == DetectionSetup.Stage.READY) {
                 Text("Enhanced detection enabled", style = MaterialTheme.typography.titleMedium)
-                Text("Play music, then check Apps & engines below. If the player is missing, keep the song playing and refresh detection.",
+                Text("Svan checks again when playback starts, earbuds reconnect, or you unlock your phone. Brief reconnects and effect failures are retried automatically. Check Apps & engines below to see what is connected.",
                     style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                 Text("Your earbuds are the output route; the player app (Apple Music, Neutron, and others) creates the session Svan detects.",
                     style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
@@ -103,7 +103,7 @@ private fun ScanSummary(report: PlaybackScanReport, showDetails: Boolean, onTogg
     )
     when {
         report.playbackConfigCount == 0 -> Text(
-            "Android reported no player track. Keep a song playing and refresh. A change from wired to Bluetooth earbuds should not by itself create or remove the player's session.",
+            "Android reported no player track in this scan. Svan keeps checking while active. A Bluetooth reconnect can briefly replace the player's audio session; keep the song playing while it settles.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
         )
         mediaCount == 0 && report.parsedSessionCount == 0 -> Text(

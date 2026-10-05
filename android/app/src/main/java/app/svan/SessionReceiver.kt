@@ -16,6 +16,7 @@ import android.media.audiofx.AudioEffect
 class SessionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (!SystemEqService.isRunning) return
+        SystemEqService.onSessionSignal()
         val session = intent.getIntExtra(AudioEffect.EXTRA_AUDIO_SESSION, -1)
         val pkg = intent.getStringExtra(AudioEffect.EXTRA_PACKAGE_NAME) ?: "?"
         when (intent.action) {

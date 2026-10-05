@@ -6,10 +6,13 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
+import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioPlaybackConfiguration
 import android.media.audiofx.AudioEffect
 import android.os.Handler
@@ -17,21 +20,38 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 
 /** Owns system effects and session discovery while the activity is backgrounded. */
 class SystemEqService : Service() {
     private val executor = Executors.newSingleThreadExecutor()
-    private val syncPending = AtomicBoolean(false)
+    private val scanGate = ScanRequestGate()
+    @Volatile private var alive = false
     private var callback: AudioManager.AudioPlaybackCallback? = null
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) { recover("output connected") }
+        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) { recover("output disconnected") }
+    }
+    private val wakeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) { recover("playback route or screen wake") }
+    }
     private val sessionReceiver = SessionReceiver()
     private val main = Handler(Looper.getMainLooper())
     private val rescan = object : Runnable {
         override fun run() {
-            if (!isRunning) return
+            if (!alive) return
             sync()
             main.postDelayed(this, 5_000)
         }
+    }
+    private val recoveryScan = Runnable { sync() }
+
+    /** Bluetooth route/session creation is asynchronous; check again after it settles. */
+    private fun recover(reason: String) {
+        if (!alive) return
+        EqController.log("detection: $reason; checking now and after route settles")
+        sync()
+        main.removeCallbacks(recoveryScan)
+        longArrayOf(350, 1_000, 2_500, 5_000, 10_000).forEach { main.postDelayed(recoveryScan, it) }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -56,7 +76,9 @@ class SystemEqService : Service() {
         if (app.svan.svaramanas.Svaramanas.bubble.value) app.svan.svaramanas.SvaramanasBubbleService.start(this)
         SessionRouter.init(this)
         SessionRouter.enable()
+        alive = true
         isRunning = true
+        instance = this
         ContextCompat.registerReceiver(this, sessionReceiver, IntentFilter().apply {
             addAction(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION)
             addAction(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION)
@@ -64,19 +86,39 @@ class SystemEqService : Service() {
         // Register even before DUMP is granted: a grant while this service is
         // alive must take effect without a force-stop or an app reinstall.
         callback = object : AudioManager.AudioPlaybackCallback() {
-            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) { sync() }
-        }.also { getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(it, null) }
+            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) { recover("playback changed") }
+        }.also { cb ->
+            runCatching { getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(cb, main) }
+                .onFailure { EqController.log("detection: playback callback unavailable; periodic scans remain active: $it") }
+        }
+        runCatching { getSystemService(AudioManager::class.java).registerAudioDeviceCallback(deviceCallback, main) }
+            .onFailure { EqController.log("detection: route callback unavailable: $it") }
+        ContextCompat.registerReceiver(this, wakeReceiver, IntentFilter().apply {
+            addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }, ContextCompat.RECEIVER_NOT_EXPORTED)
         main.post(rescan)
         EqController.log("system service: started")
     }
 
     private fun sync() {
-        if (!isRunning || !PlaybackSessions.hasDumpPermission(this)) return
-        if (!syncPending.compareAndSet(false, true)) return
+        if (!alive) return
+        if (!scanGate.request()) return
         executor.execute {
-            try {
-                PlaybackSessions.query(this)?.let { if (isRunning) SessionRouter.sync(it) }
-            } finally { syncPending.set(false) }
+            do {
+                try {
+                    if (alive) {
+                        val sessions = if (PlaybackSessions.hasDumpPermission(this)) PlaybackSessions.query(this) else null
+                        if (alive) {
+                            if (sessions != null) SessionRouter.sync(sessions)
+                            else SessionRouter.repairKnownSessions()
+                        }
+                    }
+                } catch (e: Exception) {
+                    EqController.log("detection: scan failed; automatic retry remains active: $e")
+                }
+            } while (scanGate.complete())
         }
     }
 
@@ -88,16 +130,20 @@ class SystemEqService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        sync()
+        recover("service start or manual refresh")
         return START_STICKY
     }
 
     override fun onDestroy() {
-        isRunning = false
+        alive = false
+        if (instance === this) { instance = null; isRunning = false }
         main.removeCallbacks(rescan)
+        main.removeCallbacks(recoveryScan)
         unregisterReceiver(sessionReceiver)
-        callback?.let { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(it) }
-        executor.shutdown()
+        unregisterReceiver(wakeReceiver)
+        callback?.let { runCatching { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(it) } }
+        runCatching { getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(deviceCallback) }
+        executor.shutdownNow()
         stopService(Intent(this, CaptureService::class.java))
         SessionRouter.shutdown()
         EqController.log("system service: stopped")
@@ -109,6 +155,11 @@ class SystemEqService : Service() {
         private const val STOP = "app.svan.STOP_EQ"
         @Volatile var isRunning = false
             private set
+        @Volatile private var instance: SystemEqService? = null
+
+        fun onSessionSignal() {
+            instance?.let { service -> service.main.post { service.recover("player session signal") } }
+        }
 
         fun startIfEnabled(context: Context) {
             if (context.getSharedPreferences(CHANNEL, MODE_PRIVATE).getBoolean("enabled", true)) start(context)

@@ -3,6 +3,7 @@ package app.svan
 import android.content.Context
 import android.media.projection.MediaProjection
 import android.os.Process
+import android.os.SystemClock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -26,6 +27,11 @@ object SessionRouter {
 
     private val routes = ConcurrentHashMap<Int, Route>()
     private val worker = Executors.newSingleThreadExecutor()
+    // Worker-owned lifecycle state. Successful scans are reconciled in order.
+    private val absence = SessionAbsenceTracker()
+    private val attachmentRetry = AttachmentRetry()
+    private val streamCaptureBlocked = mutableSetOf<Int>()
+    private var lastSyncSummary = ""
     private lateinit var appContext: Context
     private lateinit var compatStore: CaptureCompat
     private lateinit var appEngines: AppEnginePreferences
@@ -98,6 +104,9 @@ object SessionRouter {
             if (!CaptureService.isRunning) muter.releaseAll()
             EqController.globalEq.releaseAll()
             routes.clear()
+            absence.clear()
+            attachmentRetry.clear()
+            streamCaptureBlocked.clear()
             publishCaptureUids()
         }
     }
@@ -165,53 +174,100 @@ object SessionRouter {
     /** [playing] = null when unknown (broadcast path). [uid] < 0 = unknown, resolved here. */
     fun sessionOpened(sessionId: Int, pkg: String, uid: Int, playing: Boolean? = null) {
         if (!enabled || sessionId <= 0 || uid == Process.myUid()) return
-        if (uid < 0) {
-            // Package lookup failed (visibility) — the audio service dump knows the uid.
-            worker.execute {
+        worker.execute {
+            if (!enabled) return@execute
+            if (uid < 0) {
                 val fromDump = if (PlaybackSessions.hasDumpPermission(appContext)) {
                     PlaybackSessions.query(appContext)?.firstOrNull { it.sessionId == sessionId }?.uid
                 } else null
-                if (fromDump != null && fromDump != Process.myUid()) sessionOpened(sessionId, pkg, fromDump, playing)
-                else {
-                    EqController.log("uid unknown for $pkg (session $sessionId): Engine A only")
-                    toEngineA(sessionId, pkg, -1, playing)
-                }
+                if (fromDump == Process.myUid()) return@execute
+                openOnWorker(sessionId, pkg, fromDump ?: -1, playing)
+            } else {
+                openOnWorker(sessionId, pkg, uid, playing)
             }
-            return
         }
+    }
+
+    private fun openOnWorker(sessionId: Int, pkg: String, uid: Int, playing: Boolean?) {
+        if (!enabled) return
+        absence.forget(sessionId)
         val existing = routes[sessionId]
         if (existing != null) {
+            if (existing.uid >= 0 && uid >= 0 && existing.uid != uid) {
+                // Android can reuse numeric session IDs after a player restarts.
+                closeOnWorker(sessionId)
+                reroute(sessionId, pkg, uid, playing)
+                return
+            }
             // Re-route a session that was parked on Engine A only because it
             // wasn't playing yet (can't run the capture check on silence).
             val parked = existing.owner == Owner.ENGINE_A && existing.playing == false &&
                 playing == true && projection != null
-            routes[sessionId] = existing.copy(playing = playing ?: existing.playing)
-            if (parked) worker.execute { reroute(sessionId, pkg, uid, true) }
+            val next = existing.copy(pkg = if (pkg.startsWith("uid:") && !existing.pkg.startsWith("uid:")) existing.pkg else pkg,
+                uid = if (uid >= 0) uid else existing.uid, playing = playing ?: existing.playing)
+            routes[sessionId] = next
+            val lostEffect = existing.owner == Owner.ENGINE_A && !EqController.globalEq.isHealthy(sessionId)
+            val retry = (existing.owner == Owner.UNPROCESSED || lostEffect) &&
+                attachmentRetry.ready(sessionId, SystemClock.elapsedRealtime())
+            if (parked || retry) reroute(sessionId, next.pkg, next.uid, next.playing)
             return
         }
-        worker.execute { reroute(sessionId, pkg, uid, playing) }
+        reroute(sessionId, pkg, uid, playing)
     }
 
     fun sessionClosed(sessionId: Int) {
+        worker.execute { closeOnWorker(sessionId) }
+    }
+
+    /** Broadcast-discovered sessions still recover even without enhanced detection. */
+    fun repairKnownSessions() {
         worker.execute {
-            routes.remove(sessionId)
-            publishCaptureUids()
-            muter.unmute(sessionId)
-            EqController.globalEq.detach(sessionId)
+            if (!enabled) return@execute
+            routes.values.toList().forEach { r ->
+                if ((r.owner == Owner.UNPROCESSED ||
+                        (r.owner == Owner.ENGINE_A && !EqController.globalEq.isHealthy(r.sessionId))) &&
+                    attachmentRetry.ready(r.sessionId, SystemClock.elapsedRealtime())) {
+                    reroute(r.sessionId, r.pkg, r.uid, r.playing)
+                }
+            }
         }
+    }
+
+    private fun closeOnWorker(sessionId: Int) {
+        routes.remove(sessionId)
+        absence.forget(sessionId)
+        attachmentRetry.forget(sessionId)
+        streamCaptureBlocked.remove(sessionId)
+        publishCaptureUids()
+        muter.unmute(sessionId)
+        EqController.globalEq.detach(sessionId)
     }
 
     /** Reconciles with a full session list from the dump. */
     fun sync(active: List<PlaybackSession>) {
-        val seen = active.filter { it.uid != Process.myUid() }.associateBy { it.sessionId }
-        routes.keys.filter { it !in seen }.forEach(::sessionClosed)
-        EqController.log("sync: ${seen.size} session(s) in dump: " + seen.values.joinToString { "${it.packageName}#${it.sessionId}:${it.state}" })
-        seen.values.forEach { s ->
-            if (!s.usageCapturable) return@forEach // calls, alarms, notifications: leave alone
-            if (s.flagsBlockCapture && compatStore.cached(s.packageName) == null) {
-                compatStore.remember(s.packageName, CaptureCompat.Verdict.BLOCKED)
+        val snapshot = active.toList()
+        worker.execute {
+            if (!enabled) return@execute
+            val seen = snapshot.filter { it.uid != Process.myUid() && it.usageCapturable && it.state != "released" }
+                .associateBy { it.sessionId }
+            // An explicitly released or reclassified current record is definitive.
+            snapshot.filter { it.state == "released" || !it.usageCapturable }.forEach { closeOnWorker(it.sessionId) }
+            absence.observe(routes.keys.toSet(), seen.keys, SystemClock.elapsedRealtime()).forEach(::closeOnWorker)
+            routes.keys.filter { it !in seen }.forEach { sid ->
+                routes[sid]?.let { routes[sid] = it.copy(playing = null) }
             }
-            sessionOpened(s.sessionId, s.packageName, s.uid, playing = s.state == "started")
+            val summary = seen.values.sortedBy { it.sessionId }.joinToString { "${it.packageName}#${it.sessionId}:${it.state}" }
+            if (summary != lastSyncSummary) {
+                EqController.log("sync: ${seen.size} session(s) in dump: $summary")
+                lastSyncSummary = summary
+            }
+            seen.values.forEach { s ->
+                if (s.flagsBlockCapture) streamCaptureBlocked.add(s.sessionId) else streamCaptureBlocked.remove(s.sessionId)
+                val playing = when (s.state) { "started" -> true; "paused", "stopped", "idle" -> false; else -> null }
+                if (s.flagsBlockCapture && routes[s.sessionId]?.owner == Owner.ENGINE_B_MUTED) {
+                    toEngineA(s.sessionId, s.packageName, s.uid, playing)
+                } else openOnWorker(s.sessionId, s.packageName, s.uid, playing)
+            }
         }
     }
 
@@ -220,7 +276,7 @@ object SessionRouter {
     private fun reroute(sid: Int, pkg: String, uid: Int, playing: Boolean?) {
         if (!enabled) return
         val mp = projection
-        if (mp == null || pkg in captureSystemPackages || tempBlockedNow(pkg)) {
+        if (mp == null || uid < 0 || pkg in captureSystemPackages || sid in streamCaptureBlocked || tempBlockedNow(pkg)) {
             toEngineA(sid, pkg, uid, playing)
             return
         }
@@ -278,6 +334,7 @@ object SessionRouter {
         muter.unmute(sid)
         if (!enabled) { routes.remove(sid); publishCaptureUids(); return }
         val attached = EqController.globalEq.attach(sid)
+        if (attached) attachmentRetry.forget(sid) else attachmentRetry.failed(sid, SystemClock.elapsedRealtime())
         routes[sid] = Route(sid, pkg, uid, if (attached) Owner.ENGINE_A else Owner.UNPROCESSED, playing)
         publishCaptureUids()
         EqController.log("route: $pkg (session $sid) → ${if (attached) "Engine A" else "unprocessed (system effects unavailable)"}")
@@ -287,6 +344,7 @@ object SessionRouter {
         if (!enabled || projection == null) { toEngineA(sid, pkg, uid, playing); return }
         EqController.globalEq.detach(sid)
         if (muter.mute(sid)) {
+            attachmentRetry.forget(sid)
             routes[sid] = Route(sid, pkg, uid, Owner.ENGINE_B_MUTED, playing)
             publishCaptureUids()
             EqController.log("route: $pkg (session $sid) → Engine B (source muted)")

@@ -41,15 +41,24 @@ class GlobalEqEngine(bandCount: Int = 128) {
     val attachedSessions: Set<Int> get() = effects.keys
 
     @Synchronized
+    fun isHealthy(sessionId: Int): Boolean = effects[sessionId]?.let { dp ->
+        runCatching { dp.hasControl() && dp.enabled }.getOrDefault(false)
+    } ?: false
+
+    @Synchronized
     fun attach(sessionId: Int): Boolean {
         if (sessionId <= 0) return false
-        if (effects.containsKey(sessionId)) return true
+        if (isHealthy(sessionId)) return true
+        // An output reconnect can invalidate an effect while its old session
+        // remains in our map. Re-create it instead of reporting false success.
+        detach(sessionId)
         var candidate: DynamicsProcessing? = null
         return try {
             val dp = DynamicsProcessing(PRIORITY, sessionId, buildConfig())
             candidate = dp
             applyTo(dp)
             dp.enabled = true
+            check(dp.hasControl() && dp.enabled) { "Android did not enable the session effect" }
             effects[sessionId] = dp
             Log.i(TAG, "attached to session $sessionId ($bandCount bands)")
             true
@@ -67,7 +76,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
         effects.remove(sessionId)?.let {
             lastSent.remove(it)
             runCatching { it.enabled = false }
-            it.release()
+            runCatching { it.release() }
         }
     }
 

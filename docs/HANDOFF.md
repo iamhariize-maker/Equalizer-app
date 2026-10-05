@@ -4,6 +4,35 @@ Written at the end of a long Claude Code session so another agent (Codex cloud) 
 Repo: `iamhariize-maker/Equalizer-app`, branch **`ccr-208702a3-2mju42`** (not merged; no PR opened).
 Start with `AGENTS.md`. This file has the detail.
 
+## Bluetooth/session recovery — 2026-10-05 (0.4.1 preview)
+
+Owner reports YT Music over Bluetooth was detected once, then disappeared. No new TECNO dump is
+available, so a single device root cause is not established. Code review found unbounded dump reads,
+dropped scan requests while one was running, no dedicated output-device recovery callbacks, immediate
+eviction after one empty snapshot, and no recovery for an existing route whose effect disappeared or
+failed to attach.
+
+Changes: bounded audio-report reads (3 seconds / 2 MiB); playback/output/wake triggers with a short
+retry sequence and the existing 5-second heartbeat; coalesced scans preserving a follow-up request;
+serialized route mutations; at least 3 missing successful snapshots over 10 seconds before eviction;
+explicit release still removes immediately; missing activity becomes unknown. System effects are
+checked for control/enabled state and recovered with capped retry delays. Broadcast-known sessions
+also get effect repair without DUMP. Dump parsing handles wrapped records and numeric states while
+excluding timestamped playback history; unknown UIDs stay on Engine A. Per-stream capture flags
+are respected without permanently classifying the entire app from one track.
+
+Meaningful regressions cover parser history/wrapping, scan coalescing, disappearance grace and retry
+backoff. Emulator T24 recreates a non-broadcasting session three times; T25 drops system effects and
+requires automatic recovery on the same session. Fault injection is debug-only. This reproduces
+session/effect lifecycle failures, not physical Bluetooth transport. CI is pending for this change.
+Local unchanged native suite: 63 passed. Local Gradle could not download its distribution (network
+connection refused); Android compilation/lint/unit checks run in CI before delivery. Version code is 6.
+
+Prior build `3badd2f` / run `37255092750` is now fully green, including API 34 e2e and API 29/30/33/35
+install smoke. Its final Svaresa screenshots were inspected on 5 October: stacked cards fit both names,
+and the contrast/line-wrap fixes are present. This supersedes the older pending notes below. Real TECNO
+Bluetooth reconnection, phone background survival and each player's actual output path remain unverified.
+
 ## Svaresa mode and visual identity — 2026-10-05 (current continuation)
 
 Adds two plain-language sound modes with distinct gold marks: **Sound guide · Svaramanas** preserves

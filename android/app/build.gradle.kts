@@ -22,8 +22,8 @@ android {
         // 29: AudioPlaybackCapture (capture engine). DynamicsProcessing needs 28.
         minSdk = 29
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.4.0-svaramanas-preview"
+        versionCode = 6
+        versionName = "0.4.1-session-recovery-preview"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild {
             cmake { arguments += listOf("-DANDROID_STL=c++_shared") }

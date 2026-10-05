@@ -7,6 +7,44 @@ import org.junit.Test
 
 class PlaybackSessionsTest {
 
+    @Test fun parsesWrappedBluetoothRecreatedTracksAndNumericStates() {
+        val text = """
+            AudioPlaybackConfiguration piid:22 deviceId:8
+              u/pid:10234/51 state:2
+              attr:AudioAttributes: usage=1 flags=0x800
+              sessionId:901
+            AudioPlaybackConfiguration piid:23 deviceId:8 u/pid:10234/51 state:3 usage=1 sessionId:902
+        """.trimIndent()
+        val sessions = PlaybackSessions.parse(text)
+        assertEquals(listOf(901, 902), sessions.map { it.sessionId })
+        assertEquals(listOf("started", "paused"), sessions.map { it.state })
+    }
+
+    @Test fun playbackHistoryMustNotResurrectOldSessions() {
+        val text = """
+            AudioPlaybackConfiguration piid:1 u/pid:10234/51 state:paused usage=1 sessionId:901
+            Playback event log:
+              10-05 12:20:00 AudioPlaybackConfiguration piid:1 u/pid:10234/51 state:started usage=1 sessionId:901
+              10-05 12:19:00 AudioPlaybackConfiguration piid:2 u/pid:10234/51 state:started usage=1 sessionId:777
+        """.trimIndent()
+        val sessions = PlaybackSessions.parse(text)
+        assertEquals(1, sessions.size)
+        assertEquals("paused", sessions.single().state)
+        assertEquals(901, sessions.single().sessionId)
+    }
+
+    @Test fun releasedSiblingDoesNotHideAPausedTrackAndAnonymizedUidIsRejected() {
+        val text = """
+            piid:1 uid=10234 state=PLAYER_STATE_PAUSED usage=MEDIA session_id=42
+            piid:2 uid=10234 state=0 usage=MEDIA session_id=42
+            piid:3 uid=-1 state=2 usage=MEDIA session_id=99
+        """.trimIndent()
+        val sessions = PlaybackSessions.parse(text)
+        assertEquals(1, sessions.size)
+        assertEquals("paused", sessions.single().state)
+        assertEquals(42, sessions.single().sessionId)
+    }
+
     // Shape of `dumpsys audio` playback lines on API 31+ (fields matched
     // independently, so ordering differences between releases don't matter).
     private val dump = """

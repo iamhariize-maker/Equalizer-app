@@ -108,6 +108,14 @@ class MainActivity : ComponentActivity() {
             }
             "start_system" -> SystemEqService.start(this)
             "stop_system" -> SystemEqService.stop(this)
+            "test_drop_system_effects" -> {
+                // Emulator regression: mimic lost effects without closing the player's
+                // session. This fault-injection command is disabled in release APKs.
+                if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    EqController.globalEq.releaseAll()
+                    EqController.log("test: system effects dropped; waiting for automatic recovery")
+                }
+            }
             "start_capture" -> {
                 SvanRepository.updateSettings { it.copy(engineMode = app.svan.model.EngineMode.AUTO) }
                 startCapture()

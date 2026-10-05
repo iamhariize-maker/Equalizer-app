@@ -205,6 +205,22 @@ tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez nocapture true; 
 measure "T20 capture-opt-out stream after Engine B muted it (expect T1, not silence)"
 eq stop_capture; sleep 3
 tone $CAP --ez stop true; sleep 3
+# Repeated recreation without session broadcasts: Bluetooth reconnects and
+# player offload transitions often replace an AudioTrack this way. This tests
+# session lifecycle recovery, not a physical Bluetooth transport.
+eq preset; sleep 3
+for cycle in 1 2 3; do
+  $A logcat -c
+  tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false
+  wait_for "route: $CAP .*Engine A" 30; sleep 2
+  measure "T24_$cycle recreated non-broadcasting session"
+  if [ "$cycle" != 3 ]; then tone $CAP --ez stop true; sleep 2; fi
+done
+$A logcat -c
+eq test_drop_system_effects
+wait_for "route: $CAP .*Engine A" 30; sleep 2
+measure "T25 lost effect recovers without player restart or manual refresh"
+tone $CAP --ez stop true; sleep 3
 # Restart discovery so screenshots include real detected app rows.
 eq stop_system; sleep 3; eq start_system; sleep 3
 tone $CAP --ef freq 1000 --ef amp 0.05 --ez broadcast true; sleep 4
@@ -264,6 +280,12 @@ check "Svaramanas plan reaches system effects" "$(near "$T21" "$E21" 1.0)" "T21=
 H22=$(grep -oE 'loudness=-?[0-9.]+' "$TMP/e2e_t22_heard.txt" | grep -oE '[-0-9.]+$')
 check "Svaramanas hears the captured source" "$(awk -v l="$H22" 'BEGIN { print (l != "" && l > -60 && l < -3) ? 1 : 0 }')" "$(cat "$TMP/e2e_t22_heard.txt")"
 check "Svaresa automatic mode reaches the native planner" "$(grep -q 'mode=SVARESA' "$TMP/e2e_t23_svaresa.txt" && echo 1 || echo 0)" "$(cat "$TMP/e2e_t23_svaresa.txt")"
+for cycle in 1 2 3; do
+  ACTUAL=$(lvl "T24_$cycle")
+  check "Recreated non-broadcasting session cycle $cycle" "$(near "$ACTUAL" "$T1" 1.0)" "measured=$ACTUAL expected=$T1 ±1 dB"
+done
+T25=$(lvl T25)
+check "Lost system effect recovers automatically on the existing session" "$(near "$T25" "$T1" 1.0)" "T25=$T25 expected=$T1 ±1 dB"
 log "results:"; cat "$TMP/e2e_results.txt"
 $A logcat -d -s EqSpike:I > "$TMP/e2e_eqspike.log"
 kill $FULLLOG 2>/dev/null
