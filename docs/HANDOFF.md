@@ -66,7 +66,8 @@ API 29/30/33/35 smoke. Screenshots inspected: the "Svaresa adapts to" section fi
 **CI for 546d500 (run 37271042516): all jobs green** — core, android, compat 29/30/33/35, emulator-e2e 38 PASS / 0 FAIL
 (incl. the balance check: measured +5.6 dB vs predicted +5.4 dB), detection_release 10/10, zero `verify:` re-attaches and
 no DEGRADED/BLIND flashes in the log. Its Hi-Fi screenshot showed the second health-card button clipped to "Share"; the
-follow-up commit slims the button padding (re-check on the next screenshots).
+follow-up f9ec7a5 slims the button padding; run 37273679682 is green again (38/0, detection 10/10) and its screenshot
+shows "Scan now" and "Share report" on one line each.
 
 **Not verified:** anything on the TECNO — whether HiOS lets the app read `media.audio_flinger` (stock API 34 does),
 whether Neutron/Apple Music use direct paths, the Neutron DSP setting, battery-killer behaviour, sound preference of any
