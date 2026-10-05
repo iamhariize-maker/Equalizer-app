@@ -1,7 +1,7 @@
 # Handoff — Svan (Svanam Shreshtham: Ultimate Sound)
 
 Written at the end of a long Claude Code session so another agent (Codex cloud) can continue.
-Repo: `iamhariize-maker/Equalizer-app`, branch **`ccr-208702a3-2mju42`** (not merged; no PR opened).
+Repo: `iamhariize-maker/Equalizer-app`, current branch **`ccr-f859b567-dgrdoj`** (not merged; PR #1 is open for it).
 Start with `AGENTS.md`. This file has the detail.
 
 ## Redundant detection + Svaresa auto master — 2026-10-05 (0.5.0 preview)
@@ -37,13 +37,42 @@ engine running with "0 apps", −120 dBFS, and YouTube Music listed only from a 
   multiband level-evening on system effects, AutoEq headphone recognition), plus a stronger native measured policy
   (wider limits, tilt correction, harshness smoothing). Still ignores guided taste. `docs/SMART.md` updated.
 
-**Verified:** core 65 tests (+ASan/UBSan/TSan in CI); JVM tests for the AF parser, ledger, verifier, health,
-ISO 226 anchors (20 Hz 99.85 dB, 100 Hz 64.37 dB at 40 phon), Svaresa brain, headphone matching. Local Gradle
-lint/unit tests pass. e2e (emulator, API 34): detection with the player list blinded, with the audio-server report
-blinded, real audio-server report parse + effect verification, Svaresa bass lift measured at 63 Hz, night bounded.
-**Not verified:** anything on the TECNO — whether the app may read `media.audio_flinger` there (SELinux/OEM), whether
-Neutron/Apple Music use direct paths, battery-killer behaviour, sound preference of any new curve. The tilt target
-(−2.5 dB/oct, ±1.5) and the volume→phon mapping (30–80 phon) are first guesses; both are bounded and switchable.
+**Verified (CI, API 34 emulator, runs 37267639906 / 37268750857 / 37268938774):** core 65 tests (+ASan/UBSan/TSan);
+JVM tests for the AF parser, ledger, verifier, health, ISO 226 anchors (20 Hz 99.85 dB, 100 Hz 64.37 dB at 40 phon),
+Svaresa brain, headphone matching. e2e: the app process CAN read `media.audio_flinger` on the stock API 34 image and the
+real report parses (`detect: players=ok server=ok … capturable#449:started:BOTH:mixer:PROCESSING`); the player is
+found and processed with the player list blinded and with the audio-server report blinded; MBC level-evening was
+accepted (no `attach failed`); night comfort stayed bounded (−1.7 dB vs resting); detection_release 10/10; compat
+API 29/30/33/35 smoke. Screenshots inspected: the "Svaresa adapts to" section fits the 320 dp screen without clipping.
+
+**Fixed after the first e2e logs (commits d4827e7, bd36085, 546d500):**
+- e2e "Svaresa lifted the bass above the resting level" failed on every run (63 Hz: on −48.6, off −48.2 dBFS). The
+  test was wrong: auto headroom (default on) pre-attenuates by the curve's largest boost, so a boost never raises the
+  absolute level (1 kHz fell 6.0 dB instead). The check now measures the 63 Hz-vs-1 kHz balance (must rise > 2 dB and
+  match the predicted change ±1 dB); the reason text says bass rises *against the mids*.
+- A just-created effect was judged by a report read 250 ms later → MISSING → the router tore it down again; cards
+  flashed SUSPENDED. Only effects settled (1.5 s) before the report are judged now; re-attach on MISSING is capped at
+  3 spaced attempts (re-armed only by PROCESSING) so a disagreeing report cannot rebuild the effect every scan.
+- The health card showed an idle SystemUI SoundPool as "Active but no session"; released/non-media session-0 records
+  are ignored (they could also lend "released" to an app's live session) and only playing ones are shown. The share
+  button no longer wraps to three lines; rows/headline use the installed app label.
+- Hold-to-compare and the EQ switch re-created every system effect while Svaresa ran (levelling went null); fixed.
+- AutoHeadphone now removes its correction when switched off or when headphones are swapped.
+- **Neutron (unconfirmed):** a third-party equalizer's supported-player notes say Neutron only exposes its audio
+  session to Android effects with Settings > Audio Hardware > **DSP Effect (Device)** on. The health advice now says
+  "check DSP Effect (Device)" when Neutron is playing unprocessed, sessionless or on a direct path, and
+  PHONE_VALIDATION.md asks the owner to test both settings. Not confirmed on the TECNO.
+
+**CI for 546d500 (run 37271042516): all jobs green** — core, android, compat 29/30/33/35, emulator-e2e 38 PASS / 0 FAIL
+(incl. the balance check: measured +5.6 dB vs predicted +5.4 dB), detection_release 10/10, zero `verify:` re-attaches and
+no DEGRADED/BLIND flashes in the log. Its Hi-Fi screenshot showed the second health-card button clipped to "Share"; the
+follow-up commit slims the button padding (re-check on the next screenshots).
+
+**Not verified:** anything on the TECNO — whether HiOS lets the app read `media.audio_flinger` (stock API 34 does),
+whether Neutron/Apple Music use direct paths, the Neutron DSP setting, battery-killer behaviour, sound preference of any
+new curve. The tilt target (−2.5 dB/oct, ±1.5) and the volume→phon mapping (30–80 phon) are first guesses; both are
+bounded and switchable. A single-scan BLIND flash can still appear for ~0.5 s when a player starts (seen in CI logs).
+Note: PR #1 for this branch exists (opened 05:52 UTC, not by the coding agent), so each push runs CI twice (push + pull_request).
 Next: Listen-only capture tap so Svaresa can analyse on system effects (Visualizer is only 8-bit: unsuitable).
 
 ## Bluetooth/session recovery — 2026-10-05 (0.4.1 preview)

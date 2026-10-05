@@ -35,6 +35,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.text.style.TextAlign
 import app.svan.DetectionMonitor
 import app.svan.DetectionStatus
 import app.svan.DiagnosticReport
@@ -211,12 +213,13 @@ private fun DetectionHealthCard() {
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
             )
             Spacer(Modifier.height(8.dp))
-            // Two equal buttons with one-line labels: fits a 320 dp phone without wrapping.
+            // Two equal buttons with slim padding: one line each on a 320 dp phone (CI screenshot); larger font
+            // scales wrap instead of clipping.
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(modifier = Modifier.weight(1f), onClick = {
+                OutlinedButton(modifier = Modifier.weight(1f), contentPadding = SlimButton, onClick = {
                     if (SystemEqService.isRunning) SystemEqService.requestScanNow() else SystemEqService.start(context)
-                }) { Text("Scan now", maxLines = 1) }
-                OutlinedButton(modifier = Modifier.weight(1f), onClick = {
+                }) { Text("Scan now", textAlign = TextAlign.Center) }
+                OutlinedButton(modifier = Modifier.weight(1f), contentPadding = SlimButton, onClick = {
                     scope.launch {
                         val text = withContext(Dispatchers.Default) { DiagnosticReport.build(context).take(180_000) }
                         runCatching {
@@ -228,7 +231,7 @@ private fun DetectionHealthCard() {
                             "Share diagnostic report",
                         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     }
-                }) { Text("Share report", maxLines = 1) }
+                }) { Text("Share report", textAlign = TextAlign.Center) }
             }
             Text("Share report sends a diagnostic report and copies it to your clipboard. It lists app names, session numbers and Android's audio tables; no audio and no account data. It is only shared if you send it.",
                 style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint)
@@ -268,3 +271,5 @@ private fun SessionRow(name: String, s: LedgerSession, v: Verification?) {
 private fun labelFor(context: android.content.Context, pkg: String): String = DetectionStatus.appLabel(pkg) { p ->
     context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(p, 0)).toString()
 }.replaceFirstChar { it.uppercase() }
+
+private val SlimButton = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
