@@ -49,6 +49,8 @@ object SessionLedger {
     /** audio_usage_t values a music/game player uses: UNKNOWN, MEDIA, GAME. */
     private val MEDIA_USAGES = setOf(0, 1, 14)
     private const val FIRST_APP_UID = 10_000
+    /** Android uid = userId * 100000 + appId (work profiles, secondary users). */
+    private const val PER_USER_RANGE = 100_000
 
     fun merge(
         players: List<PlaybackSession>?,
@@ -66,18 +68,22 @@ object SessionLedger {
         val afTracks = af?.tracks.orEmpty().filter { !it.patch && it.thread.output && it.sessionId > 0 && it.pid != ownPid }
         val unresolved = mutableListOf<PlaybackSession>()
 
-        players.orEmpty().filter { it.uid != ownUid }.forEach { p ->
-            if (p.sessionId > 0) {
-                val d = draft(p.sessionId)
-                // Several records for one session: keep a started one, never lose a capture opt-out.
-                val cur = d.apc
-                d.apc = if (cur == null) p else (if (cur.state != "started" && p.state == "started") p else cur)
-                    .let { keep -> keep.copy(flags = keep.flags or (cur?.flags ?: 0) or p.flags) }
-            } else {
-                val sessions = if (p.pid > 0) afTracks.filter { it.pid == p.pid }.map { it.sessionId }.distinct() else emptyList()
-                if (sessions.isEmpty()) unresolved += p
-                else sessions.forEach { sid -> draft(sid).apc = p.copy(sessionId = sid) }
-            }
+        val others = players.orEmpty().filter { it.uid != ownUid }
+        others.filter { it.sessionId > 0 }.forEach { p ->
+            val d = draft(p.sessionId)
+            // Several records for one session: keep a started one, never lose a capture opt-out.
+            val cur = d.apc
+            d.apc = if (cur == null) p else (if (cur.state != "started" && p.state == "started") p else cur)
+                .let { keep -> keep.copy(flags = keep.flags or (cur?.flags ?: 0) or p.flags) }
+        }
+        // Session-less records only stand in for a session no real record describes. A released or
+        // non-media record (a finished SoundPool, a notification click) must never lend its state or
+        // usage to the app's live music session: the router would read "released" and close it.
+        others.filter { it.sessionId <= 0 && it.state != "released" && it.usageCapturable }.forEach { p ->
+            val sessions = if (p.pid > 0) afTracks.filter { it.pid == p.pid && (it.usage == null || it.usage in MEDIA_USAGES) }
+                .map { it.sessionId }.distinct() else emptyList()
+            if (sessions.isEmpty()) unresolved += p
+            else sessions.forEach { sid -> draft(sid).let { d -> if (d.apc == null) d.apc = p.copy(sessionId = sid) } }
         }
 
         val refBySession = af?.refs.orEmpty().groupBy { it.sessionId }
@@ -91,7 +97,7 @@ object SessionLedger {
             val ref = refBySession[t.sessionId]?.firstOrNull { it.pid == t.pid } ?: refBySession[t.sessionId]?.firstOrNull()
             val uid = ref?.uid?.takeIf { it >= 0 } ?: uidByPid[t.pid] ?: -1
             if (uid == ownUid) return@forEach
-            if (uid in 0 until FIRST_APP_UID) return@forEach // system services, not a music app
+            if (uid >= 0 && uid % PER_USER_RANGE < FIRST_APP_UID) return@forEach // system services (any user), not a music app
             val d = draft(t.sessionId)
             // An idle track with an unknown owner is noise; an active one, or a known app's, is a player.
             if (d.apc == null && !t.active && uid < 0) return@forEach
@@ -157,8 +163,11 @@ object EffectVerifier {
         if (mine.isEmpty()) {
             val tracks = af.tracks.filter { it.sessionId == sessionId && !it.patch }
             if (tracks.isNotEmpty() && tracks.none { it.thread.supportsSessionEffects }) return Verification.BYPASSED
-            // Only claim "missing" if the report is complete and the parser demonstrably sees this app's other effects.
-            return if (!af.partial && ours.isNotEmpty() && af.threads.isNotEmpty()) Verification.MISSING else Verification.UNKNOWN
+            // Only claim "missing" if the report is complete, the parser demonstrably sees this app's other effects,
+            // and the session has a track on a thread whose chains were read. Without a track the effect would sit
+            // in a chain this parser may not recognise; claiming "missing" there would re-attach forever.
+            return if (!af.partial && ours.isNotEmpty() && af.threads.isNotEmpty() && tracks.isNotEmpty()) Verification.MISSING
+            else Verification.UNKNOWN
         }
         val fx = mine.first()
         if (fx.threadName == null) {
@@ -200,7 +209,10 @@ data class DetectionStatus(
         fun assess(
             dumpPermission: Boolean, playersOk: Boolean, serverOk: Boolean, publicActive: Int?, ownActive: Int,
             sessions: List<LedgerSession>, unresolved: List<PlaybackSession>, verification: Map<Int, Verification>,
+            /** The installed app's display name for a package, or null (see [appLabel]). */
+            labelFor: (String) -> String? = { null },
         ): Triple<Health, String, String> {
+            fun labelOf(s: LedgerSession) = appLabel(s.session.packageName, labelFor)
             val other = publicActive?.let { (it - ownActive).coerceAtLeast(0) }
             val playing = sessions.filter { it.session.state == "started" || it.serverActive == true }
             if (!dumpPermission) {
@@ -217,9 +229,10 @@ data class DetectionStatus(
                 val missing = playing.filter { verification[it.session.sessionId] == Verification.MISSING || verification[it.session.sessionId] == Verification.SUSPENDED }
                 return when {
                     bypass.isNotEmpty() -> Triple(Health.DEGRADED, "${labelOf(bypass.first())} is playing on a ${bypass.first().pathLabel} output",
-                        "Android bypasses system effects on that kind of output. Switch the player's output to its standard Android/AudioTrack option, or turn off its hi-res/exclusive/bit-perfect/offload setting.")
+                        "Android bypasses system effects on that kind of output. Switch the player's output to its standard Android/AudioTrack option, or turn off its hi-res/exclusive/bit-perfect/offload setting." +
+                            neutronTip(bypass.map { it.session }))
                     missing.isNotEmpty() -> Triple(Health.DEGRADED, "${labelOf(missing.first())} is detected, but Android is not applying the effect",
-                        "Svan is retrying. If it persists the player may use a power-saving offload path.")
+                        "Svan is retrying. If it persists the player may use a power-saving offload path." + neutronTip(missing.map { it.session }))
                     else -> Triple(Health.OK, "Detected: " + playing.map { labelOf(it) }.distinct().joinToString(), "")
                 }
             }
@@ -230,11 +243,30 @@ data class DetectionStatus(
                     !playersOk -> "The player list was unavailable, so Svan relied on the audio server only."
                     else -> "Neither Android report lists a media session for it."
                 }
-                return Triple(Health.BLIND, "Android reports $other player(s) active, but Svan found no session to process", why)
+                return Triple(Health.BLIND, "Android reports $other player(s) active, but Svan found no session to process", why + neutronTip(unresolved))
             }
             return Triple(if (sessions.isEmpty()) Health.IDLE else Health.OK, if (sessions.isEmpty()) "Nothing is playing" else "Player(s) connected, paused", "")
         }
 
-        private fun labelOf(s: LedgerSession) = s.session.packageName.substringAfterLast('.').ifBlank { s.session.packageName }
+        /**
+         * Neutron reportedly exposes an audio session to Android effects only with its "DSP Effect (Device)"
+         * option on (per a third-party equalizer's supported-player notes; not confirmed on the owner's phone).
+         */
+        const val NEUTRON_TIP = " If Neutron is not detected or not processed, check Neutron's Settings > Audio Hardware > " +
+            "DSP Effect (Device): Neutron is reported to open its audio to Android effects only with that option on."
+
+        private fun neutronTip(players: List<PlaybackSession>) =
+            if (players.any { "neutroncode" in it.packageName }) NEUTRON_TIP else ""
+
+        /**
+         * What the listener calls the app: its installed label ("Neutron", "YouTube Music") when the package resolves,
+         * else the last package segment. Raw "uid:"/"pid:" placeholders are kept as they are.
+         */
+        fun appLabel(packageName: String, labelFor: (String) -> String?): String {
+            if (packageName.isBlank() || packageName.startsWith("uid:") || packageName.startsWith("pid:")) return packageName
+            val label = runCatching { labelFor(packageName) }.getOrNull()?.trim()
+            if (!label.isNullOrEmpty() && label != packageName) return label
+            return packageName.substringAfterLast('.').ifBlank { packageName }
+        }
     }
 }

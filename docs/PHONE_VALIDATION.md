@@ -32,6 +32,11 @@ audio tables and Svan's log, no audio and no account data. Do this once per prob
 YouTube Music) and once on each route (speaker, wired, Bluetooth). For Neutron also note its output setting
 (standard Android output vs hi-res/bit-perfect/exclusive/USB direct).
 
+**Neutron tip (unconfirmed on this phone):** if Neutron is not detected or not processed, check Neutron's
+Settings > Audio Hardware > **DSP Effect (Device)**. Another system equalizer's supported-player notes say Neutron
+only opens its audio session to Android effects with that option on. Test once with it off and once with it on,
+and send the diagnostic report for each, so we know whether this is the cause on the TECNO.
+
 ## Isolate delay from doubled playback
 
 Use the same short, familiar passage and keep phone/headphone volume fixed. In Presets, use

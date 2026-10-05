@@ -23,7 +23,7 @@ object AutoHeadphone {
     private val SOURCE_PRIORITY = listOf("oratory1990", "crinacle", "Rtings", "Super Review", "Innerfidelity", "Headphone.com Legacy")
     private val NOISE = setOf("bluetooth", "wireless", "headphones", "headphone", "earphones", "earbuds", "headset", "audio", "bt", "the")
 
-    @Volatile private var lastName: String? = null
+    @Volatile private var lastKey: Pair<String?, Boolean>? = null
     @Volatile private var busy = false
     @Volatile private var autoManaged: String? = null // headphone name of the correction we applied
     private val _status = kotlinx.coroutines.flow.MutableStateFlow("")
@@ -67,15 +67,20 @@ object AutoHeadphone {
     /** Cheap; call whenever the output may have changed. Network work runs in the background. */
     fun check(context: Context, request: SmartRequest) {
         val name = SvaresaSensors.headphoneName(context)
-        if (name == lastName || busy) return
-        lastName = name
+        // Keyed on the switch too: turning recognition off with the same headphones on must remove the correction.
+        val key = name to request.autoHeadphone
+        if (key == lastKey || busy) return
+        lastKey = key
         val managed = autoManaged
-        // Headphones gone (or feature off): drop the correction we added, never one the listener chose.
-        if (managed != null && (name == null || !request.autoHeadphone)) {
-            if (SvanRepository.eq.value.tuning?.headphone == managed) scope.launch(Dispatchers.Main) { SvanRepository.update { it.copy(tuning = null) } }
+        // Headphones gone or swapped for others (or feature off): drop the correction we added for the previous
+        // pair, never one the listener chose. A swap must not leave pair A's correction on pair B.
+        if (managed != null) {
+            if (SvanRepository.eq.value.tuning?.headphone == managed) scope.launch(Dispatchers.Main) {
+                SvanRepository.update { if (it.tuning?.headphone == managed) it.copy(tuning = null) else it }
+            }
             autoManaged = null
             status = ""
-            EqController.log("svaresa: headphones disconnected; removed the automatic correction")
+            EqController.log("svaresa: ${if (!request.autoHeadphone) "headphone recognition off" else "output changed"}; removed the automatic correction")
         }
         if (name == null || !request.autoHeadphone) return
         val current = SvanRepository.eq.value.tuning
@@ -103,7 +108,7 @@ object AutoHeadphone {
                 }
             } catch (e: Exception) {
                 status = "Headphone recognition needs the internet once (${e.javaClass.simpleName})."
-                lastName = null // retry on the next check
+                lastKey = null // retry on the next check
                 EqController.log("svaresa: headphone index unavailable: $e")
             } finally {
                 busy = false

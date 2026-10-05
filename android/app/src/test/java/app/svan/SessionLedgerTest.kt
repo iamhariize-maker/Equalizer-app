@@ -103,4 +103,86 @@ class SessionLedgerTest {
         // Svan's own Engine B output must not make a quiet phone look blind.
         assertEquals(Health.IDLE, assess(true, true, true, 1, own = 1, sessions = emptyList()))
     }
+
+    @Test fun releasedOrNonMediaSessionlessRecordsNeverOverrideTheLiveSession() {
+        // YouTube Music's live record plus a released session-0 record (an old SoundPool) and a
+        // session-0 notification click, all from the same pid: the live session must stay "started"
+        // with its media usage, otherwise the router would close it on every scan.
+        val l = merge(listOf(
+            apc(1281, 10187, 4100, pkg = "com.google.android.apps.youtube.music"),
+            apc(0, 10187, 4100, "released"),
+            apc(0, 10187, 4100).copy(usage = "USAGE_ASSISTANCE_SONIFICATION"),
+        ))
+        val s = l.sessions.first { it.session.sessionId == 1281 }
+        assertEquals("started", s.session.state)
+        assertEquals("USAGE_MEDIA", s.session.usage)
+        // The sessionless record listed first must not win over the real record either.
+        val reordered = merge(listOf(apc(0, 10187, 4100, "paused"), apc(1281, 10187, 4100, pkg = "com.google.android.apps.youtube.music")))
+        assertEquals("started", reordered.sessions.first { it.session.sessionId == 1281 }.session.state)
+        // A released or non-media session-0 record is not an unresolved player either.
+        assertTrue(merge(listOf(apc(0, 10250, 9999, "released"))).unresolved.isEmpty())
+    }
+
+    @Test fun systemUidsOfSecondaryUsersAreNotPlayers() {
+        val mixer = AfThread("AudioOut_D", "MIXER", true, "AUDIO_DEVICE_OUT_SPEAKER")
+        val snap = AfSnapshot(
+            threads = listOf(mixer),
+            tracks = listOf(AfTrack(mixer, 700, 4001, true, 1), AfTrack(mixer, 701, 4002, true, 1)),
+            effects = emptyList(),
+            refs = listOf(AfSessionRef(4001, 700, 1_001_041, ""), AfSessionRef(4002, 701, 1_010_187, "com.example.player")),
+        )
+        val l = merge(players = null, snapshot = snap)
+        assertEquals(listOf(4002), l.sessions.map { it.session.sessionId })
+    }
+
+    @Test fun verifierNeverClaimsMissingForASessionWithoutAServerTrack() {
+        // No track and no effect for 7777 while our other effects are visible: the effect may sit in a
+        // chain layout the parser does not know. "Missing" here would re-attach on every scan.
+        assertEquals(Verification.UNKNOWN, EffectVerifier.verify(7777, af, own))
+    }
+
+    @Test fun missingEffectRepairIsBoundedAndReArmedOnlyByProof() {
+        val r = MissingEffectRepair(maxAttempts = 3, firstDelayMs = 10_000L)
+        assertTrue(r.shouldRepair(5, Verification.MISSING, 0))
+        assertFalse(r.shouldRepair(5, Verification.MISSING, 5_000)) // spaced
+        assertTrue(r.shouldRepair(5, Verification.MISSING, 10_000))
+        assertFalse(r.shouldRepair(5, Verification.MISSING, 25_000))
+        assertFalse(r.shouldRepair(5, Verification.UNKNOWN, 40_000)) // an unread report proves nothing
+        assertTrue(r.shouldRepair(5, Verification.MISSING, 40_000))
+        assertTrue(r.exhausted(5))
+        assertFalse(r.shouldRepair(5, Verification.MISSING, 10_000_000)) // gave up: the report disagrees with a working attach
+        assertFalse(r.shouldRepair(5, Verification.PROCESSING, 10_000_001)) // proof re-arms it
+        assertTrue(r.shouldRepair(5, Verification.MISSING, 10_000_002))
+    }
+
+    @Test fun neutronGetsTheDspEffectTipOnlyWhenItIsTheProblem() {
+        val ok = merge(null).sessions
+        // Neutron (2049) is playing on a direct output.
+        val direct = DetectionStatus.assess(true, true, true, 2, 0, ok, emptyList(), emptyMap())
+        assertEquals(Health.DEGRADED, direct.first)
+        assertTrue(direct.third.contains("DSP Effect (Device)"))
+        // Neutron is active but Android gave no session.
+        val sessionless = DetectionStatus.assess(true, true, true, 1, 0, emptyList(),
+            listOf(apc(0, 10250, 9999, pkg = "com.neutroncode.mp", type = "AAudio")), emptyMap())
+        assertEquals(Health.BLIND, sessionless.first)
+        assertTrue(sessionless.third.contains("DSP Effect (Device)"))
+        // Another player's problem gets no Neutron advice.
+        val yt = ok.filter { it.session.sessionId == 1281 }
+        val missing = DetectionStatus.assess(true, true, true, 1, 0, yt, emptyList(), mapOf(1281 to Verification.MISSING))
+        assertEquals(Health.DEGRADED, missing.first)
+        assertFalse(missing.third.contains("Neutron"))
+    }
+
+    @Test fun healthLineNamesTheAppByItsInstalledLabel() {
+        val labels = mapOf("com.neutroncode.mp" to "Neutron", "com.google.android.apps.youtube.music" to "YouTube Music")
+        assertEquals("Neutron", DetectionStatus.appLabel("com.neutroncode.mp") { labels[it] })
+        assertEquals("mp", DetectionStatus.appLabel("com.neutroncode.mp") { null }) // not installed: last segment
+        assertEquals("mp", DetectionStatus.appLabel("com.neutroncode.mp") { throw SecurityException() })
+        assertEquals("uid:10250", DetectionStatus.appLabel("uid:10250") { "never asked" })
+        val yt = merge(null).sessions.filter { it.session.sessionId == 1281 }
+        val ok = DetectionStatus.assess(true, true, true, 1, 0, yt, emptyList(), mapOf(1281 to Verification.PROCESSING)) { labels[it] }
+        assertEquals("Detected: YouTube Music", ok.second)
+        val direct = DetectionStatus.assess(true, true, true, 2, 0, merge(null).sessions, emptyList(), emptyMap()) { labels[it] }
+        assertTrue(direct.second.startsWith("Neutron is playing on a direct output"))
+    }
 }

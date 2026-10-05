@@ -30,6 +30,7 @@ object SessionRouter {
     // Worker-owned lifecycle state. Successful scans are reconciled in order.
     private val absence = SessionAbsenceTracker()
     private val attachmentRetry = AttachmentRetry()
+    private val missingRepair = MissingEffectRepair()
     private val streamCaptureBlocked = mutableSetOf<Int>()
     private var lastSyncSummary = ""
     private lateinit var appContext: Context
@@ -114,6 +115,7 @@ object SessionRouter {
             routes.clear()
             absence.clear()
             attachmentRetry.clear()
+            missingRepair.clear()
             streamCaptureBlocked.clear()
             publishCaptureUids()
         }
@@ -246,6 +248,7 @@ object SessionRouter {
         seenBy.remove(sessionId)
         absence.forget(sessionId)
         attachmentRetry.forget(sessionId)
+        missingRepair.forget(sessionId)
         streamCaptureBlocked.remove(sessionId)
         publishCaptureUids()
         muter.unmute(sessionId)
@@ -301,8 +304,9 @@ object SessionRouter {
                     toEngineA(s.sessionId, s.packageName, s.uid, playing)
                 } else openOnWorker(s.sessionId, s.packageName, s.uid, playing)
                 // The audio server says our effect is gone: rebuild it (with the usual capped back-off).
-                if (verification[s.sessionId] == Verification.MISSING && routes[s.sessionId]?.owner == Owner.ENGINE_A &&
-                    attachmentRetry.ready(s.sessionId, SystemClock.elapsedRealtime())) {
+                // Bounded: a report that keeps disagreeing with a working attach must not rebuild it every scan.
+                if (routes[s.sessionId]?.owner == Owner.ENGINE_A &&
+                    missingRepair.shouldRepair(s.sessionId, verification[s.sessionId], SystemClock.elapsedRealtime())) {
                     EqController.log("verify: ${s.packageName} (session ${s.sessionId}) effect missing in the audio server; re-attaching")
                     EqController.globalEq.detach(s.sessionId)
                     reroute(s.sessionId, routes[s.sessionId]!!.pkg, routes[s.sessionId]!!.uid, playing)

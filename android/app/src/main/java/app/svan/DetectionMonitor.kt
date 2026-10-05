@@ -98,7 +98,7 @@ object DetectionMonitor {
         }
         val (health, headline, advice) = DetectionStatus.assess(
             perm, players != null, if (needServer) af != null else lastServerOk == true, publicActive, ownActive, ledger.sessions, ledger.unresolved, verification,
-        )
+        ) { pkg -> runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrNull() }
         val status = DetectionStatus(
             atMs = now, dumpPermission = perm, serviceRunning = SystemEqService.isRunning,
             playersOk = players != null, playersError = playersError,
@@ -108,7 +108,7 @@ object DetectionMonitor {
             verification = verification, health = health, headline = headline, advice = advice,
         )
         mutableStatus.value = status
-        val summary = "players=${if (players != null) "ok" else "fail"} server=${if (af != null) "ok" else "fail"} public=$publicActive " +
+        val summary = "players=${if (players != null) "ok" else "fail"} server=${if (af != null) "ok" else if (needServer) "fail" else "idle"} public=$publicActive " +
             "sessions=[" + ledger.sessions.joinToString { "${it.session.packageName}#${it.session.sessionId}:${it.session.state}:${it.source}:${it.pathLabel.ifEmpty { "?" }}:${verification[it.session.sessionId] ?: "-"}" } + "] " +
             "unresolved=${ledger.unresolved.size} health=$health"
         if (summary != lastSummary) { lastSummary = summary; EqController.log("detect: $summary") }

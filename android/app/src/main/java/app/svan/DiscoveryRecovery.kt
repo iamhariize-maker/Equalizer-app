@@ -44,3 +44,30 @@ internal class AttachmentRetry {
     fun forget(sid: Int) { failures.remove(sid) }
     fun clear() { failures.clear() }
 }
+
+/**
+ * Bounds re-attaching an effect the audio server report does not show. A successful attach clears
+ * [AttachmentRetry], so without this a report that keeps disagreeing (an unrecognised chain layout,
+ * an OEM effect proxy) would tear down and rebuild the effect on every scan: an audible glitch every
+ * few seconds. Each session gets a few spaced attempts; only a PROCESSING verdict re-arms it.
+ */
+internal class MissingEffectRepair(private val maxAttempts: Int = 3, private val firstDelayMs: Long = 10_000L) {
+    private data class State(val attempts: Int, val nextMs: Long)
+    private val states = mutableMapOf<Int, State>()
+
+    /** Feed every scan's verdict; true = re-attach now. */
+    fun shouldRepair(sid: Int, verdict: Verification?, nowMs: Long): Boolean {
+        if (verdict == Verification.PROCESSING) { states.remove(sid); return false }
+        if (verdict != Verification.MISSING) return false
+        val s = states[sid]
+        if (s != null && (s.attempts >= maxAttempts || nowMs < s.nextMs)) return false
+        val attempts = (s?.attempts ?: 0) + 1
+        states[sid] = State(attempts, nowMs + (firstDelayMs shl (attempts - 1)))
+        return true
+    }
+
+    /** True once the attempts for [sid] are used up (the report keeps disagreeing with a working attach). */
+    fun exhausted(sid: Int): Boolean = (states[sid]?.attempts ?: 0) >= maxAttempts
+    fun forget(sid: Int) { states.remove(sid) }
+    fun clear() { states.clear() }
+}
