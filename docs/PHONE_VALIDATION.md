@@ -23,6 +23,15 @@ change what Svan can observe or process. The diagnostics below are intended to
 separate “Android reported no player track,” “track found but no attachable
 session,” and “session found but not routed by Svan.”
 
+## 0.5 first: send the diagnostic report
+
+Open Hi-Fi → Music detection. The top card now states, in words, whether Svan sees your player and why not
+(permission, background service stopped by Android, player on a direct/offload output, audio reports unreadable).
+With the player ACTIVE, tap **Share diagnostic report** and send it. It contains app names, session numbers, Android's
+audio tables and Svan's log, no audio and no account data. Do this once per problem app (Neutron, Apple Music,
+YouTube Music) and once on each route (speaker, wired, Bluetooth). For Neutron also note its output setting
+(standard Android output vs hi-res/bit-perfect/exclusive/USB direct).
+
 ## Isolate delay from doubled playback
 
 Use the same short, familiar passage and keep phone/headphone volume fixed. In Presets, use

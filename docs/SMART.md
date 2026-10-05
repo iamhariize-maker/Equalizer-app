@@ -45,6 +45,22 @@ ID, and a parsed media session. It also adds one-tick listening callouts, a cont
 starting preset and saveable tab state. Neither the new detection path nor this bass profile has been
 verified on the TECNO yet; listing an app package is not proof that its session is visible or captured.
 
+## Svaresa 0.5 — what changed
+
+Svaresa used to be inert on system effects (the default) because it had no audio to analyse there. It now has three
+layers that need no capture, and a stronger measured layer when Hi-Fi can listen:
+1. **Quiet listening** (`SvaresaBrain`): ISO 226 contour difference between the current assumed loudness
+   (30–80 phon mapped from the volume setting) and a 65-phon reference → bass shelf ≤ 6 dB, treble shelf ≤ 3 dB
+   (bass ≤ 1.5 dB on the phone speaker), partly returned as level. The mapping ignores headphone sensitivity: a rough guide.
+2. **Night comfort**: auto by clock (full 22:30–05:30, one-hour ramps), on or off: −2.5 dB sub-bass shelf,
+   −1 dB at 3.8 kHz and a gentle 1.5:1 multiband level-evening (system effects; the capture engine does tone only).
+3. **Headphone recognition**: connected device name → AutoEq entry (exact/unambiguous only) → Harman correction;
+   never overrides a correction the listener chose; removed when unplugged.
+4. **Measured policy** (Engine B only): boom/mud/harsh limits 4 dB (guided: 2.5), tilt shelves ≤ 2.5 dB toward −2.5 dB/oct
+   (±1.5 dead band, first guess), harshness-driven smoothing suggestion on both engines.
+Each of 1–3 has a switch. Nothing here is claimed to sound better until listened to; the numbers shown in the UI are
+the plan's real values.
+
 ## Sound modes — Svaramanas and Svaresa
 
 The names are paired with everyday labels so listeners can choose by purpose:

@@ -4,6 +4,48 @@ Written at the end of a long Claude Code session so another agent (Codex cloud) 
 Repo: `iamhariize-maker/Equalizer-app`, branch **`ccr-208702a3-2mju42`** (not merged; no PR opened).
 Start with `AGENTS.md`. This file has the detail.
 
+## Redundant detection + Svaresa auto master — 2026-10-05 (0.5.0 preview)
+
+Owner reported (0.4.1 APK, TECNO LH7n): detection is unreliable for every player, not only Neutron. Apple Music
+was seen once, YouTube Music stopped appearing after switching, Neutron never; a screenshot showed the capture
+engine running with "0 apps", −120 dBFS, and YouTube Music listed only from a stale capture verdict.
+
+**Investigation (no device dump exists, so causes are ranked, not proven):**
+- The APK is exactly the 0.4.1 source (versionCode 6, DUMP declared). The `dumpsys audio` player format matches
+  the android14-release sources (`AudioPlaybackConfiguration.toString`), so the parser is not the main weakness.
+- The weakness was architectural: detection depended on ONE report. Players the audio service lists with
+  `sessionId:0` (native AAudio/OpenSL players, which is likely Neutron's path) were dropped. A failed/slow/odd
+  report meant "nothing is playing". "Direct/offload/bit-perfect" outputs (Neutron hi-res, Apple Music lossless
+  over USB) bypass session effects entirely and were reported as "no session". The Hi-Fi list showed remembered
+  apps as if detected. A killed foreground service was invisible.
+- Svaresa had no effect on system effects because it had no source analysis there (all-zero plan).
+
+**Changes (0.5.0):**
+- `AudioFlingerDump`: parses `dumpsys media.audio_flinger` (threads + output devices, track tables incl. pid/session/
+  usage, effect chains incl. our DynamicsProcessing, orphan chains, `Global session refs` = session→pid/uid/package).
+- `SessionLedger`: fuses player list + audio-server tables. Either alone is enough. Session-0 players are resolved
+  through their pid. Output path (mixer/direct/offload/bit-perfect/MMAP) is known per session.
+- `EffectVerifier`: proves in the audio server that our effect is bound, suspended, bypassed, waiting or missing;
+  missing → automatic re-attach.
+- `DetectionMonitor` + health card: per-scan verdict (OK/IDLE/DEGRADED/BLIND/NO_PERMISSION) with a plain reason, using
+  the public active-playback count as a blind-spot detector. Shareable diagnostic report (permissions, both raw
+  report excerpts, ledger, routes, recent log, session-0 probe) — **ask the owner for it after the next test**.
+- Router: per-source absence rules (a failed server read never evicts), bypass-path sessions never muted, self-heal.
+- Service: detects "stopped by Android" (dirty-shutdown flag) and shows HiOS/OEM background guidance.
+- Manifest visibility for more players (Neutron trial etc.).
+- Svaresa: context layer on every engine (ISO 226 quiet-listening lift, speaker protection, night comfort with
+  multiband level-evening on system effects, AutoEq headphone recognition), plus a stronger native measured policy
+  (wider limits, tilt correction, harshness smoothing). Still ignores guided taste. `docs/SMART.md` updated.
+
+**Verified:** core 65 tests (+ASan/UBSan/TSan in CI); JVM tests for the AF parser, ledger, verifier, health,
+ISO 226 anchors (20 Hz 99.85 dB, 100 Hz 64.37 dB at 40 phon), Svaresa brain, headphone matching. Local Gradle
+lint/unit tests pass. e2e (emulator, API 34): detection with the player list blinded, with the audio-server report
+blinded, real audio-server report parse + effect verification, Svaresa bass lift measured at 63 Hz, night bounded.
+**Not verified:** anything on the TECNO — whether the app may read `media.audio_flinger` there (SELinux/OEM), whether
+Neutron/Apple Music use direct paths, battery-killer behaviour, sound preference of any new curve. The tilt target
+(−2.5 dB/oct, ±1.5) and the volume→phon mapping (30–80 phon) are first guesses; both are bounded and switchable.
+Next: Listen-only capture tap so Svaresa can analyse on system effects (Visualizer is only 8-bit: unsuitable).
+
 ## Bluetooth/session recovery — 2026-10-05 (0.4.1 preview)
 
 Owner reports YT Music over Bluetooth was detected once, then disappeared. No new TECNO dump is
