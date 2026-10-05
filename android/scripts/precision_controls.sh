@@ -7,7 +7,8 @@ eq() { $A shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
 read -r W H < <($A shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr 'x' ' ')
 node() {
   $A shell uiautomator dump /sdcard/precision-ui.xml >/dev/null 2>&1
-  $A shell cat /sdcard/precision-ui.xml | python3 -c 'import re,sys,xml.etree.ElementTree as E; n=next((n for n in E.fromstring(sys.stdin.read()).iter("node") if n.attrib.get(sys.argv[1])==sys.argv[2]),None); print(" ".join(re.findall(r"\d+",n.attrib["bounds"])) if n is not None else "")' "$1" "$2"
+  $A shell cat /sdcard/precision-ui.xml > "$OUT/last-ui.xml"
+  python3 -c 'import re,sys,xml.etree.ElementTree as E; attr,label=sys.argv[2:]; n=next((n for n in E.parse(sys.argv[1]).getroot().iter("node") if (label in n.attrib.get(attr,"") if attr=="content-desc" else n.attrib.get(attr)==label)),None); print(" ".join(re.findall(r"\d+",n.attrib["bounds"])) if n is not None else "")' "$OUT/last-ui.xml" "$1" "$2"
 }
 tap() {
   local b; b=$(node text "$1")
@@ -23,8 +24,16 @@ find_control() {
       # A partly visible lazy-list item cannot reliably receive a drag.
       if [ "$y1" -ge "$((H/12))" ] && [ "$y2" -lt "$((H*7/8))" ]; then echo "$b"; return; fi
     fi
-    $A shell input swipe $((W/2)) $((H*3/4)) $((W/2)) $((H/2)) 400; sleep 1
+    # Scroll in the card margin. A vertical swipe through a fader edits it.
+    if [ -n "$b" ] && [ "$y1" -lt "$((H/12))" ]; then
+      $A shell input swipe $((W/20)) $((H/3)) $((W/20)) $((H/2)) 400
+    else
+      $A shell input swipe $((W/20)) $((H*3/4)) $((W/20)) $((H*7/12)) 400
+    fi
+    sleep 1
   done
+  $A exec-out screencap -p > "$OUT/missing-target.png"
+  state missing
   echo "FAIL missing gesture target $1" >> "$OUT/results.txt"; exit 1
 }
 state() {
@@ -37,6 +46,12 @@ state() {
   done
   echo "FAIL no gesture state" >> "$OUT/results.txt"; exit 1
 }
+# A fresh debug install also lets this check run before the longer audio suite.
+$A uninstall app.svan >/dev/null 2>&1 || true
+$A install -r -g app/build/outputs/apk/debug/app-debug.apk >/dev/null
+$A shell pm grant app.svan android.permission.DUMP
+$A shell am start -n app.svan/.MainActivity >/dev/null
+sleep 8
 eq reset_sound; eq eq_control --ez auto false --ez graphic true --ei count 10
 tap EQ
 b=$(find_control '31 Hz gain'); read -r x1 y1 x2 y2 <<< "$b"
