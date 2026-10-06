@@ -17,7 +17,13 @@ class PlayerRecognitionService : NotificationListenerService() {
     private val main = Handler(Looper.getMainLooper())
     private val manager by lazy { getSystemService(MediaSessionManager::class.java) }
     private val watched = mutableMapOf<MediaController, MediaController.Callback>()
-    private val listener = MediaSessionManager.OnActiveSessionsChangedListener { update(it.orEmpty()) }
+    // A queued callback can describe an older list than our initial query. Read
+    // the current list so that a delayed empty snapshot cannot erase a live player.
+    private val listener = MediaSessionManager.OnActiveSessionsChangedListener {
+        if (listening) runCatching { refresh() }.onFailure {
+            clear(); EqController.log("player recognition unavailable: ${it.javaClass.simpleName}")
+        }
+    }
     private var listening = false
 
     override fun onListenerConnected() {
@@ -25,10 +31,12 @@ class PlayerRecognitionService : NotificationListenerService() {
         runCatching {
             manager.addOnActiveSessionsChangedListener(listener, ComponentName(this, PlayerRecognitionService::class.java), main)
             listening = true
-            update(manager.getActiveSessions(ComponentName(this, PlayerRecognitionService::class.java)))
+            refresh()
             PlayerRecognition.setConnected(true)
         }.onFailure { clear(); EqController.log("player recognition unavailable: ${it.javaClass.simpleName}") }
     }
+
+    private fun refresh() = update(manager.getActiveSessions(ComponentName(this, PlayerRecognitionService::class.java)))
 
     private fun update(controllers: List<MediaController>) {
         watched.forEach { (controller, cb) -> runCatching { controller.unregisterCallback(cb) } }
