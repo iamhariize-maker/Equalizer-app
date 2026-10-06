@@ -153,6 +153,27 @@ wait_log "route: $CAP .*Engine A"; sleep 3
 INDEPENDENT=$(level)
 check_delta 'detection works after Shizuku stops' "$INDEPENDENT" "$BASE" -6.3
 
+# The prior non-broadcast AudioTrack is retired after successful discovery scans.
+# Do not race that existing grace period when measuring a single-source capture.
+# Multi-session startup's intermediate UID conflict remains a product limitation;
+# this setup wait does not change routing, grant access, or relax audio assertions.
+settled=0
+for ((attempt=0;attempt<20;attempt++)); do
+  $A logcat -c; eq sessions; sleep 2
+  $A logcat -d -s EqSpike:I > "$OUT/pre-capture-routes.txt"
+  if python3 - "$OUT/pre-capture-routes.txt" "$CAP" <<'PY'
+import re,sys
+rows=re.findall(r'routes: (.*)',open(sys.argv[1]).read())
+entries=re.findall(re.escape(sys.argv[2])+r'#[0-9]+=([A-Z_]+)',rows[-1]) if rows else []
+sys.exit(0 if entries==['ENGINE_A'] else 1)
+PY
+  then settled=1; break; fi
+done
+if [ "$settled" != 1 ]; then
+  echo 'FAIL test source retains multiple or missing routes before single-source capture' | tee -a "$OUT/detection.txt"
+  FAILED=1; diagnose 'test source retirement'; exit 1
+fi
+
 # Test the shipped 4x path and the same graphic controls shown in the phone report.
 $A logcat -c; eq start_capture --es quality AUDIOPHILE
 wait_log 'capture: started'; wait_log "route: $CAP .*Engine B"; sleep 3

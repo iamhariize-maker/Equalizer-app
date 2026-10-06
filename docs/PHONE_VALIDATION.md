@@ -27,6 +27,12 @@ The earlier listening/detection observations below are history, not proof that t
 onboarding or 0.5.5 works with any particular phone/player. [Compatibility](COMPATIBILITY.md)
 keeps that evidence separate from synthetic tests. Existing Bluetooth delay/echo remains open.
 
+CI also observed an Audiophile-startup safety stop while a closed non-broadcast session and its
+replacement still shared one UID. Audio routing is unchanged in this task. Test rapid track/player
+recreation and multiple sessions explicitly; record `conflicting UID routes` if seen. The
+single-source detection fixture waits for the old route to retire, which does not prove this
+real-world transition is fixed. Prefer System effects if capture stops.
+
 ---
 
 For version 0.3.1: in Presets, use **Reset all sound to Flat** to clear headphone

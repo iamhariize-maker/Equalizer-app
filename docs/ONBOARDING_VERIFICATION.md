@@ -69,6 +69,20 @@ UI assertions now check all fixture banners, visible status headings and footers
 Retry and disabled progress controls. Final CI must exercise those fixes and its images must be
 inspected too. Representative provenance-labelled captures are in [SETUP.md](SETUP.md).
 
+The first follow-up CI (37418664855) caught remaining dialog/footer clipping. Android accessibility
+also separates a button's text node from its enclosing clickable node; assertions now inspect
+the latter and require the text to fit inside it. Setup uses an inset-aware app page rather than
+a separate full-screen dialog window. The underlying tabs are absent from accessibility while
+setup is open, so Finish checks cannot accidentally hit a covered tab.
+
+That run also caught a capture-start timeout: a newly recreated test track started before an old
+non-broadcast route's existing retirement grace period ended. Sequential transition of two routes
+for one UID logged `capture: conflicting UID routes; stopping safely`. This is an **unmodified
+routing limitation**, not a tested fix. The single-source detection fixture now waits for exactly
+one System-effects route before starting capture. Its ten original assertions/tolerances and the
+39-check audio test body remain unchanged. Real multi-session/recreated-player capture needs
+separate validation; do not infer reliability from this settled single-source setup.
+
 ## Limits
 
 CI uses synthetic players and disposable signing identities. It does not establish commercial-player,

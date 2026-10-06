@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.activity.compose.BackHandler
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -16,8 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -48,10 +47,8 @@ fun ObserveWhileVisible(onTick: () -> Unit) {
 fun SetupHelpHost() {
     val panel by OnboardingUi.panel.collectAsState()
     val fixture by OnboardingUi.fixture.collectAsState()
-    if (panel != HelpPanel.NONE) Dialog(
-        onDismissRequest = { OnboardingUi.panel.value = HelpPanel.NONE; OnboardingUi.fixture.value = null },
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-    ) {
+    if (panel != HelpPanel.NONE) {
+        BackHandler { OnboardingUi.panel.value = HelpPanel.NONE; OnboardingUi.fixture.value = null }
         Surface(color = Svan.Black, modifier = Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp)) {
                 if (fixture != null) Text("UI test fixture · not live detection", color = Svan.Ember,

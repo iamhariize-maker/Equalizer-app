@@ -108,6 +108,7 @@ fun SvanApp(
     labActions: List<Pair<String, () -> Unit>>,
 ) {
     val blindOpen by app.svan.listening.BlindLab.open.collectAsState()
+    val helpPanel by OnboardingUi.panel.collectAsState()
     if(blindOpen) BlindListening()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -117,7 +118,7 @@ fun SvanApp(
     // Boot animation once per app start (survives rotation, not a fresh launch).
     var booted by rememberSaveable { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
-    Scaffold(
+    if (helpPanel == HelpPanel.NONE) Scaffold(
         containerColor = Svan.Black,
         bottomBar = {
             Column {

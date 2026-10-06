@@ -38,6 +38,11 @@ detection/workspace/control/quality/production checks pass. Final local checks a
 All wizard/status fixture images and representative live images were viewed at phone size.
 Follow-up fixes reset/clip help-panel scrolling, correct full-screen footer insets and fixture error/progress labels;
 screens.sh now asserts their presentation. Inspect final branch CI and its images as well.
+CI 37418664855 caught remaining dialog footer clipping; setup is now an inset-aware app page,
+and UI tests inspect clickable ancestors rather than TextView labels. A capture-start timeout
+logged an intermediate conflicting-UID safety stop while two recreated sessions still existed.
+The single-source fixture now waits for old-route retirement. SessionRouter/processing stay
+unchanged; multi-session capture startup remains a known limitation needing separate work.
 Existing 39 measured audio checks are byte-for-byte unchanged, with a separate UX prelude.
 See ONBOARDING_VERIFICATION.md for measured values, hashes, run links and limits.
 See SETUP.md and PHONE_VALIDATION.md for live versus labelled fixture screenshots and gaps.
