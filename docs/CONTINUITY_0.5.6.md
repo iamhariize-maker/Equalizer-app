@@ -16,6 +16,11 @@ It does not claim universal crackle-free playback or acoustic/hearing protection
 - Android system effects retain a neutral four-band compressor instead of detaching/recreating the
   effect whenever dynamics turn on/off. Unchanged compressor and limiter settings are not resent.
   EQ attenuation is sent before increases to avoid temporarily stacking old and new boosts.
+- System-effect attachment first uses a minimal muted bootstrap handle to disable an existing
+  module before the full constructor's per-band configuration writes, then enables the final
+  configured handle. Android's native DynamicsProcessing owns the stream-volume output gain, and
+  its architecture configuration resets that gain. A fresh enabled transition makes Android
+  resend the stream volume, including when reacquiring an already enabled effect after restart.
 - Capture output is primed before play. Buffer capacity permits automatic growth on new underruns;
   it never shrinks mid-song. Three consecutive reporting windows with new underruns at capacity
   end capture, stop its output, then return source sessions to system effects. A visible message
@@ -45,7 +50,15 @@ Capture now matches MEDIA usage only. Unknown/game playback can use system effec
 UID whose other active media session is not muted is forbidden, including ignored utility-like
 sessions sharing that UID. Routing batches publish their final allowlist together, avoiding an
 intermediate mixed-ownership list during startup/reconciliation. Source audio blocked by capture
-policy remains on system effects. No notification listener/accessibility permission is introduced.
+policy remains on system effects. This continuity change adds no notification listener or
+accessibility permission.
+The separate OEM detection follow-up now provides optional package/playback-state recognition;
+it does not supply session IDs or capture authority. See DETECTION_FALLBACKS.md. These continuity
+controls and music-source admission do not require notification access or accessibility access.
+Definitive CLOSE broadcasts remove their old scan evidence before publishing the capture allowlist;
+otherwise an old started record could look like an unmuted sibling after the player opens a new
+session. Rejected active media retains its evidence and still excludes its UID. Shutdown clears
+the old ledger. A reused session ID cannot borrow a different UID's mute.
 
 ## Two separate orchestral controls
 
@@ -74,6 +87,9 @@ Lab comparison. The orchestral controls require the capture engine; system effec
 - Android [audio timing guidance](https://developer.android.com/games/sdk/oboe/low-latency-audio):
   bounded work, no allocation/locks/heavy one-off calculation in callbacks, and buffer tuning.
   Svan still uses its existing AudioRecord/AudioTrack worker; this is not an Oboe migration.
+- AOSP [DynamicsProcessing volume handling](https://android.googlesource.com/platform/frameworks/av/+/refs/heads/android14-release/media/libeffects/dynamicsproc/EffectDynamicsProcessing.cpp):
+  `EFFECT_CMD_SET_VOLUME` supplies the native channel output gain and returns unity to the mixer.
+  Do not change the user's stream-volume index to compensate for an effect initialization problem.
 - Rouard, Massa & Défossez, [Hybrid Transformers for Music Source Separation](https://arxiv.org/abs/2211.08553):
   learned source separation is a distinct model/training task. It does not establish real-time,
   low-power lead/backing-vocal isolation on the owner's phones. No such model or borrowed GPL DSP
@@ -93,3 +109,10 @@ new second row of orchestral knobs. Automated evidence is not a subjective sound
 Version is 0.5.6, code 13. Preview signing stays the existing preview identity; an owner-signed
 0.5.5 installation requires the original private owner key for an in-place update. No replacement
 production key or public release is created by this change. Actual results are recorded in HANDOFF.
+
+Initial integration run 37515350637 passed both new source-policy suites and all four release/JNI
+detail checks on API 33 and 34: backing 2.49966 dB, spatial 1.90305 dB, side bass 0.000083 dB,
+maximum-control reconstructed peak 0.86136. It exposed a stale-evidence capture stop and a restart
+stream-volume restoration regression (38/39 routing and 8/9 workspace checks on each API).
+The corrections preserve those failing assertions. Their follow-up device run remains required;
+the initial run is not an all-green release result.

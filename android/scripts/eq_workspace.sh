@@ -5,6 +5,9 @@ S=${1:-emulator-5554}; OUT=${2:-/tmp/eq-workspace}; A="adb -s $S"
 CAP=app.svan.testsource.capturable
 mkdir -p "$OUT"
 : > "$OUT/results.txt"
+$A logcat -s EqSpike:I GlobalEqEngine:I EqTestSource:I > "$OUT/logcat-full.txt" 2>&1 &
+LOG_PID=$!
+trap 'kill "$LOG_PID" 2>/dev/null || true' EXIT
 eq() { $A shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
 tap() {
   $A shell uiautomator dump /sdcard/eq-workspace.xml >/dev/null 2>&1
@@ -56,6 +59,8 @@ $A shell am start -n app.svan/.MainActivity >/dev/null
 sleep 8; state restart
 tap EQ; tap 'Your EQ'
 sleep 4; state restored; measure restored
+$A shell dumpsys audio > "$OUT/restored-audio.txt"
+$A shell dumpsys media.audio_flinger > "$OUT/restored-audio-flinger.txt"
 eq gain_settings --ez headroom false --ez protection false
 state protection_manual
 eq svaramanas --ez on true --es mode SVARESA --es night OFF --ez volume_aware false --ez route_aware false --ez auto_headphone false

@@ -60,10 +60,27 @@ class GlobalEqEngine(bandCount: Int = 128) {
         // remains in our map. Re-create it instead of reporting false success.
         detach(sessionId)
         var candidate: DynamicsProcessing? = null
+        var bootstrap: DynamicsProcessing? = null
         val startedMs = SystemClock.elapsedRealtime()
         return try {
+            // An existing native module can outlive our process. Keep its full
+            // constructor/configuration pass disabled: a small muted bootstrap
+            // avoids hundreds of live per-band writes at a reset volume gain.
+            bootstrap = DynamicsProcessing(PRIORITY, sessionId,
+                DynamicsProcessing.Config.Builder(
+                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, CHANNELS,
+                    false, 0, false, 0, false, 0, false,
+                ).setInputGainAllChannelsTo(-200f).build())
+            bootstrap.enabled = false
             val dp = DynamicsProcessing(PRIORITY, sessionId, buildConfig())
             candidate = dp
+            // A recovered handle may already be enabled. Configuring its native
+            // architecture resets DynamicsProcessing's output gain; Android sends
+            // the stream volume again on the next enabled transition. Establish
+            // that transition on attachment, before any music uses the new config.
+            dp.enabled = false
+            bootstrap.release()
+            bootstrap = null
             applyTo(dp)
             dp.enabled = true
             check(dp.hasControl() && dp.enabled) { "Android did not enable the session effect" }
@@ -77,6 +94,8 @@ class GlobalEqEngine(bandCount: Int = 128) {
             Log.w(TAG, "attach failed for session $sessionId", e)
             EqController.log("system effects: attach failed for session $sessionId: $e")
             false
+        } finally {
+            bootstrap?.let { runCatching { it.release() } }
         }
     }
 

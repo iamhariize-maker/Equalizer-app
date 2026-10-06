@@ -51,10 +51,7 @@ object SessionRouter {
 
     private fun publishCaptureUids() {
         if (routingBatch) return
-        val excludedUids = evidence.values.filter { it.session.usage == "USAGE_MEDIA" &&
-            it.session.state == "started" && routes[it.session.sessionId]?.owner != Owner.ENGINE_B_MUTED
-        }.map { it.session.uid }.toSet()
-        val next = CapturePolicy.eligibleUids(routes.values, Process.myUid()) - excludedUids
+        val next = CapturePolicy.eligibleUids(routes.values, Process.myUid(), evidence.values.map { it.session })
         if (captureUids != next) captureUids = next
         if (projection != null && routes.values.any { it.owner == Owner.ENGINE_B_MUTED && it.uid !in next }) {
             EqController.log("capture: conflicting UID routes; stopping safely")
@@ -119,6 +116,8 @@ object SessionRouter {
             if (!CaptureService.isRunning) muter.releaseAll()
             EqController.globalEq.releaseAll()
             routes.clear()
+            evidence = emptyMap()
+            verification = emptyMap()
             absence.clear()
             musicGate.clear()
             attachmentRetry.clear()
@@ -238,7 +237,7 @@ object SessionRouter {
     }
 
     fun sessionClosed(sessionId: Int) {
-        worker.execute { closeOnWorker(sessionId) }
+        worker.execute { closeOnWorker(sessionId, forgetEvidence = true) }
     }
 
     /** Broadcast-discovered sessions still recover even without enhanced detection. */
@@ -255,7 +254,14 @@ object SessionRouter {
         }
     }
 
-    private fun closeOnWorker(sessionId: Int) {
+    private fun closeOnWorker(sessionId: Int, forgetEvidence: Boolean = false) {
+        // CLOSE is definitive even when DUMP becomes unavailable. An older started
+        // record must not look like an unmuted sibling when the player opens a new
+        // session. Policy-rejected active records still retain their evidence.
+        if (forgetEvidence) {
+            evidence = evidence - sessionId
+            verification = verification - sessionId
+        }
         routes.remove(sessionId)
         seenBy.remove(sessionId)
         absence.forget(sessionId)

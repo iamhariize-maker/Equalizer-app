@@ -35,6 +35,9 @@ thresholds remain intact; the release setup test now proves app DUMP stays ungra
 coverage measures the independent broadcast path before restoring shell reports for capture checks.
 
 Local verification: 103 core tests, 148 JVM tests and four screenshot-assertion Python tests pass.
+Combined with the continuity fixes and four additional UID-policy regressions, all 152 JVM tests
+and the debug/release/lint/test-source builds pass locally. The combined device rerun is pending;
+see CONTINUITY_0.5.6.md for the initial capture-close and restart-volume findings and correction.
 Android debug/release assembly, lintDebug and both test-source builds pass. The preview verifies
 with v2 signing, one protected optional listener, no forbidden capabilities and four 16 KB-aligned
 native libraries. R8 retains the privileged helper class/constructor. API 33/34 emulator validation

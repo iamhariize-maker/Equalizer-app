@@ -35,7 +35,8 @@ an explanatory fallback after persistent starvation at capacity. Capture-format 
 restart; source changes fade. Capturable mix usage is MEDIA only (unknown/game use system effects).
 Routing batches publish complete UID ownership, including excluded active media siblings. Discovery
 filters sonification/SoundPool/system/known utility sounds; unrecognized started sources need 1.5 s
-of observations. Notification-access discovery remains removed. Diagnostic memory is bounded.
+of observations. Routing still requires real session reports/broadcasts; the optional package-only
+recognition described above cannot authorize processing or capture. Diagnostic memory is bounded.
 
 Orchestral amplifier has separate Backing vocals and Spatial detail dials, default off. They shape
 existing side energy, cannot isolate stems or guarantee faithful binaural enhancement. Manual dials
@@ -46,10 +47,37 @@ Local verification: all 103 Release core tests pass. The 101-test ASan/UBSan sui
 added tests and concurrent publication checks pass without findings. Android debug/release assembly,
 lintDebug, all 142 JVM tests and both test-source builds pass. The preview APK verifies with the
 existing preview certificate, v2 signing and four 16 KB-aligned native libraries; no forbidden
-permissions are declared. Four screenshot-assertion Python tests also pass. New release JNI/source-
-filter probes and emulator checks are pending; do not infer they pass from older evidence. Original
-routing/detection/workspace/control/quality/production CI checks remain intact, with four JNI detail
-checks and three live source-attribute checks added. Extra screenshots cover the new knob row.
+permissions are declared. Four screenshot-assertion Python tests also pass. Original routing/
+detection/workspace/control/quality/production CI checks remain intact, with four JNI detail checks
+and three live source-attribute checks added. Extra screenshots cover the new knob row.
+
+First integration run 37515350637 (source 75db47e) passed core including all 103 ASan/UBSan tests
+and both TSan publication tests; Android build/lint/unit/release-verifier and all five compatibility
+jobs passed. Both API 33/34 runs passed new source filtering 3/3, new detail JNI 4/4, release quality
+4/4, detection 10/10, controls 8/8, production 4/4 and screenshot interactions (scroll + 15 fixtures).
+However, routing was 38/39 and workspace 8/9: stale closed-session evidence caused a premature
+capture stop instead of the silence watchdog; after process restart, manual output was 32.5/36.6 dB
+above its earlier measurement. Do not report this run as all green.
+
+The follow-up drops definitive CLOSE evidence while keeping active policy-rejected records, clears
+the ledger on shutdown, and tests capture exclusion against unrouted MEDIA siblings and UID reuse.
+New system-effect attachments use a minimal muted bootstrap to disable any existing native module
+before the full constructor's per-band writes, then enable the configured handle so Android
+reapplies stream volume after architecture initialization. No user volume is changed. All 146 JVM
+tests (including four new UID-policy cases), local debug/release/lint (including the bootstrap
+refinement) and the 103 core tests pass; full device reruns still need final validation. Original failing
+watchdog and manual-output assertions are kept intact. Workspace
+artifacts now retain continuous logs and the restored Android audio/effect dumps for diagnosis.
+
+Combined with the OEM fallback commits through eedfe770, local debug/release builds, lint,
+all 152 JVM tests, both test-source builds and four screenshot-assertion tests pass. Native code
+is unchanged from the verified 103-test core/ASan/UBSan suite and two TSan checks above; the 103
+Release core tests also pass again before this push. The combined API 33/34 rerun is still pending.
+
+Manual screenshot review: both new knob rows are readable on API 33/34 and match the gold/charcoal
+theme. API 33 boot full name fits on one line; API 34's captured system splash shows the correct स्व
+glyph. API 34's two timed Compose boot captures missed the text, so do not claim its name frame was
+verified from this run. Both EQ screenshots show the intended 9 glyph.
 
 ## Owner-authorized GitHub beta candidate — 2026-10-06
 

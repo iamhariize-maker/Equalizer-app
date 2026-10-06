@@ -39,4 +39,33 @@ class CapturePolicyTest {
     @Test fun noRoutesMeansNoCapture() {
         assertEquals(emptySet<Int>(), CapturePolicy.eligibleUids(emptyList(), 99))
     }
+
+    private fun observed(sid: Int, uid: Int, state: String = "started", usage: String = "USAGE_MEDIA") =
+        PlaybackSession(sid, uid, usage, state, 0, "player")
+
+    @Test fun ignoredInterfaceAndPendingMediaSiblingsExcludeTheUid() {
+        val routes = listOf(route(1, 10012, SessionRouter.Owner.ENGINE_B_MUTED))
+        val music = observed(1, 10012)
+        val interfaceSound = observed(2, 10012).copy(contentType = "CONTENT_TYPE_SONIFICATION")
+        assertEquals(emptySet<Int>(), CapturePolicy.eligibleUids(routes, 99, listOf(music, interfaceSound)))
+        assertEquals(emptySet<Int>(), CapturePolicy.eligibleUids(routes, 99, listOf(music, observed(3, 10012))))
+    }
+
+    @Test fun unrelatedUidAndNonMediaNotificationDoNotExcludeTheMusic() {
+        val routes = listOf(route(1, 10012, SessionRouter.Owner.ENGINE_B_MUTED))
+        assertEquals(setOf(10012), CapturePolicy.eligibleUids(routes, 99,
+            listOf(observed(1, 10012), observed(2, 10013), observed(3, 10012, usage = "USAGE_NOTIFICATION"))))
+    }
+
+    @Test fun closedOrPausedSiblingDoesNotBlockReplacementPlayback() {
+        val routes = listOf(route(4, 10012, SessionRouter.Owner.ENGINE_B_MUTED))
+        assertEquals(setOf(10012), CapturePolicy.eligibleUids(routes, 99,
+            listOf(observed(4, 10012), observed(1, 10012, "released"), observed(2, 10012, "paused"))))
+    }
+
+    @Test fun reusedSessionIdCannotBorrowAnotherUidsMute() {
+        val routes = listOf(route(1, 10012, SessionRouter.Owner.ENGINE_B_MUTED), route(2, 10013, SessionRouter.Owner.ENGINE_B_MUTED))
+        assertEquals(setOf(10012), CapturePolicy.eligibleUids(routes, 99,
+            listOf(observed(1, 10013), observed(2, 10013))))
+    }
 }
