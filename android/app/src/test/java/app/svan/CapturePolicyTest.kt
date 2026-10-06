@@ -1,10 +1,23 @@
 package app.svan
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class CapturePolicyTest {
     private fun route(sid: Int, uid: Int, owner: SessionRouter.Owner) = SessionRouter.Route(sid, "player", uid, owner)
+
+    @Test fun startupRequiresDiscoveryAccessOrARealConnectedSource() {
+        assertNotNull(CapturePolicy.startupBlock(false, emptyList(), 99))
+        assertNotNull(CapturePolicy.startupBlock(false, listOf(route(0, 12, SessionRouter.Owner.ENGINE_A)), 99))
+        assertNotNull(CapturePolicy.startupBlock(false, listOf(route(1, -1, SessionRouter.Owner.ENGINE_A)), 99))
+        assertNotNull(CapturePolicy.startupBlock(false, listOf(route(1, 99, SessionRouter.Owner.ENGINE_A)), 99))
+        assertNotNull(CapturePolicy.startupBlock(false, listOf(route(1, 12, SessionRouter.Owner.ENGINE_A).copy(playing = false)), 99))
+        // Broadcast-known source works without DUMP; optional discovery is not a mandatory dependency.
+        assertNull(CapturePolicy.startupBlock(false, listOf(route(1, 12, SessionRouter.Owner.ENGINE_A)), 99))
+        assertNull(CapturePolicy.startupBlock(true, emptyList(), 99))
+    }
 
     @Test fun unknownBlockedAndProbingAudioCannotBeDuplicated() {
         val routes = listOf(

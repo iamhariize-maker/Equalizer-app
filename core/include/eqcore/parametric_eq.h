@@ -23,7 +23,8 @@ class ParametricEq {
   double sampleRate() const { return fs_; }
 
   // Replaces the bands of one channel (extra bands beyond
-  // kMaxBandsPerChannel are ignored). Filter state of surviving bands is kept.
+  // kMaxBandsPerChannel are ignored). Live edits crossfade for 10 ms; edits
+  // during a fade coalesce. First configuration is immediate before playback.
   void setBands(int channel, const std::vector<BandParams>& bands);
 
   // In-place processing of one channel. Allocation-free.
@@ -39,14 +40,25 @@ class ParametricEq {
  private:
   struct Chain {
     std::vector<BiquadCoeffs> coeffs;
+    std::vector<BandParams> params;
   };
-  struct Runtime {
+  struct Bank {
     std::vector<BiquadCoeffs> coeffs;
+    std::vector<BandParams> params;
     std::vector<std::array<double, 2>> z;  // TDF2 state per section
   };
+  struct Runtime {
+    std::array<Bank,2> banks;
+    int active = 0;
+    int fadeRemaining = 0;
+    bool initialized = false;
+    std::array<double,512> oldOutput{}, newOutput{};
+  };
+  static void run(Bank& bank, double* data, int frames);
 
   int channels_;
   double fs_;
+  int fadeFrames_;
   mutable std::mutex mu_;              // guards pending_ and dirty_
   std::vector<Chain> pending_;         // written by UI thread
   std::vector<std::atomic<bool>> dirty_;

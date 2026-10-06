@@ -39,9 +39,15 @@ struct SourceFeatures {
   double airDb = 0.0;            // 10-16 kHz (only meaningful below cutoff)
   std::array<double, kBands> bandDb{};  // long-term third-octave levels (dB, relative)
 
-  // Fixed layout for JNI round trips: kScalars values, then kBands levels.
+  // Mid/side power spectra retain the placement of energy across frequencies.
+  // Used to match the actual stereo guide, rather than EQ bands alone.
+  bool hasStereoSpectrum = false;
+  std::array<double, kBands> midBandDb{}, sideBandDb{};
+
+  // JNI prefix stays compatible: 15 scalars + 30 total levels, then stereo data.
   static constexpr int kScalars = 15;
-  static constexpr int kPacked = kScalars + kBands;
+  static constexpr int kLegacyPacked = kScalars + kBands;
+  static constexpr int kPacked = kLegacyPacked + 1 + 2 * kBands;
   void pack(double* out) const;
   static SourceFeatures unpack(const double* in, int n);
 };
@@ -82,10 +88,10 @@ class SourceAnalyzer {
   double stLL_ = 0.0, stRR_ = 0.0, stLR_ = 0.0, stMM_ = 0.0, stSS_ = 0.0;  // long-term averages
   double avgSeconds_;
 
-  std::vector<double> window_, ring_;  // Hann window, mono (mid) input ring
+  std::vector<double> window_, ring_, sideRing_;  // Hann window and M/S input rings
   int ringPos_ = 0;
   std::vector<std::complex<double>> fft_;
-  std::vector<double> power_;  // EMA power per bin
+  std::vector<double> power_, midPower_, sidePower_;  // EMA total and M/S power per bin
   double activeSeconds_ = 0.0;
   int windowsSincePublish_ = 0;
 

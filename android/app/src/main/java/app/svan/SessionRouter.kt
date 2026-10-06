@@ -30,6 +30,7 @@ object SessionRouter {
     // Worker-owned lifecycle state. Successful scans are reconciled in order.
     private val absence = SessionAbsenceTracker()
     private val attachmentRetry = AttachmentRetry()
+    private val missingRepair = MissingEffectRepair()
     private val streamCaptureBlocked = mutableSetOf<Int>()
     private var lastSyncSummary = ""
     private lateinit var appContext: Context
@@ -56,6 +57,14 @@ object SessionRouter {
     }
 
     val snapshot: Collection<Route> get() = routes.values.toList()
+
+    /** What the latest scan established about each session (path, owner, source). Replaced wholesale per scan. */
+    @Volatile var evidence: Map<Int, LedgerSession> = emptyMap()
+        private set
+    /** Audio-server verification of Engine A's effect per session. */
+    @Volatile var verification: Map<Int, Verification> = emptyMap()
+        private set
+    private val seenBy = mutableMapOf<Int, SessionSource>() // worker-owned
 
     /** Packages whose capture proved silent while playing: Engine A only, until the expiry (ms). */
     private val tempBlocked = ConcurrentHashMap<String, Long>()
@@ -106,6 +115,7 @@ object SessionRouter {
             routes.clear()
             absence.clear()
             attachmentRetry.clear()
+            missingRepair.clear()
             streamCaptureBlocked.clear()
             publishCaptureUids()
         }
@@ -235,8 +245,10 @@ object SessionRouter {
 
     private fun closeOnWorker(sessionId: Int) {
         routes.remove(sessionId)
+        seenBy.remove(sessionId)
         absence.forget(sessionId)
         attachmentRetry.forget(sessionId)
+        missingRepair.forget(sessionId)
         streamCaptureBlocked.remove(sessionId)
         publishCaptureUids()
         muter.unmute(sessionId)
@@ -244,16 +256,40 @@ object SessionRouter {
     }
 
     /** Reconciles with a full session list from the dump. */
-    fun sync(active: List<PlaybackSession>) {
+    fun sync(active: List<PlaybackSession>) = sync(
+        active, playersOk = true, serverOk = false, evidence = emptyMap(), verification = emptyMap(),
+    )
+
+    /**
+     * Reconciles with the fused ledger. A session that vanished is only counted as gone when a report
+     * that could have listed it succeeded: a failed audio-server read must not evict a server-only session.
+     */
+    fun sync(
+        active: List<PlaybackSession>,
+        playersOk: Boolean,
+        serverOk: Boolean,
+        evidence: Map<Int, LedgerSession>,
+        verification: Map<Int, Verification>,
+    ) {
         val snapshot = active.toList()
         worker.execute {
             if (!enabled) return@execute
+            this.evidence = evidence
+            this.verification = verification
             val seen = snapshot.filter { it.uid != Process.myUid() && it.usageCapturable && it.state != "released" }
                 .associateBy { it.sessionId }
             // An explicitly released or reclassified current record is definitive.
             snapshot.filter { it.state == "released" || !it.usageCapturable }.forEach { closeOnWorker(it.sessionId) }
-            absence.observe(routes.keys.toSet(), seen.keys, SystemClock.elapsedRealtime()).forEach(::closeOnWorker)
-            routes.keys.filter { it !in seen }.forEach { sid ->
+            evidence.values.forEach { seenBy[it.session.sessionId] = it.source }
+            val judged = routes.keys.filter { sid ->
+                when (seenBy[sid]) {
+                    SessionSource.AUDIO_SERVICE -> playersOk
+                    SessionSource.AUDIO_SERVER -> serverOk
+                    else -> playersOk || serverOk
+                }
+            }.toSet()
+            absence.observe(judged, seen.keys, SystemClock.elapsedRealtime()).forEach(::closeOnWorker)
+            routes.keys.filter { it !in seen && it in judged }.forEach { sid ->
                 routes[sid]?.let { routes[sid] = it.copy(playing = null) }
             }
             val summary = seen.values.sortedBy { it.sessionId }.joinToString { "${it.packageName}#${it.sessionId}:${it.state}" }
@@ -267,6 +303,14 @@ object SessionRouter {
                 if (s.flagsBlockCapture && routes[s.sessionId]?.owner == Owner.ENGINE_B_MUTED) {
                     toEngineA(s.sessionId, s.packageName, s.uid, playing)
                 } else openOnWorker(s.sessionId, s.packageName, s.uid, playing)
+                // The audio server says our effect is gone: rebuild it (with the usual capped back-off).
+                // Bounded: a report that keeps disagreeing with a working attach must not rebuild it every scan.
+                if (routes[s.sessionId]?.owner == Owner.ENGINE_A &&
+                    missingRepair.shouldRepair(s.sessionId, verification[s.sessionId], SystemClock.elapsedRealtime())) {
+                    EqController.log("verify: ${s.packageName} (session ${s.sessionId}) effect missing in the audio server; re-attaching")
+                    EqController.globalEq.detach(s.sessionId)
+                    reroute(s.sessionId, routes[s.sessionId]!!.pkg, routes[s.sessionId]!!.uid, playing)
+                }
             }
         }
     }
@@ -276,7 +320,8 @@ object SessionRouter {
     private fun reroute(sid: Int, pkg: String, uid: Int, playing: Boolean?) {
         if (!enabled) return
         val mp = projection
-        if (mp == null || uid < 0 || pkg in captureSystemPackages || sid in streamCaptureBlocked || tempBlockedNow(pkg)) {
+        if (mp == null || uid < 0 || pkg in captureSystemPackages || sid in streamCaptureBlocked || tempBlockedNow(pkg) ||
+            evidence[sid]?.effectsPossible == false) {
             toEngineA(sid, pkg, uid, playing)
             return
         }

@@ -83,6 +83,7 @@ fun SoundScreen() {
     var bassDb by remember(tuning?.ref) { mutableDoubleStateOf(tuning?.bassDb ?: 0.0) }
     var tilt by remember(tuning?.ref) { mutableDoubleStateOf(tuning?.tiltDbPerOct ?: 0.0) }
     var bandCount by remember { mutableIntStateOf(64) }
+    var correctionAmount by remember(tuning?.ref) { mutableDoubleStateOf(tuning?.calibration?.amount ?: 1.0) }
     var customTarget by remember { mutableStateOf<String?>(null) }
     var customMeasurement by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -96,21 +97,21 @@ fun SoundScreen() {
         scope.launch {
             val r = TuningController.build(
                 context,
-                TuningController.Request(e, signature, bassDb, tilt, bandCount, customTarget, customMeasurement),
+                TuningController.Request(e, signature, bassDb, tilt, bandCount, customTarget, customMeasurement,correctionAmount),
             )
             busy = false
             r.onSuccess { t ->
                 SvanRepository.update { it.copy(tuning = t, enabled = true) }
-                message = "${t.bands.size} bands · fit accuracy ±%.2f dB".format(t.fitRmsDb)
+                message = "${t.bands.size} bands · RMS fit error %.2f dB".format(t.fitRmsDb)
                 picking = false
             }.onFailure { message = it.message ?: "Couldn't build the tuning" }
         }
     }
 
     // Taste sliders re-tune live (debounced) once a tuning exists.
-    LaunchedEffect(bassDb, tilt, bandCount) {
+    LaunchedEffect(bassDb, tilt, bandCount,correctionAmount,tuning) {
         if (tuning == null || entry == null || busy) return@LaunchedEffect
-        if (bassDb == tuning.bassDb && tilt == tuning.tiltDbPerOct && bandCount == tuning.bands.size) return@LaunchedEffect
+        if (bassDb == tuning.bassDb && tilt == tuning.tiltDbPerOct && bandCount == tuning.bands.size && correctionAmount==(tuning.calibration?.amount ?: 1.0)) return@LaunchedEffect
         delay(350)
         apply()
     }
@@ -145,6 +146,7 @@ fun SoundScreen() {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
         item {
             ScreenTitle("Sound", "Make your headphones sound their best.")
+            FirstRunWelcome()
             Spacer(Modifier.height(12.dp))
             Box(
                 Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(20.dp)).background(Svan.Surface)
@@ -232,15 +234,22 @@ fun SoundScreen() {
                     Text("Only the reviewer's profile is available for this measurement (raw data isn't published, or the rig needs its own targets).",
                         style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint, modifier = Modifier.padding(4.dp))
                 }
+                tuning?.calibration?.let { c ->
+                    Text("${c.basis} · %.0f–%.0f Hz\nRMS fit error %.2f dB · maximum %.2f dB. This is frequency-response correction, not a personal hearing or SPL measurement. Use data and targets from compatible measurement rigs.".format(c.lowHz,c.highHz,tuning.fitRmsDb,c.maxErrorDb),
+                        style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted,modifier=Modifier.padding(4.dp))
+                }
                 SectionLabel("Your taste")
                 SvanCard {
                     Column {
+                        ValueSlider("Correction amount",correctionAmount,{"%.0f%%".format(it*100)},
+                            toSlider={it.toFloat()},fromSlider={Math.round(it*100)/100.0},onChange={correctionAmount=it},step=.01,
+                            entryRange=0.0..1.0,entryUnit="0–1")
                         ValueSlider("Bass", bassDb, { formatDb(it) },
-                            toSlider = { ((it + 6) / 12).toFloat() }, fromSlider = { Math.round((it * 12 - 6) * 2) / 2.0 },
+                            toSlider = { ((it + 6) / 12).toFloat() }, fromSlider = { Math.round((it * 12 - 6) * 10) / 10.0 },
                             onChange = { bassDb = it }, entryRange = -6.0..6.0, entryUnit = "dB")
                         ValueSlider("Brightness", tilt, { v -> if (v == 0.0) "Neutral" else if (v > 0) "Brighter %.1f".format(v * 10) else "Warmer %.1f".format(-v * 10) },
-                            toSlider = { ((it + 0.6) / 1.2).toFloat() }, fromSlider = { Math.round((it * 1.2 - 0.6) * 20) / 20.0 },
-                            onChange = { tilt = it })
+                            toSlider = { ((it + 0.6) / 1.2).toFloat() }, fromSlider = { Math.round((it * 1.2 - 0.6) * 100) / 100.0 },
+                            onChange = { tilt = it }, step = 0.01)
                         Text("Resolution (bands)", style = MaterialTheme.typography.bodyMedium, color = Svan.TextMuted)
                         Spacer(Modifier.height(6.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -253,7 +262,7 @@ fun SoundScreen() {
                                 Spacer(Modifier.width(8.dp))
                                 Text("Tuning…", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                             } else {
-                                Text(message ?: tuning?.let { "${it.bands.size} bands · fit accuracy ±%.2f dB".format(it.fitRmsDb) } ?: "",
+                                Text(message ?: tuning?.let { "${it.bands.size} bands · RMS fit error %.2f dB".format(it.fitRmsDb) } ?: "",
                                     style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
                             }
                         }
@@ -298,19 +307,19 @@ private fun <T> PresetRow(presets: List<Pair<String, T>>, current: T, onPick: (T
     Spacer(Modifier.height(10.dp))
 }
 
-private fun pct(v: Double) = "%d%%".format((v * 100).toInt())
+private fun pct(v: Double) = "%d%%".format(Math.round(v * 100))
 
 @Composable
 private fun BassTunerCard(b: BassTuner) {
     TunerHeader("Bass tuner", "Level, depth and feel of the low end.")
-    TuningGuidance("Start with one tick: Amount +0.5 dB, Depth +1 Hz, or Feel +5%. Presets apply a full profile. Compare the same passage at matched loudness; boosts use headroom, so back off if bass gets rough, boomy, or tiring.")
+    TuningGuidance("Start with one tick: Amount +0.1 dB, Depth +1 Hz, or Feel +1%. Presets apply a full profile. Compare the same passage at matched loudness; boosts use headroom, so back off if bass gets rough, boomy, or tiring.")
     PresetRow(BassTuner.PRESETS, b) { p -> SvanRepository.update { it.copy(bass = p) } }
     SvanCard {
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Knob("Amount", b.amountDb, -6.0, 12.0, ::formatDb, step = 0.5,
+                Knob("Amount", b.amountDb, -6.0, 12.0, ::formatDb, step = 0.1, entryUnit = "dB",
                     onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(amountDb = v)) } })
-                Knob("Depth", b.focusHz, 40.0, 160.0, { f -> "%.0f Hz".format(f) }, default = 80.0, step = 1.0,
+                Knob("Depth", b.focusHz, 40.0, 160.0, { f -> "%.0f Hz".format(f) }, default = 80.0, step = 1.0, entryUnit = "Hz",
                     onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(focusHz = v)) } })
                 Knob("Feel", b.character, -1.0, 1.0, { c ->
                     when {
@@ -318,11 +327,11 @@ private fun BassTunerCard(b: BassTuner) {
                         c > 0 -> "Punch ${pct(c)}"
                         else -> "Sustain ${pct(-c)}"
                     }
-                }, step = 0.05, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
+                }, step = 0.01, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
             }
             Spacer(Modifier.height(6.dp))
             Text("Depth: deep sub (40 Hz) ↔ mid-bass (160 Hz). Feel: sustain lets notes bloom; punch sharpens kicks and " +
-                "tightens tails. Drag dials sideways; double-tap to reset. A native transient shaper in the audiophile engine; an approximation on system effects. Tuned on synthetic signals; results vary with music.",
+                "tightens tails. Turn the rim or drag sideways; tap the value for exact entry. Double-tap to reset. A native transient shaper in the audiophile engine; an approximation on system effects. Tuned on synthetic signals; results vary with music.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         }
     }
@@ -331,16 +340,16 @@ private fun BassTunerCard(b: BassTuner) {
 @Composable
 private fun VocalTunerCard(v: app.svan.model.VocalTuner) {
     TunerHeader("Vocal tuner", "Centre tone and upper-mid dynamics.")
-    TuningGuidance("Move one dial by one tick (5%) at a time. Presets change several controls together. Compare the same short passage at matched loudness; double-tap a dial to reset it.")
+    TuningGuidance("Move one dial by one tick (1%) at a time. Presets change several controls together. Compare the same short passage at matched loudness; double-tap a dial to reset it.")
     PresetRow(app.svan.model.VocalTuner.PRESETS, v) { p -> SvanRepository.update { it.copy(vocal = p) } }
     SvanCard {
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Knob("Intimacy", v.intimacy, 0.0, 1.0, ::pct, step = 0.05,
+                Knob("Intimacy", v.intimacy, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(intimacy = x)) } })
-                Knob("Warmth", v.warmth, 0.0, 1.0, ::pct, step = 0.05,
+                Knob("Warmth", v.warmth, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(warmth = x)) } })
-                Knob("Smooth", v.smoothness, 0.0, 1.0, ::pct, step = 0.05,
+                Knob("Smooth", v.smoothness, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(vocal = it.vocal.copy(smoothness = x)) } })
             }
             Spacer(Modifier.height(6.dp))
@@ -353,7 +362,7 @@ private fun VocalTunerCard(v: app.svan.model.VocalTuner) {
 @Composable
 private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
     TunerHeader("Orchestral amplifier", "Stereo width and side energy above the bass.")
-    TuningGuidance("Move one dial by one tick (5%) at a time. Presets change several controls together. Compare the same short passage at matched loudness; double-tap a dial to reset it.")
+    TuningGuidance("Move one dial by one tick (1%) at a time. Presets change several controls together. Compare the same short passage at matched loudness; double-tap a dial to reset it.")
     PresetRow(app.svan.model.InstrumentTuner.PRESETS, i) { p -> SvanRepository.update { it.copy(instrument = p) } }
     SvanCard {
         Column {
@@ -364,8 +373,8 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
                         s > 0 -> "Spacious ${pct(s)}"
                         else -> "Intimate ${pct(-s)}"
                     }
-                }, step = 0.05, onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(space = x)) } })
-                Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.05,
+                }, step = 0.01, onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(space = x)) } })
+                Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(instruments = x)) } })
             }
             Spacer(Modifier.height(6.dp))

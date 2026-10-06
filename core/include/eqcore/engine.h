@@ -16,6 +16,8 @@
 #include <vector>
 
 #include "eqcore/analyzer.h"
+#include "eqcore/true_peak.h"
+#include "eqcore/dynamic_eq.h"
 #include "eqcore/bass.h"
 #include "eqcore/dither.h"
 #include "eqcore/oversampler.h"
@@ -41,6 +43,7 @@ struct EngineConfig {
   bool autoHeadroom = true;  // pre-attenuate by the curve's max boost (predictive)
   bool gainProtection = true; // Automatic Gain Protection (reactive):
                               // on overload lower gain; recover smoothly with 250 ms release
+  bool truePeak = false;     // enabled by quality presets and Android capture
   int maxBlock = 1024;       // frames per internal chunk
 
   static EngineConfig forQuality(QualityMode mode, double sampleRate, int channels, int outputBits);
@@ -56,9 +59,12 @@ class Engine {
   void setBands(int channel, const std::vector<BandParams>& bands);
   void setBandsAllChannels(const std::vector<BandParams>& bands);
   void setPreampDb(double db);
-  void setAutoHeadroom(bool enabled) { autoHeadroom_.store(enabled); updateGain(); }
+  void setAutoHeadroom(bool enabled) { if(autoHeadroom_.exchange(enabled)!=enabled) updateGain(); }
+  void setGainProtection(bool enabled) { gainProtection_.store(enabled); }
   // Bass character: -1 sustain .. 0 off .. +1 punch; crossover 60..250 Hz.
   // Thread-safe: applied by the audio thread at the next block.
+  void setDynamicEq(double amount) { dynamicAmount_.store(amount); }
+  std::array<double,4> dynamicReductionsDb() const {return {dynamicDb_[0].load(),dynamicDb_[1].load(),dynamicDb_[2].load(),dynamicDb_[3].load()};}
   void setBassCharacter(double character, double crossoverHz = 120.0);
   // Vocal tuner + instrument amplifier (stereo engines only; mono ignores it).
   void setStereoTuner(const StereoTunerParams& p) { stereo_.setParams(p); }
@@ -73,7 +79,7 @@ class Engine {
   double appliedGainDb() const { return gainDb_.load(); }
   // Current attenuation from Automatic Gain Protection (<= 0 dB).
   double gainProtectionDb() const { return agpDb_.load(); }
-  void resetGainProtection() { agpDb_.store(0.0); }
+  void resetGainProtection() { agpDb_.store(0.0);gainResetPending_.store(true); }
   int latencyFrames() const;
 
   // Svaramanas: analyse the *input* (what the source app plays) in process().
@@ -87,20 +93,29 @@ class Engine {
 
   EngineConfig cfg_;
   std::atomic<bool> autoHeadroom_;
+  std::atomic<bool> gainProtection_;
   ParametricEq eq_;  // runs at sampleRate * oversample
   std::vector<std::unique_ptr<Oversampler>> os_;
   std::vector<Dither> dither_;
   std::atomic<double> userPreampDb_{0.0};
   std::atomic<double> gainDb_{0.0};
   std::atomic<double> agpDb_{0.0};
+  std::atomic<bool> gainResetPending_{false};
   std::atomic<double> bassCharacter_{0.0};
   std::atomic<double> bassCrossover_{120.0};
   double appliedBassCrossover_ = 120.0;
   BassShaper bass_;
+  TruePeakLimiter limiter_;
+  DynamicEq dynamic_;
+  std::atomic<double> dynamicAmount_{0};
+  std::atomic<double> dynamicDb_[4]{};
   StereoTuner stereo_;
   std::atomic<bool> analysisOn_{false};
   SourceAnalyzer analyzer_;
-  std::vector<double> outBuf_, high_;  // per-channel chunk, oversampled scratch
+  double smoothedGain_ = 1.0, gainTarget_ = 1.0, gainStep_ = 0.0;
+  int gainRampRemaining_ = 0;
+  bool gainInitialized_ = false;
+  std::vector<double> outBuf_, high_, gains_;  // preallocated processing scratch
 };
 
 }  // namespace eqcore

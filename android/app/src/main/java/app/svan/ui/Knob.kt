@@ -1,7 +1,11 @@
 package app.svan.ui
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +15,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -20,9 +27,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
@@ -34,17 +39,16 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.cos
-import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private const val START_DEG = 135f
 private const val SWEEP_DEG = 270f
 
 /**
- * Rotary dial. Drag right to increase, left to decrease (a full turn is
- * ~220 dp of travel); double-tap resets to [default]. Bipolar knobs
+ * Turn the rim, or drag sideways for precision (320 dp for the full range).
+ * Double-tap resets to [default]; tap the readout for numeric entry. Bipolar knobs
  * ([min] < 0 < [max]) fill from the 12 o'clock centre outwards. Vertical
- * gestures belong to the parent scroll container and must never edit the dial.
+ * gestures starting in the centre belong to the parent scroll container.
  */
 @Composable
 fun Knob(
@@ -61,12 +65,18 @@ fun Knob(
     accent: Color = Svan.Gold,
     negativeAccent: Color = Svan.Ash,
     enabled: Boolean = true,
+    entryUnit: String = "",
 ) {
-    val haptics = LocalHapticFeedback.current
     val current by rememberUpdatedState(value)
+    val changeValue by rememberUpdatedState(onChange)
+    val resetValue by rememberUpdatedState(default)
+    val interaction = rememberPrecisionInteraction(value, onChange)
+    var editing by remember { mutableStateOf(false) }
+    val shown = if (interaction.dragging) interaction.preview else value
     val bipolar = min < 0 && max > 0
-    val frac = ((value - min) / (max - min)).toFloat().coerceIn(0f, 1f)
-    val color = if (bipolar && value < 0) negativeAccent else accent
+    val frac by animateFloatAsState(((shown - min) / (max - min)).toFloat().coerceIn(0f, 1f),
+        spring(dampingRatio = 1f, stiffness = 1800f), label = "dialPointer")
+    val color = if (bipolar && shown < 0) negativeAccent else accent
 
     Column(modifier.width(size + 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(contentAlignment = Alignment.Center) {
@@ -76,40 +86,63 @@ fun Knob(
                     .semantics {
                         contentDescription = label
                         stateDescription = display(value)
-                        progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), min.toFloat()..max.toFloat())
+                        progressBarRangeInfo = ProgressBarRangeInfo(value.toFloat(), min.toFloat()..max.toFloat(), ((max-min)/step).toInt()-1)
                         if (!enabled) disabled()
                         setProgress { requested ->
                             if (enabled) {
-                                val stepped = (requested.toDouble() / step).roundToInt() * step
-                                onChange(stepped.coerceIn(min, max))
+                                changeValue(snap(requested.toDouble(), min, max, step))
                                 true
                             } else false
                         }
                     }
-                    .pointerInput(min, max, enabled) {
+                    .pointerInput(min, max, step, enabled) {
                         if (!enabled) return@pointerInput
                         detectTapGestures(onDoubleTap = {
-                            onChange(default)
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            changeValue(resetValue.coerceIn(min, max))
                         })
                     }
-                    .pointerInput(min, max, enabled) {
+                    .pointerInput(min, max, step, enabled) {
                         if (!enabled) return@pointerInput
-                        val travel = 220.dp.toPx()
-                        var acc = current
-                        detectHorizontalDragGestures(
-                            onDragStart = { acc = current },
-                        ) { change, drag ->
-                            change.consume()
-                            val before = acc
-                            acc = (acc + drag / travel * (max - min)).coerceIn(min, max)
-                            val stepped = (acc / step).roundToInt() * step
-                            // Ticks at the ends and when crossing the centre of a bipolar knob.
-                            val crossedCentre = bipolar && (before < 0) != (acc < 0)
-                            if (crossedCentre || (acc == min && before != min) || (acc == max && before != max)) {
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        val travel = 320.dp.toPx()
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val centre = Offset(this.size.width / 2f, this.size.height / 2f)
+                            val start = down.position - centre
+                            var previous = down.position
+                            var kind = DialDrag.WAIT
+                            var acc = DetentAccumulator(current, min, max, step)
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (pointer.isConsumed || !pointer.pressed) break
+                                    if (kind == DialDrag.WAIT) {
+                                        val delta = pointer.position - down.position
+                                        kind = dialDrag(start.x, start.y, delta.x, delta.y, minOf(this.size.width, this.size.height) / 2f, viewConfiguration.touchSlop)
+                                        if (kind == DialDrag.WAIT) continue
+                                        if (kind == DialDrag.SCROLL) break
+                                        interaction.begin()
+                                        acc = DetentAccumulator(current, min, max, step)
+                                        // Crossing touch slop starts the gesture without advancing
+                                        // several ticks at once. Subsequent travel moves the dial.
+                                        previous = pointer.position
+                                        pointer.consume()
+                                        continue
+                                    }
+                                    val p = pointer.position - centre
+                                    val old = previous - centre
+                                    val delta = if (kind == DialDrag.ROTARY) {
+                                        // Ignore the unstable angle close to the spindle.
+                                        if (p.getDistance() < minOf(this.size.width, this.size.height) * 0.18f || old.getDistance() < minOf(this.size.width, this.size.height) * 0.18f) 0.0
+                                        else angularDeltaDegrees(old.x, old.y, p.x, p.y) / 540.0 * (max - min)
+                                    } else (pointer.position.x - previous.x) / travel * (max - min)
+                                    interaction.move(acc.move(delta))
+                                    previous = pointer.position
+                                    pointer.consume()
+                                }
+                            } finally {
+                                if (interaction.dragging) interaction.finish()
                             }
-                            onChange(stepped.coerceIn(min, max))
                         }
                     },
             ) {
@@ -158,6 +191,13 @@ fun Knob(
             }
         }
         Text(label, style = MaterialTheme.typography.labelLarge, color = if (enabled) Svan.Text else Svan.TextFaint, textAlign = TextAlign.Center)
-        Text(display(value), style = MaterialTheme.typography.labelSmall, color = if (enabled) color else Svan.TextFaint, textAlign = TextAlign.Center, maxLines = 1)
+        Text(display(shown), style = MaterialTheme.typography.labelSmall, color = if (enabled) color else Svan.TextFaint,
+            textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.clickable(enabled = enabled) { editing = true })
+    }
+    if (editing) {
+        val percent = min >= -1.0 && max <= 1.0
+        val scale = if (percent) 100.0 else 1.0
+        NumberEntryDialog(label, value * scale, min * scale..max * scale, if (percent) "%" else entryUnit,
+            onDismiss = { editing = false }) { changeValue(it / scale); editing = false }
     }
 }

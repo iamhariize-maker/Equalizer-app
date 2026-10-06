@@ -46,6 +46,21 @@
         <package android:name="in.krosbits.musicolet" />
         <package android:name="com.rhmsoft.pulsar" />
         <package android:name="com.plexapp.android" />
+        <package android:name="com.neutroncode.mpeval" />
+        <package android:name="com.spotify.lite" />
+        <package android:name="com.sec.android.app.music" />
+        <package android:name="com.miui.player" />
+        <package android:name="com.google.android.music" />
+        <package android:name="com.jio.media.jiobeats" />
+        <package android:name="com.gaana" />
+        <package android:name="com.bsbportal.music" />
+        <package android:name="com.audiomack" />
+        <package android:name="com.anghami" />
+        <package android:name="com.afmobi.boomplayer" />
+        <package android:name="com.transsion.music" />
+        <package android:name="code.name.monkey.retromusic" />
+        <package android:name="com.simplemobiletools.musicplayer" />
+        <package android:name="org.schabi.newpipe" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

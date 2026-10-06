@@ -14,19 +14,20 @@ if (productionBuild) {
 
 android {
     namespace = "app.svan"
-    compileSdk = 35
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "app.svan"
         // 29: AudioPlaybackCapture (capture engine). DynamicsProcessing needs 28.
         minSdk = 29
-        targetSdk = 35
-        versionCode = 6
-        versionName = "0.4.1-session-recovery-preview"
+        targetSdk = 36
+        versionCode = 12
+        versionName = if (productionBuild) "0.5.5" else "0.5.5-quality-preview"
+        buildConfigField("boolean", "PHONE_PREVIEW", (!productionBuild).toString())
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild {
-            cmake { arguments += listOf("-DANDROID_STL=c++_shared") }
+            cmake { arguments += listOf("-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON") }
         }
     }
 
@@ -63,7 +64,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true; aidl = true }
+    buildFeatures { compose = true; aidl = true; buildConfig = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" } // matches Kotlin 1.9.24
     testOptions { unitTests.isReturnDefaultValues = true }
 
@@ -88,4 +89,5 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

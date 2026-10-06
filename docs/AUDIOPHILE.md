@@ -1,3 +1,5 @@
+Latest native quality and listening work: [0.5.5 quality lab](QUALITY_LAB_0.5.5.md).
+
 # Audiophile processing
 
 Svan has an original double precision DSP chain and a separate Android system-effects path.
@@ -61,6 +63,11 @@ the device before picking Extreme as a default.
 - **Noise-shaped TPDF (Extreme mode):** moves noise out of the midrange. Measured −16.3 dB at 1 kHz and +6.8 dB at 20 kHz, against theory of −16.9 / +5.9 dB.
 
 ## 5. Automatic Gain Protection + auto headroom
+
+0.5.4: Svaresa keeps both protections active while controlling the engine; manual choices are
+preserved. Live EQ transitions crossfade over 10 ms and gain changes ramp over 10 ms; editing
+does not reset the protector. Protection changes no longer rebuild capture DSP. See
+[measured transition regressions and limits](ENGINE_QUALITY_0.5.4.md).
 
 - **Auto headroom (predictive):** adds only the attenuation still needed after the user/preset preamp. A −6 dB preamp with a +6 dB bell stays at −6 dB, instead of the previous −12 dB.
 - **AGP (reactive):** catches sample overloads, links channel gain, and smoothly

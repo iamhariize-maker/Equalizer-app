@@ -37,7 +37,9 @@ import app.svan.EqController
 import app.svan.SystemEqService
 import app.svan.CaptureService
 import androidx.compose.ui.platform.LocalContext
+import app.svan.DetectionMonitor
 import app.svan.SessionRouter
+import app.svan.Verification
 import app.svan.SvanRepository
 import app.svan.model.DitherChoice
 import app.svan.model.EngineMode
@@ -50,6 +52,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     val context = LocalContext.current
     val prefs = SessionRouter.appPreferences()
     val s by SvanRepository.settings.collectAsState()
+    val eq by SvanRepository.eq.collectAsState()
     var stats by remember { mutableStateOf(CaptureService.stats) }
     var systemRunning by remember { mutableStateOf(SystemEqService.isRunning) }
     var knownApps by remember { mutableStateOf(emptySet<String>()) }
@@ -57,6 +60,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     var verdicts by remember { mutableStateOf(SessionRouter.compat().all()) }
     var running by remember { mutableStateOf(CaptureService.isRunning) }
     var routes by remember { mutableStateOf(SessionRouter.snapshot.toList()) }
+    val detection by DetectionMonitor.status.collectAsState()
+    val captureStartup by CaptureService.startupMessage.collectAsState()
     LaunchedEffect(Unit) {
         while (true) {
             stats = CaptureService.stats
@@ -64,7 +69,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             running = CaptureService.isRunning
             verdicts = SessionRouter.compat().all()
             systemApps = prefs.systemOnlyPackages()
-            knownApps = verdicts.keys + systemApps + SessionRouter.snapshot.map { it.pkg }
+            knownApps = verdicts.keys + systemApps + SessionRouter.snapshot.map { it.pkg } +
+                DetectionMonitor.status.value.sessions.map { it.session.packageName }
             routes = SessionRouter.snapshot.toList()
             delay(700)
         }
@@ -73,13 +79,13 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         ScreenTitle("Hi-Fi", "Choose processing, then check what each app actually uses.")
 
-        DetectionCard()
+        DetectionCard(captureStats = stats)
 
         SectionLabel("Background equalizer")
         SvanCard {
             Column {
-                Text(if (systemRunning) "System equalizer active" else "System equalizer stopped", style = MaterialTheme.typography.titleMedium)
-                Text("Keeps system effects active when you leave Svan. Android may still stop the app; phone testing is pending.",
+                Text(if (systemRunning) "Background service running" else "System equalizer stopped", style = MaterialTheme.typography.titleMedium)
+                Text("Keeps effects available when you leave Svan. Check Is it working? for an actual player connection; Android may stop background audio.",
                     style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                 OutlinedButton(onClick = { if (systemRunning) SystemEqService.stop(context) else SystemEqService.start(context) }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (systemRunning) "Stop all processing" else "Start system equalizer")
@@ -106,6 +112,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(12.dp))
+                if (captureStartup.isNotBlank() && !running) Text(captureStartup,
+                    style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                 if (s.engineMode == EngineMode.SYSTEM_ONLY) {
                     Text("Engine mode is “System effects only”.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
                 } else if (running) {
@@ -142,10 +150,12 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
 
         SectionLabel("Apps & engines")
-        Text("Try Spotify, Amazon Music, Apple Music, Poweramp, Neutron, ONKYO HF Player, VLC, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
+        Text("Try Spotify, Amazon Music, YouTube Music, Apple Music, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         if (knownApps.isEmpty()) Text("No audio apps detected yet.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
-        knownApps.sorted().forEach { pkg ->
+        val livePkgs = routes.map { it.pkg }.toSet() + detection.sessions.map { it.session.packageName }
+        // Apps with a live session first; everything else is only remembered from earlier.
+        knownApps.sortedWith(compareBy({ it !in livePkgs }, { it })).forEach { pkg ->
             val label = remember(pkg) { runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg) }
             val appRoutes = routes.filter { it.pkg == pkg }
             SvanCard {
@@ -157,9 +167,17 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_B_MUTED } -> "Audiophile engine · full DSP"
                         appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_A && it.sessionId in EqController.globalEq.attachedSessions } -> "System effects · gain per band"
                         appRoutes.isNotEmpty() -> "Unprocessed · system effect unavailable"
-                        else -> "No active audio session"
+                        pkg in livePkgs -> "Detected · attaching…"
+                        else -> "Not playing right now (remembered from earlier)"
                     }
                     Text(status, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+                    appRoutes.firstOrNull { it.owner == SessionRouter.Owner.ENGINE_A }?.let { r ->
+                        val v = SessionRouter.verification[r.sessionId]
+                        val path = SessionRouter.evidence[r.sessionId]?.pathLabel.orEmpty()
+                        val line = listOfNotNull(path.ifEmpty { null }?.let { "$it output" }, v?.takeIf { it != Verification.UNKNOWN }?.summary).joinToString(" · ")
+                        if (line.isNotEmpty()) Text(line, style = MaterialTheme.typography.bodySmall,
+                            color = if (v == Verification.PROCESSING) Svan.Gold else Svan.Ember)
+                    }
                     Text(when (verdicts[pkg]) {
                         "BLOCKED" -> "Capture blocked by this app; system effects remain available."
                         "CAPTURABLE" -> "Capture supported on the last check."
@@ -196,15 +214,21 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
 
         SectionLabel("Gain staging")
+        val guarded=s.effectiveFor(eq)
+        if(eq.smartProtection) Text("Svaresa keeps both protections active. Your manual choices return when Auto master is off.",
+            style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted)
         SvanCard {
             Column {
                 SettingSwitchRow("Auto headroom", "Lowers gain only as much as the EQ boost requires. Existing negative preamp counts toward headroom. Applies to both engines.",
-                    s.autoHeadroom, { on -> SvanRepository.updateSettings { it.copy(autoHeadroom = on) } })
-                SettingSwitchRow("Automatic gain protection", "Capture: catches sample overloads and smoothly restores gain with a 250 ms release. System effects: Android's limiter. Does not measure true inter-sample peaks.",
-                    s.gainProtection, { on -> SvanRepository.updateSettings { it.copy(gainProtection = on) } })
+                    guarded.autoHeadroom, { on -> SvanRepository.updateSettings { it.copy(autoHeadroom = on) } }, enabled=!eq.smartProtection)
+                SettingSwitchRow("Automatic gain protection", "Capture: 8× reconstructed-peak detection, −1.3 dB detector target, 3 ms lookahead plus 64 detector frames; stereo-linked gain with 250 ms recovery. System effects: Android's sample limiter.",
+                    guarded.gainProtection, { on -> SvanRepository.updateSettings { it.copy(gainProtection = on) } }, enabled=!eq.smartProtection)
             }
         }
 
+        SectionLabel("Selective dynamic EQ")
+        Text("Svaresa in the capture engine reduces sustained local resonances at 120, 330, 3000 and 6500 Hz. No automatic boost; up to 1.5 dB per band and 3 dB combined. Short transients are left alone. System effects cannot run this processor.",
+            style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted,modifier=Modifier.padding(4.dp))
         SectionLabel("System effects resolution")
         Text("Curve points sent to Android. Effective resolution depends on its processing window and the device; accepted settings do not guarantee independent bands.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted, modifier = Modifier.padding(bottom = 8.dp))

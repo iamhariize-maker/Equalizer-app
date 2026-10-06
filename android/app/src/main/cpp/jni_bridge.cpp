@@ -5,7 +5,10 @@
 #include <vector>
 
 #include "eqcore/autoeq.h"
+#include "eqcore/calibration.h"
+#include "eqcore/comparison.h"
 #include "eqcore/engine.h"
+#include "eqcore/graphic_eq.h"
 #include "eqcore/svaramanas.h"
 #include "eqcore/tuning.h"
 
@@ -81,6 +84,10 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetAutoHeadroom(JNIEnv*,
   fromHandle(h)->setAutoHeadroom(enabled == JNI_TRUE);
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetGainProtection(JNIEnv*, jclass, jlong h, jboolean enabled) {
+  fromHandle(h)->setGainProtection(enabled == JNI_TRUE);
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeResetGainProtection(JNIEnv*, jclass, jlong h) {
   fromHandle(h)->resetGainProtection();
 }
@@ -129,6 +136,7 @@ JNIEXPORT jlong JNICALL Java_app_svan_NativeEngine_nativeCreateCustom(
     JNIEnv*, jclass, jint sampleRate, jint channels, jint oversample, jdouble stopbandDb, jint ditherBits,
     jint ditherMode, jboolean autoHeadroom, jboolean gainProtection) {
   EngineConfig c;
+  c.truePeak = true;
   c.sampleRate = sampleRate;
   c.channels = channels;
   c.oversample = oversample;
@@ -291,8 +299,90 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
   return res;
 }
 
+// Match the combined/slewed guide and context curve, not two independent trims.
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeSmartLoudnessDelta(
+    JNIEnv* env, jclass, jdoubleArray bands, jdoubleArray features,
+    jdouble intimacy, jdouble space, jdouble instruments) {
+  const jsize n = bands ? env->GetArrayLength(bands) : 0;
+  std::vector<jdouble> raw(static_cast<size_t>(n));
+  if (n) env->GetDoubleArrayRegion(bands, 0, n, raw.data());
+  std::vector<BandParams> bs;
+  for (jsize i = 0; i + 4 < n; i += 5) {
+    const int type = static_cast<int>(raw[i]);
+    if (type < 0 || type > static_cast<int>(FilterType::AllPass)) continue;
+    bs.push_back({static_cast<FilterType>(type), raw[i + 1], raw[i + 2], raw[i + 3], raw[i + 4] != 0});
+  }
+  SourceFeatures f;
+  if (features) {
+    const jsize count = env->GetArrayLength(features);
+    std::vector<jdouble> packed(static_cast<size_t>(count));
+    if (count) env->GetDoubleArrayRegion(features, 0, count, packed.data());
+    f = SourceFeatures::unpack(packed.data(), count);
+  }
+  const StereoTunerParams stereo{intimacy, 0, 0, space, instruments};
+  return svaramanas::predictedGuideLoudnessDeltaDb(bs, stereo, f.valid ? &f : nullptr);
+}
+
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeOverlapScale(JNIEnv* env, jclass, jdoubleArray bands) {
+  const jsize n=env->GetArrayLength(bands);
+  std::vector<jdouble> raw(static_cast<size_t>(n));env->GetDoubleArrayRegion(bands,0,n,raw.data());
+  std::vector<BandParams> bs;
+  for(jsize i=0;i+4<n;i+=5) {
+    if (!std::isfinite(raw[i]) || raw[i]<0 || raw[i]>static_cast<int>(FilterType::AllPass)) continue;
+    bs.push_back({static_cast<FilterType>(static_cast<int>(raw[i])),raw[i+1],raw[i+2],raw[i+3],raw[i+4]!=0});
+  }
+  return positiveEqOverlapScale(bs);
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeFitGraphic(JNIEnv* env, jclass, jdoubleArray bands, jint count) {
+  const jsize n=env->GetArrayLength(bands);
+  std::vector<jdouble> raw(static_cast<size_t>(n));
+  env->GetDoubleArrayRegion(bands,0,n,raw.data());
+  std::vector<BandParams> bs;
+  for(jsize i=0;i+4<n;i+=5) {
+    if (!std::isfinite(raw[i]) || raw[i]<0 || raw[i]>static_cast<int>(FilterType::AllPass)) continue;
+    bs.push_back({static_cast<FilterType>(static_cast<int>(raw[i])),raw[i+1],raw[i+2],raw[i+3],raw[i+4]!=0});
+  }
+  const auto fit=fitGraphicEq(bs,count);
+  std::vector<jdouble> out{fit.rmsDb,fit.maxDb};
+  for(const auto& b:fit.bands) { out.push_back(static_cast<int>(b.type)); out.push_back(b.freqHz); out.push_back(b.gainDb); out.push_back(b.q); }
+  auto r=env->NewDoubleArray(static_cast<jsize>(out.size()));
+  env->SetDoubleArrayRegion(r,0,static_cast<jsize>(out.size()),out.data()); return r;
+}
+
 JNIEXPORT jint JNICALL Java_app_svan_NativeEngine_nativeLatency(JNIEnv*, jclass, jlong h) {
   return fromHandle(h)->latencyFrames();
 }
 
+
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetDynamicEq(JNIEnv*,jclass,jlong h,jdouble amount) {
+ fromHandle(h)->setDynamicEq(amount);
+}
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeDynamicReductions(JNIEnv* env,jclass,jlong h) {
+ auto r=fromHandle(h)->dynamicReductionsDb();auto out=env->NewDoubleArray(4);env->SetDoubleArrayRegion(out,0,4,r.data());return out;
+}
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeCalibratedTuning(JNIEnv* env,jclass,jstring measurement,jstring target,jboolean published,jdouble amount,jint bands,jdouble bass,jdouble tilt) {
+ const auto text=str(env,measurement);FrCurve m;
+ if(published&&text.find("GraphicEQ")!=std::string::npos)for(const auto& [f,g]:parseGraphicEq(text)){m.hz.push_back(f);m.db.push_back(g);}
+ else m=parseCurve(text);
+ auto result=published?calibratedProfile(m,amount,bands,bass,tilt):calibratedTuning(m,parseCurve(str(env,target)),amount,bands,bass,tilt);
+ if(!result.valid)return env->NewDoubleArray(0);
+ std::vector<double> out={result.fit.rmsErrorDb,result.fit.maxErrorDb,result.lowHz,result.highHz};
+ for(const auto& b:result.fit.bands){out.push_back(b.freqHz);out.push_back(b.gainDb);out.push_back(b.q);}
+ auto r=env->NewDoubleArray(out.size());env->SetDoubleArrayRegion(r,0,out.size(),out.data());return r;
+}
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeMatchComparison(JNIEnv* env,jclass,jfloatArray a,jfloatArray b,jint fs) {
+ auto n=env->GetArrayLength(a);if(fs<16000||fs>96000||n!=env->GetArrayLength(b)||n>fs*2*15||n<fs*2*4)return env->NewDoubleArray(0);
+ std::vector<float> x(n),y(n);env->GetFloatArrayRegion(a,0,n,x.data());env->GetFloatArrayRegion(b,0,n,y.data());std::array<double,6> levels{};
+ if(!matchComparison(x,y,fs,levels))return env->NewDoubleArray(0);
+ env->SetFloatArrayRegion(a,0,n,x.data());env->SetFloatArrayRegion(b,0,n,y.data());auto r=env->NewDoubleArray(6);env->SetDoubleArrayRegion(r,0,6,levels.data());return r;
+}
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeReconstructedPeak(JNIEnv* env,jclass,jfloatArray audio,jint fs) {
+ auto n=env->GetArrayLength(audio);if(n>fs*2*15||fs<16000||fs>96000)return -1;
+ std::vector<float> samples(n);env->GetFloatArrayRegion(audio,0,n,samples.data());
+ OversamplerSpec spec;spec.factor=8;spec.baseSampleRate=fs;spec.passbandHz=fs*.45;spec.stopbandDb=140;spec.maxBlock=512;
+ std::vector<double> block(512),high(4096);double peak=0;
+ for(int ch=0;ch<2;++ch){Oversampler up(spec);for(int start=0;start<n/2;start+=512){int count=std::min(512,n/2-start);for(int k=0;k<count;++k)block[k]=samples[(start+k)*2+ch];up.up(block.data(),count,high.data());for(int k=0;k<count*8;++k)peak=std::max(peak,std::abs(high[k]));}}
+ return peak;
+}
 }  // extern "C"

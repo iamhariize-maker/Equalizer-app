@@ -59,15 +59,23 @@ object SvanRepository {
                     _userPresets.value = List(a.length()) { Preset.fromJson(a.getJSONObject(it)) }
                 }
             }
+            val makeAutoDefault = !prefs.getBoolean("smartEqDefaultApplied", false)
+            if (makeAutoDefault) {
+                _eq.value = _eq.value.copy(smartEqControl=true)
+                prefs.edit().putBoolean("smartEqDefaultApplied",true).apply()
+            }
             applyCurve(_eq.value)
             EqController.globalEq.reconfigure(_settings.value.systemBands, _settings.value.systemFrameMs)
             initialized = true
             app.svan.svaramanas.Svaramanas.init(appContext)
+            if (makeAutoDefault) app.svan.svaramanas.Svaramanas.update {
+                it.copy(enabled=true, mode=app.svan.svaramanas.SmartMode.SVARESA)
+            }
             scope.launch {
                 // StateFlow is already conflated: a slow binder update never queues stale curves.
                 kotlinx.coroutines.flow.combine(_eq, _settings) { state, settings -> state to settings }.collect { (state, _) ->
-                    EqController.globalEq.setDynamics(state.bassCharacter, state.bass.crossoverHz, state.activeVocal.smoothness)
-                    EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.gainProtection, _eq.value.enabled)
+                    EqController.globalEq.setDynamics(state.bassCharacter, state.bass.crossoverHz, state.systemSmoothness, state.levelling)
+                    EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.effectiveFor(state).gainProtection, state.enabled)
                     _engineARevision.update { it + 1 }
                     prefs.edit().putString("eq", state.toJson().toString()).apply()
                 }
@@ -78,17 +86,86 @@ object SvanRepository {
     // ---- EQ edits (call from the UI thread) ----
 
     fun update(transform: (EqState) -> EqState) {
-        val next = transform(_eq.value)
+        val old = _eq.value
+        val next = transform(old)
+        if (next == old) return
         applyCurve(next)
         _eq.value = next
     }
 
-    fun applyPreset(p: Preset) = update {
-        it.withPreset(p)
+    private val _eqUndo = MutableStateFlow<List<EqState>>(emptyList())
+    val eqUndo: StateFlow<List<EqState>> = _eqUndo.asStateFlow()
+    /** Undo manual workspace edits without rewinding the live analysis/controller. */
+    private var lastEqEditNanos = 0L
+    fun editEq(transform: (EqState) -> EqState) {
+        val old = _eq.value
+        val next = transform(old)
+        if (next == old) return
+        val now=System.nanoTime()
+        if (_eqUndo.value.isEmpty() || now-lastEqEditNanos > 700_000_000L)
+            _eqUndo.value = (_eqUndo.value + old).takeLast(30)
+        lastEqEditNanos=now
+        update { next }
+    }
+    fun undoEq() {
+        val old = _eqUndo.value.lastOrNull() ?: return
+        _eqUndo.value = _eqUndo.value.dropLast(1)
+        update { it.copy(mode=old.mode, bands=old.bands, graphicCount=old.graphicCount,
+            graphicGains=old.graphicGains, graphicShelfEnds=old.graphicShelfEnds,
+            preampDb=old.preampDb, presetName=old.presetName) }
+    }
+    fun setSmartEqControl(on: Boolean) {
+        // The controller publishes ownership and its layer together when disabling.
+        // Never publish manual + stale automatic bands during the handover.
+        app.svan.svaramanas.Svaramanas.update { it.copy(enabled=on, mode=app.svan.svaramanas.SmartMode.SVARESA) }
+        if (on && _eq.value.smartBypass) update { it.copy(smartBypass=false) }
+    }
+    /** Returns the measured fit error when converting a manual curve to graphic. */
+    fun setEqMode(mode: EqMode, count: Int = _eq.value.workspaceGraphicCount): NativeEngine.Companion.Fit? {
+        val s = _eq.value
+        if (s.smartEqControl) {
+            update { it.copy(smartEqMode=mode, smartGraphicCount=count) }
+            app.svan.svaramanas.Svaramanas.refreshEq()
+            return null
+        }
+        if (mode == s.mode && (mode == EqMode.PARAMETRIC || count == s.graphicCount)) return null
+        if (mode == EqMode.PARAMETRIC) {
+            editEq { it.copy(mode=mode, bands=it.manualBands(), presetName="Custom") }
+            return null
+        }
+        val fit=NativeEngine.fitGraphic(s.manualBands(),count)
+        editEq { it.copy(mode=mode, graphicCount=count, graphicShelfEnds=true,
+            graphicGains=fit.bands.map { b -> b.gainDb }, presetName="Custom") }
+        return fit
+    }
+    fun adjustSmartEq(index: Int, gain: Double) {
+        val s = _eq.value
+        val b = s.smart?.bands?.getOrNull(index) ?: return
+        val key = if(s.smartEqMode == EqMode.GRAPHIC) "g${s.smartGraphicCount}:${EqState.smartBandKey(b)}" else EqState.smartBandKey(b)
+        val offset=((s.smartEqOffsets[key] ?: 0.0)+(gain-b.gainDb)).coerceIn(-3.0,3.0)
+        update { it.copy(smartEqOffsets=it.smartEqOffsets + (key to offset)) }
+        app.svan.svaramanas.Svaramanas.refreshEq()
+    }
+    fun resetSmartEqOffset(index: Int) {
+        val s = _eq.value
+        val b = s.smart?.bands?.getOrNull(index) ?: return
+        val key=if (s.smartEqMode == EqMode.GRAPHIC) "g${s.smartGraphicCount}:${EqState.smartBandKey(b)}" else EqState.smartBandKey(b)
+        update { it.copy(smartEqOffsets=it.smartEqOffsets-key) }
+        app.svan.svaramanas.Svaramanas.refreshEq()
+    }
+    fun resetSmartEqOffsets() {
+        update { it.copy(smartEqOffsets=emptyMap()) }
+        app.svan.svaramanas.Svaramanas.refreshEq()
+    }
+
+    fun applyPreset(p: Preset) {
+        if (_eq.value.smartEqControl) setSmartEqControl(false)
+        editEq { it.withPreset(p).copy(smartEqControl=false) }
     }
 
     /** Full reset: every layer, and Svaramanas goes back to resting. */
     fun resetSound() {
+        _eqUndo.value = emptyList()
         app.svan.svaramanas.Svaramanas.update { it.copy(enabled = false) }
         update { EqState() }
     }
@@ -115,9 +192,16 @@ object SvanRepository {
         persistPresets()
     }
 
+    fun restoreUserPresets(presets: List<Preset>) {
+        _userPresets.value = presets
+        _eqUndo.value = emptyList()
+        persistPresets()
+    }
+
     fun currentAsPreset(name: String): Preset {
         val s = _eq.value
-        return Preset(name, s.preampDb, s.manualBands()) // tuning and bass tuner stay separate layers
+        return if (s.smartEqControl && s.smart != null) Preset(name,s.effectivePreampDb(),s.smart.bands)
+        else Preset(name, s.preampDb, s.manualBands()) // headphone/bass/stereo processors remain separate
     }
 
     // ---- settings ----
@@ -125,7 +209,8 @@ object SvanRepository {
     fun updateSettings(transform: (AudioSettings) -> AudioSettings) {
         val old = _settings.value
         val next = transform(old)
-        EqController.curveEngine.setAutoHeadroom(next.autoHeadroom)
+        EqController.curveEngine.setAutoHeadroom(next.effectiveFor(_eq.value).autoHeadroom)
+        EqController.curveEngine.setGainProtection(next.effectiveFor(_eq.value).gainProtection)
         _settings.value = next
         prefs.edit().putString("settings", next.toJson().toString()).apply()
         if (next.engineMode == app.svan.model.EngineMode.SYSTEM_ONLY && next.engineMode != old.engineMode) {
@@ -134,7 +219,7 @@ object SvanRepository {
         if (next.systemBands != old.systemBands || next.systemFrameMs != old.systemFrameMs) {
             scope.launch {
                 EqController.globalEq.reconfigure(next.systemBands, next.systemFrameMs)
-                EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.gainProtection, _eq.value.enabled)
+                EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.effectiveFor(_eq.value).gainProtection, _eq.value.enabled)
             }
         }
     }
@@ -144,7 +229,8 @@ object SvanRepository {
     private fun applyCurve(s: EqState) {
         val engine = EqController.curveEngine
         // The curve engine renders Engine A's curve, so it gets the system-effects stand-ins.
-        engine.setAutoHeadroom(_settings.value.autoHeadroom)
+        engine.setAutoHeadroom(_settings.value.effectiveFor(s).autoHeadroom)
+        engine.setGainProtection(_settings.value.effectiveFor(s).gainProtection)
         engine.setBands(s.systemEffectsBands().map { it.toNative() })
         engine.setPreampDb(s.effectivePreampDb())
     }

@@ -37,6 +37,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +49,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.svan.SvanRepository
+import app.svan.SettingsBackup
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import app.svan.model.Preset
 import kotlin.math.PI
 import kotlin.math.abs
@@ -63,6 +68,25 @@ fun PresetsScreen() {
     var message by remember { mutableStateOf<String?>(null) }
     var pasteOpen by remember { mutableStateOf(false) }
     var saveOpen by remember { mutableStateOf(false) }
+    val scope=rememberCoroutineScope()
+    val exportSettings=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if(uri!=null) scope.launch {
+            message=withContext(Dispatchers.IO) { runCatching {
+                val text=SettingsBackup.export(context)
+                context.contentResolver.openOutputStream(uri,"wt")?.use {it.write(text.toByteArray(Charsets.UTF_8))} ?: error("Cannot write this file")
+                "Settings exported. Keep this file before changing signing identity."
+            }.getOrElse {"Export failed: ${it.message}"} }
+        }
+    }
+    val restoreSettings=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if(uri!=null) scope.launch {
+            val data=withContext(Dispatchers.IO) { runCatching {
+                val bytes=context.contentResolver.openInputStream(uri)?.use {it.readBytesLimited(SettingsBackup.MAX_BYTES)} ?: error("Cannot read this file")
+                bytes.toString(Charsets.UTF_8).also {SettingsBackup.decode(it)}
+            } }
+            message=data.fold({text->runCatching {SettingsBackup.restore(context,text);"Settings restored. Android permissions must be enabled separately."}.getOrElse {"Restore failed: ${it.message}"}}, {"Restore failed: ${it.message}"})
+        }
+    }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -86,6 +110,10 @@ fun PresetsScreen() {
                 }
                 ActionTile("Paste", "APO / AutoEq text", Icons.Outlined.ContentPaste, Modifier.weight(1f)) { pasteOpen = true }
                 ActionTile("Save", "current curve", Icons.Outlined.Save, Modifier.weight(1f)) { saveOpen = true }
+            }
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick={exportSettings.launch("Svan-settings.json")},modifier=Modifier.weight(1f)) {Text("Export settings")}
+                TextButton(onClick={restoreSettings.launch(arrayOf("application/json","text/plain"))},modifier=Modifier.weight(1f)) {Text("Restore settings")}
             }
             message?.let {
                 Spacer(Modifier.height(8.dp))
@@ -126,6 +154,12 @@ fun PresetsScreen() {
             saveOpen = false
         }
     }
+}
+
+private fun java.io.InputStream.readBytesLimited(max: Int): ByteArray {
+    val out=java.io.ByteArrayOutputStream();val buf=ByteArray(8192)
+    while(true) {val n=read(buf);if(n<0)break;require(out.size()+n<=max){"Backup is too large"};out.write(buf,0,n)}
+    return out.toByteArray()
 }
 
 @Composable

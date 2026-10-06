@@ -33,11 +33,16 @@ void SourceFeatures::pack(double* out) const {
   out[13] = harshDb;
   out[14] = airDb;
   for (int i = 0; i < kBands; ++i) out[kScalars + i] = bandDb[static_cast<size_t>(i)];
+  out[kLegacyPacked] = hasStereoSpectrum ? 1.0 : 0.0;
+  for (int i = 0; i < kBands; ++i) {
+    out[kLegacyPacked + 1 + i] = midBandDb[static_cast<size_t>(i)];
+    out[kLegacyPacked + 1 + kBands + i] = sideBandDb[static_cast<size_t>(i)];
+  }
 }
 
 SourceFeatures SourceFeatures::unpack(const double* in, int n) {
   SourceFeatures f;
-  if (!in || n < kPacked) return f;
+  if (!in || n < kLegacyPacked) return f;
   f.valid = in[0] != 0.0;
   f.seconds = in[1];
   f.loudnessLufs = in[2];
@@ -54,6 +59,13 @@ SourceFeatures SourceFeatures::unpack(const double* in, int n) {
   f.harshDb = in[13];
   f.airDb = in[14];
   for (int i = 0; i < kBands; ++i) f.bandDb[static_cast<size_t>(i)] = in[kScalars + i];
+  if (n >= kPacked) {
+    f.hasStereoSpectrum = in[kLegacyPacked] != 0.0;
+    for (int i = 0; i < kBands; ++i) {
+      f.midBandDb[static_cast<size_t>(i)] = in[kLegacyPacked + 1 + i];
+      f.sideBandDb[static_cast<size_t>(i)] = in[kLegacyPacked + 1 + kBands + i];
+    }
+  }
   return f;
 }
 
@@ -105,8 +117,10 @@ SourceAnalyzer::SourceAnalyzer(double sampleRate, int channels, double averageSe
   window_.resize(kFft);
   for (int i = 0; i < kFft; ++i) window_[static_cast<size_t>(i)] = 0.5 - 0.5 * std::cos(2.0 * kPi * i / kFft);
   ring_.assign(kFft, 0.0);
+  sideRing_.assign(kFft, 0.0);
   fft_.assign(kFft, {0.0, 0.0});
   power_.assign(kFft / 2 + 1, 0.0);
+  midPower_ = sidePower_ = power_;
 }
 
 void SourceAnalyzer::reset() {
@@ -117,8 +131,11 @@ void SourceAnalyzer::reset() {
   ll_ = rr_ = lr_ = mm_ = ss_ = 0.0;
   stLL_ = stRR_ = stLR_ = stMM_ = stSS_ = 0.0;
   std::fill(ring_.begin(), ring_.end(), 0.0);
+  std::fill(sideRing_.begin(), sideRing_.end(), 0.0);
   ringPos_ = 0;
   std::fill(power_.begin(), power_.end(), 0.0);
+  std::fill(midPower_.begin(), midPower_.end(), 0.0);
+  std::fill(sidePower_.begin(), sidePower_.end(), 0.0);
   activeSeconds_ = 0.0;
   windowsSincePublish_ = 0;
   std::lock_guard<std::mutex> g(lock_);
@@ -175,6 +192,7 @@ void SourceAnalyzer::process(const float* in, int frames) {
     mm_ += m * m;
     ss_ += s * s;
     ring_[static_cast<size_t>(ringPos_)] = m;
+    sideRing_[static_cast<size_t>(ringPos_)] = s;
     if (++ringPos_ >= kFft) {
       ringPos_ = 0;
       analyseWindow();
@@ -185,22 +203,28 @@ void SourceAnalyzer::process(const float* in, int frames) {
 void SourceAnalyzer::analyseWindow() {
   // Window energy decides whether this is music or a pause: pauses must not wash
   // out the long-term picture.
-  double e = 0.0;
-  for (int i = 0; i < kFft; ++i) e += ring_[static_cast<size_t>(i)] * ring_[static_cast<size_t>(i)];
+  const double e = mm_ + ss_;
   const double winSeconds = kFft / fs_;
   const double ms = e / kFft;
   const double clipsNow = clipCount_ / winSeconds;
   clipCount_ = 0.0;
-  const bool active = ms > 1e-6;  // -60 dBFS mean square on the mid signal
+  const bool active = ms > 1e-6;  // -60 dBFS mean square across BOTH channels
   if (active) {
     const int nActive = static_cast<int>(activeSeconds_ / winSeconds + 0.5);
     const double a = std::max(alpha_, 1.0 / (nActive + 1.0));  // plain mean until the EMA is full
-    for (int i = 0; i < kFft; ++i) fft_[static_cast<size_t>(i)] = {ring_[static_cast<size_t>(i)] * window_[static_cast<size_t>(i)], 0.0};
-    fftInPlace(fft_.data(), kFft);
-    for (int k = 0; k <= kFft / 2; ++k) {
-      const double p = std::norm(fft_[static_cast<size_t>(k)]);
-      power_[static_cast<size_t>(k)] += a * (p - power_[static_cast<size_t>(k)]);
+    // Reuse one preallocated FFT buffer; no allocations on the audio thread.
+    for (int channel = 0; channel < 2; ++channel) {
+      const auto& input = channel == 0 ? ring_ : sideRing_;
+      auto& spectrum = channel == 0 ? midPower_ : sidePower_;
+      for (int i = 0; i < kFft; ++i)
+        fft_[static_cast<size_t>(i)] = {input[static_cast<size_t>(i)] * window_[static_cast<size_t>(i)], 0.0};
+      fftInPlace(fft_.data(), kFft);
+      for (int k = 0; k <= kFft / 2; ++k) {
+        const auto j = static_cast<size_t>(k);
+        spectrum[j] += a * (std::norm(fft_[j]) - spectrum[j]);
+      }
     }
+    for (size_t k = 0; k < power_.size(); ++k) power_[k] = midPower_[k] + sidePower_[k];
     stLL_ += a * (ll_ - stLL_);
     stRR_ += a * (rr_ - stRR_);
     stLR_ += a * (lr_ - stLR_);
@@ -254,13 +278,21 @@ void SourceAnalyzer::publish() {
   for (int b = 0; b < SourceFeatures::kBands; ++b) {
     const double fc = SourceFeatures::bandCentreHz(b);
     const double lo = fc / std::pow(2.0, 1.0 / 6.0), hi = fc * std::pow(2.0, 1.0 / 6.0);
-    double p = 0.0;
-    for (int k = std::max(1, static_cast<int>(std::ceil(lo / binHz))); k <= kFft / 2 && k * binHz < hi; ++k)
-      p += power_[static_cast<size_t>(k)];
-    // Low bands are narrower than one bin at 4096 points: interpolate the nearest bin.
-    if (p <= 0.0) p = power_[static_cast<size_t>(std::clamp(static_cast<int>(fc / binHz + 0.5), 1, kFft / 2))];
-    f.bandDb[static_cast<size_t>(b)] = db10(p);
+    auto level = [&](const std::vector<double>& spectrum) {
+      double p = 0.0;
+      bool hasBin = false;
+      for (int k = std::max(1, static_cast<int>(std::ceil(lo / binHz))); k <= kFft / 2 && k * binHz < hi; ++k) {
+        p += spectrum[static_cast<size_t>(k)];
+        hasBin = true;
+      }
+      if (!hasBin) p = spectrum[static_cast<size_t>(std::clamp(static_cast<int>(fc / binHz + 0.5), 1, kFft / 2))];
+      return db10(p);
+    };
+    f.bandDb[static_cast<size_t>(b)] = level(power_);
+    f.midBandDb[static_cast<size_t>(b)] = level(midPower_);
+    f.sideBandDb[static_cast<size_t>(b)] = level(sidePower_);
   }
+  f.hasStereoSpectrum = f.valid;
   // Floor empty bands 80 dB under the loudest one: silence in a band (a sparse
   // mix, a test tone) must not drag the tilt line or fake huge deviations.
   double maxBand = -1e9;

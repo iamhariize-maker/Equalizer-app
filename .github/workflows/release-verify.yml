@@ -1,0 +1,108 @@
+name: Verify published beta APK
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published release tag to verify
+        required: true
+        type: string
+
+permissions: {}
+concurrency:
+  group: release-verify-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.asset.outputs.tag }}
+    steps:
+      - name: Resolve the existing release and its one APK
+        id: asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ -n "$TAG" && "$TAG" != *$'\n'* && "$TAG" != *$'\r'* ]]
+          encoded=$(jq -rn --arg tag "$TAG" '$tag | @uri')
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$encoded" > release.json
+          jq -e '.draft == false and ([.assets[] | select(.name | endswith(".apk"))] | length) == 1' release.json >/dev/null
+          mkdir -p candidate
+          jq '{release_id: .id, tag: .tag_name, asset: ([.assets[] | select(.name | endswith(".apk"))][0] | {id, name, size, digest})}' release.json > candidate/asset.json
+          name=$(jq -r '.asset.name' candidate/asset.json)
+          [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*\.apk$ ]]
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir candidate
+          [[ $(wc -c < "candidate/$name") -eq $(jq -r '.asset.size' candidate/asset.json) ]]
+          printf 'tag=%s\n' "$TAG" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: refs/tags/${{ steps.asset.outputs.tag }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: 'build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Verify without signing or owner credentials
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0' >/dev/null
+          export SVAN_BUILD_TOOLS_DIR="$ANDROID_HOME/build-tools/36.0.0"
+          name=$(jq -r '.asset.name' candidate/asset.json)
+          bash source/android/scripts/verify_release.sh "candidate/$name"
+          (cd candidate && sha256sum -- "$name" > SHA256SUMS)
+          digest=$(awk '{print $1}' candidate/SHA256SUMS)
+          server_digest=$(jq -r '.asset.digest // ""' candidate/asset.json)
+          [[ -z "$server_digest" || "$server_digest" == "sha256:$digest" ]]
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verified-release-checksum
+          path: |
+            candidate/SHA256SUMS
+            candidate/asset.json
+          if-no-files-found: error
+          retention-days: 7
+
+  upload-checksum:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # GitHub requires write access to attach a release asset. This job runs no
+    # checked-out APK/verifier code and receives only public checksum metadata.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: verified-release-checksum
+          path: verified
+      - name: Check the asset has not changed, then attach SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ $(wc -l < verified/SHA256SUMS) -eq 1 ]]
+          grep -Eq '^[0-9a-f]{64}  [A-Za-z0-9][A-Za-z0-9._+-]*\.apk$' verified/SHA256SUMS
+          name=$(jq -r '.asset.name' verified/asset.json)
+          [[ $(awk '{print $2}' verified/SHA256SUMS) == "$name" ]]
+          [[ $(jq -r '.tag' verified/asset.json) == "$TAG" ]]
+          encoded=$(jq -rn --arg tag "$TAG" '$tag | @uri')
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$encoded" > current.json
+          jq -e --slurpfile old verified/asset.json '
+            .draft == false and .id == $old[0].release_id and
+            ([.assets[] | select(.name | endswith(".apk"))] | length) == 1 and
+            any(.assets[]; .id == $old[0].asset.id and .name == $old[0].asset.name and .size == $old[0].asset.size and .digest == $old[0].asset.digest)
+          ' current.json >/dev/null
+          gh release upload "$TAG" verified/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber

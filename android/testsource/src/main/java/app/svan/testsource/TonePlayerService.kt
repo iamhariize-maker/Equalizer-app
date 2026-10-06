@@ -11,6 +11,8 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.audiofx.AudioEffect
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
 import android.util.Log
 import kotlin.math.PI
 import kotlin.math.sin
@@ -26,6 +28,19 @@ class TonePlayerService : Service() {
     @Volatile private var playing = false
     private var thread: Thread? = null
     private var explicitBroadcast = true
+    private lateinit var mediaSession: MediaSession
+
+    override fun onCreate() {
+        super.onCreate()
+        mediaSession = MediaSession(this, "Svan streaming-style test player").apply {
+            setPlaybackToLocal(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build())
+            isActive = true
+        }
+    }
+
+    private fun mediaState(state: Int) {
+        mediaSession.setPlaybackState(PlaybackState.Builder().setState(state, 0, 1f).build())
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -81,6 +96,7 @@ class TonePlayerService : Service() {
         var phase = 0.0
         val step = 2 * PI * freq / rate
         track.play()
+        mediaState(PlaybackState.STATE_PLAYING)
         try {
             while (playing) {
                 for (i in 0 until n) {
@@ -110,6 +126,7 @@ class TonePlayerService : Service() {
     }
 
     private fun stopTone() {
+        mediaState(PlaybackState.STATE_STOPPED)
         playing = false
         thread?.join(1000)
         thread = null
@@ -117,6 +134,7 @@ class TonePlayerService : Service() {
 
     override fun onDestroy() {
         stopTone()
+        mediaSession.release()
         super.onDestroy()
     }
 

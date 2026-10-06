@@ -1,8 +1,395 @@
+## Owner-authorized GitHub beta candidate — 2026-10-06
+
+The owner recovered the original private signing backup and authorized signing/publication.
+No replacement key was generated. `Svan-0.5.5-owner-signed-fbc2ff6.apk` retains the original
+certificate in release-cert.sha256 and is a private re-sign of the exact production fixture
+from all-green CI 37434953170, source fbc2ff6d6ec624444feeb9991711d933511bf93a.
+All 73 ZIP entry contents are identical, including all four native libraries. The full owner
+release verifier passes; public hash/provenance are in releases/v0.5.5-beta.md and its payload
+record. Subsequent changes are release documentation and staging only; permissions, audio, signing config
+and app version/code remain untouched (0.5.5/12). Use the original identity for future updates.
+
+The backup remains private to the owner, outside Git/CI; do not publish it or recovery details.
+The prerelease is prepared as v0.5.5-beta.1. Publication/asset availability must be checked on
+GitHub, not inferred from this commit. The older default branch does not contain release-verify.
+The workspace upload route returned Bad Content-Length; stage-beta.yml transfers only the
+already-signed public APK through a temporary Git blob, verifies it with read-only CI access,
+then attaches it and SHA256SUMS to the unpublished draft in a separate contents-write job.
+No key/password/signing operation is in CI and publication remains explicit. Automatic
+release-event verification still needs owner-authorized default-branch integration; the
+staging workflow does not replace that future setup. No branch-default change, other-branch
+push, Pages or Play submission is made.
+Phone updates/DUMP retention, OEM behavior, Bluetooth and payment apps still need validation.
+
+## GitHub beta onboarding — 2026-10-06
+
+Owner extended release preparation to first-run/detection UX; work stays on
+`ccr-f859b567-dgrdoj`. No release/PR/Pages/Play submission is made. Original-code licence
+is All rights reserved. The uploaded owner APK at a603146 is unchanged and predates the UX:
+new owner signing and accurate asset hash/source notes are required to distribute it.
+Version/signing config and manifest remain unchanged; do not publish a CI test signer.
+
+Read OnboardingState.kt/OnboardingAndroid.kt and ui/OnboardingUi.kt for the new UI policy.
+First run reaches System effects with no setup gate. Existing bootstrap enabled automatic
+Svaresa; only genuinely fresh installs invoke the existing complete Flat reset. Saved sound,
+updates and restores are not reset. No DSP/chain/router/grant implementation changes.
+DetectionGrantService.kt is absent on this branch; ShizukuDetectionGrant.kt is the existing
+fixed own-package DUMP-only binder grant and remains untouched.
+
+Wizard observations/polling are limited to resumed UI. Errors use plain retry messages;
+raw grant failures remain in the existing bounded local audio log. Debugging reads never
+substitute false for missing/denied keys. Success uses existing gold rather than a new green,
+and makes no banking-app promise. Shizuku is stopped only by the user's own action.
+
+The contextual card uses actual activity plus missing session/DUMP evidence. Named dismissals
+are per package. Anonymous public configurations cannot identify an app; “A player” and an
+anonymous dismissal key are explicit limitations. Reset hidden prompts is always reachable.
+Hi-Fi status separates idle/unreachable/routed and unknown observations; service-running is
+not success. Copy diagnostic summary is local and limited; detailed sharing stays explicit.
+Bundled compatibility rows distinguish synthetic/earlier-owner/unverified evidence.
+
+Release verifier CI initially failed on SDK 36.1's per-scheme certificate labels; commit
+3008eb5 accepts those plus SDK 36.0, requires one signer and one consistent certificate.
+Both SDKs locally pass the owner APK and wrong-cert/additional-permission rejection tests.
+Baseline CI 37414104556 and onboarding CI 37414766431 both passed all nine jobs.
+Their logs and API 33/34 result artifacts were inspected: the 39 original audio checks pass
+before/after, all 34 median levels per API match at 0.1 dB precision, and native libraries
+are byte-identical. Two min/max endpoints vary by 0.1 dB; this is not a bit-perfect sample claim.
+Onboarding adds eight real first-run/prompt and five live wizard checks per API. All original
+detection/workspace/control/quality/production checks pass. Final local checks are 98 core,
+132 JVM, debug/release builds and lint, plus verifier positive/two negative cases.
+All wizard/status fixture images and representative live images were viewed at phone size.
+Follow-up fixes reset/clip help-panel scrolling, correct full-screen footer insets and fixture error/progress labels;
+screens.sh now asserts their presentation. Inspect final branch CI and its images as well.
+CI 37418664855 caught remaining dialog footer clipping; setup is now an inset-aware app page,
+and UI tests inspect clickable ancestors rather than TextView labels. A capture-start timeout
+logged an intermediate conflicting-UID safety stop while two recreated sessions still existed.
+The single-source fixture now waits for old-route retirement. SessionRouter/processing stay
+unchanged; multi-session capture startup remains a known limitation needing separate work.
+Existing 39 measured audio checks are byte-for-byte unchanged, with a separate UX prelude.
+See ONBOARDING_VERIFICATION.md for measured values, hashes, run links and limits.
+See SETUP.md and PHONE_VALIDATION.md for live versus labelled fixture screenshots and gaps.
+
+## Public beta preparation — 2026-10-06
+
+Owner requested release verification/automation and Play documents only, starting at `a603146`.
+Work stays on `ccr-f859b567-dgrdoj`. Beta notes and the bug form are reused from
+`ccr-aa3465ac-bgvou9`, without merging that branch or changing app/DSP code, permissions,
+signing configuration or version metadata. Owner's licence decision: original Svan code is
+**All rights reserved**; third-party notices remain applicable (LICENSE).
+
+New `verify_release.sh` checks public certificate, package/version, exact compiled permission
+allowlist and 16 KB ELF/ZIP alignment, then prints the actual file SHA-256. CI exercises a real
+disposable-signed production-mode fixture plus wrong-certificate/additional-permission failures;
+the owner key is never needed. The owner APK passes local verification with the supplied hash.
+Core local baseline: 98 tests, zero failed checks. Android debug/release assembly, lint and
+102 JVM tests pass locally. New push CI results are pending at writing;
+do not infer a green run from older or cancelled checks.
+
+`release-verify.yml` has a read-only download/verification job and a separate contents-write
+checksum attachment job: GitHub cannot attach release assets with a read-only token. No custom
+secret, signing or sensitive comment is added. Runtime release upload is unverified until an
+owner-created published release exists. The workflow must be present on the default branch;
+the older default branch has not been changed. See RELEASING.md for owner setup/rollback.
+
+Play drafts have source-line evidence and explicit unresolved network/support-data handling,
+permission/FGS review and real-device gaps. Privacy HTML is prepared, Pages is not enabled,
+and contact/retention plus an in-app policy entry remain owner/future implementation work.
+The signing A/B choice is explicitly undecided. No release, PR, Pages deployment or Play
+submission is created by this task. After each push, inspect CI logs and screenshots.
+
+## Quality engine continuation — 2026-10-05 (0.5.5 preview, code 12)
+
+Built true-peak estimation/lookahead, bounded selective dynamic EQ, measurement-derived headphone
+correction with provenance/amount controls, and an attenuation-only blind matched-listening lab.
+See [quality lab](QUALITY_LAB_0.5.5.md) for architecture, proof, CPU/latency tradeoffs and limits.
+The 0.5.4 exact delivered artifact passed all seven jobs in CI 37347862654; native/JVM 86/94,
+39 audio, 9 workspace, 8 controls, 10 release checks. New local/CI results are pending at writing;
+deliver 0.5.5 only after its exact release quality checks and screenshots pass.
+
+Owner then requested their digital signature for the Play route and confirmed no existing key or
+Play upload. A private RSA-4096 upload key and recovery files were created outside Git/GitHub.
+Production mode uses that private identity, version `0.5.5`, code 12, and disables all Activity test
+commands. Settings export/restore is added for the unavoidable preview→private signer migration.
+CI builds production APK/AAB with a disposable test key and checks public UI/native quality paths;
+owner delivery re-signs those exact tested payloads privately. See RELEASE_SIGNING.md. No Play
+publication or approval is claimed. The owner must download and securely back up the private key.
+The current Play target policy requires API 36 for new submissions; compile/target SDK and build
+tools are updated accordingly (AGP 8.9.2, Gradle 8.11.1), with minimum API 29 retained and a fifth
+compatibility job on API 36. The owner also prioritises LG V60/Android 13; full e2e coverage now runs
+on API 33 and 34. The release verification record must therefore cover nine CI jobs. LG's actual
+Quad DAC, playback routes and OEM background behavior remain real-device validation.
+
+## Engine quality continuation — 2026-10-05 (0.5.4 preview, code 11)
+
+Owner requested the current APK first (0.5.3 was delivered), then broader Svaresa engine authority
+only where it improves audio quality. Built native EQ crossfades and gain ramps, protection authority
+that preserves manual choices, live capture protection updates without rebuilding, and removal of
+per-edit limiter-history resets. See [engine quality](ENGINE_QUALITY_0.5.4.md) for measured transition
+cases, tests and limits. Native/JVM suites are 86/94; EQ workspace checks grow 6→9, retaining the
+eight gesture, 39 audio and ten release checks. CI is pending at writing; inspect it and screenshots.
+
+The delivered 0.5.3 commit `1545af2` passed all seven jobs in
+[CI 37340722679](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37340722679), including
+all gesture/output checks and API 29/30/33/35 compatibility. Touch screenshots were inspected.
+Its 80 native/91 JVM checks and fixed preview signature are verified; TECNO/IM4 listening remains
+owner validation. The final two commits changed test visibility only, not app source.
+
+## Extended EQ ownership — 2026-10-05 (0.5.3 preview, code 10)
+
+Owner reports 0.5.2 was successful and requests app-wide refinement, specifically usable Extended EQ
+with Svaresa directly controlling its parametric/graphic bands **by default**. They also require careful
+handling of overlap for bass, vocal and treble preferences. No permission changes or new analysis tap.
+
+Svaresa now owns the EQ workspace rather than adding its bands to a hidden manual EQ. Manual bands,
+mode, graphic count and gains remain separately stored. The upgrade/new-install migration selects
+Svaresa once; explicit manual override persists thereafter. Re-enabling Auto master from its panel
+reclaims EQ ownership. Applying a preset is an explicit manual override. Guided mode retains its
+existing taste behavior, and can use the owned workspace if entered from Auto master.
+
+Live nodes/faders are the actual applied automatic filters. Fixed-centre graphic layouts use a native
+response fitter, followed by bounded personal gain preferences, summed-response boost guard and
+level matching of the actual slewed curve. A 6 dB positive-response cap reduces only positive
+assistant gains; cuts remain intact. User tuning/bass layers remain separate, and predictive headroom
+covers their combined system EQ. This is not a guarantee against every transient/intersample overload
+or of listener preference. Capture-only analysis and system-effect limits still apply.
+
+Manual EQ: entire page scrolls, faders have 48 dp touch width and accessibility progress semantics,
+precise value entry, per-band gain steps, grouped undo and response-preserving layout conversion
+(exact graphic→parametric; bounded approximate parametric→graphic with RMS/max error exposed).
+Legacy all-bell graphic layouts retain their sound until explicitly converted; new/fitted layouts use
+shelf endpoints. No overwritten headphone correction or invented IM4 compensation.
+
+Local/CI verification details and listening limits: [EQ workspace](EQ_WORKSPACE_0.5.3.md).
+Native suite grows 73→80, JVM 74→83; existing 39 audio/routing and 10 release detection checks stay,
+plus six new measured EQ workspace checks. CI screenshot script explicitly selects GUIDED before
+guide captures (fixes the misleading prior filenames), and captures auto/manual band controls.
+Final CI and artifact checks are pending at writing; distribute only after all pass and screenshots
+are inspected. Preview signing remains unchanged for in-place updates.
+
 # Handoff — Svan (Svanam Shreshtham: Ultimate Sound)
 
 Written at the end of a long Claude Code session so another agent (Codex cloud) can continue.
-Repo: `iamhariize-maker/Equalizer-app`, branch **`ccr-208702a3-2mju42`** (not merged; no PR opened).
+Repo: `iamhariize-maker/Equalizer-app`, current branch **`ccr-f859b567-dgrdoj`** (not merged; PR #1 is open for it).
 Start with `AGENTS.md`. This file has the detail.
+
+## Combined sound refinement — 2026-10-05 (0.5.2 preview)
+
+The owner reports 0.5.1 detection working so far, currently listening with Fosi IM4 and starting to
+be impressed. They requested stronger, clearer instrument/vocal/ambience results in both the guide
+and Auto master. This build combines the permission removal below with targeted sound refinements.
+No new permission is added; working streaming-session discovery is preserved.
+
+Built: total mid + side spectral analysis with allocation-free dual FFTs, appended M/S feature
+packing (legacy prefix accepted); accurate static M/S level model sharing live filter coefficients
+and complex crossover sum; strength now scales all guide processors; paired presence/masking
+profiles; stronger measured Svaresa excess correction with unchanged 4 dB bounds/dead bands.
+The controller matches the combined, slewed guide/context bands instead of adding two guesses.
+Negative smart trim can reach -18 dB for extreme stereo requests; positive makeup remains capped
+at +1.5 dB. Guide-only transient suggestions are restrained (max 0.15); the manual processor is
+unchanged. Runtime/UI matching is explicitly estimated when no audio has been captured.
+
+Tests first exposed side-only music being missed, ineffective stereo strength and up to +2.58 dB
+unintended full-guide loudness. Native validation now enables every suggested processor. Checked
+synthetic cases stay within 0.25 dB; six foreground/masking contrasts are 1.70–3.02 dB. Side-only
+mud is reduced 4.03 → 2.96 dB at unchanged loudness. Details, reproducible cases and limits:
+[Sound validation](SOUND_VALIDATION_0.5.2.md). The combined local/CI results will accompany the APK.
+No IM4-specific measured correction was invented. Engine A still lacks live analysis; blocked streams
+receive the selected guide and output/volume/night context, not fabricated mix intelligence. Stronger
+contrast is measured; listening quality, commercial streaming/TECNO behavior and Play Protect
+classification of this APK still need phone validation. Do not claim unparalleled quality.
+
+## Notification-access removal — 2026-10-05 (0.5.2 preview)
+
+The owner explicitly requested removal of player recognition's setting and
+permission. They reported the **latest 0.5.1 APK** was blocked by Play Protect
+with a possible security/financial-fraud warning, requiring protection to be
+turned off to install. They also report music recognition/detection working in
+this version so far; no new DUMP/session report was supplied, so this is listener
+feedback, not a complete commercial-player/route validation matrix.
+
+Removed the notification-listener service/manifest declaration, optional card,
+consent/settings links, media-session reader, identity/state models, diagnostic
+fields, health logic and recognition-only checks. Retained the working direct
+Shizuku grant, audio reports, callbacks, broadcasts, parser hardening and silent
+capture startup guard. The combined build also refines sound (see below). Synthetic test players still publish media
+sessions, but Svan does not read them. The APK permission gate checks the compiled
+manifest, including service permissions, to prevent notification/SMS/accessibility
+capabilities returning through dependencies.
+
+Google's [developer warning guidance](https://developers.google.com/android/play-protect/warning-dev-guidance)
+identifies notification-listener access as a trigger for financial-fraud installation
+blocking of internet-sideloaded APKs in supported markets. The 0.5.1 declaration
+matches those criteria; this is a **likely explanation**, not proof of the phone's
+exact classification. Removing it is not a Play Protect approval or malware
+certification. Keep Play Protect enabled. If the replacement is blocked, obtain
+the exact message and follow Google's developer investigation/appeal path.
+No external scanner or appeal was submitted in this session.
+
+Local debug/release builds, lint and 74 JVM tests passed; the permission-only native suite was
+65/65; the combined sound refinement now has 73 tests. The compiled 0.5.2 APK passes the capability gate and the actual 0.5.1 APK
+fails it for its listener service/permission. Preview signing matches the installed
+0.5.1 certificate. New CI is pending at writing. The prior 0.5.1 exact
+release passed [CI 37288622066](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37288622066):
+65 native tests plus sanitizers, 81 JVM tests, 10 release checks, 45 e2e checks,
+compat API 29/30/33/35; small-screen screenshots inspected. New e2e retains 39
+checks (the six removed checks existed only for the deleted permission feature).
+`detection_release.sh` still requires exactly 10 passes, including the real direct
+Shizuku grant and measured output after Shizuku stops.
+
+Preview signing is still the public development key for in-place updates; it
+cannot establish exclusive publisher identity. A private production/Play signing
+key is a separate release requirement; do not distribute it or copy the preview
+key into production. No signing rotation was performed in this permission-removal
+patch. Remaining permission purposes and limits are in `docs/PERMISSIONS.md`.
+
+## Streaming-first detection continuation — 2026-10-05 (0.5.1 preview)
+
+Owner clarified: Spotify, Amazon Music, YouTube Music and other popular streaming
+players are first. Neutron and advanced local/direct-output players come later.
+Detection remains the top priority, ahead of new sound-changing features.
+
+**New TECNO evidence:** owner pasted the 0.5.0 report at 2:17:09 PM: DUMP=false,
+RECORD_AUDIO=true, service running, no dirty shutdown, battery optimisation not
+ignored; public active=2 including capture output; zero discovered sessions/routes,
+capture peak=0 and `muted=[]`. This establishes missing discovery permission and
+an empty capture allowlist, not a parser, Bluetooth, offload or HiOS-kill cause.
+The cached YouTube Music CAPTURABLE verdict does not identify the active player.
+Selected, sanitized report evidence is a regression fixture under
+`android/app/src/test/resources/detection/`; there are no real raw audio tables yet.
+
+**Follow-up evidence (2:30 PM screenshots / 2:32:09 PM report):** Shizuku 13.5 is
+running under adb and shows an authorized application, while Svan displays
+"Setup timed out. Open Shizuku and check that it is running, then retry."
+DUMP is still false at 486 scans. The previous recommendation to start Shizuku
+does not address this failure. It establishes a setup-helper timeout; why the
+UserService never completed on HiOS is not proven.
+
+**Implemented:**
+- Replaced Shizuku UserService/app_process startup with a fixed, authorized package
+  service shell transaction (`grant --user <app's user> app.svan android.permission.DUMP`).
+  No new process launch, arbitrary commands, caller-supplied targets or new permission
+  scope. Explicit Shizuku authorization remains required. ResultReceiver and actual
+  app DUMP permission determine success. A UI deadline and one in-flight request
+  prevent repeated stuck requests; late grants are recognized. Removed the unused
+  AIDL/UserService/R8 keep rules. Dedicated setup diagnostics retain phase/errors
+  separately from noisy capture logs. Release detection test requires the direct
+  binder grant and still measures processing of an already-playing source.
+- Permission/setup warning while music is playing on Sound/EQ/other tabs; the
+  main setup is shown before optional recognition. Setup state refreshes if DUMP
+  changes during a running scan. Capture startup is blocked (before consent in
+  the activity, checked again in the service) when DUMP is missing and there is
+  no real connected source. Broadcast-discovered sources still work without DUMP.
+- Optional Notification access → MediaSessionManager player recognition, with
+  playback/local-output callbacks triggering recovery scans. Names match by full,
+  unambiguous UID only; remote, paused, buffering, failed/revoked sources do not
+  supply a local-playing signal. No notification text, track metadata, position,
+  audio or transport commands are read/sent. Privacy rationale is in-app and in
+  PRIVACY.md. This source recognizes players, **does not invent audio-session IDs**,
+  prove processing, permit capture, or replace DUMP for non-broadcasting sources.
+- Recognition-driven server scans and explicit missing-player health even if a
+  second player is detected; preserves existing audio-report redundancy and
+  routing/capture flags. No DSP or sound-policy changes.
+- AF oversized integers are rejected row by row instead of losing the entire
+  report; sessionless duplicate records retain capture opt-outs; partial server
+  reports can add positive evidence but cannot establish absence for eviction.
+- Synthetic AOSP-shaped streaming fixtures (clearly marked as synthetic), seeded
+  malformed/truncated-report regressions, UID/work-profile/shared-UID cases, and
+  real TECNO missing-permission/capture-start regressions. Test-source service now
+  publishes a real local media session. Emulator T30 covers both dumps unavailable,
+  no invented route, live recovery, stopped player, revocation and optionality.
+  T16 retains the acoustic no-duplicate check and checks blocked capture startup.
+  `detection_release.sh` remains exactly ten checks.
+
+**Verification so far:** local unchanged native suite: 65 tests, zero failures.
+Final direct-grant debug/release builds, lint and 81 JVM tests passed locally
+(JDK 17 / SDK 35 / NDK 27.0.12077973). Preview certificate SHA-256 matches the
+owner's uploaded 0.5.0 APK, so installation should preserve settings. New
+CI/emulator checks are pending at writing;
+do not distribute this preview until they pass and screenshots are inspected.
+
+**Still unverified:** commercial streaming apps on the TECNO, DUMP grant success
+on this phone (owner has been given the existing phone-only Shizuku steps), media
+recognition on HiOS, any sound preference, Bluetooth timing, screen-off survival.
+Next required phone evidence: report with **DUMP=true**, with Spotify/Amazon/YT
+Music playing, plus route and app name. No PC/commands are required from the owner.
+
+Direct grant protocol references (no GPL source used):
+[AOSP BinderProxy.shellCommand](https://github.com/aosp-mirror/platform_frameworks_base/blob/android14-release/core/java/android/os/BinderProxy.java),
+[AOSP ShellCallback.writeToParcel](https://github.com/aosp-mirror/platform_frameworks_base/blob/android14-release/core/java/android/os/ShellCallback.java),
+[ShizukuBinderWrapper (MIT dependency)](https://github.com/RikkaApps/Shizuku-API/blob/master/api/src/main/java/rikka/shizuku/ShizukuBinderWrapper.java).
+
+## Redundant detection + Svaresa auto master — 2026-10-05 (0.5.0 preview)
+
+Owner reported (0.4.1 APK, TECNO LH7n): detection is unreliable for every player, not only Neutron. Apple Music
+was seen once, YouTube Music stopped appearing after switching, Neutron never; a screenshot showed the capture
+engine running with "0 apps", −120 dBFS, and YouTube Music listed only from a stale capture verdict.
+
+**Investigation (no device dump exists, so causes are ranked, not proven):**
+- The APK is exactly the 0.4.1 source (versionCode 6, DUMP declared). The `dumpsys audio` player format matches
+  the android14-release sources (`AudioPlaybackConfiguration.toString`), so the parser is not the main weakness.
+- The weakness was architectural: detection depended on ONE report. Players the audio service lists with
+  `sessionId:0` (native AAudio/OpenSL players, which is likely Neutron's path) were dropped. A failed/slow/odd
+  report meant "nothing is playing". "Direct/offload/bit-perfect" outputs (Neutron hi-res, Apple Music lossless
+  over USB) bypass session effects entirely and were reported as "no session". The Hi-Fi list showed remembered
+  apps as if detected. A killed foreground service was invisible.
+- Svaresa had no effect on system effects because it had no source analysis there (all-zero plan).
+
+**Changes (0.5.0):**
+- `AudioFlingerDump`: parses `dumpsys media.audio_flinger` (threads + output devices, track tables incl. pid/session/
+  usage, effect chains incl. our DynamicsProcessing, orphan chains, `Global session refs` = session→pid/uid/package).
+- `SessionLedger`: fuses player list + audio-server tables. Either alone is enough. Session-0 players are resolved
+  through their pid. Output path (mixer/direct/offload/bit-perfect/MMAP) is known per session.
+- `EffectVerifier`: proves in the audio server that our effect is bound, suspended, bypassed, waiting or missing;
+  missing → automatic re-attach.
+- `DetectionMonitor` + health card: per-scan verdict (OK/IDLE/DEGRADED/BLIND/NO_PERMISSION) with a plain reason, using
+  the public active-playback count as a blind-spot detector. Shareable diagnostic report (permissions, both raw
+  report excerpts, ledger, routes, recent log, session-0 probe) — **ask the owner for it after the next test**.
+- Router: per-source absence rules (a failed server read never evicts), bypass-path sessions never muted, self-heal.
+- Service: detects "stopped by Android" (dirty-shutdown flag) and shows HiOS/OEM background guidance.
+- Manifest visibility for more players (Neutron trial etc.).
+- Svaresa: context layer on every engine (ISO 226 quiet-listening lift, speaker protection, night comfort with
+  multiband level-evening on system effects, AutoEq headphone recognition), plus a stronger native measured policy
+  (wider limits, tilt correction, harshness smoothing). Still ignores guided taste. `docs/SMART.md` updated.
+
+**Verified (CI, API 34 emulator, runs 37267639906 / 37268750857 / 37268938774):** core 65 tests (+ASan/UBSan/TSan);
+JVM tests for the AF parser, ledger, verifier, health, ISO 226 anchors (20 Hz 99.85 dB, 100 Hz 64.37 dB at 40 phon),
+Svaresa brain, headphone matching. e2e: the app process CAN read `media.audio_flinger` on the stock API 34 image and the
+real report parses (`detect: players=ok server=ok … capturable#449:started:BOTH:mixer:PROCESSING`); the player is
+found and processed with the player list blinded and with the audio-server report blinded; MBC level-evening was
+accepted (no `attach failed`); night comfort stayed bounded (−1.7 dB vs resting); detection_release 10/10; compat
+API 29/30/33/35 smoke. Screenshots inspected: the "Svaresa adapts to" section fits the 320 dp screen without clipping.
+
+**Fixed after the first e2e logs (commits d4827e7, bd36085, 546d500):**
+- e2e "Svaresa lifted the bass above the resting level" failed on every run (63 Hz: on −48.6, off −48.2 dBFS). The
+  test was wrong: auto headroom (default on) pre-attenuates by the curve's largest boost, so a boost never raises the
+  absolute level (1 kHz fell 6.0 dB instead). The check now measures the 63 Hz-vs-1 kHz balance (must rise > 2 dB and
+  match the predicted change ±1 dB); the reason text says bass rises *against the mids*.
+- A just-created effect was judged by a report read 250 ms later → MISSING → the router tore it down again; cards
+  flashed SUSPENDED. Only effects settled (1.5 s) before the report are judged now; re-attach on MISSING is capped at
+  3 spaced attempts (re-armed only by PROCESSING) so a disagreeing report cannot rebuild the effect every scan.
+- The health card showed an idle SystemUI SoundPool as "Active but no session"; released/non-media session-0 records
+  are ignored (they could also lend "released" to an app's live session) and only playing ones are shown. The share
+  button no longer wraps to three lines; rows/headline use the installed app label.
+- Hold-to-compare and the EQ switch re-created every system effect while Svaresa ran (levelling went null); fixed.
+- AutoHeadphone now removes its correction when switched off or when headphones are swapped.
+- **Neutron (unconfirmed):** a third-party equalizer's supported-player notes say Neutron only exposes its audio
+  session to Android effects with Settings > Audio Hardware > **DSP Effect (Device)** on. The health advice now says
+  "check DSP Effect (Device)" when Neutron is playing unprocessed, sessionless or on a direct path, and
+  PHONE_VALIDATION.md asks the owner to test both settings. Not confirmed on the TECNO.
+
+**CI for 546d500 (run 37271042516): all jobs green** — core, android, compat 29/30/33/35, emulator-e2e 38 PASS / 0 FAIL
+(incl. the balance check: measured +5.6 dB vs predicted +5.4 dB), detection_release 10/10, zero `verify:` re-attaches and
+no DEGRADED/BLIND flashes in the log. Its Hi-Fi screenshot showed the second health-card button clipped to "Share"; the
+follow-up f9ec7a5 slims the button padding; run 37273679682 is green again (38/0, detection 10/10) and its screenshot
+shows "Scan now" and "Share report" on one line each.
+
+**Not verified:** anything on the TECNO — whether HiOS lets the app read `media.audio_flinger` (stock API 34 does),
+whether Neutron/Apple Music use direct paths, the Neutron DSP setting, battery-killer behaviour, sound preference of any
+new curve. The tilt target (−2.5 dB/oct, ±1.5) and the volume→phon mapping (30–80 phon) are first guesses; both are
+bounded and switchable. A single-scan BLIND flash can still appear for ~0.5 s when a player starts (seen in CI logs).
+Note: PR #1 for this branch exists (opened 05:52 UTC, not by the coding agent), so each push runs CI twice (push + pull_request).
+Next: Listen-only capture tap so Svaresa can analyse on system effects (Visualizer is only 8-bit: unsuitable).
 
 ## Bluetooth/session recovery — 2026-10-05 (0.4.1 preview)
 
@@ -319,3 +706,7 @@ flipped-d lift (see §6 item 1) — pushed with this file.
 - AutoEq (MIT, Jaakko Pasanen): data/targets fetched at runtime; test fixtures in `core/tests/data/` with README.
 - Poppins SemiBold (SIL OFL 1.1, Indian Type Foundry): launcher-icon glyph outlines. Mukta/Eczar were evaluated, not shipped.
 - JamesDSP/RootlessJamesDSP (GPL-3): **read for technique only; no code copied.**
+
+Play preparation follow-up: native ELF load alignment was still 4 KB despite 16 KB ZIP packaging.
+NDK 27 flexible page-size support now produces 16 KB load segments. The release artifact gate
+checks every shared library in both APK and AAB; older 4 KB Android systems remain supported.

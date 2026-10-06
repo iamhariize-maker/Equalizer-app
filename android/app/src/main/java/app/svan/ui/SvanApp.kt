@@ -6,6 +6,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -15,6 +22,7 @@ import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -28,30 +36,29 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
-/** The in-app Svaramanas bubble: tap to open the dialog, hold to hear the music without it. */
+/** Dedicated shortcut dock: it never overlays a slider, dial or numeric readout. */
 @Composable
-private fun SvaramanasBubble(modifier: Modifier = Modifier) {
+private fun SvaramanasDock(modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val request by app.svan.svaramanas.Svaramanas.request.collectAsState()
     val listening by app.svan.svaramanas.Svaramanas.listening.collectAsState()
     val eq by app.svan.SvanRepository.eq.collectAsState()
-    Box(
+    Row(
         modifier
-            .size(58.dp)
-            .shadow(10.dp, CircleShape, ambientColor = Svan.Gold, spotColor = Svan.Gold)
-            .clip(CircleShape)
+            .fillMaxWidth().height(56.dp)
+            .background(Svan.Surface)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = { app.svan.svaramanas.SvaramanasActivity.open(context) },
@@ -62,13 +69,25 @@ private fun SvaramanasBubble(modifier: Modifier = Modifier) {
                     },
                 )
             }
-            .semantics { contentDescription = "${request.mode.plainName}. Tap to open, hold to compare." },
+            .semantics(mergeDescendants=true) {
+                role=Role.Button
+                contentDescription = "${request.mode.plainName}. Tap to open, hold to compare."
+                onClick(label="Open ${request.mode.plainName}") { app.svan.svaramanas.SvaramanasActivity.open(context); true }
+            }
+            .padding(horizontal=16.dp),
+        verticalAlignment=Alignment.CenterVertically,
     ) {
         if (request.mode == app.svan.svaramanas.SmartMode.SVARESA) {
-            SvaresaMark(58.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
+            SvaresaMark(36.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
         } else {
-            SvaramanasMark(58.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
+            SvaramanasMark(36.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
         }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(request.mode.sanskritName,style=MaterialTheme.typography.labelLarge,color=Svan.Gold)
+            Text("${request.mode.plainName} · Hold to compare",style=MaterialTheme.typography.labelSmall,color=Svan.TextMuted)
+        }
+        Text("Open",style=MaterialTheme.typography.labelMedium,color=Svan.Gold)
     }
 }
 
@@ -88,14 +107,22 @@ fun SvanApp(
     onStopCapture: () -> Unit,
     labActions: List<Pair<String, () -> Unit>>,
 ) {
+    val blindOpen by app.svan.listening.BlindLab.open.collectAsState()
+    val helpPanel by OnboardingUi.panel.collectAsState()
+    if(blindOpen) BlindListening()
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var working by androidx.compose.runtime.remember { mutableStateOf(app.svan.OnboardingAndroid.working(context)) }
+    ObserveWhileVisible { working = app.svan.OnboardingAndroid.working(context) }
     val tabState = rememberSaveableStateHolder()
     // Boot animation once per app start (survives rotation, not a fresh launch).
     var booted by rememberSaveable { mutableStateOf(false) }
     Box(Modifier.fillMaxSize()) {
-    Scaffold(
+    if (helpPanel == HelpPanel.NONE) Scaffold(
         containerColor = Svan.Black,
         bottomBar = {
+            Column {
+            SvaramanasDock()
             NavigationBar(containerColor = Svan.Surface, tonalElevation = androidx.compose.ui.unit.Dp(0f)) {
                 TABS.forEachIndexed { i, t ->
                     NavigationBarItem(
@@ -113,9 +140,11 @@ fun SvanApp(
                     )
                 }
             }
+            }
         },
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            ContextualSetupPrompt(working)
             AnimatedContent(tab, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "tab") { t ->
                 tabState.SaveableStateProvider(t) {
                     when (t) {
@@ -129,7 +158,7 @@ fun SvanApp(
             }
         }
     }
-    SvaramanasBubble(Modifier.align(androidx.compose.ui.Alignment.BottomEnd).padding(end = 18.dp, bottom = 96.dp))
     if (!booted) BootAnimation(onDone = { booted = true })
+    SetupHelpHost()
     }
 }

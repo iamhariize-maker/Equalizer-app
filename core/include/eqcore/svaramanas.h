@@ -50,6 +50,8 @@ enum Note : int {
   kNoteLossy = 14,          // boosts kept below the codec ceiling
   kNoteCrushedMaster = 15,  // heavily limited / clipping master: boosts halved
   kNoteMono = 16,           // no side signal: widening skipped
+  kNoteBright = 17,         // Svaresa: mix thinner/brighter than a healthy balance, eased
+  kNoteDark = 18,           // Svaresa: mix darker/heavier than a healthy balance, opened
   kNoteBudget = 20,         // emphasis scaled to fit the budget
   kNoteConflictDropped = 21,
   kNoteOverlapSoftened = 22,
@@ -65,8 +67,10 @@ struct Request {
   std::vector<uint32_t> order;
   double strength = 1.0;    // 0..1.5
   bool stereoEngine = true; // Engine B (mid/side tuners available)
-  // Svaresa is an automatic, conservative master mode. It ignores guided
-  // taste/category lifts and only acts on source evidence that was measured.
+  // Svaresa is the automatic master mode. It ignores guided taste/category
+  // lifts and acts only on source evidence that was measured, but with real
+  // authority: wider correction limits, a tonal-balance (tilt) correction and
+  // a harshness-driven smoothing suggestion that guided mode does not have.
   bool svaresaMode = false;
 };
 
@@ -83,7 +87,7 @@ CategoryCheck checkCategories(const Request& r);
 struct Plan {
   std::vector<BandParams> bands;  // the smart layer (fixed skeleton per request)
   double preampDb = 0.0;          // loudness-matching trim (<= 0 for boosts)
-  double predictedDeltaDb = 0.0;  // loudness change of the bands before the trim
+  double predictedDeltaDb = 0.0;  // estimated static guide loudness change before trim
   double bassCharacter = 0.0;     // suggestion, -1..1
   StereoTunerParams stereo{};     // suggestion (Engine B only)
   CategoryCheck categories;
@@ -92,7 +96,11 @@ struct Plan {
 
 // Guardrail constants (also asserted by tests).
 constexpr double kMaxBandDb = 3.0;         // any single smart band
-constexpr double kMaxCorrectionDb = 2.5;   // analyser-driven cuts/lifts
+constexpr double kMaxCorrectionDb = 2.5;   // analyser-driven cuts/lifts (guided mode)
+constexpr double kSvaresaMaxCorrectionDb = 4.0;  // Svaresa's measured cuts
+constexpr double kSvaresaTiltTargetDbPerOct = -2.5;  // healthy third-octave balance (energy per band vs octave)
+constexpr double kSvaresaTiltDeadbandDbPerOct = 1.5; // no tilt move inside +-1.5 of the target
+constexpr double kSvaresaMaxTiltDb = 2.5;          // largest tilt shelf pair move
 constexpr double kEmphasisBudgetDb = 6.0;  // sum of positive request gains
 
 // features may be null (Engine A / nothing heard yet): a static plan matched
@@ -101,6 +109,11 @@ Plan plan(const Request& r, const SourceFeatures* features);
 
 // K-weighted loudness change of `bands` on a third-octave power spectrum
 // (dB levels at SourceFeatures::bandCentreHz). Pink when spectrumDb is null.
+// Full static guide (EQ + M/S), using measured M/S spectra when available.
+// Without audio, pink with a 25% side-energy reference is an estimate only.
+double predictedGuideLoudnessDeltaDb(const std::vector<BandParams>& bands, const StereoTunerParams& stereo,
+                                     const SourceFeatures* features, double sampleRate = 48000.0);
+
 double predictedLoudnessDeltaDb(const std::vector<BandParams>& bands, const double* spectrumDb,
                                 double sampleRate = 48000.0);
 

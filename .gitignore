@@ -9,3 +9,8 @@ android/**/build/
 *.apk
 *.aab
 android/build-kit/
+*.p12
+*.jks
+*.pem
+*.keystore
+!android/preview.keystore

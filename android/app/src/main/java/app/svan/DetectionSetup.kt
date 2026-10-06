@@ -1,11 +1,8 @@
 package app.svan
 
-import android.content.ComponentName
 import android.content.Context
-import android.content.ServiceConnection
 import android.content.pm.PackageManager
 import android.os.Handler
-import android.os.IBinder
 import android.os.Looper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,12 +20,9 @@ object DetectionSetup {
     private val main = Handler(Looper.getMainLooper())
     private var initialized = false
     private var busy = false
-    private var bound = false
+    @Volatile private var grantPending = false
+    private val grantLog = ArrayDeque<String>()
     private var generation = 0
-    private val args by lazy {
-        Shizuku.UserServiceArgs(ComponentName(context.packageName, DetectionGrantService::class.java.name))
-            .daemon(false).processNameSuffix("detection_setup").version(1)
-    }
 
     fun init(ctx: Context) {
         if (initialized) return
@@ -40,16 +34,18 @@ object DetectionSetup {
         } }
         Shizuku.addRequestPermissionResultListener { code, result -> main.post {
             if (code == REQUEST) {
-                if (result == PackageManager.PERMISSION_GRANTED) bind()
+                if (result == PackageManager.PERMISSION_GRANTED) grant()
                 else mutableState.value = State(Stage.ERROR, "Detection permission was declined. You can allow Svan in Shizuku's Authorized applications, then retry.")
             }
         } }
         refresh()
     }
 
-    fun refresh() {
+    fun refresh(clearError: Boolean = false) {
         if (!initialized || busy) return
         val ready = PlaybackSessions.hasDumpPermission(context)
+        // A visible failure must survive live polling until Retry (or a real late grant).
+        if (!ready && !clearError && mutableState.value.stage == Stage.ERROR) return
         mutableState.value = when {
             ready -> State(Stage.READY, "Enhanced app detection is enabled.")
             runCatching { Shizuku.pingBinder() }.getOrDefault(false) -> State(Stage.AUTHORIZE)
@@ -60,63 +56,83 @@ object DetectionSetup {
 
     fun enable() {
         if (busy) return
-        refresh()
+        refresh(clearError = true)
         if (mutableState.value.stage == Stage.READY) {
             SystemEqService.refreshDetection(context)
             return
         }
         if (mutableState.value.stage != Stage.AUTHORIZE) return
         try {
-            if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) bind()
+            if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) grant()
             else if (Shizuku.shouldShowRequestPermissionRationale()) {
                 mutableState.value = State(Stage.ERROR, "Open Shizuku → Authorized applications and allow Svan, then retry.")
             } else Shizuku.requestPermission(REQUEST)
         } catch (e: RuntimeException) {
-            mutableState.value = State(Stage.ERROR, "Could not request detection access: ${e.message}")
+            record("permission request failed: ${e.javaClass.simpleName}: ${e.message}")
+            mutableState.value = State(Stage.ERROR, "Could not ask Shizuku for access. Open Shizuku and retry.")
         }
     }
 
-    private fun bind() {
-        if (busy) return
-        busy = true
-        val attempt = ++generation
-        mutableState.value = State(Stage.WORKING, "Enabling Android app detection…")
-        try {
-            bound = true
-            Shizuku.bindUserService(args, connection)
-            main.postDelayed({ if (busy && attempt == generation) finish("Setup timed out. Open Shizuku and check that it is running, then retry.") }, 15_000)
-        } catch (e: RuntimeException) { finish("Could not start detection setup: ${e.message}") }
+    private fun record(message: String) {
+        val line = "${System.currentTimeMillis()}: $message"
+        synchronized(grantLog) {
+            grantLog.addLast(line)
+            while (grantLog.size > 12) grantLog.removeFirst()
+        }
+        EqController.log("detection setup: $message")
     }
 
-    private val connection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            if (!busy || binder == null) return
-            val attempt = generation
-            thread(name = "svan-detection-grant") {
-                val result = runCatching { IDetectionGrant.Stub.asInterface(binder).enableDetection() }
-                    .getOrElse { "Detection setup failed: ${it.message}" }
-                main.post {
-                    if (busy && attempt == generation) finish(if (result == "OK") null else result)
+    fun diagnostics(): String = buildString {
+        appendLine("Setup stage: ${state.value.stage} · ${state.value.message}")
+        appendLine("Grant in flight: $grantPending")
+        appendLine("Shizuku running: ${runCatching { Shizuku.pingBinder() }.getOrDefault(false)}")
+        appendLine("Shizuku API version: ${runCatching { Shizuku.getVersion() }.getOrNull() ?: "unavailable"}")
+        appendLine("Shizuku authorization granted: ${runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false)}")
+        synchronized(grantLog) { grantLog.forEach { appendLine(it) } }
+    }
+
+    private fun grant() {
+        if (busy) return
+        if (grantPending) {
+            mutableState.value = State(Stage.ERROR, "The previous grant request is still waiting for Android. No second request was started. Share report if it stays blocked.")
+            return
+        }
+        busy = true
+        grantPending = true
+        val attempt = ++generation
+        mutableState.value = State(Stage.WORKING, "Granting Svan's audio-session access through Shizuku…")
+        record("requesting fixed DUMP grant through direct package binder")
+        // No UserService/app_process launch: it timed out on the owner's HiOS device despite Shizuku running.
+        thread(name = "svan-detection-grant") {
+            val result = runCatching { ShizukuDetectionGrant.enable(context) }
+                .getOrElse { "Detection grant failed: ${it.javaClass.simpleName}: ${it.message}" }
+            main.post {
+                grantPending = false
+                if (busy && attempt == generation) finish(if (result == "OK") null else result)
+                else {
+                    record("late grant response: $result")
+                    // A late successful grant is real access, even after the UI deadline expired.
+                    if (PlaybackSessions.hasDumpPermission(context)) { refresh(); SystemEqService.refreshDetection(context) }
                 }
             }
         }
-        override fun onServiceDisconnected(name: ComponentName?) {
-            if (busy) finish("Detection setup disconnected. Please retry.")
-        }
+        main.postDelayed({
+            if (busy && attempt == generation) finish("Shizuku is authorized, but Android did not answer the audio-session permission request. Detection is still disabled. Share report for the setup details.")
+        }, 15_000)
     }
 
     private fun finish(error: String?) {
         busy = false
         generation++
-        if (bound) {
-            bound = false
-            runCatching { Shizuku.unbindUserService(args, connection, true) }
-        }
         if (PlaybackSessions.hasDumpPermission(context)) {
             mutableState.value = State(Stage.READY, "Enhanced app detection is enabled. Play music and check its route below.")
-            EqController.log("detection setup: granted via Shizuku")
+            record("granted via Shizuku (direct package binder)")
             SystemEqService.refreshDetection(context)
-        } else mutableState.value = State(Stage.ERROR, error ?: "Android did not grant detection access. Please retry.")
+        } else {
+            val reason = error ?: "Android did not grant detection access. Please retry."
+            record(reason)
+            mutableState.value = State(Stage.ERROR, detectionGrantFailureMessage(grantPending))
+        }
     }
 
     private const val REQUEST = 369

@@ -32,7 +32,7 @@ enum class Feel(val title: String, val line: String) {
 /** Friendly mode names for the sound guide and the automatic master. */
 enum class SmartMode(val plainName: String, val sanskritName: String, val promise: String) {
     GUIDED("Sound guide", "Svaramanas", "You choose the tone and what to bring forward."),
-    SVARESA("Auto master", "Svaresa", "Measured EQ and level matching when Hi-Fi can listen."),
+    SVARESA("Auto master", "Svaresa", "Adapts to your volume, output and the hour; corrects what it can measure."),
 }
 
 /** Instrument categories. Bits match eqcore::svaramanas::Category. */
@@ -61,9 +61,16 @@ data class SmartRequest(
     val feel: Feel = Feel.BALANCED,
     val picks: List<Category> = emptyList(),
     val strength: Double = 1.0,
+    /** Svaresa adaptations (see [SvaresaBrain]); each can be switched off. */
+    val night: NightMode = NightMode.AUTO,
+    val volumeAware: Boolean = true,
+    val routeAware: Boolean = true,
+    val autoHeadphone: Boolean = true,
+    val selectiveEq: Boolean = true,
 ) {
     fun toJson(): JSONObject = JSONObject().put("on", enabled).put("mode", mode.name).put("feel", feel.name).put("strength", strength)
         .put("picks", JSONArray().apply { picks.forEach { put(it.name) } })
+        .put("night", night.name).put("volumeAware", volumeAware).put("routeAware", routeAware).put("autoHeadphone", autoHeadphone).put("selectiveEq",selectiveEq)
 
     companion object {
         fun fromJson(o: JSONObject) = SmartRequest(
@@ -73,6 +80,11 @@ data class SmartRequest(
             picks = o.optJSONArray("picks")?.let { a -> List(a.length()) { a.getString(it) } }
                 ?.mapNotNull { n -> Category.entries.firstOrNull { it.name == n } } ?: emptyList(),
             strength = o.optDouble("strength", 1.0).coerceIn(0.0, 1.5),
+            night = runCatching { NightMode.valueOf(o.optString("night", NightMode.AUTO.name)) }.getOrDefault(NightMode.AUTO),
+            volumeAware = o.optBoolean("volumeAware", true),
+            routeAware = o.optBoolean("routeAware", true),
+            autoHeadphone = o.optBoolean("autoHeadphone", true),
+            selectiveEq=o.optBoolean("selectiveEq",true),
         )
     }
 }
@@ -109,6 +121,11 @@ data class SmartPlan(
     val notes: List<Int>,
 ) {
     fun toLayer() = SmartLayer(bands, preampDb, bassCharacter, intimacy, smoothness, space, instruments)
+
+    /** The measured plan plus Svaresa's context layer (quiet listening, output protection, night). */
+    fun toLayer(context: ContextLayer?): SmartLayer = if (context == null) toLayer() else SmartLayer(
+        bands + context.bands, preampDb + context.preampDb, bassCharacter, intimacy, smoothness, space, instruments, context.levelling,
+    )
 
     companion object {
         fun compute(r: SmartRequest, features: DoubleArray?, stereoEngine: Boolean): SmartPlan {
@@ -160,6 +177,12 @@ object Svaramanas {
     /** True while the audiophile engine lets Svaramanas hear the music itself. */
     val listening: StateFlow<Boolean> = _listening.asStateFlow()
 
+    private val _context = MutableStateFlow<ContextLayer?>(null)
+    /** Svaresa's current quiet-listening / output / night adaptation, or null when it is not driving. */
+    val context: StateFlow<ContextLayer?> = _context.asStateFlow()
+
+    private lateinit var appContext: Context
+
     private val _bubble = MutableStateFlow(false)
     /** The floating bubble over other apps (needs "Display over other apps"). */
     val bubble: StateFlow<Boolean> = _bubble.asStateFlow()
@@ -172,11 +195,13 @@ object Svaramanas {
 
     const val UPDATE_MS = 3000L
     private const val SLEW_DB = 0.5
+    private const val CONTEXT_SLEW_DB = 2.0
 
     fun init(context: Context) {
         if (initialized) return
         synchronized(this) {
             if (initialized) return
+            appContext = context.applicationContext
             prefs = context.applicationContext.getSharedPreferences("svaramanas", Context.MODE_PRIVATE)
             prefs.getString("request", null)?.let { s -> runCatching { _request.value = SmartRequest.fromJson(JSONObject(s)) } }
             _bubble.value = prefs.getBoolean("bubble", false)
@@ -194,6 +219,8 @@ object Svaramanas {
     /** UI thread. */
     fun update(transform: (SmartRequest) -> SmartRequest) {
         val next = transform(_request.value)
+        if (next.enabled && next.mode == SmartMode.SVARESA && !SvanRepository.eq.value.smartEqControl)
+            SvanRepository.update { it.copy(smartEqControl=true) }
         _request.value = next
         if (initialized) prefs.edit().putString("request", next.toJson().toString()).apply()
         recompute(immediate = true)
@@ -204,14 +231,24 @@ object Svaramanas {
         if (SvanRepository.eq.value.smartBypass != on) SvanRepository.update { it.copy(smartBypass = on) }
     }
 
+    fun refreshEq() { if (initialized) recompute(immediate = true) }
+    private var fitInput: List<Band>? = null
+    private var fitCount = 0
+    private var cachedFit: NativeEngine.Companion.Fit? = null
+    private var guardInput: List<Band>? = null
+    private var guardScale = 1.0
+
     /** Main thread. */
     private fun recompute(immediate: Boolean) {
         val r = _request.value
         if (!r.enabled) {
             _plan.value = null
+            _context.value = null
             _listening.value = CaptureService.isRunning
-            if (SvanRepository.eq.value.smart != null) SvanRepository.update { it.copy(smart = null, smartBypass = false) }
-            if (immediate) EqController.log("svaramanas: resting")
+            if (SvanRepository.eq.value.smart != null || SvanRepository.eq.value.smartEqControl) SvanRepository.update { it.copy(smart = null, smartBypass = false, smartEqControl=false) }
+            if (immediate) EqController.curveEngine.responseDb(doubleArrayOf(63.0, 1000.0)).let { c ->
+                EqController.log("svaramanas: resting response@63Hz=%.2f dB response@1kHz=%.2f dB".format(c[0], c[1]))
+            }
             return
         }
         val engineB = CaptureService.isRunning
@@ -225,12 +262,48 @@ object Svaramanas {
         _listening.value = engineB
         // Features only count once enough music was heard; before that the plan is static.
         val p = SmartPlan.compute(r, packed?.takeIf { heard?.valid == true }, engineB)
-        _plan.value = p
-        val target = p.toLayer()
+        if (r.mode == SmartMode.SVARESA) AutoHeadphone.check(appContext, r)
+        val ctx = if (r.mode == SmartMode.SVARESA) SvaresaBrain.layer(SvaresaSensors.read(appContext, r)) else null
+        _context.value = ctx
+        val eq = SvanRepository.eq.value
+        var target = p.toLayer(ctx).copy(protectEngine=r.mode==SmartMode.SVARESA,dynamicEq=if(r.mode==SmartMode.SVARESA&&r.selectiveEq) r.strength.coerceIn(0.0,1.0) else 0.0)
+        if (eq.smartEqControl && eq.smartEqMode == app.svan.model.EqMode.GRAPHIC) {
+            if (fitInput != target.bands || fitCount != eq.smartGraphicCount) {
+                fitInput=target.bands; fitCount=eq.smartGraphicCount
+                cachedFit=NativeEngine.fitGraphic(target.bands,eq.smartGraphicCount)
+            }
+            val fit=cachedFit!!
+            target=target.copy(bands=fit.bands.map { Band(it.type,it.freqHz,it.gainDb,it.q,it.enabled) },
+                graphicFitRmsDb=fit.rmsErrorDb, graphicFitMaxDb=fit.maxErrorDb)
+        }
+        if (eq.smartEqControl) {
+            val personalized=eq.personalizeSmartBands(target.bands)
+            if (guardInput != personalized) {
+                guardInput=personalized
+                guardScale=NativeEngine.overlapScale(personalized)
+            }
+            target=target.copy(bands=personalized.map { if(it.gainDb>0) it.copy(gainDb=it.gainDb*guardScale) else it },overlapScale=guardScale)
+        }
         val prev = SvanRepository.eq.value.smart
-        val next = if (immediate || prev == null) target else slew(prev, target)
+        var drifted = if (immediate || prev == null) target else slew(prev, target)
+        if (eq.smartEqControl && drifted.bands != target.bands) {
+            val scale=NativeEngine.overlapScale(drifted.bands)
+            drifted=drifted.copy(bands=drifted.bands.map { if(it.gainDb>0) it.copy(gainDb=it.gainDb*scale) else it },overlapScale=minOf(target.overlapScale,scale))
+        }
+        // Match the bands actually applied after slewing, including quiet/night
+        // context. Separate preamp estimates cannot account for stacked filters.
+        val bands = DoubleArray(drifted.bands.size * 5) { i ->
+            val b = drifted.bands[i / 5]
+            when (i % 5) { 0 -> b.type.ordinal.toDouble(); 1 -> b.freqHz; 2 -> b.gainDb; 3 -> b.q; else -> if (b.enabled) 1.0 else 0.0 }
+        }
+        val delta = NativeEngine.nativeSmartLoudnessDelta(bands, packed?.takeIf { heard?.valid == true },
+            drifted.intimacy, drifted.space, drifted.instruments)
+        val next = drifted.copy(preampDb = (-delta).coerceIn(-18.0, 1.5))
+        val applied = p.copy(bands = if (!eq.smartEqControl || eq.smartEqMode == app.svan.model.EqMode.PARAMETRIC) next.bands.take(p.bands.size) else p.bands, preampDb = next.preampDb, predictedDeltaDb = delta,
+            notes = if (abs(delta) > 0.05 && 30 !in p.notes) p.notes + 30 else p.notes)
+        _plan.value = applied
         if (next != prev) SvanRepository.update { it.copy(smart = next) }
-        if (immediate) logPlan(p, heard)
+        if (immediate) logPlan(applied, heard)
     }
 
     private var heardLogs = 0
@@ -238,32 +311,43 @@ object Svaramanas {
     private fun slew(from: SmartLayer, to: SmartLayer): SmartLayer {
         val same = from.bands.size == to.bands.size && from.bands.zip(to.bands).all { (a, b) -> a.type == b.type && a.freqHz == b.freqHz && a.q == b.q }
         if (!same) return to
-        fun step(a: Double, b: Double) = if (abs(b - a) <= SLEW_DB) b else a + SLEW_DB * Math.signum(b - a)
+        fun step(a: Double, b: Double, limit: Double) = if (abs(b - a) <= limit) b else a + limit * Math.signum(b - a)
+        // The measured plan drifts slowly (0.5 dB / 3 s). The context layer (the last bands) answers a volume
+        // change or a route switch within a few seconds, since the listener caused it.
+        val contextStart = to.bands.size - ContextLayer.BAND_COUNT
+        val hasContext = to.levelling != null && contextStart >= 0 && to.graphicFitRmsDb == null
         return to.copy(
-            bands = from.bands.zip(to.bands).map { (a, b) -> b.copy(gainDb = step(a.gainDb, b.gainDb)) },
-            preampDb = step(from.preampDb, to.preampDb),
+            bands = from.bands.zip(to.bands).mapIndexed { i, (a, b) ->
+                b.copy(gainDb = step(a.gainDb, b.gainDb, if (hasContext && i >= contextStart) CONTEXT_SLEW_DB else SLEW_DB))
+            },
+            preampDb = step(from.preampDb, to.preampDb, if (hasContext) CONTEXT_SLEW_DB else SLEW_DB),
         )
     }
 
     private fun logPlan(p: SmartPlan, heard: Heard?) {
-        val curve = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
+        val curves = EqController.curveEngine.responseDb(doubleArrayOf(63.0, 1000.0))
+        val c = _context.value
         EqController.log(
             "svaramanas plan: mode=${_request.value.mode} feel=${_request.value.feel} picks=${_request.value.picks} bands=${p.bands.count { it.gainDb != 0.0 }} " +
-                "preamp=%.2f predicted=%.2f notes=${p.notes} heard=${heard?.valid ?: false} response@1kHz=%.2f dB".format(p.preampDb, p.predictedDeltaDb, curve),
+                "preamp=%.2f predicted=%.2f notes=${p.notes} heard=${heard?.valid ?: false} ".format(p.preampDb, p.predictedDeltaDb) +
+                (c?.let { "context: bass=%+.2f treble=%+.2f night=%.2f levelling=%.2f ".format(it.bassLiftDb, it.trebleLiftDb, it.nightAmount, it.levelling) } ?: "") +
+                "response@63Hz=%.2f dB response@1kHz=%.2f dB".format(curves[0], curves[1]),
         )
     }
 
     /** Svaramanas speaks: plain-language lines for what it heard and did. */
-    fun explain(p: SmartPlan?, h: Heard?, r: SmartRequest, listening: Boolean): List<String> {
+    fun explain(p: SmartPlan?, h: Heard?, r: SmartRequest, listening: Boolean, ctx: ContextLayer? = null): List<String> {
         if (!r.enabled) return listOf("Resting. Turn me on and tell me what you'd like to hear.")
         if (p == null) return emptyList()
         fun gainAt(f: Double) = p.bands.filter { it.freqHz == f }.sumOf { it.gainDb }
         val out = mutableListOf<String>()
         if (r.mode == SmartMode.SVARESA) {
+            out += "Headroom and overload protection stay active across the engine. Your manual protection choices return when Auto master is off."
+            ctx?.reasons?.let { out += it }
             when {
-                !listening -> out += "Auto master is ready. Live analysis needs Hi-Fi and a player that allows audio capture; your chosen EQ and tuners still work."
+                !listening -> out += "Output, volume and night adaptation are live. Measured tone corrections also need Hi-Fi and a player that allows audio capture; your chosen EQ and tuners still work."
                 h?.valid != true -> out += "Auto master is listening for a few seconds before making any change."
-                else -> out += "Auto master is checking the mix and making only small, measured corrections."
+                else -> out += "Auto master is checking the full stereo mix and correcting measured masking, harshness and tonal imbalance."
             }
         } else if (!listening) out += "On system effects I shape by your choices. Turn on Hi-Fi and I'll listen to the music itself."
         else if (h?.valid != true) out += "Listening… give me a few seconds of music and I'll fine-tune."
@@ -274,17 +358,19 @@ object Svaramanas {
             11 -> out += "The bass was booming: tightened %.1f dB around 90 Hz.".format(-gainAt(90.0))
             12 -> out += "The upper mids were turning shrill: smoothed %.1f dB at 3.5 kHz and held back presence lifts.".format(-gainAt(3500.0))
             13 -> out += "The top end was dull for a full-range file, so I opened the air a little."
+            17 -> out += "The mix is thinner/brighter than a healthy balance: eased the top and restored body."
+            18 -> out += "The mix is darker/heavier than a healthy balance: opened the top and relieved the low-mid body."
             14 -> out += "This stream stops near %.1f kHz (lossy). I won't lift anything near that ceiling; it would only amplify codec artefacts.".format((h?.cutoffHz ?: 0.0) / 1000)
             15 -> out += "This master is heavily limited or clipping, so I halved every lift. More would only distort."
             16 -> out += "This track has no real stereo, so I skipped widening."
             20 -> out += "Your picks asked for a lot, so I fit them into a 6 dB emphasis budget."
             21 -> out += "${Category.fromMask(p.rejected).joinToString { it.title }} clashes with ${Category.fromMask(p.conflictWith).joinToString { it.title }} in the same range. I kept your first picks."
             22 -> out += "Overlapping picks share their range; the later one yields."
-            30 -> out += "Level-matched (%+.1f dB) so you judge the tone, not the volume.".format(p.preampDb)
+            30 -> out += (if (h?.valid == true) "Source-based level trim (%+.1f dB), including instrument focus and intimacy." else "Estimated level trim (%+.1f dB) against a reference spectrum; live matching needs captured audio.").format(p.preampDb)
         }
         if (r.mode == SmartMode.SVARESA && h?.valid != true && listening) out += "No automatic change yet; I need a capturable music session first."
-        else if (out.isEmpty() || (p.notes.none { it in 10..16 } && h?.valid == true)) {
-            out += if (r.mode == SmartMode.SVARESA) "No correction needed. The mix stays as it is." else "The mix sounds healthy. Nothing to police."
+        else if (out.isEmpty() || (p.notes.none { it in 10..18 } && h?.valid == true)) {
+            out += if (r.mode == SmartMode.SVARESA) "No measured mix correction needed. Output, volume and night settings remain active." else "The mix sounds healthy. Nothing to police."
         }
         return out
     }

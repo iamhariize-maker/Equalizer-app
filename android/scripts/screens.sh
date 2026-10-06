@@ -56,9 +56,17 @@ else
   echo "FAIL sound scroll changed EQ settings" > "$OUT/interaction.txt"
 fi
 cat "$OUT/interaction.txt"
+$A shell am start -n app.svan/.MainActivity --es cmd reset_sound >/dev/null
+$A shell am start -n app.svan/.MainActivity --es cmd eq_control --ez auto true >/dev/null
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on true --es mode SVARESA --es night OFF --ez auto_headphone false >/dev/null
 tap_text "EQ" && shot 1-eq
-tap_text "Graphic" && shot 2-eq-graphic
-tap_text "Parametric"
+swipe_up; shot 1b-eq-live-bands
+$A shell am start -n app.svan/.MainActivity --es cmd eq_control --ez auto true --ez graphic true --ei count 31 >/dev/null
+shot 2-eq-graphic
+swipe_up; shot 2b-eq-graphic-faders
+$A shell am start -n app.svan/.MainActivity --es cmd eq_control --ez auto false >/dev/null
+tap_text "Sound"; tap_text "EQ"; shot 2c-eq-manual
+swipe_up; shot 2d-eq-manual-controls
 tap_text "Presets" && shot 3-presets
 tap_text "Hi-Fi" && shot 4-hifi
 swipe_up; shot 4b-hifi-apps
@@ -66,10 +74,15 @@ swipe_up; shot 4c-hifi-quality
 swipe_up; shot 4d-hifi-gain
 swipe_up; shot 4e-hifi-protection
 swipe_up; shot 4f-hifi-resolution
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on true --es mode SVARESA --es night OFF >/dev/null
+$A shell input swipe $((W / 20)) $((H * 3 / 4)) $((W / 20)) $((H / 5)) 500
+shot 4g-svaresa-protection
+$A shell input swipe $((W / 20)) $((H * 3 / 4)) $((W / 20)) $((H / 5)) 500
+shot 4h-selective-eq
 tap_text "Lab" && shot 5-lab
 tap_text "EQ"
 # Svaramanas: the dialog over the app with a real request, scrolled through.
-$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on true --es feel WARM --es picks VOCALS,STRINGS,BASS >/dev/null
+$A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on true --es mode GUIDED --es feel WARM --es picks VOCALS,STRINGS,BASS >/dev/null
 sleep 2
 $A shell am start -n app.svan/.MainActivity --es cmd svaramanas_panel >/dev/null
 shot 6-svaramanas
@@ -84,3 +97,25 @@ shot 6e-svaresa
 swipe_up; shot 6f-svaresa-details
 $A shell input keyevent KEYCODE_BACK
 $A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on false >/dev/null
+
+$A shell am start -n app.svan/.MainActivity --es cmd blind_lab >/dev/null
+shot 7-blind-listening
+$A shell input keyevent KEYCODE_BACK
+
+# UI-only fixtures cover states that cannot be photographed live while adb is
+# verifiably off. Every image is labelled; none starts capture or grants access.
+for fixture in install debugging start authorize grant working error finish-on finish-off finish-unknown status-idle status-unreachable status-system status-audiophile status-unknown; do
+  $A shell am start -n app.svan/.MainActivity --es cmd onboarding_fixture --es fixture "$fixture" >/dev/null
+  sleep 2
+  $A shell uiautomator dump /sdcard/svan-fixture.xml >/dev/null 2>&1
+  $A shell cat /sdcard/svan-fixture.xml > "$OUT/8-setup-$fixture.xml"
+  DENSITY=$($A shell wm density | grep -oE '[0-9]+' | tail -1)
+  python3 scripts/assert_setup_screen.py "$OUT/8-setup-$fixture.xml" "$fixture" "$DENSITY" "$H"
+  if [ "$?" != 0 ]; then echo "FAIL setup fixture $fixture" >> "$OUT/interaction.txt"; exit 1; fi
+  echo "PASS setup fixture $fixture" >> "$OUT/interaction.txt"
+  shot "8-setup-$fixture"
+  swipe_up
+  shot "8-setup-$fixture-detail"
+  $A shell am start -n app.svan/.MainActivity --es cmd onboarding_close >/dev/null
+  sleep 1
+done

@@ -1,4 +1,4 @@
-# Svan preview privacy notice
+# Svan Privacy Policy (beta)
 
 Svan processes audio locally on your Android device. The app does not upload,
 store as audio files, or send captured playback to a server. Engine B uses
@@ -21,8 +21,12 @@ screenshots only if you choose to do so. There is no advertising or analytics SD
 in the current dependency list. Uninstalling the app removes its local data.
 
 Optional enhanced detection uses the Shizuku API after explicit user approval.
-Its short-lived setup service runs a fixed command to grant Svan the Android DUMP
-permission. It accepts no arbitrary shell commands. This lets Svan read Android's
+It sends one fixed `grant` request to Android's package service through the
+authorized Shizuku binder to grant only Svan the Android DUMP permission, for the
+app's Android user. It accepts no arbitrary shell commands, targets or permissions,
+and starts no separate privileged helper process. A temporary private file holds
+only the grant's result/error text and is deleted after the request returns.
+This lets Svan read Android's
 local audio-session report to find playing apps; the report is not uploaded.
 Shizuku and wireless debugging can be stopped after the grant. Setup links open
 Shizuku's official website in the user's browser. The Shizuku API is MIT licensed;
@@ -31,3 +35,41 @@ its notice is included in the APK's assets/licenses directory.
 This describes the current preview implementation. A store release still needs
 an owner-approved policy URL/contact and Play Console disclosures matching the
 final package, including its foreground-service and MediaProjection uses.
+
+Svan 0.5.2 removes player recognition and notification-listener access entirely.
+There is no notification-listener service, settings link or notification-reading
+permission. POST_NOTIFICATIONS is retained only to show Svan's own foreground
+service/status notifications; it does not allow reading other apps' notifications.
+Music discovery uses Android audio reports, playback callbacks and player
+session broadcasts. The working Shizuku detection grant remains available.
+
+## Optional blind listening and calibration
+
+An explicit eight-second tap uses only already-authorized capture, before DSP; blocked apps remain
+blocked. Captured/WAV excerpts stay in memory and are discarded when the dialog closes. They are
+not uploaded or saved as recordings. Only local votes, measured level match, timestamp, headphone
+name and a frozen-configuration hash are saved; Clear results deletes them. Imported calibration
+curves and their hashes are stored privately for re-tuning. Published AutoEq data are fetched using
+the existing network path; listening recordings and preferences are never sent. No new permission
+or notification access is introduced.
+
+Settings export writes EQ, presets, Svaresa/audio preferences and active calibration curves only
+to a file you choose. The file may identify your headphone. It contains no recordings, listening
+votes, Android permissions or signing keys. Restore validates it locally without uploading it.
+
+## Optional floating controls and diagnostic detail
+
+SYSTEM_ALERT_WINDOW is used only for the optional Svaramanas bubble. It is not needed for
+in-app controls and is not enabled automatically. You can disable the bubble or revoke overlay
+access. Diagnostic reports can additionally include phone/build details and output-device names
+and addresses; review and redact a report before sharing it. Posting a report in a public GitHub
+issue makes it visible to others. Files exported outside Svan are not deleted by uninstalling it.
+
+## Publication and privacy contact
+
+TODO (owner): supply the public developer identity, monitored privacy contact or inquiry mechanism,
+effective publication date, and retention/deletion handling for reports voluntarily sent to support.
+Do not publish this as a completed Play policy until those fields are resolved. The generated
+`privacy.html` is suitable for a static Pages deployment but Pages has not been enabled by this work.
+The current app still needs a visible policy text/link before Play submission. No new data flow or
+permission is introduced by this documentation.

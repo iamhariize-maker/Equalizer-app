@@ -33,6 +33,16 @@ data class Band(
 
 enum class EqMode { PARAMETRIC, GRAPHIC }
 
+data class CorrectionCalibration(val amount: Double = 1.0, val maxErrorDb: Double = 0.0,
+    val lowHz: Double = 20.0, val highHz: Double = 20000.0, val basis: String = "Published profile",
+    val measurementHash: String = "", val targetHash: String = "") {
+    fun toJson()=JSONObject().put("amount",amount).put("max",maxErrorDb).put("low",lowHz).put("high",highHz)
+        .put("basis",basis).put("measurement",measurementHash).put("target",targetHash)
+    companion object {
+        fun fromJson(o: JSONObject)=CorrectionCalibration((o.optDouble("amount",1.0).takeIf(Double::isFinite) ?: 1.0).coerceIn(0.0,1.0),o.optDouble("max",0.0),o.optDouble("low",20.0),o.optDouble("high",20000.0),o.optString("basis","Published profile"),o.optString("measurement"),o.optString("target"))
+    }
+}
+
 /** Headphone correction layer (from AutoEq data), applied under the user's EQ. */
 data class Tuning(
     val enabled: Boolean = true,
@@ -45,16 +55,18 @@ data class Tuning(
     val tiltDbPerOct: Double = 0.0,
     /** How to find the data again for re-tuning: "<source>|<form>|<rig>|<name>|<resultPath>". */
     val ref: String = "",
+    val calibration: CorrectionCalibration? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("on", enabled).put("hp", headphone).put("src", source).put("ref", ref)
         .put("sig", signature).put("rms", fitRmsDb).put("bass", bassDb).put("tilt", tiltDbPerOct)
-        .put("bands", JSONArray().apply { bands.forEach { put(it.toJson()) } })
+        .put("bands", JSONArray().apply { bands.forEach { put(it.toJson()) } }).apply { calibration?.let { put("calibration",it.toJson()) } }
 
     companion object {
         fun fromJson(o: JSONObject) = Tuning(
             o.optBoolean("on", true), o.getString("hp"), o.optString("src"), o.optString("sig"),
             o.optJSONArray("bands")?.let { a -> List(a.length()) { Band.fromJson(a.getJSONObject(it)) } } ?: emptyList(),
             o.optDouble("rms", 0.0), o.optDouble("bass", 0.0), o.optDouble("tilt", 0.0), o.optString("ref"),
+            o.optJSONObject("calibration")?.let { CorrectionCalibration.fromJson(it) },
         )
     }
 }
@@ -107,6 +119,12 @@ data class EqState(
     val bands: List<Band> = DEFAULT_BANDS,
     val graphicCount: Int = 10,
     val graphicGains: List<Double> = List(10) { 0.0 },
+    val graphicShelfEnds: Boolean = true,
+    /** Svaresa owns the EQ band workspace; the manual curve stays stored separately. */
+    val smartEqControl: Boolean = false,
+    val smartEqMode: EqMode = EqMode.PARAMETRIC,
+    val smartGraphicCount: Int = 31,
+    val smartEqOffsets: Map<String, Double> = emptyMap(),
     val preampDb: Double = 0.0,
     val presetName: String = "Flat",
     val tuning: Tuning? = null,
@@ -118,8 +136,14 @@ data class EqState(
     /** Hold-to-compare: the smart layer is skipped while true. */
     val smartBypass: Boolean = false,
 ) {
+    val workspaceMode: EqMode get() = if (smartEqControl) smartEqMode else mode
+    val workspaceGraphicCount: Int get() = if (smartEqControl) smartGraphicCount else graphicCount
+
     /** The smart layer the engines should run right now, if any. */
     val activeSmart: SmartLayer? get() = if (enabled && !smartBypass) smart else null
+    /** Protection remains linked during compare/EQ bypass; it is not a tone effect. */
+    val smartProtection: Boolean get() = smart?.protectEngine == true
+    val dynamicEq: Double get() = activeSmart?.dynamicEq ?: 0.0
 
     /** Built-in Flat is a complete audible reset, including independent layers. */
     fun withPreset(p: Preset): EqState = if (p.builtIn && p.name == "Flat") EqState(smart = smart, smartBypass = smartBypass) else
@@ -130,19 +154,28 @@ data class EqState(
 
     /** Your tuners, with Svaramanas's suggestions added where you left room (yours always win). */
     val activeVocal: VocalTuner get() = if (!enabled) VocalTuner() else activeSmart?.let {
-        VocalTuner(maxOf(vocal.intimacy, it.intimacy), vocal.warmth, maxOf(vocal.smoothness, it.smoothness))
+        VocalTuner(maxOf(vocal.intimacy, it.intimacy), vocal.warmth, maxOf(vocal.smoothness, if(it.dynamicEq>0) 0.0 else it.smoothness))
     } ?: vocal
+    /** System effects cannot run native dynamic EQ; keep their automatic smoothing. */
+    val systemSmoothness: Double get() = if (!enabled) 0.0 else maxOf(vocal.smoothness, activeSmart?.smoothness ?: 0.0)
     val activeInstrument: InstrumentTuner get() = if (!enabled) InstrumentTuner() else activeSmart?.let {
         InstrumentTuner(if (instrument.space != 0.0) instrument.space else it.space, maxOf(instrument.instruments, it.instruments))
     } ?: instrument
 
     /** The user's own EQ layer (parametric or graphic). */
-    fun manualBands(): List<Band> = if (mode == EqMode.PARAMETRIC) bands else GraphicLayout.bands(graphicCount, graphicGains)
+    fun manualBands(): List<Band> = if (mode == EqMode.PARAMETRIC) bands else GraphicLayout.bands(graphicCount, graphicGains, graphicShelfEnds)
 
     /** The bands the engines actually run: headphone tuning + your EQ + bass tuner. */
     fun effectiveBands(): List<Band> = if (!enabled) emptyList() else
-        (tuning?.takeIf { it.enabled }?.bands ?: emptyList()) + manualBands() + bass.bands() +
+        (tuning?.takeIf { it.enabled }?.bands ?: emptyList()) + (if (smartEqControl) emptyList() else manualBands()) + bass.bands() +
             (activeSmart?.bands ?: emptyList())
+
+    /**
+     * Svaresa's level-evening request for system effects; null when Svaresa is not driving dynamics.
+     * Hold-to-compare and the EQ switch give 0.0 (neutral), not null: the compressor stage must stay
+     * configured, or every system effect would be torn down and re-created (an audible gap) on each press.
+     */
+    val levelling: Double? get() = smart?.levelling?.let { if (activeSmart != null) it else 0.0 }
 
     /** Bass shaper amount the engines should run (0 when the EQ is off). */
     val bassCharacter: Double get() = if (enabled) (bass.character + (activeSmart?.bassCharacter ?: 0.0)).coerceIn(-1.0, 1.0) else 0.0
@@ -150,16 +183,26 @@ data class EqState(
     /** Your preamp plus Svaramanas's loudness-matching trim. */
     fun effectivePreampDb(): Double = if (enabled) preampDb + (activeSmart?.preampDb ?: 0.0) else 0.0
 
+    fun personalizeSmartBands(bands: List<Band>): List<Band> = bands.map { b ->
+        val key = if (smartEqMode == EqMode.GRAPHIC) "g${smartGraphicCount}:${smartBandKey(b)}" else smartBandKey(b)
+        val offset = smartEqOffsets[key]?.takeIf { it.isFinite() }?.coerceIn(-3.0, 3.0) ?: 0.0
+        b.copy(gainDb = (b.gainDb + offset).coerceIn(-12.0, 12.0))
+    }
+
     fun toJson(): JSONObject = JSONObject()
         .put("enabled", enabled).put("mode", mode.name)
         .put("bands", JSONArray().apply { bands.forEach { put(it.toJson()) } })
-        .put("gCount", graphicCount)
+        .put("gCount", graphicCount).put("gShelves", graphicShelfEnds)
+        .put("smartEqMode",smartEqMode.name).put("smartGraphicCount",smartGraphicCount)
+        .put("smartEqControl", smartEqControl).put("smartEqOffsets", JSONObject(smartEqOffsets))
         .put("gGains", JSONArray().apply { graphicGains.forEach { put(it) } })
         .put("preamp", preampDb).put("preset", presetName)
         .put("bass", bass.toJson()).put("vocal", vocal.toJson()).put("inst", instrument.toJson())
         .apply { tuning?.let { put("tuning", it.toJson()) } }
 
     companion object {
+        fun smartBandKey(b: Band) = "${b.type.name}:${b.freqHz}:${b.q}"
+
         /** A neutral starting layout: five 0 dB bands to grab and drag. */
         val DEFAULT_BANDS = listOf(
             Band(FilterType.LOW_SHELF, 80.0, 0.0, 0.71),
@@ -180,6 +223,13 @@ data class EqState(
                 bands = bands,
                 graphicCount = count,
                 graphicGains = gains,
+                graphicShelfEnds = o.optBoolean("gShelves", false), // retain legacy all-bell sound until converted
+                smartEqControl = o.optBoolean("smartEqControl", false),
+                smartEqMode = runCatching { EqMode.valueOf(o.optString("smartEqMode","PARAMETRIC")) }.getOrDefault(EqMode.PARAMETRIC),
+                smartGraphicCount = o.optInt("smartGraphicCount",31).takeIf { it in GraphicLayout.COUNTS } ?: 31,
+                smartEqOffsets = o.optJSONObject("smartEqOffsets")?.let { a ->
+                    a.keys().asSequence().associateWith { a.optDouble(it, 0.0).takeIf(Double::isFinite)?.coerceIn(-3.0,3.0) ?: 0.0 }
+                } ?: emptyMap(),
                 preampDb = o.optDouble("preamp", 0.0),
                 presetName = o.optString("preset", "Custom"),
                 tuning = o.optJSONObject("tuning")?.let { runCatching { Tuning.fromJson(it) }.getOrNull() },
@@ -203,6 +253,13 @@ data class SmartLayer(
     val smoothness: Double = 0.0,
     val space: Double = 0.0,
     val instruments: Double = 0.0,
+    /** Svaresa's level-evening amount 0..1 (system effects' compressor); null = not part of this layer. */
+    val levelling: Double? = null,
+    val graphicFitRmsDb: Double? = null,
+    val graphicFitMaxDb: Double? = null,
+    val overlapScale: Double = 1.0,
+    val protectEngine: Boolean = false,
+    val dynamicEq: Double = 0.0,
 )
 
 /**
@@ -278,9 +335,13 @@ object GraphicLayout {
         return sqrt(r) / (r - 1)
     }
 
-    fun bands(n: Int, gains: List<Double>): List<Band> {
+    fun bands(n: Int, gains: List<Double>, shelfEnds: Boolean = true): List<Band> {
         val q = q(n)
-        return centers(n).mapIndexed { i, f -> Band(FilterType.PEAK, f, gains.getOrElse(i) { 0.0 }, q) }
+        return centers(n).mapIndexed { i, f ->
+            val edge = shelfEnds && (i == 0 || i == n - 1)
+            Band(if (!edge) FilterType.PEAK else if (i == 0) FilterType.LOW_SHELF else FilterType.HIGH_SHELF,
+                f, gains.getOrElse(i) { 0.0 }, if (edge) 0.71 else q)
+        }
     }
 
     fun label(f: Double): String = if (f >= 1000) {
@@ -318,6 +379,13 @@ data class AudioSettings(
     val systemBands: Int = 128,
     val systemFrameMs: Int = 80,
 ) {
+    /** Auto master may add protection, but never rewrites the listener's saved choices. */
+    fun effectiveFor(eq: EqState): AudioSettings = if (eq.smartProtection)
+        copy(autoHeadroom=true,gainProtection=true) else this
+
+    fun sameCaptureFormat(other: AudioSettings): Boolean = quality==other.quality &&
+        outputBits==other.outputBits && dither==other.dither
+
     fun toJson(): JSONObject = JSONObject()
         .put("engine", engineMode.name).put("quality", quality.name).put("bits", outputBits)
         .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs)

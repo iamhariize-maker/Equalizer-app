@@ -7,7 +7,25 @@ namespace eqcore {
 
 namespace {
 double coeff(double ms, double fs) { return std::exp(-1.0 / (ms * 1e-3 * fs)); }
+std::array<BiquadCoeffs, 8> staticFilters(const StereoTunerParams& p, double fs) {
+  auto b = [&](FilterType t, double f, double g, double q) { return designBiquad({t, f, g, q, true}, fs); };
+  return {b(FilterType::Peak, 220, 3 * p.warmth, .9), b(FilterType::HighShelf, 8000, -2 * p.warmth, .7),
+          b(FilterType::Peak, 1200, 2.5 * p.intimacy, .6), b(FilterType::LowPass, 180, 0, .7071067811865476),
+          b(FilterType::HighPass, 180, 0, .7071067811865476), b(FilterType::Peak, 500, 1.5 * p.instruments, 1),
+          b(FilterType::Peak, 3000, 4 * p.instruments, .7), b(FilterType::HighShelf, 10000, 3 * p.instruments, .7)};
+}
 }  // namespace
+
+std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double f, double fs) {
+  const auto c = staticFilters(p, fs);
+  const auto z = std::polar(1.0, -2.0 * 3.14159265358979323846 * f / fs);
+  auto h = [&](int i) { const auto& b = c[static_cast<size_t>(i)];
+    return (b.b0 + b.b1 * z + b.b2 * z * z) / (1.0 + b.a1 * z + b.a2 * z * z); };
+  const auto mid = h(0) * h(1) * h(2);
+  const auto side = p.space == 0 && p.instruments == 0 ? std::complex<double>(1, 0) :
+      h(3) * h(3) + std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0) * h(4) * h(4) * h(5) * h(6) * h(7);
+  return {std::norm(mid), std::norm(side)};
+}
 
 StereoTuner::StereoTuner(double sampleRate) : fs_(sampleRate) {
   aBand_ = coeff(1.0, fs_);
@@ -31,15 +49,12 @@ void StereoTuner::redesign(const StereoTunerParams& p) {
   const auto set = [&](Bq& b, FilterType t, double f, double g, double q) {
     b.c = designBiquad({t, f, g, q, true}, fs_);
   };
-  set(warmBell_, FilterType::Peak, 220.0, 3.0 * p.warmth, 0.9);
-  set(warmShelf_, FilterType::HighShelf, 8000.0, -2.0 * p.warmth, 0.7);
-  set(intimacyBell_, FilterType::Peak, 1200.0, 2.5 * p.intimacy, 0.6);
+  const auto c = staticFilters(p, fs_);
+  warmBell_.c = c[0]; warmShelf_.c = c[1]; intimacyBell_.c = c[2];
   set(harshBand_, FilterType::BandPass, 3800.0, 0.0, 0.9);
-  for (auto& lp : sideLp_) set(lp, FilterType::LowPass, 180.0, 0.0, 0.7071067811865476);
-  for (auto& hp : sideHp_) set(hp, FilterType::HighPass, 180.0, 0.0, 0.7071067811865476);
-  set(bodyBell_, FilterType::Peak, 500.0, 1.5 * p.instruments, 1.0);
-  set(presenceBell_, FilterType::Peak, 3000.0, 4.0 * p.instruments, 0.7);
-  set(airShelf_, FilterType::HighShelf, 10000.0, 3.0 * p.instruments, 0.7);
+  for (auto& lp : sideLp_) lp.c = c[3];
+  for (auto& hp : sideHp_) hp.c = c[4];
+  bodyBell_.c = c[5]; presenceBell_.c = c[6]; airShelf_.c = c[7];
   spaceGain_ = std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0);
 }
 

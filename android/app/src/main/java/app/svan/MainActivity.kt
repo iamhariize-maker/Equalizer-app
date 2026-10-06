@@ -27,7 +27,16 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(0xFF0C0A08.toInt()), // Svan.Black: warm charcoal
         )
         super.onCreate(savedInstanceState)
+        val priorSound = getSharedPreferences("svan", MODE_PRIVATE)
+        val onboarding = OnboardingAndroid.prefs(this)
+        val freshDefaults = FirstRunPolicy.needsFlatDefault(onboarding.getBoolean("defaults_checked", false),
+            priorSound.contains("eq") || priorSound.contains("settings") || priorSound.contains("presets"),
+            priorSound.getBoolean("smartEqDefaultApplied", false))
         SvanRepository.init(this)
+        // Use the existing complete Flat action only on a brand-new install.
+        // Updates, restores and saved user sound are never reset by onboarding.
+        if (freshDefaults) SvanRepository.resetSound()
+        onboarding.edit().putBoolean("defaults_checked", true).apply()
         SessionRouter.init(this)
         DetectionSetup.init(this)
         SystemEqService.startIfEnabled(this)
@@ -41,6 +50,8 @@ class MainActivity : ComponentActivity() {
                     onStartCapture = { pendingQuality = null; startCapture() },
                     onStopCapture = ::stopCapture,
                     labActions = listOf(
+                        "Blind listening" to { app.svan.listening.BlindLab.open.value=true },
+                        "Run engine checks" to { thread { runCatching { app.svan.listening.QualityLab.verify(this) }.onFailure { EqController.log("QUALITY_LAB_FAILED ${it.message}") } } },
                         "Probe band limits" to { thread { EqController.log(DynamicsProbe.run(this)) } },
                         "Audible resolution" to ::runResolutionProbe,
                         "Sessions" to { thread { EqController.log(sessionReport()) } },
@@ -71,10 +82,40 @@ class MainActivity : ComponentActivity() {
      *           measure_mix, forget_verdicts
      */
     private fun handleCommand(intent: Intent?) {
+        if (!BuildConfig.PHONE_PREVIEW) return
         val cmd = intent?.getStringExtra("cmd") ?: return
         intent.getStringExtra("quality")?.let { pendingQuality = QualityMode.valueOf(it) }
         EqController.log("CMD $cmd")
         when (cmd) {
+            "onboarding_state" -> {
+                val state = OnboardingAndroid.working(this)
+                val snapshot = OnboardingAndroid.wizard(this)
+                val data = org.json.JSONObject()
+                    .put("kind", state.kind.name).put("prompt", state.promptKey(OnboardingAndroid.dismissed(this)) != null)
+                    .put("dump", snapshot.dumpGranted).put("wizard", snapshot.step.name)
+                    .put("usb", snapshot.debugging.usb.name).put("wireless", snapshot.debugging.wireless.name)
+                    .put("system", SystemEqService.isRunning).put("capture", CaptureService.isRunning)
+                    .put("engineMode", SvanRepository.settings.value.engineMode.name)
+                    .put("preset", SvanRepository.eq.value.presetName).put("preamp", SvanRepository.eq.value.preampDb)
+                    .put("smart", app.svan.svaramanas.Svaramanas.request.value.enabled)
+                java.io.File(filesDir, "onboarding-state.json").writeText(data.toString())
+                EqController.log("ONBOARDING_STATE_READY")
+            }
+            "onboarding_fixture" -> {
+                if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    app.svan.ui.OnboardingUi.fixture.value = intent.getStringExtra("fixture")
+                    app.svan.ui.OnboardingUi.panel.value = app.svan.ui.HelpPanel.DETECTION
+                }
+            }
+            "onboarding_close" -> {
+                if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    app.svan.ui.OnboardingUi.fixture.value = null
+                    app.svan.ui.OnboardingUi.panel.value = app.svan.ui.HelpPanel.NONE
+                }
+            }
+            "onboarding_reset_prompts" -> OnboardingAndroid.resetPrompts(this)
+            "blind_lab" -> app.svan.listening.BlindLab.open.value=true
+            "quality_lab" -> thread { runCatching {app.svan.listening.QualityLab.verify(this)}.onFailure {EqController.log("QUALITY_LAB_FAILED ${it.message}")} }
             "probe" -> thread { EqController.log(DynamicsProbe.run(this)) }
             "resolution" -> runResolutionProbe()
             "sessions" -> thread { EqController.log(sessionReport()) }
@@ -90,10 +131,35 @@ class MainActivity : ComponentActivity() {
             "gain_settings" -> SvanRepository.updateSettings {
                 it.copy(autoHeadroom = intent.getBooleanExtra("headroom", true), gainProtection = intent.getBooleanExtra("protection", true))
             }
-            "eq_band" -> SvanRepository.update {
+            "eq_band" -> SvanRepository.editEq {
                 it.copy(mode = app.svan.model.EqMode.PARAMETRIC, bands = listOf(app.svan.model.Band(freqHz = intent.getFloatExtra("frequency", 1000f).toDouble(), gainDb = intent.getFloatExtra("gain", 0f).toDouble())), preampDb = 0.0, tuning = null, bass = app.svan.model.BassTuner(), vocal = app.svan.model.VocalTuner(), instrument = app.svan.model.InstrumentTuner())
             }
-            "graphic_test" -> SvanRepository.update {
+            "eq_control" -> {
+                SvanRepository.setSmartEqControl(intent.getBooleanExtra("auto",true))
+                SvanRepository.setEqMode(if (intent.getBooleanExtra("graphic",false)) app.svan.model.EqMode.GRAPHIC else app.svan.model.EqMode.PARAMETRIC,
+                    intent.getIntExtra("count",31).takeIf { it in app.svan.model.GraphicLayout.COUNTS } ?: 31)
+                val state=SvanRepository.eq.value
+                EqController.log("eq control: auto=${state.smartEqControl} mode=${state.workspaceMode} appliedBands=${state.smart?.bands?.size} manualBands=${state.manualBands().size} " +
+                    "response@1kHz=%.2f dB fitRms=%.3f".format(EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0],state.smart?.graphicFitRmsDb ?: 0.0))
+            }
+            "eq_workspace" -> {
+                val s=SvanRepository.eq.value
+                val o=org.json.JSONObject().put("state",s.toJson())
+                    .put("protectionRequested",SvanRepository.settings.value.toJson())
+                    .put("protectionEffective",SvanRepository.settings.value.effectiveFor(s).toJson())
+                    .put("smartProtection",s.smartProtection)
+                    .put("smartBands",org.json.JSONArray().apply { s.smart?.bands?.forEach { put(it.toJson()) } })
+                    .put("appliedBands",org.json.JSONArray().apply { s.effectiveBands().forEach { put(it.toJson()) } })
+                    .put("smartPreamp",s.smart?.preampDb ?: 0.0)
+                    .put("response",EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0])
+                // A 31/64-band report exceeds logcat's per-message limit. Keep the
+                // complete diagnostic in app-private storage; debug tests use run-as.
+                java.io.File(filesDir,"eq-workspace.json").writeText(o.toString())
+                EqController.log("EQ_WORKSPACE_READY")
+            }
+            "eq_personal_gain" -> SvanRepository.adjustSmartEq(intent.getIntExtra("index",0),intent.getFloatExtra("gain",0f).toDouble())
+            "eq_undo" -> SvanRepository.undoEq()
+            "graphic_test" -> SvanRepository.editEq {
                 it.copy(mode = app.svan.model.EqMode.GRAPHIC, graphicCount = 10,
                     graphicGains = List(10) { band -> if (band == 5) 6.0 else 0.0 }, preampDb = 0.0,
                     tuning = null, bass = app.svan.model.BassTuner(), vocal = app.svan.model.VocalTuner(), instrument = app.svan.model.InstrumentTuner())
@@ -114,6 +180,15 @@ class MainActivity : ComponentActivity() {
                 if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
                     EqController.globalEq.releaseAll()
                     EqController.log("test: system effects dropped; waiting for automatic recovery")
+                }
+            }
+            "test_blind_reports" -> {
+                // Debug-only: pretend one Android report is unreadable (--ez players true --ez server true).
+                if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    DetectionMonitor.debugBlindPlayers = intent.getBooleanExtra("players", false)
+                    DetectionMonitor.debugBlindServer = intent.getBooleanExtra("server", false)
+                    EqController.log("test: blind player list=${DetectionMonitor.debugBlindPlayers} audio server=${DetectionMonitor.debugBlindServer}")
+                    SystemEqService.requestScanNow()
                 }
             }
             "start_capture" -> {
@@ -183,10 +258,15 @@ class MainActivity : ComponentActivity() {
                     app.svan.svaramanas.Category.entries.firstOrNull { it.name == n.trim().uppercase() }
                 }
                 val strength = intent.getFloatExtra("strength", -1f)
+                val night = intent.getStringExtra("night")?.let { n -> app.svan.svaramanas.NightMode.entries.firstOrNull { it.name == n.uppercase() } }
                 app.svan.svaramanas.Svaramanas.update { r ->
                     r.copy(
                         enabled = intent.getBooleanExtra("on", true), mode = mode ?: r.mode, feel = feel ?: r.feel, picks = picks ?: r.picks,
                         strength = if (strength >= 0) strength.toDouble() else r.strength,
+                        night = night ?: r.night,
+                        volumeAware = if (intent.hasExtra("volume_aware")) intent.getBooleanExtra("volume_aware", true) else r.volumeAware,
+                        routeAware = if (intent.hasExtra("route_aware")) intent.getBooleanExtra("route_aware", true) else r.routeAware,
+                        autoHeadphone = if (intent.hasExtra("auto_headphone")) intent.getBooleanExtra("auto_headphone", true) else r.autoHeadphone,
                     )
                 }
             }
@@ -227,6 +307,14 @@ class MainActivity : ComponentActivity() {
             return
         }
         SystemEqService.start(this)
+        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasDumpPermission(this), SessionRouter.snapshot, android.os.Process.myUid())
+        if (blocker != null) {
+            CaptureService.startupMessage.value = blocker
+            DetectionSetup.refresh()
+            EqController.log("capture: start blocked — $blocker")
+            return
+        }
+        CaptureService.startupMessage.value = ""
         val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
         if (android.os.Build.VERSION.SDK_INT >= 33) perms += Manifest.permission.POST_NOTIFICATIONS
         val missing = perms.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }

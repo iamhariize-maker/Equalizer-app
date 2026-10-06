@@ -67,6 +67,8 @@ fun SvaramanasPanel(
     val plan by Svaramanas.plan.collectAsState()
     val heard by Svaramanas.heard.collectAsState()
     val listening by Svaramanas.listening.collectAsState()
+    val ctx by Svaramanas.context.collectAsState()
+    val headphoneNote by app.svan.svaramanas.AutoHeadphone.statusFlow.collectAsState()
     val eq by SvanRepository.eq.collectAsState()
     var message by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(message) { if (message != null) { delay(4000); message = null } }
@@ -153,12 +155,55 @@ fun SvaramanasPanel(
                 ValueSlider(
                     label = "Change amount",
                     value = request.strength,
-                    display = { s -> when { s < 0.75 -> "Gentle"; s < 1.25 -> "Natural"; else -> "Bold" } },
+                    display = { s -> (when { s < 0.75 -> "Gentle"; s < 1.25 -> "Natural"; else -> "Bold" }) + " · ${Math.round(s*100)}%" },
                     toSlider = { ((it - 0.5) / 1.0).toFloat() },
-                    fromSlider = { (0.5 + it * 1.0) },
+                    fromSlider = { Math.round((0.5 + it) * 100) / 100.0 },
                     onChange = { v -> Svaramanas.update { it.copy(strength = v) } },
                     enabled = request.enabled,
+                    step = 0.01,
                 )
+            }
+        }
+
+        AnimatedVisibility(request.mode == SmartMode.SVARESA) {
+            Column {
+                Spacer(Modifier.height(10.dp))
+                SectionLabel("Svaresa adapts to")
+                SettingSwitchRow("Selective dynamic EQ","Capture engine only: reduces sustained local resonances without boosting. Up to 1.5 dB per band, 3 dB total; short transients are preserved.",
+                    request.selectiveEq,{on->Svaramanas.update {it.copy(selectiveEq=on,enabled=true)}})
+                SettingSwitchRow(
+                    "Quiet listening",
+                    "At low volume the ear loses bass and treble (ISO 226 equal-loudness). Svaresa restores them, a little more the quieter you listen.",
+                    request.volumeAware, { on -> Svaramanas.update { it.copy(volumeAware = on, enabled = true) } },
+                )
+                SettingSwitchRow(
+                    "Output protection",
+                    "Knows if the music is on the phone speaker, wired, USB or Bluetooth. A small speaker never gets a bass boost it cannot reproduce.",
+                    request.routeAware, { on -> Svaramanas.update { it.copy(routeAware = on, enabled = true) } },
+                )
+                SettingSwitchRow(
+                    "Recognise my headphones",
+                    "When earbuds or headphones are in the AutoEq database, Svaresa applies their published correction to the Harman target for you.",
+                    request.autoHeadphone, { on -> Svaramanas.update { it.copy(autoHeadphone = on, enabled = true) } },
+                )
+                if (headphoneNote.isNotEmpty() && request.autoHeadphone) Text(headphoneNote,
+                    style = MaterialTheme.typography.bodySmall, color = Svan.Gold, modifier = Modifier.padding(top = 4.dp))
+                Text("Night comfort", style = MaterialTheme.typography.titleSmall, color = Svan.Text, modifier = Modifier.padding(top = 8.dp))
+                Text("After dark: softer sub-bass and presence, and gently even levels so quiet details stay clear.",
+                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                Spacer(Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    app.svan.svaramanas.NightMode.entries.forEach { m ->
+                        Pill(m.label, request.night == m, { Svaramanas.update { it.copy(night = m, enabled = true) } })
+                    }
+                }
+                ctx?.let { c ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Right now: bass %+.1f dB · treble %+.1f dB · night %.0f%%".format(c.bassLiftDb, c.trebleLiftDb, c.nightAmount * 100),
+                        style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint,
+                    )
+                }
             }
         }
 
@@ -166,7 +211,7 @@ fun SvaramanasPanel(
         HeardBlock(heard, listening)
 
         SectionLabel("What I did")
-        Svaramanas.explain(plan, heard, request, listening).forEach { line ->
+        Svaramanas.explain(plan, heard, request, listening, ctx).forEach { line ->
             Row(Modifier.padding(vertical = 3.dp)) {
                 Box(Modifier.padding(top = 7.dp).size(5.dp).clip(CircleShape).background(Svan.Gold))
                 Spacer(Modifier.width(10.dp))

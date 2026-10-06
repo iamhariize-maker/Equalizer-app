@@ -1,5 +1,12 @@
 # Release readiness
 
+**Historical checklist:** the preview/debug-key, API 35 and no-export descriptions below predate
+0.5.5 and are retained as history, not current release instructions. Current production mode uses
+version 0.5.5/code 12, target API 36 and owner signing; previews use the fixed shared preview key.
+Settings export/restore now exists. Use [RELEASING.md](RELEASING.md),
+[RELEASE_SIGNING.md](RELEASE_SIGNING.md) and the [Play drafts](play/LISTING.md).
+The owner chose **All rights reserved** for original code; see [LICENSE](../LICENSE).
+
 The current APK is a debug-key-signed, R8-minified preview. Do not submit it to a
 store as a production release. The owner must retain a signing keystore and its
 passwords securely; neither keys nor passwords belong in this repository.

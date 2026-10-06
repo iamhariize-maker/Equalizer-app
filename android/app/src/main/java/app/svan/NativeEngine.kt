@@ -74,11 +74,15 @@ class NativeEngine(
     fun loadParametricPreset(text: String): Int = nativeLoadParametricPreset(handle, text)
 
     fun setAutoHeadroom(enabled: Boolean) = nativeSetAutoHeadroom(handle, enabled)
+    fun setGainProtection(enabled: Boolean) = nativeSetGainProtection(handle, enabled)
     fun resetGainProtection() = nativeResetGainProtection(handle)
 
     fun setPreampDb(db: Double) = nativeSetPreamp(handle, db)
 
     /** Svaramanas listening: the engine analyses its *input* (the source app's audio). */
+    fun setDynamicEq(amount: Double) = nativeSetDynamicEq(handle,amount)
+    fun dynamicReductions(): DoubleArray = nativeDynamicReductions(handle)
+
     fun setAnalysis(on: Boolean) = nativeSetAnalysis(handle, on)
 
     /** Long-term features of the input, packed (see eqcore::SourceFeatures). */
@@ -111,6 +115,17 @@ class NativeEngine(
             return raw[0] to bands
         }
 
+        data class CalibrationFit(val fit: Fit, val lowHz: Double, val highHz: Double)
+        fun calibratedTuning(measurement: String,target: String,published: Boolean,amount: Double,bands: Int,bass: Double,tilt: Double): CalibrationFit? {
+            val raw=nativeCalibratedTuning(measurement,target,published,amount,bands,bass,tilt)
+            if(raw.size<4)return null
+            return CalibrationFit(Fit((4 until raw.size step 3).map { Band(FilterType.PEAK,raw[it],raw[it+1],raw[it+2]) },raw[0],raw[1]),raw[2],raw[3])
+        }
+        @JvmStatic external fun nativeSetDynamicEq(handle: Long, amount: Double)
+        @JvmStatic external fun nativeDynamicReductions(handle: Long): DoubleArray
+        @JvmStatic external fun nativeCalibratedTuning(measurement: String,target: String,published: Boolean,amount: Double,bands: Int,bass: Double,tilt: Double): DoubleArray
+        @JvmStatic external fun nativeMatchComparison(a: FloatArray,b: FloatArray,fs: Int): DoubleArray
+        @JvmStatic external fun nativeReconstructedPeak(audio: FloatArray,fs: Int): Double
         @JvmStatic external fun nativeCreate(sampleRate: Int, channels: Int, quality: Int, outputBits: Int): Long
         @JvmStatic external fun nativeDestroy(handle: Long)
         @JvmStatic external fun nativeSetBands(
@@ -150,12 +165,29 @@ class NativeEngine(
         @JvmStatic external fun nativeLoadParametricPreset(handle: Long, text: String): Int
         @JvmStatic external fun nativeSetPreamp(handle: Long, db: Double)
         @JvmStatic external fun nativeSetAutoHeadroom(handle: Long, enabled: Boolean)
+        @JvmStatic external fun nativeSetGainProtection(handle: Long, enabled: Boolean)
         @JvmStatic external fun nativeResetGainProtection(handle: Long)
         @JvmStatic external fun nativeProcess(handle: Long, input: FloatArray, output: FloatArray, frames: Int)
         @JvmStatic external fun nativeResponseDb(handle: Long, channel: Int, freqs: DoubleArray): DoubleArray
         @JvmStatic external fun nativeLatency(handle: Long): Int
         @JvmStatic external fun nativeSetAnalysis(handle: Long, on: Boolean)
         @JvmStatic external fun nativeAnalysis(handle: Long): DoubleArray
+        fun fitGraphic(bands: List<app.svan.model.Band>, count: Int): Fit {
+            val raw = nativeFitGraphic(DoubleArray(bands.size * 5) { i ->
+                val b = bands[i / 5]
+                when (i % 5) { 0 -> b.type.ordinal.toDouble(); 1 -> b.freqHz; 2 -> b.gainDb; 3 -> b.q; else -> if (b.enabled) 1.0 else 0.0 }
+            }, count)
+            return Fit((2 until raw.size step 4).map { i -> Band(FilterType.entries[raw[i].toInt()], raw[i+1], raw[i+2], raw[i+3]) }, raw[0], raw[1])
+        }
+        fun overlapScale(bands: List<app.svan.model.Band>): Double = nativeOverlapScale(DoubleArray(bands.size*5) { i ->
+            val b=bands[i/5]
+            when(i%5) { 0 -> b.type.ordinal.toDouble(); 1 -> b.freqHz; 2 -> b.gainDb; 3 -> b.q; else -> if(b.enabled) 1.0 else 0.0 }
+        })
+        @JvmStatic external fun nativeOverlapScale(bands: DoubleArray): Double
+        @JvmStatic external fun nativeFitGraphic(bands: DoubleArray, count: Int): DoubleArray
+        @JvmStatic external fun nativeSmartLoudnessDelta(
+            bands: DoubleArray, features: DoubleArray?, intimacy: Double, space: Double, instruments: Double,
+        ): Double
         @JvmStatic external fun nativeSvaramanasPlan(
             features: DoubleArray?, feel: Int, order: IntArray, strength: Double, stereoEngine: Boolean,
             svaresaMode: Boolean,

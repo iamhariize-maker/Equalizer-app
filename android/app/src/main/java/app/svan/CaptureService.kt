@@ -64,6 +64,14 @@ class CaptureService : Service() {
         }
         // Must be in the foreground (type mediaProjection) *before* getMediaProjection on Android 14+.
         startForeground(NOTIF_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasDumpPermission(this), SessionRouter.snapshot, Process.myUid())
+        if (blocker != null) {
+            startupMessage.value = blocker
+            EqController.log("capture: start blocked — $blocker")
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        startupMessage.value = ""
 
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         @Suppress("DEPRECATION")
@@ -125,11 +133,17 @@ class CaptureService : Service() {
             synchronized(engineLock) { current = dsp }
             eqWatcher = Thread({
                 var last: EqState? = null
+                var lastSettings: AudioSettings? = null
                 while (running) {
                     val eq = SvanRepository.eq.value
-                    if (eq !== last) {
-                        synchronized(engineLock) { current?.let { applyEq(it, eq) } }
+                    val audioSettings=SvanRepository.settings.value
+                    if (eq !== last || audioSettings != lastSettings) {
+                        synchronized(engineLock) { current?.let {
+                            applyProtection(it,eq,audioSettings)
+                            if(eq !== last)applyEq(it, eq)
+                        } }
                         last = eq
+                        lastSettings=audioSettings
                     }
                     Thread.sleep(15)
                 }
@@ -171,7 +185,7 @@ class CaptureService : Service() {
                     EqController.log("capture filter: ${allowed.size} muted UID(s)")
                 }
                 val now = SvanRepository.settings.value
-                if (now != settings) {
+                if (!now.sameCaptureFormat(settings)) {
                     // Build before swapping so an unsuccessful rebuild leaves a
                     // valid handle for cleanup. Native parameter edits stay separate.
                     val replacement = buildEngine(now)
@@ -184,14 +198,17 @@ class CaptureService : Service() {
                     }
                     EqController.log("capture: engine rebuilt, quality=${now.quality}")
                 }
+                settings=now
                 val n = input.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                 if (n < 0) { if (running) EqController.log("capture: read failed ($n)"); break }
                 if (n == 0) continue
+                app.svan.listening.ClipRecorder.offer(buf,n)
                 var blockPeak = 0f
                 for (i in 0 until n) blockPeak = maxOf(blockPeak, kotlin.math.abs(buf[i]))
                 levelPeak = maxOf(levelPeak, blockPeak)
                 levelFrames += n / 2
-                if (blockPeak == 0f) silentRun += n / 2 else { silentRun = 0; watchdogFired = false }
+                if (app.svan.listening.ClipPlayer.playing) silentRun=0
+                else if (blockPeak == 0f) silentRun += n / 2 else { silentRun = 0; watchdogFired = false }
                 // Fail open: a muted source whose capture stays all-zero while other media is
                 // playing means its audio is not reaching us (capture opt-out mid-session, a
                 // DRM stream...). Silence forever is the worst outcome, so hand it back to
@@ -281,21 +298,29 @@ class CaptureService : Service() {
             // Dither "off" means no word-length reduction at all: float goes straight out.
             ditherBits = if (s.dither == DitherChoice.OFF) 0 else s.outputBits,
             ditherMode = s.dither.nativeMode,
-            autoHeadroom = s.autoHeadroom,
-            gainProtection = s.gainProtection,
+            autoHeadroom = s.effectiveFor(SvanRepository.eq.value).autoHeadroom,
+            gainProtection = s.effectiveFor(SvanRepository.eq.value).gainProtection,
         ).also {
-            it.setAnalysis(true) // Svaramanas listens to the source (cheap: one FFT per 85 ms)
+            it.setAnalysis(true) // Svaramanas listens to the source (preallocated mid/side analysis every 85 ms)
             applyEq(it, SvanRepository.eq.value)
         }
 
     private fun applyEq(engine: NativeEngine, eq: EqState) {
-        engine.resetGainProtection()
+        // Preserve limiter history through adaptation; resetting it would release
+        // attenuation abruptly every time Svaresa publishes a new curve.
+        engine.setDynamicEq(eq.dynamicEq)
         engine.setBands(eq.effectiveBands().map { it.toNative() })
         engine.setPreampDb(eq.effectivePreampDb())
         engine.setBassCharacter(eq.bassCharacter, eq.bass.crossoverHz)
         val v = eq.activeVocal
         val i = eq.activeInstrument
         engine.setStereoTuner(v.intimacy, v.warmth, v.smoothness, i.space, i.instruments)
+    }
+
+    private fun applyProtection(engine: NativeEngine,eq: EqState,settings: AudioSettings) {
+        val effective=settings.effectiveFor(eq)
+        engine.setAutoHeadroom(effective.autoHeadroom)
+        engine.setGainProtection(effective.gainProtection)
     }
 
     override fun onDestroy() {
@@ -322,6 +347,7 @@ class CaptureService : Service() {
         val inputPeakDb: Double, val outputPeakDb: Double)
 
     companion object {
+        val startupMessage = kotlinx.coroutines.flow.MutableStateFlow("")
         private val engineLock = Any()
         @Volatile private var current: NativeEngine? = null
 

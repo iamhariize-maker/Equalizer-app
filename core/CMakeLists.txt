@@ -20,15 +20,20 @@ option(EQCORE_BUILD_TESTS "Build eqcore unit tests and benchmark" ${EQCORE_IS_TO
 set(EQCORE_SANITIZE "" CACHE STRING "Sanitizers, e.g. address,undefined or thread")
 
 add_library(eqcore STATIC
+  src/graphic_eq.cpp
   src/biquad.cpp
   src/parametric_eq.cpp
   src/oversampler.cpp
   src/resampler.cpp
   src/bass.cpp
   src/tuning.cpp
+  src/calibration.cpp
+  src/comparison.cpp
   src/stereo.cpp
   src/dither.cpp
   src/autoeq.cpp
+  src/true_peak.cpp
+  src/dynamic_eq.cpp
   src/engine.cpp
   src/analyzer.cpp
   src/svaramanas.cpp)

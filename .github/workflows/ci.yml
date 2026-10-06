@@ -35,6 +35,9 @@ jobs:
       - name: Assemble debug APK, lint, unit tests
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug testDebugUnitTest
+      - name: Test screenshot assertions
+        working-directory: android
+        run: python3 -m unittest discover -s scripts -p test_setup_screen_assertions.py
       - name: Prepare phone preview
         run: |
           mkdir -p android/build-kit
@@ -44,6 +47,8 @@ jobs:
           BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           APK=android/build-kit/Svan-preview.apk
           "$BT/aapt2" dump badging "$APK" > badging.txt
+          "$BT/aapt2" dump xmltree "$APK" --file AndroidManifest.xml > manifest.txt
+          python3 android/scripts/check_manifest_permissions.py manifest.txt
           grep -E "^package|sdkVersion|native-code" badging.txt
           ! grep -q testOnly badging.txt
           ! grep -q "application-debuggable" badging.txt
@@ -51,16 +56,8 @@ jobs:
           grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" sig.txt
           # The fixed preview key keeps updates installable over earlier previews.
           grep -q "CN=Svan Preview" sig.txt
-          python3 - "$APK" <<'PY'
-          import struct, sys, zipfile
-          z = zipfile.ZipFile(sys.argv[1]); f = open(sys.argv[1], 'rb')
-          for i in z.infolist():
-              if i.filename.endswith('.so') and i.compress_type == 0:
-                  f.seek(i.header_offset); h = f.read(30)
-                  n, e = struct.unpack('<HH', h[26:30])
-                  assert (i.header_offset + 30 + n + e) % 4096 == 0, 'unaligned ' + i.filename
-          print('native libs page-aligned')
-          PY
+          "$BT/zipalign" -c -P 16 4 "$APK"
+          python3 android/scripts/check_native_alignment.py "$APK"
       - uses: actions/upload-artifact@v4
         with:
           name: Svan-preview
@@ -69,6 +66,40 @@ jobs:
         with:
           name: app-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Verify production APK and Play bundle with a disposable CI key
+        working-directory: android
+        env:
+          SVAN_KEYSTORE: ${{ runner.temp }}/svan-ci-only.p12
+          SVAN_STORE_PASSWORD: ci-test-only-password
+          SVAN_KEY_ALIAS: ci-test-only
+          SVAN_KEY_PASSWORD: ci-test-only-password
+        run: |
+          keytool -genkeypair -keystore "$SVAN_KEYSTORE" -storetype PKCS12 -alias "$SVAN_KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 30 -dname 'CN=Svan CI Test Only' -storepass:env SVAN_STORE_PASSWORD -keypass:env SVAN_KEY_PASSWORD
+          ./gradlew --no-daemon -PsvanProduction=true :app:assembleRelease :app:bundleRelease
+          mkdir -p build-kit/production-test
+          cp app/build/outputs/apk/release/app-release.apk build-kit/production-test/Svan-production-test.apk
+          cp app/build/outputs/bundle/release/app-release.aab build-kit/production-test/Svan-production-test.aab
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --verbose build-kit/production-test/Svan-production-test.apk
+          "$BT/aapt2" dump xmltree build-kit/production-test/Svan-production-test.apk --file AndroidManifest.xml > production-manifest.txt
+          python3 scripts/check_manifest_permissions.py production-manifest.txt
+          jarsigner -verify build-kit/production-test/Svan-production-test.aab
+          "$BT/zipalign" -c -P 16 4 build-kit/production-test/Svan-production-test.apk
+          python3 scripts/check_native_alignment.py build-kit/production-test/Svan-production-test.apk build-kit/production-test/Svan-production-test.aab
+          rm "$SVAN_KEYSTORE"
+      - name: Release verifier accepts fixture and rejects wrong certificate and added permission
+        working-directory: android
+        run: |
+          bash -n scripts/verify_release.sh scripts/test_verify_release.sh
+          if command -v shellcheck >/dev/null; then
+            shellcheck scripts/verify_release.sh scripts/test_verify_release.sh
+          fi
+          export SVAN_BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          bash scripts/test_verify_release.sh build-kit/production-test/Svan-production-test.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Svan-production-test-build
+          path: android/build-kit/production-test/
 
   # End-to-end routing test on a KVM-accelerated emulator (GitHub's Linux
   # runners expose /dev/kvm). Results + screenshots are uploaded as artifacts
@@ -77,6 +108,10 @@ jobs:
     needs: android
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [33, 34]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -90,14 +125,20 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Build APKs
         working-directory: android
-        run: ./gradlew --no-daemon assembleDebug assembleRelease :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
+        run: ./gradlew --no-daemon assembleDebug :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
       - name: Download the phone preview for release validation
         uses: actions/download-artifact@v4
         with:
           name: Svan-preview
           path: tested-preview
       - name: Use the exact downloadable APK in release tests
-        run: cp tested-preview/Svan-preview.apk android/app/build/outputs/apk/release/app-release.apk
+        run: |
+          mkdir -p android/app/build/outputs/apk/release
+          cp tested-preview/Svan-preview.apk android/app/build/outputs/apk/release/app-release.apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: Svan-production-test-build
+          path: tested-production
       - name: Prepare output dir
         run: |
           mkdir -p e2e-out
@@ -107,15 +148,16 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         env:
           SHIZUKU_APK: ${{ github.workspace }}/shizuku.apk
+          SVAN_ONBOARDING_OUT: ${{ github.workspace }}/e2e-out/onboarding
         with:
-          api-level: 34
+          api-level: ${{ matrix.api }}
           target: default
           arch: x86_64
           disable-animations: true
           # No -noaudio: the test needs the emulator's audio HAL.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
-          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/e2e.sh emulator-5554 ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" || true
+          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/quality_lab.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/quality" || exit 1 ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/precision_controls.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/precision" || exit 1 ; bash scripts/e2e.sh emulator-5554 ; bash scripts/eq_workspace.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/workspace" ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" ; bash scripts/production_release.sh emulator-5554 "$GITHUB_WORKSPACE/tested-production/Svan-production-test.apk" "$GITHUB_WORKSPACE/e2e-out/production" || exit 1
       - name: Results
         if: always()
         run: |
@@ -124,13 +166,34 @@ jobs:
           grep -q '^PASS release smoke test' e2e-out/smoke.txt
           if grep -q '^FAIL' e2e-out/e2e_results.txt; then echo 'e2e results contain a failure'; exit 1; fi
           grep -q '^PASS sound scroll preserves EQ settings' e2e-out/screens/interaction.txt
+          test "$(grep -c '^PASS setup fixture ' e2e-out/screens/interaction.txt)" -eq 15
+          ! grep -q '^FAIL' e2e-out/screens/interaction.txt
+          cat e2e-out/workspace/results.txt
+          if grep -q '^FAIL' e2e-out/workspace/results.txt; then exit 1; fi
+          test "$(grep -c '^PASS' e2e-out/workspace/results.txt)" -eq 9
+          cat e2e-out/precision/results.txt
+          if grep -q '^FAIL' e2e-out/precision/results.txt; then exit 1; fi
+          test "$(grep -c '^PASS' e2e-out/precision/results.txt)" -eq 8
+          cat e2e-out/quality/results.txt
+          if grep -q '^FAIL' e2e-out/quality/results.txt; then exit 1; fi
+          test "$(grep -c '^PASS' e2e-out/quality/results.txt)" -eq 4
+          cat e2e-out/production/results.txt
+          test "$(grep -c '^PASS' e2e-out/production/results.txt)" -eq 4
+          ! grep -q '^FAIL' e2e-out/production/results.txt
           cat e2e-out/detection/detection.txt
           if grep -q '^FAIL' e2e-out/detection/detection.txt; then echo 'release detection results contain a failure'; exit 1; fi
           test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 10
+          cat e2e-out/onboarding/results.txt
+          test "$(grep -c '^PASS' e2e-out/onboarding/results.txt)" -eq 8
+          ! grep -q '^FAIL' e2e-out/onboarding/results.txt
+          cat e2e-out/detection/onboarding.txt
+          test "$(grep -c '^PASS' e2e-out/detection/onboarding.txt)" -eq 6
+          ! grep -q '^FAIL' e2e-out/detection/onboarding.txt
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: e2e-results
+          name: e2e-results-api${{ matrix.api }}
           if-no-files-found: warn
           path: e2e-out/
 
@@ -143,7 +206,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        api: [29, 30, 33, 35]
+        include:
+          - { api: 29, target: default }
+          - { api: 30, target: default }
+          - { api: 33, target: default }
+          - { api: 35, target: default }
+          - { api: 36, target: google_apis }
     steps:
       - uses: actions/checkout@v4
       - name: Enable KVM
@@ -162,7 +230,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api }}
-          target: default
+          target: ${{ matrix.target }}
           arch: x86_64
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
