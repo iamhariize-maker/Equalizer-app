@@ -21,3 +21,5 @@ Synthetic evidence: [39 routing checks](../android/scripts/e2e.sh),
 Phone observations: [PHONE_VALIDATION.md](PHONE_VALIDATION.md).
 Update the bundled file and this table together; include the build, phone, route and evidence
 before promoting an unverified entry. An app package in the manifest is not validation.
+
+Seen your phone behave differently from this table? [File a device report](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml).

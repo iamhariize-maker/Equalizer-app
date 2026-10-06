@@ -1,0 +1,96 @@
+name: Device report
+description: Tell us whether Svan works on your phone. This is the most useful thing an alpha tester can do.
+title: "[Device] <phone model> / Android <version>"
+labels: ["device-report", "beta-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing Svan! Svan is in beta, and which phones allow system-wide EQ is still being mapped.
+        A report takes about a minute. "It didn't work" reports are just as valuable as "it works".
+  - type: input
+    id: device
+    attributes:
+      label: Phone make and model
+      placeholder: "TECNO LH7n"
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android version and vendor skin
+      placeholder: "Android 14, HiOS"
+    validations:
+      required: true
+  - type: input
+    id: svan-version
+    attributes:
+      label: Svan version
+      description: Shown on the release page. Use the exact file name if you are unsure.
+      placeholder: "0.5.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: Where did this build come from?
+      options:
+        - Owner-signed GitHub beta
+        - Shared-key preview
+        - Other or unknown
+    validations:
+      required: true
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Which engine did you use?
+      options:
+        - System effects
+        - Audiophile engine
+        - Both, on different apps
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: players
+    attributes:
+      label: Music or video apps you tried
+      placeholder: "YouTube Music, Spotify, VLC"
+    validations:
+      required: true
+  - type: dropdown
+    id: output
+    attributes:
+      label: Audio output
+      multiple: true
+      options:
+        - Phone speaker
+        - Wired headphones or USB DAC
+        - Bluetooth headphones
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: What happened?
+      options:
+        - Works well
+        - Works, with problems
+        - App was not detected or listed
+        - Detected but no change in sound
+        - Crash or freeze
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Details
+      description: What did you hear or see? Mention delay, echo, crackling, battery drain, or anything surprising. Use only what you actually observed.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed anything private (account names, personal info) from any logs or screenshots I attached.
+          required: true
