@@ -55,7 +55,7 @@ missing. Artifacts `e2e-results-api33` / `e2e-results-api34` have the log and sc
 screenshots** — layout bugs only show there.
 
 ## Rules that matter
-1. **Don't push to `main`/other branches.** Work on the branch your session instructs (currently `ccr-f859b567-dgrdoj`; `ccr-208702a3-2mju42` is older). No new PR unless the user asks.
+1. **Don't push to `main`/other branches.** Work on the branch your session instructs (currently `claude/codex-audio-crackling-amplifier-gkj007`, which contains all of `ccr-f859b567-dgrdoj`). No new PR unless the user asks.
 2. **Never claim sound quality you haven't measured.** Every number in the UI/docs comes from a test. The owner reports successful listening on TECNO/IM4 with 0.5.2; this does not establish a complete device/player matrix.
 3. **Tests first for DSP.** New processors need a measured test (see existing ones: expected vs measured dB). Keep the audio thread allocation-free and wait-free (see `ParametricEq`, `StereoTuner`).
 4. **Design:** one gold hue on warm charcoal (`Theme.kt` tokens: Gold/Molten/Bronze; Ember ONLY for warnings; Ash for "negative" sides). Serif titles. Polished, not colourful. Don't introduce new hues.

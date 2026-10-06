@@ -16,8 +16,8 @@ printf '%s\n' "$ready" > "$OUT/lab.json"
 python3 - "$OUT" <<'PY'
 import json,pathlib,sys
 out=pathlib.Path(sys.argv[1]);d=json.loads((out/'lab.json').read_text())
-checks=[('backing vocal-region response through release JNI',2.3<d['backingDb']<2.6),
-        ('spatial detail response through release JNI',1.7<d['spatialDb']<2.1),
+checks=[('backing vocal-region response through release JNI',1.8<d['backingDb']<2.2),
+        ('binaural side-air response through release JNI',1.3<d['spatialDb']<1.7),
         ('side bass level retained',abs(d['bassDb'])<.1),
         ('combined maximum tuners remain peak-protected',d['peak']<.93)]
 text='\n'.join(('PASS' if valid else 'FAIL')+' '+label for label,valid in checks)+'\n'

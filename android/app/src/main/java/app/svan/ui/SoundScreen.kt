@@ -381,11 +381,11 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 Knob("Backing vocals", i.backingVocals, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(backingVocals = x)) } })
-                Knob("Spatial detail", i.spatialDetail, 0.0, 1.0, ::pct, step = 0.01,
+                Knob("Binaural", i.spatialDetail, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(spatialDetail = x)) } })
             }
             Spacer(Modifier.height(6.dp))
-            Text("Backing vocals gently lifts the stereo vocal region; harmonies and instruments sharing it change together. Spatial detail brings out existing side ambience and binaural detail. It changes the stereo balance; it cannot recover hidden stems or reproduce the artist’s original spatial intent. Start low and compare in Lab at matched loudness.",
+            Text("Backing vocals lifts off-centre harmonies and doubles while the lead masks them, and backs off when they are already clear. Binaural follows each band's left/right position and widens only sounds that are moving between channels, so the recording's own bounces and pans become more dramatic while fixed placements stay put. Both leave the mono sum untouched and add no reverb or delay. Centre-panned harmonies cannot be separated. Start low and compare in Lab at matched loudness.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
             Spacer(Modifier.height(6.dp))
             Text("Shapes stereo side energy above the bass range. It cannot identify individual instruments; a centred instrument will not be boosted. No added reverb. Requires an app actively using the audiophile engine; has no effect on system effects.",

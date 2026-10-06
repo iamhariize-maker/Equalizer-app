@@ -60,22 +60,57 @@ otherwise an old started record could look like an unmuted sibling after the pla
 session. Rejected active media retains its evidence and still excludes its UID. Shutdown clears
 the old ledger. A reused session ID cannot borrow a different UID's mute.
 
-## Two separate orchestral controls
+## Two separate orchestral controls (revised)
 
-- **Backing vocals:** a broad 1600 Hz, Q 0.65 side-channel bell, up to 2.5 dB.
-- **Spatial detail:** a 4000 Hz side-channel high shelf, up to 2 dB.
+Both are 0–100%, default off, persisted/exported/restored, retained alongside Svaresa suggestions and
+included in blind-comparison rendering. Both act only on the side signal above the 180 Hz side
+crossover, so L+R (the mono sum) and centre-only content are unchanged; core tests assert this to
+1e-12. No reverb, time delay, generated harmonics or synthesized HRTF cues. The stereo-linked
+reconstructed-peak limiter protects the combined chain when gain protection is enabled.
 
-Both are 0–100%, default off, persisted/exported/restored, retained alongside Svaresa suggestions,
-and included in blind-comparison rendering. Existing settings migrate to zero for both. They use
-the existing 180 Hz side crossover, leave mono/centre-only content unchanged, and add no reverb,
-time delay, generated harmonics or fake binaural cues. The existing stereo-linked reconstructed-
-peak limiter protects the combined chain when gain protection is enabled.
+- **Backing vocals — de-masking.** A static side bell (1600 Hz, Q 0.65, up to 2 dB) plus a dynamic
+  side vocal-band lift (band-pass 1.2 kHz, Q 0.55, up to 4 dB). It compares the side vocal band to
+  the centre vocal band: when the off-centre layers are far below the lead (ratio ≤ 0.1) the full
+  lift applies; when they are already comparable (ratio ≥ 0.5) only the static bell remains.
+  Attack 40 ms, release 250 ms. Measured with a lead 20 dB above a harmony layer: +1.4 / +2.9 /
+  +5.6 dB at 25 / 50 / 100%; a harmony as loud as the lead receives only the static bell (±0.3 dB).
+- **Binaural — image-motion enhancer** (stored as `spatialDetail`). A Blumlein-style side
+  spaciousness bell (500 Hz, up to 2.5 dB), a side air shelf (4 kHz, up to 1.5 dB) and a dynamic
+  stage: side and a 180 Hz high-passed mid are split into <1 kHz / 1–4 kHz / >4 kHz bands with a
+  complementary split that sums back exactly. Each band's signed position p = 2⟨m·s⟩/⟨m²+s²⟩
+  (+1 left, −1 right) is compared with its 600 ms average; only movement raises that band's side
+  gain (up to ×1.8, attack 10 ms, release 300 ms). A band emerging from silence starts at its own
+  position, so entries are not mistaken for movement. Measured on a 2 kHz ping-pong (250 ms per
+  side): +1.7 / +3.1 / +5.5 dB of side level at 25 / 50 / 100%, while a fixed hard-left image
+  matches the static response within 0.3 dB.
 
-These are tonal M/S controls, not stem separation: stereo instruments sharing the bands change
-with harmonies. Centre-panned backing vocals are not independently boosted. Spatial detail changes
-the recorded interchannel balance and can change localization; it cannot promise more accurate
-binaural reproduction or recover the artist's intent. Use modest settings and the level-matched
-Lab comparison. The orchestral controls require the capture engine; system effects cannot do M/S.
+Limits: these are M/S controls, not stem separation. Centre-panned harmonies cannot be lifted
+independently; off-centre instruments in the vocal band change with the harmonies. Widening a
+moving hard-panned source above ×1 adds anti-phase crosstalk on the opposite channel while it moves
+(that is how the extra width is produced); the mono sum still cancels it exactly. Whether this reads
+as "the artist's intent" is a listening judgement for the owner, not a measurement. Cost: about
+0.5% of one x86 core for 48 kHz stereo with both at 100% (host benchmark). The orchestral controls
+require the capture engine; system effects cannot do M/S.
+
+## Crackle hardening (capture engine) — revised
+
+The recorder buffer was ~21 ms (1024 frames): a capture thread descheduled for longer while the
+phone is busy or switching apps lost audio, heard as a crackle. It is now 250 ms; reads still return
+per 256-frame block, so this adds no latency. Playback previously started with one 5 ms block queued;
+it now starts with a 40 ms primed cushion (silence), which the shared clock keeps in place. This
+adds about 40 ms of delay to the capture engine only. Underrun-driven buffer growth and the
+persistent-starvation fallback remain as a second line.
+
+## System-effect volume on re-attach — revised
+
+Measured in CI run 37525591141: after a forced app restart the re-created DynamicsProcessing played
+32.5 dB (API 34) above its earlier level, i.e. without the −33 dB music stream volume. AOSP
+references: DP_PARAM_ENGINE_ARCHITECTURE recreates the engine (output gain back to 0 dB);
+AudioFlinger resends volume only on a volume/controller change or a real STARTING/RESTART, and an
+enable during STOPPING resumes ACTIVE without one. The muted bootstrap and quick toggle are
+removed. Attachment now creates the effect flat, enables it, waits 150 ms, disables, waits 150 ms
+and re-enables (a guaranteed restart with a cached chain volume) before loading the curve. The first
+create retries once after 250 ms when the server is still tearing down the old effect (NO_INIT).
 
 ## Research basis and design choice
 

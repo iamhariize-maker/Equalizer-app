@@ -22,7 +22,7 @@ object ContinuityLab {
             return 20*log10(2*hypot(sinSum,cosSum)/(fs/2)/.05)
         }
         val backing=measure(1.0,0.0,1600.0);val spatial=measure(0.0,1.0,8000.0)
-        check(backing in 2.3..2.6 && spatial in 1.7..2.1)
+        check(backing in 1.8..2.2 && spatial in 1.3..1.7)
         val low=measure(1.0,1.0,60.0);check(abs(low)<.1)
         val audio=FloatArray(fs*2*2)
         repeat(fs*2){audio[it*2]=(.8*sin(2*PI*1600*it/fs)).toFloat();audio[it*2+1]=-audio[it*2]}

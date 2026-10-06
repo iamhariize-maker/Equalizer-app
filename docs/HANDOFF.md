@@ -38,7 +38,8 @@ filters sonification/SoundPool/system/known utility sounds; unrecognized started
 of observations. Routing still requires real session reports/broadcasts; the optional package-only
 recognition described above cannot authorize processing or capture. Diagnostic memory is bounded.
 
-Orchestral amplifier has separate Backing vocals and Spatial detail dials, default off. They shape
+Orchestral amplifier has separate Backing vocals and Binaural (stored as spatialDetail) dials, default off.
+Revised later the same night — see "0.5.6 follow-up" below and CONTINUITY_0.5.6.md. They shape
 existing side energy, cannot isolate stems or guarantee faithful binaural enhancement. Manual dials
 survive Svaresa layering/export/restore and are included in blind rendering. Host tests verify response,
 mono preservation, edit continuity, concurrency, and protection at 44.1/48/96 kHz.
@@ -791,3 +792,17 @@ flipped-d lift (see §6 item 1) — pushed with this file.
 Play preparation follow-up: native ELF load alignment was still 4 KB despite 16 KB ZIP packaging.
 NDK 27 flexible page-size support now produces 16 KB load segments. The release artifact gate
 checks every shared library in both APK and AAB; older 4 KB Android systems remain supported.
+
+## 0.5.6 follow-up — 2026-10-07, branch claude/codex-audio-crackling-amplifier-gkj007
+
+Merged all of ccr-f859b567-dgrdoj (Codex continuity + OEM detection work). Its last CI run
+(37525591141) failed only `manual override restores original curve and output` (+32.5 dB on API 34)
+on both API 33/34; routing and every other suite passed. Changes on top (details and measurements
+in CONTINUITY_0.5.6.md):
+- System effects: deterministic volume re-arm on attach, bootstrap removed, one NO_INIT retry.
+- Capture: 250 ms recorder buffer (no added latency) and a 40 ms primed output cushion.
+- Backing vocals: dynamic de-masking lift added; Binaural: Blumlein bell + per-band motion enhancer.
+- Core 105 tests (two new); host ASan/UBSan/TSan, Android debug/release, lint and JVM tests pass
+  locally. Emulator CI on this branch and owner-phone listening are still required; the owner's
+  crackle has not been reproduced on a device.
+

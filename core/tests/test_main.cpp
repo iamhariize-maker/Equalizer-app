@@ -1138,7 +1138,7 @@ TEST(engine_instrument_amp_keeps_centre_and_widens_sides) {
 TEST(stereo_tuner_is_stable_on_noise) {
   const double fs = 44100;
   StereoTuner t(fs);
-  StereoTunerParams p{1, 1, 1, 1, 1};
+  StereoTunerParams p{1, 1, 1, 1, 1, 1, 1};
   t.setParams(p);
   std::mt19937 rng(4);
   std::uniform_real_distribution<double> u(-1, 1);
@@ -1162,13 +1162,75 @@ TEST(stereo_detail_controls_have_measured_response_and_preserve_mono) {
       const double expected=10*std::log10(stereoResponsePower(p,hz,fs)[1]);
       CHECK_NEAR(measured,expected,.03);
       if(hz==60)CHECK(std::abs(measured)<.1);
-      if(control==0 && hz==1600)CHECK(measured>2.3 && measured<2.6);
-      if(control==1 && hz==8000)CHECK(measured>1.7 && measured<2.1);
+      if(control==0 && hz==1600)CHECK(measured>1.8 && measured<2.2);
+      if(control==1 && hz==8000)CHECK(measured>1.3 && measured<1.7);
       auto mono=ms(fs,.1,[&](double t){return .1*std::sin(2*kPi*hz*t);},[](double){return 0.;});
       auto unchanged=runTuner(p,mono,fs);
       CHECK(unchanged.l==mono.l && unchanged.r==mono.r);
     }
   }
+}
+
+// A tone's amplitude over [from, to) seconds of one channel-like vector.
+static double toneDb(const std::vector<double>& x, double hz, double fs, double from, double to) {
+  return toDb(sineAmplitude(x, hz, fs, static_cast<int>(from * fs), static_cast<int>(to * fs)));
+}
+
+TEST(backing_vocals_lift_masked_layers_and_leave_prominent_layers) {
+  const double fs = 48000;
+  StereoTunerParams p;
+  p.backingVocals = 1;
+  const double staticDb = 10 * std::log10(stereoResponsePower(p, 1300, fs)[1]);
+  // Lead (centre, 1 kHz) 20 dB above harmony layers (side, 1.3 kHz).
+  auto masked = ms(fs, 2, [](double t) { return .3 * std::sin(2 * kPi * 1000 * t); },
+                   [](double t) { return .03 * std::sin(2 * kPi * 1300 * t); });
+  const double maskedLift = toneDb(sideOf(runTuner(p, masked, fs)), 1300, fs, 1, 2) - toDb(.03);
+  CHECK(maskedLift - staticDb > 3.0);  // dynamic de-masking on top of the static bell
+  CHECK(maskedLift < staticDb + 4.3);  // bounded at 4 dB
+  // Layers already as loud as the lead: only the static bell.
+  auto prominent = ms(fs, 2, [](double t) { return .1 * std::sin(2 * kPi * 1000 * t); },
+                      [](double t) { return .1 * std::sin(2 * kPi * 1300 * t); });
+  const double prominentLift = toneDb(sideOf(runTuner(p, prominent, fs)), 1300, fs, 1, 2) - toDb(.1);
+  CHECK_NEAR(prominentLift, staticDb, .3);
+  // The lead itself and the mono sum are untouched.
+  auto out = runTuner(p, masked, fs);
+  bool monoSum = true;
+  for (size_t i = 0; i < out.l.size(); ++i) monoSum = monoSum && std::fabs((out.l[i] + out.r[i]) - (masked.l[i] + masked.r[i])) < 1e-12;
+  CHECK(monoSum);
+}
+
+TEST(binaural_motion_exaggerates_channel_bounces_but_not_static_images) {
+  const double fs = 48000;
+  StereoTunerParams p;
+  p.spatialDetail = 1;
+  // Ping-pong: a 2 kHz tone that bounces between hard left and hard right every 250 ms.
+  auto bounce = [&](double t) {
+    const double phase = std::fmod(t, .5) / .5;  // 0..1
+    const double pan = phase < .5 ? 1 : -1;      // +1 left, -1 right
+    return pan;
+  };
+  Stereo moving, still;
+  for (int i = 0; i < static_cast<int>(fs * 3); ++i) {
+    const double t = i / fs, x = .2 * std::sin(2 * kPi * 2000 * t), pan = bounce(t);
+    moving.l.push_back(pan > 0 ? x : 0); moving.r.push_back(pan > 0 ? 0 : x);
+    still.l.push_back(x); still.r.push_back(0);
+  }
+  auto sideRms = [](const std::vector<double>& s, size_t from) {
+    double e = 0; for (size_t i = from; i < s.size(); ++i) e += s[i] * s[i]; return std::sqrt(e / (s.size() - from)); };
+  const size_t from = static_cast<size_t>(fs);
+  const double staticDb = 10 * std::log10(stereoResponsePower(p, 2000, fs)[1]);
+  const double movingDb = toDb(sideRms(sideOf(runTuner(p, moving, fs)), from) / sideRms(sideOf(moving), from));
+  const double stillDb = toDb(sideRms(sideOf(runTuner(p, still, fs)), from) / sideRms(sideOf(still), from));
+  CHECK_NEAR(stillDb, staticDb, .3);       // a fixed hard-left image stays where it was
+  CHECK(movingDb - staticDb > 2.0);        // the artist's bounce becomes more dramatic
+  CHECK(movingDb - staticDb < 5.2);        // bounded (+0.8 side gain at most)
+  auto out = runTuner(p, moving, fs);
+  bool monoSum = true, finite = true;
+  for (size_t i = 0; i < out.l.size(); ++i) {
+    monoSum = monoSum && std::fabs((out.l[i] + out.r[i]) - (moving.l[i] + moving.r[i])) < 1e-12;
+    finite = finite && std::isfinite(out.l[i]) && std::fabs(out.l[i]) < 1;
+  }
+  CHECK(monoSum && finite);
 }
 
 TEST(stereo_live_edits_crossfade_preserve_history_and_are_block_independent) {

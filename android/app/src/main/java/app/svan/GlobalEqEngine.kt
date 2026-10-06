@@ -60,29 +60,28 @@ class GlobalEqEngine(bandCount: Int = 128) {
         // remains in our map. Re-create it instead of reporting false success.
         detach(sessionId)
         var candidate: DynamicsProcessing? = null
-        var bootstrap: DynamicsProcessing? = null
         val startedMs = SystemClock.elapsedRealtime()
         return try {
-            // An existing native module can outlive our process. Keep its full
-            // constructor/configuration pass disabled: a small muted bootstrap
-            // avoids hundreds of live per-band writes at a reset volume gain.
-            bootstrap = DynamicsProcessing(PRIORITY, sessionId,
-                DynamicsProcessing.Config.Builder(
-                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, CHANNELS,
-                    false, 0, false, 0, false, 0, false,
-                ).setInputGainAllChannelsTo(-200f).build())
-            bootstrap.enabled = false
-            val dp = DynamicsProcessing(PRIORITY, sessionId, buildConfig())
+            // Right after a player or our own process restarts, the audio server
+            // can briefly refuse a new effect (NO_INIT) while it tears down the old one.
+            val dp = runCatching { DynamicsProcessing(PRIORITY, sessionId, buildConfig()) }.getOrElse {
+                SystemClock.sleep(RETRY_CREATE_MS)
+                DynamicsProcessing(PRIORITY, sessionId, buildConfig())
+            }
             candidate = dp
-            // A recovered handle may already be enabled. Configuring its native
-            // architecture resets DynamicsProcessing's output gain; Android sends
-            // the stream volume again on the next enabled transition. Establish
-            // that transition on attachment, before any music uses the new config.
-            dp.enabled = false
-            bootstrap.release()
-            bootstrap = null
-            applyTo(dp)
+            // DynamicsProcessing applies the stream volume itself (the mixer then
+            // plays at unity), and configuring its architecture resets that gain
+            // to 0 dB. AudioFlinger resends the volume only when the volume
+            // changes or the effect really restarts; an off/on inside one mix
+            // cycle resumes without a restart. Re-arm while the curve is still
+            // flat, waiting long enough for a genuine stop, so the effect never
+            // plays with a missing stream volume (heard as a large jump in level).
             dp.enabled = true
+            SystemClock.sleep(VOLUME_REARM_MS)
+            dp.enabled = false
+            SystemClock.sleep(VOLUME_REARM_MS)
+            dp.enabled = true
+            applyTo(dp)
             check(dp.hasControl() && dp.enabled) { "Android did not enable the session effect" }
             effects[sessionId] = dp
             attachedAt[sessionId] = startedMs
@@ -94,8 +93,6 @@ class GlobalEqEngine(bandCount: Int = 128) {
             Log.w(TAG, "attach failed for session $sessionId", e)
             EqController.log("system effects: attach failed for session $sessionId: $e")
             false
-        } finally {
-            bootstrap?.let { runCatching { it.release() } }
         }
     }
 
@@ -264,6 +261,9 @@ class GlobalEqEngine(bandCount: Int = 128) {
         private const val CHANNELS = 2
         /** Above the default 0 so a stock/OEM equalizer doesn't override us. */
         private const val PRIORITY = Int.MAX_VALUE
+        /** Longer than AudioFlinger's disable wait (about 50 ms plus a mix period on slow outputs). */
+        private const val VOLUME_REARM_MS = 150L
+        private const val RETRY_CREATE_MS = 250L
 
         fun logSpaced(n: Int, lo: Double, hi: Double): DoubleArray =
             DoubleArray(n) { exp(ln(lo) + (ln(hi) - ln(lo)) * it / max(1, n - 1)) }

@@ -127,7 +127,10 @@ class CaptureService : Service() {
                 .setTransferMode(AudioTrack.MODE_STREAM).build()
             track = output
             check(output.state == AudioTrack.STATE_INITIALIZED) { "output not initialized" }
-            output.setBufferSizeInFrames(maxOf(minOut / 8, frames * 4))
+            // Standing reserve against scheduling stalls (app switches, a busy phone).
+            // Input and output run on one clock, so a primed queue keeps its level.
+            val cushion = rate * OUTPUT_CUSHION_MS / 1000
+            output.setBufferSizeInFrames(minOf(output.bufferCapacityInFrames, maxOf(minOut / 8, cushion + frames * 2)))
             val settings = SvanRepository.settings.value
             val dsp = buildEngine(settings)
             engine = dsp
@@ -159,11 +162,14 @@ class CaptureService : Service() {
             record = input
             activeRecord = input
             input.startRecording()
-            var outputStarted = false
             val fade = CaptureFade(rate / 100)
             val recovery = CaptureBufferRecovery()
             EqController.log("capture: started, quality=${settings.quality}, DSP latency=${dsp.latencyFrames} frames, output buffer=${output.bufferSizeInFrames} frames")
             val buf = FloatArray(frames * 2)
+            // Prime before play: starting on one 5 ms block underruns at the first hiccup.
+            val primed = minOf(cushion, output.bufferSizeInFrames - frames) * 2
+            if (primed > 0) output.write(FloatArray(primed), 0, primed, AudioTrack.WRITE_NON_BLOCKING)
+            output.play()
             var levelPeak = 0f
             var outputPeak = 0f
             var levelFrames = 0L
@@ -219,7 +225,6 @@ class CaptureService : Service() {
                     written += count
                     writtenFrames += count / 2
                 }
-                if (!outputStarted) { output.play(); outputStarted = true }
                 if (sourceChanged && running) {
                     input.stop(); input.release(); record = null; activeRecord = null
                     allowed = next
@@ -286,7 +291,9 @@ class CaptureService : Service() {
         return AudioRecord.Builder()
             .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                 .setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build())
-            .setBufferSizeInBytes(maxOf(minIn, 256 * 8 * 4))
+            // A deep recorder buffer adds no latency (reads return per block) but
+            // keeps audio when this thread is descheduled; a shallow one drops it (crackle).
+            .setBufferSizeInBytes(maxOf(minIn, rate * CAPTURE_BACKLOG_MS / 1000 * 8))
             .setAudioPlaybackCaptureConfig(builder.build()).build().also {
                 if (it.state != AudioRecord.STATE_INITIALIZED) { it.release(); error("capture not initialized") }
             }
@@ -365,6 +372,8 @@ class CaptureService : Service() {
         private const val CHANNEL = "capture"
         private const val NOTIF_ID = 1
         private const val SILENCE_FAILOPEN_S = 4
+        private const val OUTPUT_CUSHION_MS = 40
+        private const val CAPTURE_BACKLOG_MS = 250
         const val ACTION_STOP = "app.svan.STOP_CAPTURE"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"

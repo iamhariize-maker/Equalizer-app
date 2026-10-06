@@ -303,7 +303,7 @@ data class InstrumentTuner(
     val space: Double = 0.0,       // -1 caved in .. +1 spacious
     val instruments: Double = 0.0, // 0..1 string/sax presence, body, air
     val backingVocals: Double = 0.0,
-    val spatialDetail: Double = 0.0,
+    val spatialDetail: Double = 0.0, // "Binaural" in the UI: image-motion enhancer
 ) {
     val isOff: Boolean get() = space == 0.0 && instruments == 0.0 && backingVocals == 0.0 && spatialDetail == 0.0
 
@@ -323,7 +323,7 @@ data class InstrumentTuner(
             "Intimate stage" to InstrumentTuner(-0.5, 0.3),
             "Wide open" to InstrumentTuner(1.0, 0.6),
             "Vocal layers" to InstrumentTuner(backingVocals = 0.5),
-            "Spatial detail" to InstrumentTuner(spatialDetail = 0.5),
+            "Binaural motion" to InstrumentTuner(spatialDetail = 0.5),
         )
     }
 }

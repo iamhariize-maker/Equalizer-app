@@ -12,7 +12,7 @@ Implementation and limits: [0.5.3 EQ workspace](EQ_WORKSPACE_0.5.3.md).
 Fresh session? Read in this order: `AGENTS.md` → this file → `docs/HANDOFF.md` (0.5.2 section = newest truth) →
 `docs/SMART.md` → `docs/CODEX_SVARAMANAS.md` (older research agenda, still valid) → `docs/AUDIOPHILE.md` (measured numbers)
 → `docs/PHONE_VALIDATION.md`. Repo `iamhariize-maker/Equalizer-app`. Work on the branch your session instructs
-(currently `ccr-f859b567-dgrdoj`, PR #1 open). No other branches, no new PRs.
+(currently `claude/codex-audio-crackling-amplifier-gkj007`; PR #1 is closed). No other branches, no new PRs.
 
 ---
 

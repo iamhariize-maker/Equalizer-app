@@ -7,13 +7,14 @@ namespace eqcore {
 
 namespace {
 double coeff(double ms, double fs) { return std::exp(-1.0 / (ms * 1e-3 * fs)); }
-std::array<BiquadCoeffs, 10> staticFilters(const StereoTunerParams& p, double fs) {
+std::array<BiquadCoeffs, 11> staticFilters(const StereoTunerParams& p, double fs) {
   auto b = [&](FilterType t, double f, double g, double q) { return designBiquad({t, f, g, q, true}, fs); };
   return {b(FilterType::Peak, 220, 3 * p.warmth, .9), b(FilterType::HighShelf, 8000, -2 * p.warmth, .7),
           b(FilterType::Peak, 1200, 2.5 * p.intimacy, .6), b(FilterType::LowPass, 180, 0, .7071067811865476),
           b(FilterType::HighPass, 180, 0, .7071067811865476), b(FilterType::Peak, 500, 1.5 * p.instruments, 1),
           b(FilterType::Peak, 3000, 4 * p.instruments, .7), b(FilterType::HighShelf, 10000, 3 * p.instruments, .7),
-          b(FilterType::Peak, 1600, 2.5 * p.backingVocals, .65), b(FilterType::HighShelf, 4000, 2 * p.spatialDetail, .7)};
+          b(FilterType::Peak, 1600, 2 * p.backingVocals, .65), b(FilterType::HighShelf, 4000, 1.5 * p.spatialDetail, .7),
+          b(FilterType::Peak, 500, 2.5 * p.spatialDetail, .7)};
 }
 }  // namespace
 
@@ -24,7 +25,7 @@ std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double f, 
     return (b.b0 + b.b1 * z + b.b2 * z * z) / (1.0 + b.a1 * z + b.a2 * z * z); };
   const auto mid = h(0) * h(1) * h(2);
   const auto side = p.space == 0 && p.instruments == 0 && p.backingVocals == 0 && p.spatialDetail == 0 ? std::complex<double>(1, 0) :
-      h(3) * h(3) + std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0) * h(4) * h(4) * h(5) * h(6) * h(7) * h(8) * h(9);
+      h(3) * h(3) + std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0) * h(4) * h(4) * h(5) * h(6) * h(7) * h(8) * h(9) * h(10);
   return {std::norm(mid), std::norm(side)};
 }
 
@@ -55,14 +56,27 @@ void StereoTuner::State::redesign(const StereoTunerParams& p, double fs_) {
   for (auto& lp : sideLp_) lp.c = c[3];
   for (auto& hp : sideHp_) hp.c = c[4];
   bodyBell_.c = c[5]; presenceBell_.c = c[6]; airShelf_.c = c[7];
-  backingBell_.c=c[8];detailShelf_.c=c[9];
+  backingBell_.c=c[8];detailShelf_.c=c[9];shuffleBell_.c=c[10];
+  // Vocal layers: 1.2 kHz centre, roughly 450 Hz-3.2 kHz.
+  set(vocalSide_, FilterType::BandPass, 1200.0, 0.0, 0.55);
+  vocalMid_.c = vocalSide_.c;
+  aVocal_=coeff(10,fs_);rVocal_=coeff(120,fs_);aLift_=coeff(40,fs_);rLift_=coeff(250,fs_);
+  // Motion: detection ignores the bass below the side crossover.
+  set(motionHp_, FilterType::HighPass, 180.0, 0.0, .7071067811865476);
+  set(splitSide_[0], FilterType::LowPass, 1000.0, 0.0, .7071067811865476);
+  set(splitSide_[1], FilterType::LowPass, 4000.0, 0.0, .7071067811865476);
+  splitMid_[0].c=splitSide_[0].c;splitMid_[1].c=splitSide_[1].c;
+  aPan_=coeff(15,fs_);aSlow_=coeff(600,fs_);aMotionUp_=coeff(10,fs_);aMotionDown_=coeff(300,fs_);
   spaceGain_ = std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0);
 }
 
 void StereoTuner::State::reset() {
   for (Bq* b : {&warmBell_, &warmShelf_, &intimacyBell_, &harshBand_, &sideLp_[0], &sideLp_[1], &sideHp_[0], &sideHp_[1], &bodyBell_,
-                &presenceBell_, &airShelf_, &backingBell_, &detailShelf_})
+                &presenceBell_, &airShelf_, &backingBell_, &detailShelf_, &shuffleBell_, &vocalSide_, &vocalMid_,
+                &motionHp_, &splitSide_[0], &splitSide_[1], &splitMid_[0], &splitMid_[1]})
     b->z1 = b->z2 = 0;
+  envVocalSide_ = envVocalMid_ = backingLiftDb_ = 0;
+  for (int b = 0; b < kBands; ++b) { cross_[b] = power_[b] = panSlow_[b] = 0; motionGain_[b] = 1; heard_[b] = false; }
   envBand_ = envFull_ = 1e-9;
   deharshGain_ = 1.0;
 }
@@ -102,11 +116,64 @@ double StereoTuner::State::process(double& left, double& right) {
     const double low = sideLp_[1].run(sideLp_[0].run(s));
     double high = sideHp_[1].run(sideHp_[0].run(s));
     high = detailShelf_.run(backingBell_.run(airShelf_.run(presenceBell_.run(bodyBell_.run(high)))));
+    if (p_.spatialDetail > 0) high = shuffleBell_.run(high);
+    if (p_.backingVocals > 0) high = backingLift(high, m);
+    if (p_.spatialDetail > 0) high = motion(high, m);
     s = low + spaceGain_ * high;
   }
   left = m + s;
   right = m - s;
   return minGain;
+}
+
+// Backing vocals are commonly doubled/harmony layers spread off-centre, where
+// the lead sits in the middle. When the side vocal band is far quieter than the
+// centre vocal band (layers masked by the lead), lift it; when the layers are
+// already comparable, leave them. A peaking structure: x + (g-1)*bandpass(x).
+double StereoTuner::State::backingLift(double high, double m) {
+  const double vs = vocalSide_.run(high), vm = vocalMid_.run(m);
+  const double as = std::fabs(vs), am = std::fabs(vm);
+  envVocalSide_ = as > envVocalSide_ ? aVocal_ * envVocalSide_ + (1 - aVocal_) * as : rVocal_ * envVocalSide_ + (1 - rVocal_) * as;
+  envVocalMid_ = am > envVocalMid_ ? aVocal_ * envVocalMid_ + (1 - aVocal_) * am : rVocal_ * envVocalMid_ + (1 - rVocal_) * am;
+  double targetDb = 0;
+  if (envVocalMid_ > 1e-4) {  // a centre vocal band above about -80 dBFS
+    const double ratio = envVocalSide_ / envVocalMid_;
+    targetDb = 4.0 * p_.backingVocals * std::clamp((0.5 - ratio) / 0.4, 0.0, 1.0);
+  }
+  const double a = targetDb > backingLiftDb_ ? aLift_ : rLift_;
+  backingLiftDb_ = a * backingLiftDb_ + (1 - a) * targetDb;
+  return high + (std::pow(10.0, backingLiftDb_ / 20.0) - 1.0) * vs;
+}
+
+// Per band, the signed position p = 2<ms>/<m^2+s^2> is +1 hard left, -1 hard
+// right and 0 centred. Its distance from a slow (600 ms) average is the motion
+// the artist put into the mix: ping-pong delays, auto-pans, panned fills. Only
+// moving bands get extra side level, so static images keep their placement.
+// The three bands are a complementary split and sum back exactly.
+double StereoTuner::State::motion(double high, double m) {
+  const double md = motionHp_.run(m);
+  const double s0 = splitSide_[0].run(high), m0 = splitMid_[0].run(md);
+  const double sr = high - s0, mr = md - m0;
+  const double s1 = splitSide_[1].run(sr), m1 = splitMid_[1].run(mr);
+  const double sb[kBands] = {s0, s1, sr - s1}, mb[kBands] = {m0, m1, mr - m1};
+  double out = 0;
+  for (int b = 0; b < kBands; ++b) {
+    cross_[b] = aPan_ * cross_[b] + (1 - aPan_) * sb[b] * mb[b];
+    power_[b] = aPan_ * power_[b] + (1 - aPan_) * (sb[b] * sb[b] + mb[b] * mb[b]);
+    double target = 1;
+    if (power_[b] > 1e-8) {  // above about -80 dBFS
+      const double pan = std::clamp(2 * cross_[b] / power_[b], -1.0, 1.0);
+      // A band emerging from silence starts where it is: an entry is not movement.
+      panSlow_[b] = heard_[b] ? aSlow_ * panSlow_[b] + (1 - aSlow_) * pan : pan;
+      heard_[b] = true;
+      target = 1 + 0.8 * p_.spatialDetail * std::clamp(std::fabs(pan - panSlow_[b]) / 0.6, 0.0, 1.0);
+    }
+    else heard_[b] = false;
+    const double a = target > motionGain_[b] ? aMotionUp_ : aMotionDown_;
+    motionGain_[b] = a * motionGain_[b] + (1 - a) * target;
+    out += motionGain_[b] * sb[b];
+  }
+  return out;
 }
 
 void StereoTuner::reset() {
