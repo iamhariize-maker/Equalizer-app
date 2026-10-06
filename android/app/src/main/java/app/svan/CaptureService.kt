@@ -64,7 +64,7 @@ class CaptureService : Service() {
         }
         // Must be in the foreground (type mediaProjection) *before* getMediaProjection on Android 14+.
         startForeground(NOTIF_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasDumpPermission(this), SessionRouter.snapshot, Process.myUid())
+        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasReportAccess(this), SessionRouter.snapshot, Process.myUid())
         if (blocker != null) {
             startupMessage.value = blocker
             EqController.log("capture: start blocked — $blocker")

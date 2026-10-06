@@ -1,6 +1,6 @@
 package app.svan
 
-/** Discovery is not permission to process every sound a phone makes. No notification access. */
+/** Discovery is not permission to process every sound a phone makes. Recognition never overrides this policy. */
 object MusicSourcePolicy {
     private val utilityPackages = setOf(
         "com.rapido.passenger", "com.rapido.rider", "com.rapido.captain",

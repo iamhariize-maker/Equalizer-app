@@ -93,6 +93,11 @@ class MainActivity : ComponentActivity() {
                 val data = org.json.JSONObject()
                     .put("kind", state.kind.name).put("prompt", state.promptKey(OnboardingAndroid.dismissed(this)) != null)
                     .put("dump", snapshot.dumpGranted).put("wizard", snapshot.step.name)
+                    .put("recognition", PlayerRecognition.connected.value)
+                    .put("recognized", PlayerRecognition.players.value.size)
+                    .put("recognizedTestPlayer", PlayerRecognition.players.value.any { it.packageName == "app.svan.testsource.capturable" })
+                    .put("namedTestPlayer", state.players.any { it.key == "app.svan.testsource.capturable" })
+                    .put("connectedPlayers", state.players.count { it.engine != null })
                     .put("usb", snapshot.debugging.usb.name).put("wireless", snapshot.debugging.wireless.name)
                     .put("system", SystemEqService.isRunning).put("capture", CaptureService.isRunning)
                     .put("engineMode", SvanRepository.settings.value.engineMode.name)
@@ -298,7 +303,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sessionReport(): String = buildString {
-        appendLine("DUMP granted: ${PlaybackSessions.hasDumpPermission(this@MainActivity)}")
+        appendLine("Audio-report access: ${PlaybackSessions.hasReportAccess(this@MainActivity)}; app DUMP: ${PlaybackSessions.hasDumpPermission(this@MainActivity)}")
         val sessions = PlaybackSessions.query(this@MainActivity)
         if (sessions == null) appendLine("dump: unavailable (${PlaybackSessions.lastError})")
         else sessions.forEach {
@@ -316,7 +321,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         SystemEqService.start(this)
-        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasDumpPermission(this), SessionRouter.snapshot, android.os.Process.myUid())
+        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasReportAccess(this), SessionRouter.snapshot, android.os.Process.myUid())
         if (blocker != null) {
             CaptureService.startupMessage.value = blocker
             DetectionSetup.refresh()

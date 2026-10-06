@@ -53,7 +53,7 @@ object DetectionMonitor {
     fun scan(context: Context): Outcome {
         scans++
         val now = System.currentTimeMillis()
-        val perm = PlaybackSessions.hasDumpPermission(context)
+        val perm = PlaybackSessions.hasReportAccess(context)
         val ownPid = Process.myPid()
         val ownUid = Process.myUid()
         var players: List<PlaybackSession>? = null
@@ -86,6 +86,10 @@ object DetectionMonitor {
             if (debugBlindPlayers) { players = null; playersError = "test: player list blinded" }
             if (debugBlindServer) { af = null; afError = "test: audio-server report blinded" }
             if (needServer) lastAfSnapshot = af
+        }
+        if (perm && needServer && players == null && af == null && ShizukuAudioReports.ready &&
+            !debugBlindPlayers && !debugBlindServer) {
+            ShizukuAudioReports.reportsFailed(context, "$playersError; $afError")
         }
         val pm = context.packageManager
         val ledger = SessionLedger.merge(players, af, ownPid, ownUid) { uid ->

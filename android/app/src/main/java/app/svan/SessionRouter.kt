@@ -196,7 +196,7 @@ object SessionRouter {
         if (!enabled || sessionId <= 0 || uid == Process.myUid() || MusicSourcePolicy.excludedPackage(pkg)) return
         worker.execute {
             if (!enabled) return@execute
-            val observed = if (PlaybackSessions.hasDumpPermission(appContext))
+            val observed = if (PlaybackSessions.hasReportAccess(appContext))
                 PlaybackSessions.query(appContext)?.firstOrNull { it.sessionId == sessionId } else null
             if (observed != null && MusicSourcePolicy.exclusion(observed) != null) return@execute
             if (uid < 0) {

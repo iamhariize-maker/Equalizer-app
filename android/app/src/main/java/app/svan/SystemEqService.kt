@@ -72,6 +72,8 @@ class SystemEqService : Service() {
             .addAction(Notification.Action.Builder(null, "Svaramanas", smart).build())
             .addAction(Notification.Action.Builder(null, "Stop", stop).build()).build(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        DetectionSetup.init(this)
+        ShizukuAudioReports.connect(this)
         SvanRepository.init(this)
         if (app.svan.svaramanas.Svaramanas.bubble.value) app.svan.svaramanas.SvaramanasBubbleService.start(this)
         SessionRouter.init(this)

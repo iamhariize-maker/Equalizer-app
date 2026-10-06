@@ -21,10 +21,18 @@ import kotlinx.coroutines.withContext
 fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
     val context = LocalContext.current
     val report by PlaybackSessions.report.collectAsState()
+    val shell by app.svan.ShizukuAudioReports.state.collectAsState()
+    val recognition by app.svan.PlayerRecognition.connected.collectAsState()
     var showDetails by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(app.svan.OnboardingAndroid.working(context)) }
     ObserveWhileVisible { working = app.svan.OnboardingAndroid.working(context) }
     SectionLabel("Music detection")
+    Text(when {
+        shell.stage == app.svan.ShizukuAudioReports.Stage.READY && app.svan.ShizukuAudioReports.ready -> "Enhanced detection · Shizuku is connected"
+        PlaybackSessions.hasDumpPermission(context) -> "Enhanced detection · existing audio access"
+        recognition -> "Basic detection + player recognition"
+        else -> "Basic detection · no extra setup needed for supported players"
+    }, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
     WorkingStatusCard(working, stats = captureStats)
     SvanCard {
         Column {

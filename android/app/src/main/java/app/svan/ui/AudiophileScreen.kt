@@ -135,7 +135,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             SvanCard {
                 Column {
                     if (routes.none { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }) {
-                        Text("No music connected. Complete Music detection above, then play your song and check Apps & engines. The DSP is idle until a player connects.",
+                        Text("No music connected. Play a song; if it stays disconnected, try the optional Music detection options above. The DSP is idle until a player connects.",
                             style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     }
                     stats?.let { st ->

@@ -1,3 +1,22 @@
+## OEM detection fallbacks — 2026-10-06, 0.5.6 follow-up
+
+The current request supersedes the earlier notification-access restriction for optional player
+recognition only. Setup binds a read-only Shizuku UserService as shell and probes a real audio
+report, without granting app DUMP. Either audio/audio_flinger report can establish capability;
+connection and IPC/read deadlines prevent a blocked OEM call from freezing setup or adding
+unbounded workers. Existing/manual app grants remain supported. Shell mode needs Shizuku running;
+reboots/disconnections return to basic session broadcasts, with clear OEM help and retry.
+
+Optional notification access is explicitly explained in Hi-Fi → Music detection. The listener
+queries package/playback state only, never notification text, song titles or track history, and
+clears its in-memory state on disconnect. Recognition can name an otherwise unreachable player,
+but never creates a session ID, alters a capture verdict, mutes a source or changes sound settings.
+The 0.5.6 utility-source filters and capture/continuity safeguards remain intact. Original measured
+CI counts are preserved; four additional real MediaSession/listener fallback checks are added.
+
+Validation results for this follow-up are recorded in docs/DETECTION_FALLBACKS.md. OEM behavior,
+including OxygenOS UserService binding, needs phone evidence; do not infer it from stock emulators.
+
 ## Playback continuity and stereo detail — 2026-10-06, 0.5.6 candidate
 
 Owner requested priority crackling fixes, automatic rejection of utility sounds, and backing-vocal/
