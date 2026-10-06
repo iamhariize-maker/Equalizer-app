@@ -184,7 +184,7 @@ private fun openSettings(context: Context, intent: Intent): String? = try {
 }
 
 @Composable
-fun WorkingStatusCard(state: WorkingState, fixture: Boolean = false) {
+fun WorkingStatusCard(state: WorkingState, fixture: Boolean = false, stats: CaptureService.Stats? = null) {
     val context = LocalContext.current
     var copied by remember { mutableStateOf(false) }
     SvanCard {
@@ -202,7 +202,7 @@ fun WorkingStatusCard(state: WorkingState, fixture: Boolean = false) {
                 if (player.engine != null && player.reason != null) Text(player.reason,
                     style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
             }
-            if (state.players.any { it.engine == UiEngine.AUDIOPHILE } && !fixture) CaptureService.stats?.let { stats ->
+            if (state.showsCapturePeaks(hasStats = stats != null, fixture = fixture)) stats?.let { stats ->
                 Text("Capture peaks · in %.1f dBFS · out %.1f dBFS".format(stats.inputPeakDb, stats.outputPeakDb),
                     style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
             }

@@ -18,14 +18,14 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun DetectionCard() {
+fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
     val context = LocalContext.current
     val report by PlaybackSessions.report.collectAsState()
     var showDetails by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(app.svan.OnboardingAndroid.working(context)) }
     ObserveWhileVisible { working = app.svan.OnboardingAndroid.working(context) }
     SectionLabel("Music detection")
-    WorkingStatusCard(working)
+    WorkingStatusCard(working, stats = captureStats)
     SvanCard {
         Column {
             SetupHelpLinks()

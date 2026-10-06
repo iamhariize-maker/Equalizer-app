@@ -83,7 +83,28 @@ one System-effects route before starting capture. Its ten original assertions/to
 39-check audio test body remain unchanged. Real multi-session/recreated-player capture needs
 separate validation; do not infer reliability from this settled single-source setup.
 
-## Limits
+## Page-fix CI and live signal follow-up
+
+[Page-fix CI 37423521036](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37423521036)
+at `9cdec1e2d506bf3f1f69144a2286654fc0f8d2c0` passed all nine jobs. Both full suites
+passed every original measured check, eight first-run checks, five live wizard checks and all
+15 fixture geometry/control checks. All 15 API 33 wizard/status layouts, their finish details,
+and live API 33/34 setup/status captures were inspected at native phone size. The footer fits
+and the headings, retry/progress labels and unknown-debugging warning remain readable.
+
+All four native libraries also match the baseline byte for byte in this build. API 33's 34
+paired medians are identical; API 34 has one 0.1 dB difference: `T28_on` quiet-listening bass
+is -48.0 dBFS versus baseline -48.1 dBFS. All 39 check outcomes are identical. Do not claim
+every raw measurement is identical or silently substitute this run into the earlier table.
+
+Visual review caught a missing live peak readout in the new Audiophile status card. The
+follow-up passes the Hi-Fi screen's existing polled stats into that card instead of reading
+the volatile stats once at composition. No extra audio sampling, processing or background
+poller is added. Two unit regressions cover missing/stale readings and fixture suppression;
+a sixth live wizard/status CI check requires visible capture peaks. Its final CI and screenshots
+must be checked before delivery. The earlier snapshots in SETUP.md keep their labelled provenance.
+
+## Remaining limits
 
 CI uses synthetic players and disposable signing identities. It does not establish commercial-player,
 Bluetooth, payment-app, TECNO/LG or Android 11–15 OEM compatibility. Real wireless pairing,

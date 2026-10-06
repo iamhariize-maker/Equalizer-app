@@ -7,6 +7,24 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OnboardingStateTest {
+    @Test fun peaksRequireAnActualAudiophileRouteAndAvailableReadings() {
+        val b = WorkingPlayer("player", "Player", true, true, UiEngine.AUDIOPHILE)
+        val routed = WorkingState.derive(1, listOf(b), true)
+        assertTrue(routed.showsCapturePeaks(hasStats = true))
+        assertFalse(routed.showsCapturePeaks(hasStats = false))
+        assertFalse(WorkingState.derive(1, listOf(b.copy(engine = UiEngine.SYSTEM_EFFECTS)), true)
+            .showsCapturePeaks(hasStats = true))
+    }
+
+    @Test fun idleUnknownUnreachableAndFixturesNeverShowStaleCapturePeaks() {
+        for (state in listOf(WorkingState.derive(0, emptyList(), true),
+            WorkingState.derive(null, emptyList(), true), WorkingState.derive(1, emptyList(), true))) {
+            assertFalse(state.showsCapturePeaks(hasStats = true))
+        }
+        val b = WorkingPlayer("player", "Player", true, true, UiEngine.AUDIOPHILE)
+        assertFalse(WorkingState.derive(1, listOf(b), true).showsCapturePeaks(hasStats = true, fixture = true))
+    }
+
     private val off = DebuggingState(SettingState.OFF, SettingState.OFF, SettingState.OFF)
     private val on = DebuggingState(SettingState.ON, SettingState.OFF, SettingState.ON)
     private fun snapshot(installed: Boolean? = false, running: Boolean? = false,

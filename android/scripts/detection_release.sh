@@ -199,6 +199,19 @@ eq bypass --ez off false; eq eq_band --ef frequency 1000 --ef gain -12; sleep 3
 CUT=$(level)
 check_delta 'release parametric EQ produces a 12 dB cut' "$CUT" "$BASE" -12
 tap 'Hi-Fi'; sleep 2
+peaks_visible=0
+for ((attempt=0;attempt<10;attempt++)); do
+  timeout 15s $A shell uiautomator dump /sdcard/svan-peaks.xml >/dev/null 2>&1 || continue
+  $A shell cat /sdcard/svan-peaks.xml > "$OUT/status-audiophile-live.xml"
+  if grep -Fq 'Capture peaks' "$OUT/status-audiophile-live.xml"; then peaks_visible=1; break; fi
+  sleep 1
+done
+if [ "$peaks_visible" == 1 ]; then
+  echo 'PASS routed Audiophile status displays existing live capture peaks' >> "$OUT/onboarding.txt"
+else
+  echo 'FAIL routed Audiophile status missing existing live capture peaks' >> "$OUT/onboarding.txt"
+  FAILED=1
+fi
 $A exec-out screencap -p > "$OUT/status-audiophile-live.png"
 # Connected status and signal readings are below the detection card.
 $A shell input swipe 160 500 160 140 500; sleep 2

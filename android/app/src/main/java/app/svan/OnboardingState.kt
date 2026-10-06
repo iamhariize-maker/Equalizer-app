@@ -53,6 +53,9 @@ data class WorkingPlayer(
 )
 
 data class WorkingState(val kind: WorkingKind, val players: List<WorkingPlayer>, val dumpGranted: Boolean) {
+    fun showsCapturePeaks(hasStats: Boolean, fixture: Boolean = false): Boolean =
+        !fixture && hasStats && players.any { it.engine == UiEngine.AUDIOPHILE }
+
     fun promptKey(dismissed: Set<String>): String? = if (dumpGranted || kind != WorkingKind.UNREACHABLE) null
         else players.firstOrNull { !it.attachable && it.engine == null && it.key !in dismissed }?.key
 

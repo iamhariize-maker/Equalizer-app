@@ -79,7 +79,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         ScreenTitle("Hi-Fi", "Choose processing, then check what each app actually uses.")
 
-        DetectionCard()
+        DetectionCard(captureStats = stats)
 
         SectionLabel("Background equalizer")
         SvanCard {
