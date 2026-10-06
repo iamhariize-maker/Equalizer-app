@@ -407,7 +407,6 @@ object SessionRouter {
     private fun toEngineA(sid: Int, pkg: String, uid: Int, playing: Boolean?) {
         muter.unmute(sid)
         if (!enabled) { routes.remove(sid); publishCaptureUids(); return }
-        EqController.globalEq.awaitProcessSettle()
         val attached = EqController.globalEq.attach(sid)
         if (attached) attachmentRetry.forget(sid) else attachmentRetry.failed(sid, SystemClock.elapsedRealtime())
         routes[sid] = Route(sid, pkg, uid, if (attached) Owner.ENGINE_A else Owner.UNPROCESSED, playing)

@@ -52,19 +52,6 @@ class GlobalEqEngine(bandCount: Int = 128) {
         runCatching { dp.hasControl() && dp.enabled }.getOrDefault(false)
     } ?: false
 
-    /**
-     * When Svan's process was killed mid-song and restarts, the audio server can still be
-     * tearing down the dead process's effect for a few seconds (CI saw NO_INIT 2.5 s after a
-     * kill). An effect attached during that window ran without the stream volume: playback
-     * jumped by the full volume attenuation (+32.5 dB on the emulator). Until the process is
-     * [PROCESS_SETTLE_MS] old, wait (without holding the engine lock); the source keeps
-     * playing unprocessed at its normal volume meanwhile.
-     */
-    fun awaitProcessSettle() {
-        val age = SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime()
-        if (age in 0 until PROCESS_SETTLE_MS) SystemClock.sleep(PROCESS_SETTLE_MS - age)
-    }
-
     @Synchronized
     fun attach(sessionId: Int): Boolean {
         if (sessionId <= 0) return false
@@ -84,11 +71,16 @@ class GlobalEqEngine(bandCount: Int = 128) {
             candidate = dp
             // DynamicsProcessing applies the stream volume itself (the mixer then
             // plays at unity), and configuring its architecture resets that gain
-            // to 0 dB. AudioFlinger resends the volume only when the volume
-            // changes or the effect really restarts; an off/on inside one mix
-            // cycle resumes without a restart. Re-arm while the curve is still
-            // flat, waiting long enough for a genuine stop, so the effect never
-            // plays with a missing stream volume (heard as a large jump in level).
+            // to 0 dB. AudioFlinger resends the volume only when the volume or the
+            // controlling effect changes, or the effect really restarts.
+            // An effect created before its player started is pinned to the session
+            // and outlives our process; after a restart our new handle joins that
+            // still-active orphan. Its client starts "enabled" while the server
+            // handle does not, so a plain off/on is a no-op on the server. Take
+            // ownership (off, on), then stop for longer than AudioFlinger's disable
+            // wait and start again, while the curve is still flat. Measured in CI
+            // before this: +32.5 dB (API 34) / +36.6 dB (API 33) after a restart.
+            dp.enabled = false
             dp.enabled = true
             SystemClock.sleep(VOLUME_REARM_MS)
             dp.enabled = false
@@ -277,7 +269,6 @@ class GlobalEqEngine(bandCount: Int = 128) {
         /** Longer than AudioFlinger's disable wait (about 50 ms plus a mix period on slow outputs). */
         private const val VOLUME_REARM_MS = 150L
         private const val RETRY_CREATE_MS = 250L
-        private const val PROCESS_SETTLE_MS = 5_000L
 
         fun logSpaced(n: Int, lo: Double, hi: Double): DoubleArray =
             DoubleArray(n) { exp(ln(lo) + (ln(hi) - ln(lo)) * it / max(1, n - 1)) }
