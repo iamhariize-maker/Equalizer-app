@@ -20,7 +20,11 @@ BassShaper::BassShaper(double sampleRate, int channels) : fs_(sampleRate), ch_(s
   design();
 }
 
-void BassShaper::setCharacter(double c) { character_ = std::clamp(c, -1.0, 1.0); }
+void BassShaper::setCharacter(double c) {
+  c=std::isfinite(c)?std::clamp(c,-1.,1.):0.;
+  if(c==0 && character_!=0)for(auto& state:ch_)state.releaseRemaining=std::max(1,static_cast<int>(fs_*.010));
+  character_=c;
+}
 
 void BassShaper::setCrossoverHz(double hz) {
   crossoverHz_ = std::clamp(hz, 60.0, 250.0);
@@ -59,7 +63,9 @@ void BassShaper::process(int channel, double* data, int frames) {
     s.slow = a > s.slow ? aSlow_ * s.slow + (1 - aSlow_) * a : rSlow_ * s.slow + (1 - rSlow_) * a;
     double target = 1.0;
     if (active) target = std::clamp(std::pow(s.fast / s.slow, k), kMinGain, kMaxGain);
-    s.gain = active ? gainSmooth_ * s.gain + (1 - gainSmooth_) * target : 1.0;
+    if(active) { s.gain=gainSmooth_*s.gain+(1-gainSmooth_)*target;s.releaseRemaining=0; }
+    else if(s.releaseRemaining>0) { s.gain+=(1.-s.gain)/s.releaseRemaining;--s.releaseRemaining; }
+    else s.gain=1.;
     // x - low + gain*low: exact identity when gain == 1.
     data[i] = x + (s.gain - 1.0) * low;
   }

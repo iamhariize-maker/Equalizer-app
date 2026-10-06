@@ -63,7 +63,7 @@ object DetectionMonitor {
         val publicActive = publicActiveCount(context)
         // The audio-server report is bigger and holds a global lock while it is written, so it is read only
         // while Android says something is playing (or every 30 s, or whenever it has never worked).
-        val needServer = perm && (publicActive == null || publicActive > 0 || now - lastServerReadMs > IDLE_SERVER_READ_MS ||
+        val needServer = perm && now - lastServerReadMs >= 1500L && (publicActive == null || publicActive > 0 || now - lastServerReadMs > IDLE_SERVER_READ_MS ||
             lastServerOk != true || debugBlindServer)
         if (perm) {
             players = runCatching { PlaybackSessions.queryPlayers(context) }.getOrNull()
@@ -91,6 +91,8 @@ object DetectionMonitor {
         val ledger = SessionLedger.merge(players, af, ownPid, ownUid) { uid ->
             runCatching { pm.getPackagesForUid(uid)?.firstOrNull() }.getOrNull()
         }
+        val musicSessions=ledger.sessions.filter { MusicSourcePolicy.exclusion(it.session)==null }
+        val musicUnresolved=ledger.unresolved.filter { MusicSourcePolicy.exclusion(it)==null }
         val ownActive = when {
             players != null -> players.count { it.uid == ownUid && it.state == "started" }
             CaptureService.isRunning -> 1
@@ -103,7 +105,7 @@ object DetectionMonitor {
             }
         }
         val (health, headline, advice) = DetectionStatus.assess(
-            perm, players != null, if (needServer) af != null else lastServerOk == true, publicActive, ownActive, ledger.sessions, ledger.unresolved, verification,
+            perm, players != null, if (needServer) af != null else lastServerOk == true, publicActive, ownActive, musicSessions, musicUnresolved, verification,
         ) { pkg -> runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrNull() }
         val status = DetectionStatus(
             atMs = now, dumpPermission = perm, serviceRunning = SystemEqService.isRunning,
@@ -112,7 +114,7 @@ object DetectionMonitor {
             serverError = if (needServer) afError else lastServerError, serverPartial = af?.partial == true,
             publicActive = publicActive,
             knownAudioSessions = SessionRouter.snapshot.count { it.sessionId > 0 && it.uid >= 0 && it.uid != ownUid && it.playing != false },
-            sessions = ledger.sessions, unresolved = ledger.unresolved,
+            sessions = musicSessions, unresolved = musicUnresolved,
             verification = verification, health = health, headline = headline, advice = advice,
         )
         mutableStatus.value = status

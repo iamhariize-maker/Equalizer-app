@@ -62,6 +62,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     var routes by remember { mutableStateOf(SessionRouter.snapshot.toList()) }
     val detection by DetectionMonitor.status.collectAsState()
     val captureStartup by CaptureService.startupMessage.collectAsState()
+    val captureRecovery by CaptureService.recoveryMessage.collectAsState()
     LaunchedEffect(Unit) {
         while (true) {
             stats = CaptureService.stats
@@ -70,7 +71,10 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             verdicts = SessionRouter.compat().all()
             systemApps = prefs.systemOnlyPackages()
             knownApps = verdicts.keys + systemApps + SessionRouter.snapshot.map { it.pkg } +
-                DetectionMonitor.status.value.sessions.map { it.session.packageName }
+                DetectionMonitor.status.value.sessions.filter { source ->
+                    app.svan.MusicSourcePolicy.immediate(source.session) || SessionRouter.snapshot.any { it.sessionId == source.session.sessionId }
+                }.map { it.session.packageName }
+            knownApps = knownApps.filterNot { app.svan.MusicSourcePolicy.excludedPackage(it) }.toSet()
             routes = SessionRouter.snapshot.toList()
             delay(700)
         }
@@ -126,6 +130,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                 }
             }
         }
+        if (captureRecovery.isNotBlank()) Text(captureRecovery, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
         if (running) {
             SvanCard {
                 Column {
@@ -139,7 +144,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         Text("DSP %.1f ms · load %.1f%% · underruns %d".format(st.dspLatencyMs, st.dspPercent, st.underruns), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                         Text("Applied gain %.1f dB · protection %.1f dB".format(st.gainDb, st.protectionDb), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     }
-                    Text("These readings exclude capture, Android mixing and Bluetooth delay. If playback stutters, try Efficient; use system effects for the shortest path.",
+                    Text("These readings exclude capture, Android mixing and Bluetooth delay. Svan increases buffering after underruns and returns to system effects if capture repeatedly cannot keep up.",
                         style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
                 }
             }
@@ -150,7 +155,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
 
         SectionLabel("Apps & engines")
-        Text("Try Spotify, Amazon Music, YouTube Music, Apple Music, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
+        Text("Notifications, interface effects and known utility sounds are left outside Svan processing. Unknown players must show sustained playback. Their alerts remain audible normally. Try Spotify, Amazon Music, YouTube Music, Apple Music, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         if (knownApps.isEmpty()) Text("No audio apps detected yet.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         val livePkgs = routes.map { it.pkg }.toSet() + detection.sessions.map { it.session.packageName }
@@ -193,7 +198,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
 
         SectionLabel("Capture processing quality")
-        Text("These quality and dither settings apply to the capture engine. System effects use Android’s own processing.",
+        Text("Quality and dither changes take effect when capture restarts. This keeps filter latency stable during a song. System effects use Android’s own processing.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         QualityMode.entries.forEach { q ->
             ChoiceRow(q.title, q.detail, s.quality == q, onClick = { SvanRepository.updateSettings { it.copy(quality = q) } },

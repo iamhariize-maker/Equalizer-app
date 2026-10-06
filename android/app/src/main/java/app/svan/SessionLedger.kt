@@ -121,7 +121,7 @@ object SessionLedger {
                 named
             } ?: run {
                 val uid = ref?.uid?.takeIf { it >= 0 } ?: uidByPid[pid] ?: -1
-                val usage = when (tracks.firstOrNull()?.usage) { 14 -> "USAGE_GAME"; 0 -> "USAGE_UNKNOWN"; else -> "USAGE_MEDIA" }
+                val usage = when (tracks.firstOrNull()?.usage) { 14 -> "USAGE_GAME"; 1 -> "USAGE_MEDIA"; else -> "USAGE_UNKNOWN" }
                 val pkg = ref?.packageName?.takeIf { it.isNotBlank() && it != "?" } ?: packageForUid(uid) ?: if (uid >= 0) "uid:$uid" else "pid:$pid"
                 PlaybackSession(d.sid, uid, usage, if (activeOnServer == true) "started" else "paused", 0, pkg, pid)
             }

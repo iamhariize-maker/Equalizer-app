@@ -49,6 +49,8 @@ swipe_up; shot 0b-sound-tuners
 swipe_up; shot 0c-sound-tuners
 swipe_up; shot 0d-sound-tuners
 swipe_up; shot 0e-sound-tuners
+swipe_up; shot 0f-orchestral-details
+swipe_up; shot 0g-orchestral-guidance
 AFTER=$(state) || AFTER=""
 if [ -n "$BEFORE" ] && [ "$BEFORE" = "$AFTER" ]; then
   echo "PASS sound scroll preserves EQ settings" > "$OUT/interaction.txt"

@@ -115,6 +115,15 @@ class MainActivity : ComponentActivity() {
             }
             "onboarding_reset_prompts" -> OnboardingAndroid.resetPrompts(this)
             "blind_lab" -> app.svan.listening.BlindLab.open.value=true
+            "source_policy_state" -> {
+                val pkg=intent.getStringExtra("pkg").orEmpty()
+                val observed=SessionRouter.evidence.values.filter { it.session.packageName==pkg }
+                EqController.log("SOURCE_POLICY_STATE "+org.json.JSONObject()
+                    .put("observed",observed.size)
+                    .put("excluded",observed.count {MusicSourcePolicy.exclusion(it.session)!=null})
+                    .put("routes",SessionRouter.snapshot.count {it.pkg==pkg}))
+            }
+            "continuity_lab" -> thread { runCatching {app.svan.listening.ContinuityLab.verify()}.onFailure {EqController.log("CONTINUITY_LAB_FAILED ${it.message}")} }
             "quality_lab" -> thread { runCatching {app.svan.listening.QualityLab.verify(this)}.onFailure {EqController.log("QUALITY_LAB_FAILED ${it.message}")} }
             "probe" -> thread { EqController.log(DynamicsProbe.run(this)) }
             "resolution" -> runResolutionProbe()
@@ -222,7 +231,7 @@ class MainActivity : ComponentActivity() {
                 SvanRepository.update {
                     it.copy(
                         vocal = app.svan.model.VocalTuner(f("intimacy"), f("warmth"), f("smooth")),
-                        instrument = app.svan.model.InstrumentTuner(f("space"), f("instruments")),
+                        instrument = app.svan.model.InstrumentTuner(f("space"), f("instruments"), f("backing"), f("spatial")),
                     )
                 }
                 val r = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]

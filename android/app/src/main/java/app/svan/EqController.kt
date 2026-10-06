@@ -16,7 +16,11 @@ object EqController {
 
     fun log(line: String) {
         android.util.Log.i("EqSpike", line) // automated tests read logcat
-        synchronized(log) { log.appendLine(line) }
+        synchronized(log) {
+            log.appendLine(line)
+            // Diagnostics must not grow for the entire lifetime of the audio service.
+            if (log.length > 65_536) log.delete(0, log.length - 49_152)
+        }
     }
 
     /** Loads AutoEq text into the shared state; both engines follow it. */

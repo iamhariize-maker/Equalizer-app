@@ -1,3 +1,37 @@
+## Playback continuity and stereo detail — 2026-10-06, 0.5.6 candidate
+
+Owner requested priority crackling fixes, automatic rejection of utility sounds, and backing-vocal/
+binaural-detail control. Work remains on ccr-f859b567-dgrdoj. See CONTINUITY_0.5.6.md for actual
+implementation, research sources and limits. Crackling on the owner's phone has not been reproduced;
+its engine/output/diagnostic report are still needed. Never claim the device issue is confirmed fixed.
+
+Version/code are 0.5.6/13. No owner signing, public release, Play submission or PR is made. Preview
+identity is unchanged; an owner-signed public beta needs the original owner key for an in-place update.
+The read-only release verifier accepts the two exact supported pairs (0.5.5/12 and 0.5.6/13).
+
+Native stereo edits crossfade over 20 ms with fixed banks; bass bypass releases over 10 ms. System
+MBC stays neutral/allocated rather than recreating effects on dynamics changes. Unchanged values are
+not repeatedly sent. Capture primes output, grows its effective buffer after underruns and stops with
+an explanatory fallback after persistent starvation at capacity. Capture-format changes apply at
+restart; source changes fade. Capturable mix usage is MEDIA only (unknown/game use system effects).
+Routing batches publish complete UID ownership, including excluded active media siblings. Discovery
+filters sonification/SoundPool/system/known utility sounds; unrecognized started sources need 1.5 s
+of observations. Notification-access discovery remains removed. Diagnostic memory is bounded.
+
+Orchestral amplifier has separate Backing vocals and Spatial detail dials, default off. They shape
+existing side energy, cannot isolate stems or guarantee faithful binaural enhancement. Manual dials
+survive Svaresa layering/export/restore and are included in blind rendering. Host tests verify response,
+mono preservation, edit continuity, concurrency, and protection at 44.1/48/96 kHz.
+
+Local verification: all 103 Release core tests pass. The 101-test ASan/UBSan suite plus both newly
+added tests and concurrent publication checks pass without findings. Android debug/release assembly,
+lintDebug, all 142 JVM tests and both test-source builds pass. The preview APK verifies with the
+existing preview certificate, v2 signing and four 16 KB-aligned native libraries; no forbidden
+permissions are declared. Four screenshot-assertion Python tests also pass. New release JNI/source-
+filter probes and emulator checks are pending; do not infer they pass from older evidence. Original
+routing/detection/workspace/control/quality/production CI checks remain intact, with four JNI detail
+checks and three live source-attribute checks added. Extra screenshots cover the new knob row.
+
 ## Owner-authorized GitHub beta candidate — 2026-10-06
 
 The owner recovered the original private signing backup and authorized signing/publication.

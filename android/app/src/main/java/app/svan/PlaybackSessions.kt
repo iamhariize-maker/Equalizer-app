@@ -25,6 +25,7 @@ data class PlaybackSession(
     val pid: Int = -1,
     /** `type:` of the player (android.media.AudioTrack, AAudio, OpenSL ES…); empty if absent. */
     val playerType: String = "",
+    val contentType: String = "CONTENT_TYPE_UNKNOWN",
 ) {
     /** Usages AudioPlaybackCapture can see (docs: MEDIA, GAME, UNKNOWN). */
     val usageCapturable: Boolean get() = usage in CAPTURABLE_USAGES
@@ -65,6 +66,7 @@ object PlaybackSessions {
     private val UID = Regex("""(?:u/pid\s*:\s*|(?:client)?uid\s*[:=]\s*)(-?\d+)""", RegexOption.IGNORE_CASE)
     private val PID = Regex("""u/pid\s*:\s*-?\d+\s*/\s*(-?\d+)""", RegexOption.IGNORE_CASE)
     private val TYPE = Regex("""\btype\s*:\s*(\S+)""", RegexOption.IGNORE_CASE)
+    private val CONTENT = Regex("""\bcontent(?:Type)?\s*[:=]\s*([\w]+)""", RegexOption.IGNORE_CASE)
     private val USAGE = Regex("""\busage\s*[:=]\s*([\w]+)""", RegexOption.IGNORE_CASE)
     private val STATE = Regex("""\bstate\s*[:=]\s*([\w]+)""", RegexOption.IGNORE_CASE)
     private val FLAGS = Regex("""\bflags\s*[:=]\s*(0[xX][0-9A-Fa-f]+|\d+)""", RegexOption.IGNORE_CASE)
@@ -167,6 +169,11 @@ object PlaybackSessions {
             flags = flags,
             pid = PID.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: -1,
             playerType = TYPE.find(line)?.groupValues?.get(1) ?: "",
+            contentType = when(val c=CONTENT.find(line)?.groupValues?.get(1)?.uppercase()?.removePrefix("CONTENT_TYPE_")) {
+                "2", "MUSIC" -> "CONTENT_TYPE_MUSIC"
+                "4", "SONIFICATION" -> "CONTENT_TYPE_SONIFICATION"
+                else -> "CONTENT_TYPE_${c ?: "UNKNOWN"}"
+            },
         )
         if (sid <= 0) {
             // Session 0 / missing cannot be attached to a player effect directly.
@@ -212,7 +219,7 @@ object PlaybackSessions {
             scannedAtMs = System.currentTimeMillis(),
             playbackConfigCount = parsed.configLines.size,
             parsedSessionCount = sessions.size,
-            mediaSessions = sessions.filter { it.usageCapturable },
+            mediaSessions = sessions.filter { MusicSourcePolicy.exclusion(it) == null },
             unparsedConfigCount = parsed.unparsedConfigCount,
             configPreview = parsed.configLines.take(5).joinToString("\n").take(1600),
             sessionlessPlayers = sessionless,

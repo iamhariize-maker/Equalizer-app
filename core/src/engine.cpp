@@ -83,8 +83,7 @@ void Engine::setBandsAllChannels(const std::vector<BandParams>& bands) {
 }
 
 void Engine::setPreampDb(double db) {
-  userPreampDb_.store(db);
-  updateGain();
+  if(userPreampDb_.exchange(db)!=db) updateGain();
 }
 
 void Engine::setBassCharacter(double character, double crossoverHz) {
