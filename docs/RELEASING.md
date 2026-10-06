@@ -1,9 +1,9 @@
 # Owner runbook: Svan 0.5.5 GitHub beta
 
 Package `app.svan`, versionName `0.5.5`, versionCode `12`. Initial verification preparation changed
-only scripts, workflows and documentation. Subsequent onboarding work needs a new signed asset;
-the owner's original APK remains the candidate for the original build only. Nothing is published
-by committing or pushing this work. Svan's original code is **All rights reserved**, per the owner's
+only scripts, workflows and documentation. The onboarding production payload at fbc2ff6 is now
+privately signed with the recovered original owner key; see the beta notes for its exact hash.
+Committing or pushing alone does not publish a GitHub release. Svan's original code is **All rights reserved**, per the owner's
 decision; third-party notices remain applicable. See [LICENSE](../LICENSE).
 
 ## 1. Build and test before signing privately
@@ -29,19 +29,14 @@ step or private-key input. Never distribute the public preview or disposable CI-
 an owner release. If using a tested CI payload, privately sign and check payload equivalence as
 described in RELEASE_SIGNING.md; do not assume an arbitrary rebuild is the exact tested payload.
 
-For this beta, the owner already has `Svan-0.5.5-owner-signed-a603146.apk`. Do not rebuild or re-sign
-that file just to publish it. Source application code remains at `a603146`; a later preparation tag
-can point at the docs/workflow commit that adds the verifier without claiming a new APK build.
+For this beta, use `Svan-0.5.5-owner-signed-fbc2ff6.apk`, privately re-signed from the exact
+production fixture of CI 37434953170. All 73 ZIP entry contents match the tested payload;
+its public record is [v0.5.5-beta-payload.json](releases/v0.5.5-beta-payload.json). No new key was
+generated. The original a603146 owner APK is historical and lacks the new onboarding.
 
-## Onboarding changes need a new asset
-
-The subsequent onboarding/detection work changes app UI after `a603146`. The original
-owner-signed APK/hash below predates it. To distribute that work, finish CI/phone review,
-privately build/sign a new APK outside CI, give it an accurate source-based filename,
-and update the release notes/hash after verifying it. Do not attach the old APK while
-claiming it contains the new onboarding. This task does not change version metadata;
-choose an owner-authorized future versionCode before a Play update or when required
-for a later release. Existing note/hash lines remain facts about the original file only.
+App version metadata remains 0.5.5/code 12. Real-phone in-place update/grant retention must be
+validated. A future Play update requires an owner-authorized increasing versionCode and
+corresponding verifier/notes updates; signing this beta does not change app version metadata.
 
 ## 2. Verify the owner APK
 
@@ -51,7 +46,7 @@ required by the release verifier. Set `ANDROID_HOME` to your SDK, or `SVAN_BUILD
 build-tools directory, then from the repository root:
 
 ```sh
-bash android/scripts/verify_release.sh /path/to/Svan-0.5.5-owner-signed-a603146.apk
+bash android/scripts/verify_release.sh /path/to/Svan-0.5.5-owner-signed-fbc2ff6.apk
 ```
 
 Use the default [public certificate](release-cert.sha256) for an owner release. The optional second
@@ -60,8 +55,8 @@ release signer pass. Permission additions **and removals** fail against
 [the compiled permission allowlist](release-permissions.txt). Native checks cover ELF load segments
 and uncompressed APK ZIP offsets at 16 KB, matching the existing Python gate's requirements.
 
-This specific original file must print SHA-256
-`1e8ac9c4d64357eb937af24606b4d522d92aec2770cc4bf0d03b3830b204fa32`.
+This specific beta file must print SHA-256
+`4272e44c7c033b05789bd6beff51e7b5422e7da375a360e486e8fc310af5702b`.
 Do not publish it under that filename/hash if any bytes differ. The workflow checks signer, package,
 version, permission set and alignment; its generated checksum reports the actual downloaded bytes,
 not a claim of reproducible-build provenance.
@@ -72,7 +67,10 @@ not a claim of reproducible-build provenance.
    release/workflow_dispatch events. At preparation time the default branch is the older
    `ccr-208702a3-2mju42`; this work stays on `ccr-f859b567-dgrdoj`. The owner must deliberately make
    the prepared branch the default or arrange an authorized integration before expecting automation.
-   No branch-default change, merge or PR is performed here.
+   No branch-default change, merge or PR is performed here. Until that integration, automatic
+   release verification will not run: use the complete local verifier, generate `SHA256SUMS`
+   from the final signed APK, and attach it manually. Do not claim workflow verification.
+   Download the published assets and repeat local verification before sharing the link.
 2. In [Releases](https://github.com/iamhariize-maker/Equalizer-app/releases), draft a new release,
    for example tag `v0.5.5-beta.1`, targeting the prepared commit that contains this verifier/workflow.
    Do not tag `a603146` alone: it does not contain the new scripts. A GitHub tag is not a change to

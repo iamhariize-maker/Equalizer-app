@@ -19,8 +19,9 @@ Contributors and coding agents: start with [`AGENTS.md`](AGENTS.md) and [`docs/H
 
 ## Beta downloads
 
-Owner-signed betas will be listed in [GitHub Releases](https://github.com/iamhariize-maker/Equalizer-app/releases)
-as prereleases. Android 10+ (API 29+) and ARM64/x86_64 are the build requirements; commercial-player,
+Download [Svan 0.5.5 beta](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1)
+from [GitHub Releases](https://github.com/iamhariize-maker/Equalizer-app/releases). Android 10+ (API 29+)
+and ARM64/x86_64 are the build requirements; commercial-player,
 OEM and output-route compatibility still needs real-device testing. Download the APK and `SHA256SUMS`
 and run `sha256sum -c SHA256SUMS`, or compare the APK's SHA-256 using a trusted file-hash tool.
 **Never disable Play Protect.** If it warns or blocks installation, stop and report the exact message.

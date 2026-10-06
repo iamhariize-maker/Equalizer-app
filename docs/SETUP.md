@@ -1,9 +1,9 @@
 # Start listening, then fix detection only if needed
 
-This guide describes the onboarding work after `a603146`. The original
-`Svan-0.5.5-owner-signed-a603146.apk` does **not** contain it. A new privately signed APK,
-its correct hash and source reference are required before distributing this flow.
-No release is published by this work.
+This guide describes the onboarding included in `Svan-0.5.5-owner-signed-fbc2ff6.apk`.
+Use the [GitHub beta](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1)
+and verify its hash against the [release notes](releases/v0.5.5-beta.md). The original
+`Svan-0.5.5-owner-signed-a603146.apk` does **not** contain this flow.
 
 1. Open Svan and play music. A fresh install starts System effects, Flat, 0 dB preamp,
    and Audiophile off. The welcome card can be dismissed; no Shizuku setup blocks first run.

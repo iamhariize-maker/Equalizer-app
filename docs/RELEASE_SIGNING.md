@@ -5,6 +5,12 @@ created privately on 5 October 2026. The key and its passwords are outside the r
 never CI inputs, and must be downloaded and backed up by the owner. The public preview key
 is not a production identity. A brand certificate label does not certify a legal identity.
 
+On 6 October 2026 the owner recovered the original backup and authorized private signing and
+GitHub publication of the tested `fbc2ff6` production payload. No new key was generated.
+The backup was confirmed restricted to the owner and used outside Git/CI; no recovery credentials
+are release assets. The resulting APK retains the certificate below. See the
+[beta notes](releases/v0.5.5-beta.md) for its actual file hash and payload verification.
+
 This release compiles/targets API 36 using AGP 8.9.2 and Gradle 8.11.1, retaining minimum API 29.
 Google's [current target requirement](https://support.google.com/googleplay/android-developer/answer/11926878?hl=en)
 requires API 36 for new mobile-app submissions from 31 August 2026. CI adds Android 16/API 36

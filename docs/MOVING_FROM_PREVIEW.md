@@ -4,6 +4,11 @@ Earlier previews used a shared public development key. The owner-signed 0.5.5 AP
 certificate, so Android cannot update an earlier preview in place. Uninstalling deletes Svan's
 local data and permissions; preserve settings first.
 
+The new `fbc2ff6` beta retains the original owner key used by `Svan-0.5.5-owner-signed-a603146.apk`.
+If that owner build is already installed, export settings as a precaution and try an in-place
+update first; do not uninstall just because this guide describes preview migration. Real-phone
+update/grant retention is still unverified. The app version/code remain 0.5.5/12.
+
 1. While the preview is still installed, open **Presets → Export settings**. If the installed
    preview lacks this feature, update it with a compatible latest preview signed by the same
    preview key before exporting. Keep Play Protect enabled; if it blocks that update, stop and

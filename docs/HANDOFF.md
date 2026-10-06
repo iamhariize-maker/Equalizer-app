@@ -1,3 +1,21 @@
+## Owner-authorized GitHub beta candidate — 2026-10-06
+
+The owner recovered the original private signing backup and authorized signing/publication.
+No replacement key was generated. `Svan-0.5.5-owner-signed-fbc2ff6.apk` retains the original
+certificate in release-cert.sha256 and is a private re-sign of the exact production fixture
+from all-green CI 37434953170, source fbc2ff6d6ec624444feeb9991711d933511bf93a.
+All 73 ZIP entry contents are identical, including all four native libraries. The full owner
+release verifier passes; public hash/provenance are in releases/v0.5.5-beta.md and its payload
+record. Subsequent changes are release documentation only; permissions, audio, signing config
+and app version/code remain untouched (0.5.5/12). Use the original identity for future updates.
+
+The backup remains private to the owner, outside Git/CI; do not publish it or recovery details.
+The prerelease is prepared as v0.5.5-beta.1. Publication/asset availability must be checked on
+GitHub, not inferred from this commit. The older default branch does not contain release-verify;
+until owner-authorized default-branch integration, verify locally and attach the generated
+SHA256SUMS manually. No branch-default change, other-branch push, Pages or Play submission is made.
+Phone updates/DUMP retention, OEM behavior, Bluetooth and payment apps still need validation.
+
 ## GitHub beta onboarding — 2026-10-06
 
 Owner extended release preparation to first-run/detection UX; work stays on

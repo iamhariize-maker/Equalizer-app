@@ -1,7 +1,8 @@
 # Current onboarding validation (after a603146)
 
-The original owner-signed a603146 APK predates this flow. Use a new owner-signed build
-and its updated release hash when testing. Do not disable Play Protect.
+Use `Svan-0.5.5-owner-signed-fbc2ff6.apk` and the hash in the
+[beta release notes](releases/v0.5.5-beta.md). The original owner-signed a603146 APK
+predates this flow. Both use the same owner signing identity. Do not disable Play Protect.
 
 - Fresh install: Sound is immediately available with System effects, Flat and 0 dB preamp;
   Audiophile and automatic tonal processing are off. Updates must retain saved sound/settings.
