@@ -2,86 +2,63 @@
 
 # Svan · स्वन्
 
-**A free system-wide equalizer for Android, built for sound quality.**
-64-bit DSP · up to 256 parametric stages · AutoEq headphone correction · no root needed
+A system-wide equalizer for Android.
 
 ![Status: beta](https://img.shields.io/badge/status-beta-orange.svg)
 ![Android 10+](https://img.shields.io/badge/Android-10%2B-green.svg)
 [![CI](https://github.com/iamhariize-maker/Equalizer-app/actions/workflows/ci.yml/badge.svg)](https://github.com/iamhariize-maker/Equalizer-app/actions/workflows/ci.yml)
 
-[**⬇ Download the beta**](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1) ·
-[**Report your device**](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml) ·
+[Download the beta](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1) ·
+[Report your device](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml) ·
 [Compatibility](docs/COMPATIBILITY.md) ·
 [Setup guide](docs/SETUP.md)
 
 </div>
 
-*Svan* (स्वन्) is Sanskrit for **sound**; the full name is *Svanam Shreshtham: Ultimate Sound*.
+Svan (स्वन्) is the Sanskrit word for sound. The full name is Svanam Shreshtham: Ultimate Sound.
 
-> **Beta: testers wanted.** The DSP engine is measured and tested, and the app is verified on Android emulators.
-> Real-phone compatibility is still being mapped, so a
-> [device report](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml) (about a minute) is the most useful thing you can do,
-> whether Svan worked for you or not.
+It's an equalizer that works across the apps on your phone instead of inside a single player. You can load a correction for your headphones from the AutoEq database, tweak it by hand with up to 256 parametric bands per channel, and not worry about clipping when you boost. It doesn't need root.
+
+Svan is in beta and I'm still finding out which phones, players and Bluetooth setups it actually works with. If you try it, please tell me what happened, even if the answer is "nothing". The [device report form](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml) takes about a minute.
 
 <p align="center">
   <img src="docs/images/setup/first-run.png" width="240" alt="Svan Sound screen with a flat EQ curve">
   &nbsp;&nbsp;
   <img src="docs/images/setup/system-effects.png" width="240" alt="Svan Hi-Fi screen showing a player found and routed">
 </p>
-<p align="center"><sub>Captured on an Android emulator with a synthetic test player, not a real phone or music app.</sub></p>
+<p align="center"><sub>Screenshots from an Android emulator with a test player, not from a real phone or music app.</sub></p>
 
-## Why Svan
+## How it works
 
-Most Android equalizers are tied to one music app, or need root. Svan applies one EQ to the apps you already use.
+There are two engines, and each app's audio goes through exactly one of them.
 
-- **System-wide.** One EQ for eligible audio from your music apps, video apps and browsers.
-- **Headphone correction.** Search AutoEq profiles for your headphones, or import `ParametricEQ.txt` and `GraphicEQ.txt` files.
-- **Serious parametric EQ.** Up to 256 active stages per channel, independent left and right, with peak, shelf, high/low-pass, band-pass, notch and all-pass filters.
-- **64-bit processing, oversampling, clipping protection.** Audiophile engine only. 2x/4x/8x oversampling reduces the high-frequency "cramping" of digital EQ, with auto headroom, gain protection and TPDF or noise-shaped dither.
-- **Blind listening comparison.** A built-in tool so you can check whether a change really sounds better.
-- **No root.** Optional [Shizuku](https://shizuku.rikka.app/) setup helps Svan find players that don't announce themselves, and can be stopped afterwards.
-- **No ads and no analytics SDK.** Audio is processed on your phone. See the [privacy notice](docs/PRIVACY.md).
+System effects is the default and the one I'd suggest. It uses Android's own `DynamicsProcessing` effect on other apps' audio sessions, so latency is low and it works with apps that block audio capture, like Spotify. The catch is that it only does gain per band, and Android decides the precision.
 
-## Two engines
+The Audiophile engine captures the playback, runs it through the 64-bit C++ chain in `core/`, and plays it back. That gives you the full set of tools: oversampled EQ, dither, gain protection. It's also experimental. It adds delay (noticeable on Bluetooth), asks for a capture permission every session, and can't do bit-perfect or USB DAC passthrough.
 
-| | System effects (recommended) | Audiophile engine (experimental) |
-|---|---|---|
-| How | Android `DynamicsProcessing` on other apps' audio sessions | Captures playback, runs the 64-bit C++ chain, plays it back |
-| Strengths | Low latency; works with apps that block capture | Full DSP chain, oversampled EQ, dither |
-| Trade-offs | Gain-per-band only; Android controls the precision | Adds delay (more on Bluetooth); needs a capture permission each session; no bit-perfect or USB-DAC passthrough |
+A fresh install starts on System effects with a flat curve and 0 dB preamp. More detail in [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [AUDIOPHILE.md](docs/AUDIOPHILE.md).
 
-Fresh installs start with System effects, Flat settings and 0 dB preamp. Details: [ARCHITECTURE.md](docs/ARCHITECTURE.md), [AUDIOPHILE.md](docs/AUDIOPHILE.md).
+## Getting started
 
-## Quick start
+1. Download the APK and `SHA256SUMS` from the [release page](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1) and check the hash with `sha256sum -c SHA256SUMS`. Keep Play Protect on. If Android blocks the install, stop and [send me the exact message](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml).
+2. Open Svan and play some music. You don't have to set anything up first.
+3. Go to Hi-Fi and look at "Is it working?" to see whether your player and output are listed.
+4. If your player isn't reachable, the optional Fix music detection wizard uses Shizuku to sort it out. [docs/SETUP.md](docs/SETUP.md) walks through it.
+5. In Presets, search for your headphones to load an AutoEq correction, or import a profile file.
 
-1. Download the APK and `SHA256SUMS` from [Releases](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1) and run `sha256sum -c SHA256SUMS`,
-   or compare the APK's SHA-256 with a trusted hash tool. **Never disable Play Protect.** If Android warns or blocks the install, stop and
-   [report the exact message](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml).
-2. Open Svan and play music. No setup is required to start.
-3. In **Hi-Fi → Is it working?** check that your player and output route are shown.
-4. If your player isn't reachable, use **Fix music detection** (optional Shizuku wizard). See [docs/SETUP.md](docs/SETUP.md).
-5. In **Presets**, search your headphones for an AutoEq correction, or import a profile file.
-6. Tell us how it went: [file a device report](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml).
+You need Android 10 or newer on arm64 or x86_64. If you used an earlier preview, read [moving from preview](docs/MOVING_FROM_PREVIEW.md) before you uninstall anything.
 
-Requires Android 10 or newer (arm64-v8a or x86_64). Coming from an earlier preview? See [moving from preview](docs/MOVING_FROM_PREVIEW.md) before uninstalling.
+## What doesn't work yet
 
-## Known limitations (beta)
+I haven't been able to test most of this on real hardware. The compatibility table says exactly how each row was checked, and most of it is still "unverified".
 
-- Real-phone, OEM, Bluetooth and player compatibility are unverified. Every row of [COMPATIBILITY.md](docs/COMPATIBILITY.md) says how it was verified.
-- On one test phone the Audiophile engine sounded delayed or doubled over Bluetooth, and some players weren't detected. Use System effects if you hear it.
-- Apps that block audio capture can only use System effects.
-- Measured results in the docs come from synthetic tests, not listening tests or total phone latency.
-- This is a beta, not a store release.
+On the one phone I've used for listening (a TECNO LH7n on Android 14), the Audiophile engine sounded delayed or doubled over Bluetooth, and a few players weren't detected. I don't know why yet. If you hear that too, switch to System effects.
+
+Apps that block capture only work with System effects. The numbers in the docs come from synthetic tests, so they say nothing about how it sounds or about total latency on a phone. And this is a beta, not a store release.
 
 ## The DSP core
 
-`core/` is a portable C++17 DSP library, shared by the Android app and any future player mode.
-
-- **Parametric EQ:** up to 256 active stages per channel, independent L/R (Android allows 128 manual bands plus tuning and tuners). Band changes never block the audio thread.
-- **AutoEq import:** `ParametricEQ.txt` and `GraphicEQ.txt` formats.
-- **64-bit processing:** the whole chain runs in double precision.
-- **Oversampled EQ** (2x/4x/8x), a **resampler** with Quality / Audiophile settings (portable core only; Android capture stays at 48 kHz), **dither**, **auto headroom** and **Automatic Gain Protection**.
-- **Tested:** 98 self-contained unit tests, also run under ASan and UBSan in CI.
+The `core/` folder is a portable C++17 library that the Android app uses. It has a parametric EQ where band changes never block the audio thread, AutoEq import (`ParametricEQ.txt` and `GraphicEQ.txt`), double-precision processing throughout, 2x/4x/8x oversampling, a resampler with two quality settings (not used on Android, where capture stays at 48 kHz), TPDF and noise-shaped dither, automatic headroom, and gain protection for real overloads. There are 98 unit tests, and CI also runs them under ASan and UBSan.
 
 ## Build and test the core
 
@@ -113,18 +90,15 @@ debugging can be stopped. See [phone validation](docs/PHONE_VALIDATION.md).
 The optional [Shizuku API](https://github.com/RikkaApps/Shizuku-API) is MIT licensed,
 Copyright (c) 2021 RikkaW. Its full notice ships in `assets/licenses/Shizuku-API-MIT.txt`.
 
-## Reporting problems and contributing
+## Bugs, reports and code
 
-- **Device reports:** [use the form](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml). It's the fastest way to help.
-- **Bugs:** [use the bug form](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml). Issues are public, so redact private details.
-- **Code:** The source is public to read but not licensed for reuse, so code pull requests are not being accepted. See [CONTRIBUTING.md](CONTRIBUTING.md).
-- If Svan is useful to you, a ⭐ helps other people find it.
+For device reports use [this form](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml), and for bugs use the [bug form](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml). Issues are public, so look over any logs or screenshots before you post them.
+
+The source is public so you can read it, but it isn't licensed for reuse, so I'm not taking code pull requests for now. [CONTRIBUTING.md](CONTRIBUTING.md) has the details. If you find Svan useful, a star helps other people come across it.
 
 ## Licence
 
-Svan's original code is **All rights reserved**, per the owner's decision. See [LICENSE](LICENSE).
-The beta is free to use for personal evaluation. Third-party materials retain their own licences and attribution;
-no GPL implementation is copied.
+All rights reserved. See [LICENSE](LICENSE). The beta is free to use for personal evaluation. Third-party code and assets keep their own licences, and no GPL code has been copied into Svan.
 
 ## Brand assets
 

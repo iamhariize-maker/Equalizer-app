@@ -1,22 +1,20 @@
-# Contributing to Svan
+# Contributing
 
-Thanks for helping! Svan is a beta. What helps most right now is **testing on real phones** and telling us what happened.
+Svan is a beta, and the most useful thing you can do right now is try it on your own phone and tell me what happened.
 
-## Welcome
-- **[Device reports](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml):** which phone, Android version, player, output and engine, and whether it worked. "It didn't work" is just as valuable as "it works".
-- **[Bug reports](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml):** issues are public, so review and redact diagnostics first. Never post credentials, recordings or payment details.
-- **Listening feedback and ideas:** open an issue and say what you heard, on which route.
-- **Docs:** typos, unclear steps and missing setup guidance for your phone brand.
+## What helps
 
-## Code contributions
-Svan's original source code is **All rights reserved** (see [LICENSE](LICENSE)). The repository is public to read, but that does not
-grant a licence to copy, modify or redistribute it. To keep the owner's licensing options open, **code pull requests are not
-being accepted for now.** If you'd like to contribute code, open an issue first so terms can be agreed before you do any work.
+- A [device report](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml): your phone, Android version, player, output and engine, and whether it worked. A report that says it didn't work is just as useful as one that says it did.
+- A [bug report](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml). Issues are public, so please look over logs and screenshots first, and never post passwords, recordings or payment details.
+- What you heard and on which route, if something sounds off.
+- Fixes to the docs, especially setup steps for your phone's brand.
 
-## Ground rules for everyone
-- Keep Play Protect enabled when installing builds. Verify the APK's SHA-256.
-- **No unmeasured sound-quality claims.** Numbers in the UI or docs must come from a test.
-- Don't copy code from other equalizers (JamesDSP and RootlessJamesDSP are GPL; reference for technique only).
+## Code
 
-## Security
-Please report security problems privately via a GitHub security advisory rather than a public issue.
+The source is all rights reserved (see [LICENSE](LICENSE)). It's public so people can read it, but that doesn't give anyone the right to copy or redistribute it. I want to keep my options open on licensing, so I'm not accepting code pull requests at the moment. If you'd like to contribute code anyway, open an issue first so we can agree on terms before you spend any time on it.
+
+## A few ground rules
+
+Keep Play Protect on when you install builds, and check the APK's SHA-256. Don't claim anything about sound quality that hasn't been measured. And please don't copy code from other equalizers. JamesDSP and RootlessJamesDSP are GPL, so they're fine to read for ideas but nothing more.
+
+If you find a security problem, report it privately through a GitHub security advisory instead of opening a public issue.
