@@ -1,0 +1,432 @@
+{
+  "baseline_commit": "3008eb57912540183219b6a908190e82556def50",
+  "onboarding_commit": "49f33488efb7d3a432dad426d91fde99821f8825",
+  "precision_db": 0.1,
+  "api_results": [
+    {
+      "api": 33,
+      "checks": 39,
+      "measurements": 34,
+      "max_median_change_db": 0.0,
+      "levels": [
+        {
+          "label": "T0 one unprocessed copy (Engine A flat)",
+          "before_dbfs": -51.6,
+          "after_dbfs": -51.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T1 Engine A preset (expect T0 + curve@1k)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T2 Engine B single processed copy (expect ~T1; double audio would be louder)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T2b Engine B with space+instruments at max (expect = T2: centre untouched)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T3 blocked app on Engine A (expect ~T1, not silence)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T4 non-broadcasting app via DUMP (expect ~T1)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T5 after stop (expect ~T1 via Engine A, or T0 if discovered only by dump)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T6 bass tuner Punchy (expect T0 + response@1k)",
+          "before_dbfs": -60.0,
+          "after_dbfs": -60.0,
+          "change_db": 0.0
+        },
+        {
+          "label": "T7 HD 650 -> Harman tuning (expect T0 + response@1k)",
+          "before_dbfs": -66.2,
+          "after_dbfs": -66.2,
+          "change_db": 0.0
+        },
+        {
+          "label": "T8 vocal tuner max on system effects (expect T0 + response@1k)",
+          "before_dbfs": -62.9,
+          "after_dbfs": -62.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T9 +6 dB bell without predictive headroom (expect T0 + 6)",
+          "before_dbfs": -45.6,
+          "after_dbfs": -45.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T10 bypass restores flat level (expect T0)",
+          "before_dbfs": -51.6,
+          "after_dbfs": -51.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T11 system override excludes capturable audio (expect T1, no double copy)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T12 changing override stops capture safely (expect T1)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T13 auto restored to Engine B (expect T1)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T14 global system-only stops capture (expect T1)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T15 system EQ in background",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T16 unknown non-broadcasting audio stays single and unprocessed (expect T0)",
+          "before_dbfs": -51.6,
+          "after_dbfs": -51.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T17 implicit broadcast connects without enhanced permission",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T18 no detection before permission grant",
+          "before_dbfs": -51.6,
+          "after_dbfs": -51.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T19 live permission grant discovers existing playback",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T21 Svaramanas plan on system effects (expect T0 + response@1k)",
+          "before_dbfs": -58.9,
+          "after_dbfs": -58.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T20 capture-opt-out stream after Engine B muted it (expect T1, not silence)",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T24_1 recreated non-broadcasting session",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T24_2 recreated non-broadcasting session",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T24_3 recreated non-broadcasting session",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T25 lost effect recovers without player restart or manual refresh",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T26_players found with the players report unreadable",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T26_server found with the server report unreadable",
+          "before_dbfs": -57.9,
+          "after_dbfs": -57.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T28_off_1k 1 kHz tone, Svaresa resting",
+          "before_dbfs": -51.6,
+          "after_dbfs": -51.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T28_on_1k 1 kHz tone, Svaresa quiet-listening",
+          "before_dbfs": -57.6,
+          "after_dbfs": -57.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T28_off 63 Hz tone, Svaresa resting",
+          "before_dbfs": -51.6,
+          "after_dbfs": -51.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T28_on 63 Hz tone, Svaresa quiet-listening lift",
+          "before_dbfs": -52.1,
+          "after_dbfs": -52.1,
+          "change_db": 0.0
+        },
+        {
+          "label": "T29 night comfort on the same tone (bounded, audible)",
+          "before_dbfs": -53.5,
+          "after_dbfs": -53.5,
+          "change_db": 0.0
+        }
+      ]
+    },
+    {
+      "api": 34,
+      "checks": 39,
+      "measurements": 34,
+      "max_median_change_db": 0.0,
+      "levels": [
+        {
+          "label": "T0 one unprocessed copy (Engine A flat)",
+          "before_dbfs": -47.6,
+          "after_dbfs": -47.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T1 Engine A preset (expect T0 + curve@1k)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T2 Engine B single processed copy (expect ~T1; double audio would be louder)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T2b Engine B with space+instruments at max (expect = T2: centre untouched)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T3 blocked app on Engine A (expect ~T1, not silence)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T4 non-broadcasting app via DUMP (expect ~T1)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T5 after stop (expect ~T1 via Engine A, or T0 if discovered only by dump)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T6 bass tuner Punchy (expect T0 + response@1k)",
+          "before_dbfs": -55.9,
+          "after_dbfs": -55.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T7 HD 650 -> Harman tuning (expect T0 + response@1k)",
+          "before_dbfs": -62.1,
+          "after_dbfs": -62.1,
+          "change_db": 0.0
+        },
+        {
+          "label": "T8 vocal tuner max on system effects (expect T0 + response@1k)",
+          "before_dbfs": -58.9,
+          "after_dbfs": -58.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T9 +6 dB bell without predictive headroom (expect T0 + 6)",
+          "before_dbfs": -41.6,
+          "after_dbfs": -41.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T10 bypass restores flat level (expect T0)",
+          "before_dbfs": -47.6,
+          "after_dbfs": -47.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T11 system override excludes capturable audio (expect T1, no double copy)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T12 changing override stops capture safely (expect T1)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T13 auto restored to Engine B (expect T1)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T14 global system-only stops capture (expect T1)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T15 system EQ in background",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T16 unknown non-broadcasting audio stays single and unprocessed (expect T0)",
+          "before_dbfs": -47.6,
+          "after_dbfs": -47.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T17 implicit broadcast connects without enhanced permission",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T18 no detection before permission grant",
+          "before_dbfs": -47.6,
+          "after_dbfs": -47.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T19 live permission grant discovers existing playback",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T21 Svaramanas plan on system effects (expect T0 + response@1k)",
+          "before_dbfs": -54.9,
+          "after_dbfs": -54.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T20 capture-opt-out stream after Engine B muted it (expect T1, not silence)",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T24_1 recreated non-broadcasting session",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T24_2 recreated non-broadcasting session",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T24_3 recreated non-broadcasting session",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T25 lost effect recovers without player restart or manual refresh",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T26_players found with the players report unreadable",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T26_server found with the server report unreadable",
+          "before_dbfs": -53.9,
+          "after_dbfs": -53.9,
+          "change_db": 0.0
+        },
+        {
+          "label": "T28_off_1k 1 kHz tone, Svaresa resting",
+          "before_dbfs": -47.6,
+          "after_dbfs": -47.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T28_on_1k 1 kHz tone, Svaresa quiet-listening",
+          "before_dbfs": -53.6,
+          "after_dbfs": -53.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T28_off 63 Hz tone, Svaresa resting",
+          "before_dbfs": -47.6,
+          "after_dbfs": -47.6,
+          "change_db": 0.0
+        },
+        {
+          "label": "T28_on 63 Hz tone, Svaresa quiet-listening lift",
+          "before_dbfs": -48.1,
+          "after_dbfs": -48.1,
+          "change_db": 0.0
+        },
+        {
+          "label": "T29 night comfort on the same tone (bounded, audible)",
+          "before_dbfs": -49.5,
+          "after_dbfs": -49.5,
+          "change_db": 0.0
+        }
+      ]
+    }
+  ],
+  "min_max_limit": "Two min/max endpoints differ by 0.1 dB; all 34 medians per API are identical at 0.1 dB precision. This is not a claim of identical samples."
+}

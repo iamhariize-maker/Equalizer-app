@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
-# Real first install and broadcast/non-broadcast playback. No audio parameter changes.
+# CI emulator only: reinstalls Svan, then tests real first-run and session broadcasts.
 set -euo pipefail
 S=${1:-emulator-5554}
 OUT=${2:-/tmp/onboarding-e2e}
 APK=${3:-app/build/outputs/apk/debug/app-debug.apk}
 mkdir -p "$OUT"
 A=(adb -s "$S")
+failure_shot() {
+    local rc=$?
+    if [[ "$rc" != 0 ]]; then
+        "${A[@]}" exec-out screencap -p > "$OUT/failure.png" || true
+        printf 'FAIL onboarding test exited %s\n' "$rc" >> "$OUT/results.txt"
+    fi
+}
+trap failure_shot EXIT
 CAP=app.svan.testsource.capturable
 eq() { "${A[@]}" shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
 tone() { "${A[@]}" shell am start -n "$CAP"/app.svan.testsource.ToneActivity "$@" >/dev/null; }

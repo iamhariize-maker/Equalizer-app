@@ -166,10 +166,19 @@ class OnboardingStateTest {
     @Test fun summaryContainsOnlyTheRequestedLocalFields() {
         val s = view(1, listOf(player.copy(name = "PRIVATE TITLE / ACCOUNT")))
         val summary = diagnosticSummary("0.5.5", 34, s.kind, 4, 1, 0, "Bluetooth")
-        assertTrue(summary.contains("Android: 34"))
+        assertTrue(summary.contains("Android API: 34"))
         assertTrue(summary.contains("Scans: 4"))
         assertFalse(summary.contains("PRIVATE"))
         assertFalse(summary.contains(player.key))
+    }
+
+    @Test fun summaryReportsOnlyBoundedEngineTypes() {
+        val summary = diagnosticSummary("0.5.5", 34, WorkingKind.ROUTED, 4, 1, 1,
+            "Bluetooth", setOf(UiEngine.SYSTEM_EFFECTS, UiEngine.AUDIOPHILE), androidVersion = "14")
+        assertTrue(summary.contains("Android version: 14"))
+        assertTrue(summary.contains("Engine routes: System effects, Audiophile engine"))
+        assertTrue(diagnosticSummary("0.5.5", 34, WorkingKind.IDLE, 0, 0, 0, "Unknown")
+            .contains("Engine routes: None"))
     }
 
     @Test fun firstInstallDetectionNeverResetsExistingPreferencesOrUpdates() {

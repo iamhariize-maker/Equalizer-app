@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -49,19 +50,21 @@ fun SetupHelpHost() {
     val fixture by OnboardingUi.fixture.collectAsState()
     if (panel != HelpPanel.NONE) Dialog(
         onDismissRequest = { OnboardingUi.panel.value = HelpPanel.NONE; OnboardingUi.fixture.value = null },
-        properties = DialogProperties(usePlatformDefaultWidth = false),
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         Surface(color = Svan.Black, modifier = Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 16.dp)) {
                 if (fixture != null) Text("UI test fixture · not live detection", color = Svan.Ember,
                     style = MaterialTheme.typography.labelMedium)
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    when (panel) {
-                        HelpPanel.DETECTION -> if (fixture?.startsWith("status-") == true)
-                            WorkingStatusCard(workingFixture(fixture.orEmpty()), fixture = true) else DetectionWizard(fixture)
-                        HelpPanel.BATTERY -> BatteryGuide()
-                        HelpPanel.COMPATIBILITY -> CompatibilityList()
-                        else -> Unit
+                key(panel, fixture) {
+                    Column(Modifier.weight(1f).clipToBounds().verticalScroll(rememberScrollState())) {
+                        when (panel) {
+                            HelpPanel.DETECTION -> if (fixture?.startsWith("status-") == true)
+                                WorkingStatusCard(workingFixture(fixture.orEmpty()), fixture = true) else DetectionWizard(fixture)
+                            HelpPanel.BATTERY -> BatteryGuide()
+                            HelpPanel.COMPATIBILITY -> CompatibilityList()
+                            else -> Unit
+                        }
                     }
                 }
                 OutlinedButton(onClick = { OnboardingUi.panel.value = HelpPanel.NONE; OnboardingUi.fixture.value = null },
@@ -79,6 +82,8 @@ private fun DetectionWizard(fixture: String?) {
     var linkError by remember { mutableStateOf<String?>(null) }
     ObserveWhileVisible { if (fixture == null) { DetectionSetup.refresh(); live = OnboardingAndroid.wizard(context) } }
     val snapshot = fixture?.let(::wizardFixture) ?: live
+    val working = if (fixture != null) fixture == "working" else grant.stage == DetectionSetup.Stage.WORKING
+    val error = if (fixture != null) fixture == "error" else grant.stage == DetectionSetup.Stage.ERROR
     ScreenTitle(if (snapshot.dumpGranted) "Music detection enabled" else "Music detection", "Optional help for players that do not announce an audio session.")
     Text("System effects can work without this setup when a player announces its session.",
         style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
@@ -134,8 +139,8 @@ private fun DetectionWizard(fixture: String?) {
                     if (launch == null) linkError = "Shizuku could not be opened. Open it from your app list, then retry." else open(launch)
                 }, enabled = fixture == null, modifier = Modifier.fillMaxWidth()) { Text("Open Shizuku") }
                 WizardStep.AUTHORIZE, WizardStep.GRANT -> Button(onClick = { DetectionSetup.enable() },
-                    enabled = fixture == null && grant.stage != DetectionSetup.Stage.WORKING, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (grant.stage == DetectionSetup.Stage.WORKING) "Enabling detection…" else if (snapshot.step == WizardStep.AUTHORIZE) "Allow Svan" else "Enable music detection")
+                    enabled = fixture == null && !working, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (working) "Enabling detection…" else if (snapshot.step == WizardStep.AUTHORIZE) "Allow Svan" else "Enable music detection")
                 }
                 WizardStep.FINISH -> {
                     OutlinedButton(onClick = { open(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }, enabled = fixture == null,
@@ -152,7 +157,7 @@ private fun DetectionWizard(fixture: String?) {
                 if (live.running == true && !live.dumpGranted) DetectionSetup.enable()
                 live = OnboardingAndroid.wizard(context)
             }, enabled = fixture == null) {
-                Text(if (grant.stage == DetectionSetup.Stage.ERROR) "Retry" else "Check again")
+                Text(if (error) "Retry" else "Check again")
             }
         }
     }
@@ -211,7 +216,7 @@ fun WorkingStatusCard(state: WorkingState, fixture: Boolean = false) {
                 context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Svan diagnostic summary", text))
                 copied = true
             }, enabled = !fixture) { Text(if (copied) "Diagnostic summary copied" else "Copy diagnostic summary") }
-            Text("Copies version, Android, detection state, counts and output type locally. No media titles or account details.",
+            Text("Copies version, Android, detection state, counts, engine routes and output type locally. No media titles or account details.",
                 style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
         }
     }

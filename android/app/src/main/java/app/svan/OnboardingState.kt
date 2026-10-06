@@ -75,9 +75,11 @@ data class WorkingState(val kind: WorkingKind, val players: List<WorkingPlayer>,
 
 /** No player labels/packages, media metadata, output addresses or raw report excerpts. */
 fun diagnosticSummary(version: String, api: Int, state: WorkingKind, scans: Int,
-                      publicPlayers: Int?, routedSessions: Int, routeType: String): String =
-    "Svan: $version\nAndroid: $api\nDetection: $state\nScans: $scans\n" +
-        "Public playback count: ${publicPlayers ?: "unknown"}\nRouted sessions: $routedSessions\nOutput type: $routeType"
+                      publicPlayers: Int?, routedSessions: Int, routeType: String,
+                      engines: Set<UiEngine> = emptySet(), androidVersion: String = "Unknown"): String =
+    "Svan: $version\nAndroid version: $androidVersion\nAndroid API: $api\nDetection: $state\nScans: $scans\n" +
+        "Public playback count: ${publicPlayers ?: "unknown"}\nRouted sessions: $routedSessions\n" +
+        "Engine routes: ${UiEngine.entries.filter { it in engines }.joinToString { it.title }.ifEmpty { "None" }}\nOutput type: $routeType"
 
 object FirstRunPolicy {
     fun needsFlatDefault(onboardingRecorded: Boolean, savedSound: Boolean, previousAutomaticDefault: Boolean): Boolean =

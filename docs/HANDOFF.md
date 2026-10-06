@@ -1,4 +1,4 @@
-## GitHub beta onboarding — 2026-10-06 (in progress)
+## GitHub beta onboarding — 2026-10-06
 
 Owner extended release preparation to first-run/detection UX; work stays on
 `ccr-f859b567-dgrdoj`. No release/PR/Pages/Play submission is made. Original-code licence
@@ -28,9 +28,18 @@ Bundled compatibility rows distinguish synthetic/earlier-owner/unverified eviden
 Release verifier CI initially failed on SDK 36.1's per-scheme certificate labels; commit
 3008eb5 accepts those plus SDK 36.0, requires one signer and one consistent certificate.
 Both SDKs locally pass the owner APK and wrong-cert/additional-permission rejection tests.
-Baseline CI and new onboarding CI must be inspected; results are pending at writing.
+Baseline CI 37414104556 and onboarding CI 37414766431 both passed all nine jobs.
+Their logs and API 33/34 result artifacts were inspected: the 39 original audio checks pass
+before/after, all 34 median levels per API match at 0.1 dB precision, and native libraries
+are byte-identical. Two min/max endpoints vary by 0.1 dB; this is not a bit-perfect sample claim.
+Onboarding adds eight real first-run/prompt and five live wizard checks per API. All original
+detection/workspace/control/quality/production checks pass. Final local checks are 98 core,
+132 JVM, debug/release builds and lint, plus verifier positive/two negative cases.
+All wizard/status fixture images and representative live images were viewed at phone size.
+Follow-up fixes reset/clip help-panel scrolling, correct full-screen footer insets and fixture error/progress labels;
+screens.sh now asserts their presentation. Inspect final branch CI and its images as well.
 Existing 39 measured audio checks are byte-for-byte unchanged, with a separate UX prelude.
-Do not call measurements identical until comparing both API 33/34 baseline and new artifacts.
+See ONBOARDING_VERIFICATION.md for measured values, hashes, run links and limits.
 See SETUP.md and PHONE_VALIDATION.md for live versus labelled fixture screenshots and gaps.
 
 ## Public beta preparation — 2026-10-06

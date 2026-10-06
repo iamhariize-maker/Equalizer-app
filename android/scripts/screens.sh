@@ -106,6 +106,30 @@ $A shell input keyevent KEYCODE_BACK
 # verifiably off. Every image is labelled; none starts capture or grants access.
 for fixture in install debugging start authorize grant working error finish-on finish-off finish-unknown status-idle status-unreachable status-system status-audiophile status-unknown; do
   $A shell am start -n app.svan/.MainActivity --es cmd onboarding_fixture --es fixture "$fixture" >/dev/null
+  sleep 2
+  $A shell uiautomator dump /sdcard/svan-fixture.xml >/dev/null 2>&1
+  $A shell cat /sdcard/svan-fixture.xml > "$OUT/8-setup-$fixture.xml"
+  DENSITY=$($A shell wm density | grep -oE '[0-9]+' | tail -1)
+  python3 - "$OUT/8-setup-$fixture.xml" "$fixture" "$DENSITY" <<'PY'
+import re,sys,xml.etree.ElementTree as E
+nodes=list(E.parse(sys.argv[1]).iter('node'));fixture=sys.argv[2]
+def node(text):
+    found=next((n for n in nodes if n.get('text')==text),None)
+    assert found is not None, f'{fixture}: missing {text}'
+    return found
+banner=node('UI test fixture · not live detection')
+box=lambda n:list(map(int,re.findall(r'\d+',n.get('bounds',''))))
+back=box(node('Back to Svan'))
+assert back[3]-back[1]>=36*int(sys.argv[3])/160, f'{fixture}: Back to Svan is clipped'
+if fixture.startswith('status-'):
+    heading=node('Is it working?')
+    assert box(heading)[1]>=box(banner)[3], f'{fixture}: heading overlaps fixture banner'
+if fixture=='error': assert node('Retry').get('enabled')=='false'
+if fixture=='working':
+    assert any(n.get('text')=='Enabling detection…' and n.get('enabled')=='false' for n in nodes)
+PY
+  if [ "$?" != 0 ]; then echo "FAIL setup fixture $fixture" >> "$OUT/interaction.txt"; exit 1; fi
+  echo "PASS setup fixture $fixture" >> "$OUT/interaction.txt"
   shot "8-setup-$fixture"
   swipe_up
   shot "8-setup-$fixture-detail"

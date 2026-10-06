@@ -178,6 +178,7 @@ eq bypass --ez off false; eq eq_band --ef frequency 1000 --ef gain -12; sleep 3
 CUT=$(level)
 check_delta 'release parametric EQ produces a 12 dB cut' "$CUT" "$BASE" -12
 tap 'Hi-Fi'; sleep 2
+$A exec-out screencap -p > "$OUT/status-audiophile-live.png"
 # Connected status and signal readings are below the detection card.
 $A shell input swipe 160 500 160 140 500; sleep 2
 $A exec-out screencap -p > "$OUT/connected-audiophile.png"

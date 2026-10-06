@@ -50,7 +50,7 @@ measure() { # $1 = label
 
 # Separate UX prelude; the 39 original measured audio checks below remain unchanged.
 if [ -z "${APK_DIR:-}" ]; then
-  bash scripts/onboarding_e2e.sh "$S" "$TMP/onboarding-e2e" "$APP_APK" || exit 1
+  bash scripts/onboarding_e2e.sh "$S" "${SVAN_ONBOARDING_OUT:-$TMP/onboarding-e2e}" "$APP_APK" || exit 1
 fi
 
 : > "$TMP/e2e_results.txt"

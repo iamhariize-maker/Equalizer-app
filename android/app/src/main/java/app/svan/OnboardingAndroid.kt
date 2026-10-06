@@ -61,7 +61,7 @@ object OnboardingAndroid {
         return WorkingState.derive(publicOther, players, PlaybackSessions.hasDumpPermission(context))
     }
 
-    private fun label(context: Context, key: String): String = DetectionStatus.appLabel(key) { pkg ->
+    private fun label(context: Context, key: String): String = if (key.startsWith("uid:") || key.startsWith("pid:")) "A player" else DetectionStatus.appLabel(key) { pkg ->
         context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(pkg, 0)).toString()
     }
 
@@ -79,7 +79,8 @@ object OnboardingAndroid {
 
     fun summary(context: Context, working: WorkingState): String = diagnosticSummary(
         BuildConfig.VERSION_NAME, Build.VERSION.SDK_INT, working.kind, DetectionMonitor.scans,
-        DetectionMonitor.status.value.publicActive, SessionRouter.snapshot.size, outputType(context))
+        DetectionMonitor.status.value.publicActive, SessionRouter.snapshot.size, outputType(context),
+        working.players.mapNotNull { it.engine }.toSet(), Build.VERSION.RELEASE)
 
     fun prefs(context: Context) = context.getSharedPreferences("svan_onboarding", Context.MODE_PRIVATE)
     fun dismissed(context: Context): Set<String> = prefs(context).getStringSet("dismissed_players", emptySet())?.toSet() ?: emptySet()
