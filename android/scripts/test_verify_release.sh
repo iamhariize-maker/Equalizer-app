@@ -8,8 +8,8 @@ apk=$(realpath -- "$1")
 bt=${SVAN_BUILD_TOOLS_DIR:?set SVAN_BUILD_TOOLS_DIR to the SDK build-tools directory}
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
-"$bt/apksigner" verify --print-certs "$apk" > "$tmp/signature.txt"
-awk '/^Signer #[0-9]+ certificate SHA-256 digest: / {print $NF}' "$tmp/signature.txt" > "$tmp/test-cert.sha256"
+"$bt/apksigner" verify --verbose --print-certs "$apk" > "$tmp/signature.txt"
+awk '/^(Signer #[0-9]+ |V[0-9.]+ Signer(: | #[0-9]+: ))certificate SHA-256 digest: / {print $NF}' "$tmp/signature.txt" | sort -u > "$tmp/test-cert.sha256"
 bash "$root/android/scripts/verify_release.sh" "$apk" "$tmp/test-cert.sha256"
 echo 'PASS verifier accepts the signed production-mode fixture (not proof of owner signing)'
 

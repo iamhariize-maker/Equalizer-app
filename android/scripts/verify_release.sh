@@ -30,7 +30,10 @@ tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 
 "$bt/apksigner" verify --verbose --print-certs "$apk" > "$tmp/signature.txt" 2>&1 || fail 'apksigner verify rejected the APK'
-awk '/^Signer #[0-9]+ certificate SHA-256 digest: / {print $NF}' "$tmp/signature.txt" > "$tmp/certs.txt"
+grep -qx 'Number of signers: 1' "$tmp/signature.txt" || fail 'expected exactly one APK signer'
+# SDK 36.1 prints per-scheme "V2 Signer:"; earlier SDKs print "Signer #1".
+# All reported schemes must agree on one certificate, never select just the first.
+awk '/^(Signer #[0-9]+ |V[0-9.]+ Signer(: | #[0-9]+: ))certificate SHA-256 digest: / {print $NF}' "$tmp/signature.txt" | sort -u > "$tmp/certs.txt"
 [[ $(wc -l < "$tmp/certs.txt") -eq 1 ]] || fail 'expected exactly one signer certificate'
 actual=$(tr '[:upper:]' '[:lower:]' < "$tmp/certs.txt")
 [[ "$actual" =~ ^[0-9a-f]{64}$ ]] || fail 'apksigner did not return a valid certificate fingerprint'
