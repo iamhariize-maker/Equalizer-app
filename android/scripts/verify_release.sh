@@ -46,12 +46,14 @@ package=$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" "$tmp/badging.txt")
 version_name=$(sed -n "s/^package: .*versionName='\([^']*\)'.*/\1/p" "$tmp/badging.txt")
 version_code=$(sed -n "s/^package: .*versionCode='\([^']*\)'.*/\1/p" "$tmp/badging.txt")
 [[ "$package" == app.svan ]] || fail 'package must be app.svan'
-[[ "$version_name" == 0.5.5 ]] || fail 'versionName must be 0.5.5'
-[[ "$version_code" == 12 ]] || fail 'versionCode must be 12'
+case "$version_name:$version_code" in
+  0.5.5:12|0.5.6:13) ;;
+  *) fail 'unsupported release versionName/versionCode pair' ;;
+esac
 if grep -Eq 'application-debuggable|testOnly' "$tmp/badging.txt"; then
     fail 'debuggable/testOnly APK is not a beta release'
 fi
-printf 'PASS package app.svan, versionName 0.5.5, versionCode 12\n'
+printf 'PASS package app.svan, versionName %s, versionCode %s\n' "$version_name" "$version_code"
 
 awk -F "'" '/^uses-permission[^:]*:/ {print $2}' "$tmp/badging.txt" | sort -u > "$tmp/actual-permissions.txt"
 [[ -s "$tmp/actual-permissions.txt" ]] || fail 'compiled permission list is empty'

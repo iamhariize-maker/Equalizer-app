@@ -1,3 +1,84 @@
+## OEM detection fallbacks — 2026-10-06, 0.5.6 follow-up
+
+The current request supersedes the earlier notification-access restriction for optional player
+recognition only. Setup binds a read-only Shizuku UserService as shell and probes a real audio
+report, without granting app DUMP. Either audio/audio_flinger report can establish capability;
+connection and IPC/read deadlines prevent a blocked OEM call from freezing setup or adding
+unbounded workers. Existing/manual app grants remain supported. Shell mode needs Shizuku running;
+reboots/disconnections return to basic session broadcasts, with clear OEM help and retry.
+
+Optional notification access is explicitly explained in Hi-Fi → Music detection. The listener
+queries package/playback state only, never notification text, song titles or track history, and
+clears its in-memory state on disconnect. Recognition can name an otherwise unreachable player,
+but never creates a session ID, alters a capture verdict, mutes a source or changes sound settings.
+The 0.5.6 utility-source filters and capture/continuity safeguards remain intact. Original measured
+CI counts are preserved; four additional real MediaSession/listener fallback checks are added.
+
+Validation results for this follow-up are recorded in docs/DETECTION_FALLBACKS.md. OEM behavior,
+including OxygenOS UserService binding, needs phone evidence; do not infer it from stock emulators.
+
+## Playback continuity and stereo detail — 2026-10-06, 0.5.6 candidate
+
+Owner requested priority crackling fixes, automatic rejection of utility sounds, and backing-vocal/
+binaural-detail control. Work remains on ccr-f859b567-dgrdoj. See CONTINUITY_0.5.6.md for actual
+implementation, research sources and limits. Crackling on the owner's phone has not been reproduced;
+its engine/output/diagnostic report are still needed. Never claim the device issue is confirmed fixed.
+
+Version/code are 0.5.6/13. No owner signing, public release, Play submission or PR is made. Preview
+identity is unchanged; an owner-signed public beta needs the original owner key for an in-place update.
+The read-only release verifier accepts the two exact supported pairs (0.5.5/12 and 0.5.6/13).
+
+Native stereo edits crossfade over 20 ms with fixed banks; bass bypass releases over 10 ms. System
+MBC stays neutral/allocated rather than recreating effects on dynamics changes. Unchanged values are
+not repeatedly sent. Capture primes output, grows its effective buffer after underruns and stops with
+an explanatory fallback after persistent starvation at capacity. Capture-format changes apply at
+restart; source changes fade. Capturable mix usage is MEDIA only (unknown/game use system effects).
+Routing batches publish complete UID ownership, including excluded active media siblings. Discovery
+filters sonification/SoundPool/system/known utility sounds; unrecognized started sources need 1.5 s
+of observations. Routing still requires real session reports/broadcasts; the optional package-only
+recognition described above cannot authorize processing or capture. Diagnostic memory is bounded.
+
+Orchestral amplifier has separate Backing vocals and Spatial detail dials, default off. They shape
+existing side energy, cannot isolate stems or guarantee faithful binaural enhancement. Manual dials
+survive Svaresa layering/export/restore and are included in blind rendering. Host tests verify response,
+mono preservation, edit continuity, concurrency, and protection at 44.1/48/96 kHz.
+
+Local verification: all 103 Release core tests pass. The 101-test ASan/UBSan suite plus both newly
+added tests and concurrent publication checks pass without findings. Android debug/release assembly,
+lintDebug, all 142 JVM tests and both test-source builds pass. The preview APK verifies with the
+existing preview certificate, v2 signing and four 16 KB-aligned native libraries; no forbidden
+permissions are declared. Four screenshot-assertion Python tests also pass. Original routing/
+detection/workspace/control/quality/production CI checks remain intact, with four JNI detail checks
+and three live source-attribute checks added. Extra screenshots cover the new knob row.
+
+First integration run 37515350637 (source 75db47e) passed core including all 103 ASan/UBSan tests
+and both TSan publication tests; Android build/lint/unit/release-verifier and all five compatibility
+jobs passed. Both API 33/34 runs passed new source filtering 3/3, new detail JNI 4/4, release quality
+4/4, detection 10/10, controls 8/8, production 4/4 and screenshot interactions (scroll + 15 fixtures).
+However, routing was 38/39 and workspace 8/9: stale closed-session evidence caused a premature
+capture stop instead of the silence watchdog; after process restart, manual output was 32.5/36.6 dB
+above its earlier measurement. Do not report this run as all green.
+
+The follow-up drops definitive CLOSE evidence while keeping active policy-rejected records, clears
+the ledger on shutdown, and tests capture exclusion against unrouted MEDIA siblings and UID reuse.
+New system-effect attachments use a minimal muted bootstrap to disable any existing native module
+before the full constructor's per-band writes, then enable the configured handle so Android
+reapplies stream volume after architecture initialization. No user volume is changed. All 146 JVM
+tests (including four new UID-policy cases), local debug/release/lint (including the bootstrap
+refinement) and the 103 core tests pass; full device reruns still need final validation. Original failing
+watchdog and manual-output assertions are kept intact. Workspace
+artifacts now retain continuous logs and the restored Android audio/effect dumps for diagnosis.
+
+Combined with the OEM fallback commits through eedfe770, local debug/release builds, lint,
+all 152 JVM tests, both test-source builds and four screenshot-assertion tests pass. Native code
+is unchanged from the verified 103-test core/ASan/UBSan suite and two TSan checks above; the 103
+Release core tests also pass again before this push. The combined API 33/34 rerun is still pending.
+
+Manual screenshot review: both new knob rows are readable on API 33/34 and match the gold/charcoal
+theme. API 33 boot full name fits on one line; API 34's captured system splash shows the correct स्व
+glyph. API 34's two timed Compose boot captures missed the text, so do not claim its name frame was
+verified from this run. Both EQ screenshots show the intended 9 glyph.
+
 ## Owner-authorized GitHub beta candidate — 2026-10-06
 
 The owner recovered the original private signing backup and authorized signing/publication.

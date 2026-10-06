@@ -30,7 +30,7 @@ object BlindRenderer {
             if(settings.dither==DitherChoice.OFF)0 else settings.outputBits,settings.dither.nativeMode,true,true).also {
             it.setBands(state.effectiveBands().map(Band::toNative));it.setPreampDb(state.effectivePreampDb())
             it.setBassCharacter(state.bassCharacter,state.bass.crossoverHz)
-            val v=state.activeVocal;val i=state.activeInstrument;it.setStereoTuner(v.intimacy,v.warmth,v.smoothness,i.space,i.instruments)
+            val v=state.activeVocal;val i=state.activeInstrument;it.setStereoTuner(v.intimacy,v.warmth,v.smoothness,i.space,i.instruments,i.backingVocals,i.spatialDetail)
             it.setDynamicEq(state.dynamicEq)
         }
         fun process(state: EqState): FloatArray =engine(state).use {e->

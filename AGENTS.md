@@ -22,10 +22,12 @@ suite on API 33 as well as API 34; emulators do not verify LG's Quad DAC or back
 `SessionRouter` gives every audio session to exactly ONE engine (they share one `DynamicsProcessing`
 instance per session; never attach both).
 
-Owner decision (5 October 2026): remove notification-access player recognition entirely.
-Do not reintroduce a notification listener, SMS access or accessibility permission for
-player discovery. Keep Play Protect enabled; do not ask users to bypass its warnings.
-The fixed Shizuku DUMP grant and real audio-session detection remain available.
+Owner follow-up (6 October 2026): implement OEM-safe detection fallbacks. Normal setup
+reads fixed audio reports via a Shizuku shell UserService instead of granting app DUMP.
+Optional NotificationListenerService recognition is authorized for package/playback state
+only; never read notification text or use recognition as proof of an audio-session ID,
+processing, or capture compatibility. Keep the independent session-broadcast path,
+existing/manual grants, Play Protect, and all DSP/routing quality safeguards.
 
 ## Repo map
 | Path | What |

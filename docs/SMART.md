@@ -303,9 +303,11 @@ panel study is required before a public quality claim.
 
 ## 9. Constraints and open questions
 
-0.5.2 removes notification-access player recognition by owner request. Do not
-restore this permission for player naming or track memory. Audio-session discovery
-and Shizuku's fixed DUMP grant remain. Svaresa's Engine A analysis tap is still unbuilt.
+The 6 October 2026 follow-up authorizes optional package/playback-state recognition
+through Android notification access, superseding the 0.5.2 restriction for player naming
+only. Track history/metadata remain out of scope. Real audio sessions come from shell
+audio reports, broadcasts or existing/manual DUMP grants. Recognition never proves
+processing or capture eligibility. Svaresa's Engine A analysis tap is still unbuilt.
 
 - No root, no Shizuku dependency for the default path (Shizuku stays an optional extra).
 - Play: MediaProjection + foreground-service disclosure, overlay

@@ -14,6 +14,8 @@
 // Instrument amplifier (side only, above ~180 Hz so bass stays centred):
 //   space      -1..1 caved in .. spacious (side level, +-6 dB)
 //   instruments 0..1 string/sax presence, body and air on the sides
+//   backingVocals 0..1 broad side vocal-region bell (1600 Hz, up to 2.5 dB)
+//   spatialDetail 0..1 side high shelf (4000 Hz, up to 2 dB); no synthesized cues
 #include <atomic>
 #include <array>
 
@@ -24,8 +26,13 @@ namespace eqcore {
 struct StereoTunerParams {
   double intimacy = 0, warmth = 0, smoothness = 0;
   double space = 0, instruments = 0;
+  double backingVocals = 0, spatialDetail = 0; // 0..1, existing side detail only
+  bool operator==(const StereoTunerParams& b) const {
+    return intimacy==b.intimacy && warmth==b.warmth && smoothness==b.smoothness &&
+        space==b.space && instruments==b.instruments && backingVocals==b.backingVocals && spatialDetail==b.spatialDetail;
+  }
   bool isOff() const {
-    return intimacy == 0 && warmth == 0 && smoothness == 0 && space == 0 && instruments == 0;
+    return intimacy == 0 && warmth == 0 && smoothness == 0 && space == 0 && instruments == 0 && backingVocals == 0 && spatialDetail == 0;
   }
 };
 
@@ -37,7 +44,7 @@ class StereoTuner {
  public:
   explicit StereoTuner(double sampleRate);
 
-  // Any thread; picked up by process() at the next block.
+  // Any thread; live changes crossfade for 20 ms. Updates during a fade coalesce.
   void setParams(const StereoTunerParams& p);
 
   // In-place on one block of left/right samples. Allocation-free.
@@ -58,21 +65,25 @@ class StereoTuner {
       return y;
     }
   };
-  void redesign(const StereoTunerParams& p);
-
+  struct State {
+    StereoTunerParams p_;
+    Bq warmBell_, warmShelf_, intimacyBell_, harshBand_;
+    Bq sideLp_[2], sideHp_[2], bodyBell_, presenceBell_, airShelf_, backingBell_, detailShelf_;
+    double envBand_ = 1e-9, envFull_ = 1e-9, deharshGain_ = 1.0, spaceGain_ = 1.0;
+    double aBand_, rBand_, aFull_, rFull_, gSmooth_;
+    void redesign(const StereoTunerParams& p, double fs);
+    void reset();
+    double process(double& left, double& right);
+  };
   double fs_;
+  int fadeFrames_, fadeRemaining_ = 0, active_ = 0;
+  bool initialized_ = false;
+  std::array<State,2> states_;
   std::atomic<int> version_{0};
   int appliedVersion_ = -1;
-  StereoTunerParams pending_, p_;
+  StereoTunerParams pending_;
   std::atomic<bool> pendingLock_{false};
-
-  // mid (vocal)
-  Bq warmBell_, warmShelf_, intimacyBell_, harshBand_;
-  double envBand_ = 1e-9, envFull_ = 1e-9, deharshGain_ = 1.0, lastDeharshDb_ = 0.0;
-  double aBand_, rBand_, aFull_, rFull_, gSmooth_;
-  // side (instruments)
-  Bq sideLp_[2], sideHp_[2], bodyBell_, presenceBell_, airShelf_;  // LR4 crossover at 180 Hz
-  double spaceGain_ = 1.0;
+  double lastDeharshDb_ = 0;
 };
 
 }  // namespace eqcore

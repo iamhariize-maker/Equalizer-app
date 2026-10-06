@@ -694,15 +694,20 @@ TEST(bass_punch_preserves_attack_energy_around_crossover) {
   }
 }
 
-TEST(bass_off_restores_identity_after_active_processing) {
-  BassShaper b(48000, 1);
-  b.setCharacter(1);
-  std::vector<double> x(1024);
-  for(size_t i=0;i<x.size();++i)x[i]=0.1*std::sin(2*kPi*120*i/48000);
-  auto y=x;b.process(0,y.data(),y.size());
+TEST(bass_off_smoothly_restores_identity_after_active_processing) {
+  BassShaper b(48000,1),reference(48000,1);
+  b.setCharacter(1);reference.setCharacter(1);
+  std::vector<double> first(1024),next(1024);
+  for(int i=0;i<1024;++i) {
+    first[i]=.1*std::sin(2*kPi*120*i/48000);
+    next[i]=.1*std::sin(2*kPi*120*(i+1024)/48000);
+  }
+  auto warm=first;b.process(0,warm.data(),1024);reference.process(0,first.data(),1024);
   b.setCharacter(0);
-  y=x;b.process(0,y.data(),y.size());
-  CHECK(x==y);
+  auto output=next,unchanged=next;
+  b.process(0,output.data(),1024);reference.process(0,unchanged.data(),1024);
+  CHECK(std::abs(output.front()-unchanged.front())<.001);
+  CHECK(std::equal(next.begin()+480,next.end(),output.begin()+480));
 }
 
 // --------------------------------------------------------------- resampler
@@ -1143,6 +1148,72 @@ TEST(stereo_tuner_is_stable_on_noise) {
   bool ok = true;
   for (size_t i = 0; i < l.size(); ++i) ok = ok && std::isfinite(l[i]) && std::isfinite(r[i]) && std::fabs(l[i]) < 10;
   CHECK(ok);
+}
+
+TEST(stereo_detail_controls_have_measured_response_and_preserve_mono) {
+  const double fs=48000;
+  for (int control=0;control<2;++control) {
+    StereoTunerParams p;
+    if(control==0)p.backingVocals=1;else p.spatialDetail=1;
+    for(double hz:{60.,1600.,8000.}) {
+      auto input=ms(fs,1,[](double){return 0.;},[&](double t){return .1*std::sin(2*kPi*hz*t);});
+      auto output=runTuner(p,input,fs);
+      const double measured=toDb(sineAmplitude(sideOf(output),hz,fs,24000,48000)/.1);
+      const double expected=10*std::log10(stereoResponsePower(p,hz,fs)[1]);
+      CHECK_NEAR(measured,expected,.03);
+      if(hz==60)CHECK(std::abs(measured)<.1);
+      if(control==0 && hz==1600)CHECK(measured>2.3 && measured<2.6);
+      if(control==1 && hz==8000)CHECK(measured>1.7 && measured<2.1);
+      auto mono=ms(fs,.1,[&](double t){return .1*std::sin(2*kPi*hz*t);},[](double){return 0.;});
+      auto unchanged=runTuner(p,mono,fs);
+      CHECK(unchanged.l==mono.l && unchanged.r==mono.r);
+    }
+  }
+}
+
+TEST(stereo_live_edits_crossfade_preserve_history_and_are_block_independent) {
+  auto run=[](int block) {
+    StereoTuner t(48000);
+    std::vector<double> l(8000,.1),r(8000,-.1);
+    for(int start=0;start<8000;) {
+      if(start==2000)t.setParams({1,1,1,1,1,1,1});
+      if(start==4000)t.setParams({});
+      const int boundary=start<2000?2000:start<4000?4000:8000;
+      int n=std::min(block,boundary-start);
+      t.process(l.data()+start,r.data()+start,n);start+=n;
+    }
+    CHECK_NEAR(l[2000],l[1999],1e-12);
+    CHECK(std::abs(l[4000]-l[3999])<.002);
+    CHECK(l.back()==.1 && r.back()==-.1);
+    for(size_t i=1;i<l.size();++i)CHECK(std::abs(l[i]-l[i-1])<.01);
+    return l;
+  };
+  auto a=run(1),b=run(127),c=run(256);
+  CHECK(a==b && b==c);
+}
+
+TEST(stereo_repeated_identical_publications_do_not_change_audio) {
+  StereoTuner a(48000),b(48000);StereoTunerParams p{.3,.2,.4,.5,.6,.7,.8};
+  a.setParams(p);b.setParams(p);
+  auto source=ms(48000,1,[](double t){return .1*std::sin(2*kPi*1000*t);},[](double t){return .1*std::sin(2*kPi*3200*t);});
+  auto x=source,y=source;
+  for(size_t i=0;i<x.l.size();i+=128) {
+    int n=std::min<size_t>(128,x.l.size()-i);b.setParams(p);
+    a.process(x.l.data()+i,x.r.data()+i,n);b.process(y.l.data()+i,y.r.data()+i,n);
+  }
+  CHECK(x.l==y.l && x.r==y.r);
+}
+
+TEST(eq_parameter_stereo_publication_is_safe_during_processing) {
+  StereoTuner tuner(48000);
+  std::thread writer([&]{for(int i=0;i<2000;++i)tuner.setParams({.2,.3,.4,.5,.6,(i%2)*1.,(i%3)*.5});});
+  std::array<double,128> l{},r{};
+  bool finite=true;
+  for(int i=0;i<2000;++i) {
+    l.fill(.05);r.fill(-.03);tuner.process(l.data(),r.data(),128);
+    finite=finite && std::all_of(l.begin(),l.end(),[](double x){return std::isfinite(x);});
+  }
+  writer.join();CHECK(finite);
 }
 
 TEST(quality_presets_are_consistent) {
@@ -1796,6 +1867,22 @@ TEST(true_peak_protection_catches_intersample_overload) {
   const double after=reconstructedPeak(audio);
   std::printf("    reconstructed peak %.4f -> %.4f (samples below full scale)\n",before,after);
   CHECK(before>1.3);CHECK(after<=.92);
+}
+
+TEST(detail_controls_and_live_edits_remain_peak_protected) {
+  for(double fs:{44100.,48000.,96000.}) {
+    auto cfg=EngineConfig::forQuality(QualityMode::Efficient,fs,2,24);
+    Engine e(cfg);const int n=int(fs);std::vector<float> audio(2*n);
+    for(int i=0;i<n;++i) {audio[2*i]=.8*std::sin(2*kPi*1600*i/fs);audio[2*i+1]=-audio[2*i];}
+    e.setStereoTuner({1,1,1,1,1,1,1});
+    for(int i=0;i<n;i+=256) {
+      if(i==2560)e.setStereoTuner({0,0,0,-1,0,0,0});
+      if(i==5120)e.setStereoTuner({1,1,1,1,1,1,1});
+      e.process(audio.data()+2*i,audio.data()+2*i,std::min(256,n-i));
+    }
+    CHECK(reconstructedPeak(audio,2,fs)<.93);
+    CHECK(std::all_of(audio.begin(),audio.end(),[](float x){return std::isfinite(x);}));
+  }
 }
 
 TEST(true_peak_is_block_independent_linked_and_bypass_has_fixed_delay) {

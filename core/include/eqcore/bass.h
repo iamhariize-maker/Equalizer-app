@@ -33,6 +33,7 @@ class BassShaper {
   struct ChannelState {
     double lowState = 0.0;
     double fast = 1e-9, slow = 1e-9, gain = 1.0;
+    int releaseRemaining = 0;
   };
   void design();
 

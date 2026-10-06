@@ -28,18 +28,19 @@ class GlobalEqEngine(bandCount: Int = 128) {
 
     private val effects = ConcurrentHashMap<Int, DynamicsProcessing>()
     private val lastSent = ConcurrentHashMap<DynamicsProcessing, FloatArray>()
+    private data class DynamicsState(val character: Double, val crossover: Double, val smoothness: Double, val levelling: Double?)
+    private val lastDynamics = ConcurrentHashMap<DynamicsProcessing, DynamicsState>()
+    private val lastProtection = ConcurrentHashMap<DynamicsProcessing, Boolean>()
     @Volatile private var centersHz: DoubleArray = logSpaced(bandCount, 20.0, 20000.0)
     @Volatile private var gainsDb: DoubleArray = DoubleArray(bandCount)
     @Volatile private var protection = true
-    @Volatile private var eqEnabled = true
     @Volatile private var inputGainDb: Float = 0f
     @Volatile private var bassCharacter: Double = 0.0
     @Volatile private var bassCrossoverHz: Double = 120.0
     @Volatile private var deharsh: Double = 0.0
     /** Svaresa's gentle level-evening, 0..1; null = not requested (no MBC just for it). */
     @Volatile private var levelling: Double? = null
-    /** MBC only exists in effects created while a bass feel was set (config is fixed at creation). */
-    @Volatile private var mbcInUse = false
+    // Keep a neutral MBC allocated: toggling a tuner must never destroy a live effect.
 
     val attachedSessions: Set<Int> get() = effects.keys
     /** elapsedRealtime when each session's current effect started being created (for audio-server verification). */
@@ -59,10 +60,27 @@ class GlobalEqEngine(bandCount: Int = 128) {
         // remains in our map. Re-create it instead of reporting false success.
         detach(sessionId)
         var candidate: DynamicsProcessing? = null
+        var bootstrap: DynamicsProcessing? = null
         val startedMs = SystemClock.elapsedRealtime()
         return try {
+            // An existing native module can outlive our process. Keep its full
+            // constructor/configuration pass disabled: a small muted bootstrap
+            // avoids hundreds of live per-band writes at a reset volume gain.
+            bootstrap = DynamicsProcessing(PRIORITY, sessionId,
+                DynamicsProcessing.Config.Builder(
+                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, CHANNELS,
+                    false, 0, false, 0, false, 0, false,
+                ).setInputGainAllChannelsTo(-200f).build())
+            bootstrap.enabled = false
             val dp = DynamicsProcessing(PRIORITY, sessionId, buildConfig())
             candidate = dp
+            // A recovered handle may already be enabled. Configuring its native
+            // architecture resets DynamicsProcessing's output gain; Android sends
+            // the stream volume again on the next enabled transition. Establish
+            // that transition on attachment, before any music uses the new config.
+            dp.enabled = false
+            bootstrap.release()
+            bootstrap = null
             applyTo(dp)
             dp.enabled = true
             check(dp.hasControl() && dp.enabled) { "Android did not enable the session effect" }
@@ -71,11 +89,13 @@ class GlobalEqEngine(bandCount: Int = 128) {
             Log.i(TAG, "attached to session $sessionId ($bandCount bands)")
             true
         } catch (e: RuntimeException) {
-            candidate?.let { lastSent.remove(it); runCatching { it.release() } }
+            candidate?.let { lastSent.remove(it); lastDynamics.remove(it); lastProtection.remove(it); runCatching { it.release() } }
             // UnsupportedOperationException / IllegalStateException on some OEM builds.
             Log.w(TAG, "attach failed for session $sessionId", e)
             EqController.log("system effects: attach failed for session $sessionId: $e")
             false
+        } finally {
+            bootstrap?.let { runCatching { it.release() } }
         }
     }
 
@@ -98,6 +118,8 @@ class GlobalEqEngine(bandCount: Int = 128) {
         attachedAt.remove(sessionId)
         effects.remove(sessionId)?.let {
             lastSent.remove(it)
+            lastDynamics.remove(it)
+            lastProtection.remove(it)
             runCatching { it.enabled = false }
             runCatching { it.release() }
         }
@@ -121,9 +143,8 @@ class GlobalEqEngine(bandCount: Int = 128) {
 
     /** Samples [engine]'s parametric curve into the band gains and pushes it to every session. */
     @Synchronized
-    fun applyCurveFrom(engine: NativeEngine, gainProtection: Boolean = true, enabled: Boolean = true) {
+    fun applyCurveFrom(engine: NativeEngine, gainProtection: Boolean = true) {
         protection = gainProtection
-        eqEnabled = enabled
         val response = engine.responseDb(centersHz)
         if (response.size != bandCount) return // raced with reconfigure(); the next update fixes it
         // The native response already contains preamp and chosen headroom.
@@ -149,7 +170,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
             CHANNELS,
             true, bandCount,   // pre-EQ: our curve
-            mbcInUse, if (mbcInUse) 4 else 0, // MBC: bass feel + vocal smoothness (see setDynamics)
+            true, 4, // MBC: bass feel + vocal smoothness (see setDynamics)
             false, 0,          // post-EQ
             true,              // limiter
         ).setPreferredFrameDuration(frameDurationMs.toFloat()).build()
@@ -164,25 +185,19 @@ class GlobalEqEngine(bandCount: Int = 128) {
      */
     @Synchronized
     fun setDynamics(character: Double, crossoverHz: Double, smoothness: Double, levellingAmount: Double? = null) {
-        // Svaresa asks for the compressor up front (even at 0) so night starting never re-creates effects mid-song.
-        val needMbc = character != 0.0 || smoothness > 0.0 || levellingAmount != null
+        val next = DynamicsState(character, crossoverHz, smoothness, levellingAmount)
+        val previous = DynamicsState(bassCharacter, bassCrossoverHz, deharsh, levelling)
+        if (next == previous) return
         bassCharacter = character
         bassCrossoverHz = crossoverHz
         deharsh = smoothness
         levelling = levellingAmount
-        if (needMbc != mbcInUse) {
-            mbcInUse = needMbc
-            EqController.log("system effects: dynamics ${if (needMbc) "on" else "off"} (${effects.size} session(s) re-created)")
-            val sessions = effects.keys.toList()
-            sessions.forEach(::detach)
-            sessions.forEach { attach(it) }
-        } else {
-            forEachEffect(::applyMbc)
-        }
+        forEachEffect(::applyMbc)
     }
 
     private fun applyMbc(dp: DynamicsProcessing) {
-        if (!mbcInUse) return
+        val state = DynamicsState(bassCharacter, bassCrossoverHz, deharsh, levelling)
+        if (lastDynamics[dp] == state) return
         val c = bassCharacter.toFloat()
         val xo = bassCrossoverHz.toFloat().coerceAtMost(2000f)
         val bass = when {
@@ -204,6 +219,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
         dp.setMbcBandAllChannelsTo(1, evened(neutral(2500f), true, 2500f))
         dp.setMbcBandAllChannelsTo(2, evened(harsh, d <= 0f, 6000f))
         dp.setMbcBandAllChannelsTo(3, evened(neutral(20000f), true, 20000f))
+        lastDynamics[dp] = state
     }
 
     private fun neutral(cutoff: Float) = DynamicsProcessing.MbcBand(true, cutoff, 1f, 60f, 1f, 0f, 0f, -90f, 1f, 0f, 0f)
@@ -217,7 +233,10 @@ class GlobalEqEngine(bandCount: Int = 128) {
         val centers = centersHz
         val gains = gainsDb
         val sent = lastSent.getOrPut(dp) { FloatArray(centers.size) { Float.NaN } }
-        for (i in centers.indices) {
+        // Apply attenuation first, so a partial binder update cannot stack old boosts
+        // with new boosts before their compensating cuts have reached the session.
+        val order = centers.indices.sortedBy { if (sent[it].isNaN() || gains[it] < sent[it]) 0 else 1 }
+        for (i in order) {
             val g = gains[i].toFloat()
             if (abs(g - sent[i]) < 0.01f) continue
             // Upper edge = geometric midpoint to the next centre.
@@ -225,11 +244,11 @@ class GlobalEqEngine(bandCount: Int = 128) {
             dp.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, cutoff.toFloat(), g))
             sent[i] = g
         }
-        dp.setInputGainAllChannelsTo(inputGainDb)
+        if (lastProtection[dp] == null) dp.setInputGainAllChannelsTo(inputGainDb)
         applyMbc(dp)
-        dp.setLimiterAllChannelsTo(
+        if (lastProtection[dp] != protection) dp.setLimiterAllChannelsTo(
             DynamicsProcessing.Limiter(
-                true, protection && eqEnabled, 0,
+                true, protection, 0,
                 1f,    // attack ms
                 60f,   // release ms
                 10f,   // ratio
@@ -237,6 +256,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
                 0f,    // post gain
             ),
         )
+        lastProtection[dp] = protection
     }
 
     companion object {

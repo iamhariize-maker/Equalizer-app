@@ -64,7 +64,7 @@ class CaptureService : Service() {
         }
         // Must be in the foreground (type mediaProjection) *before* getMediaProjection on Android 14+.
         startForeground(NOTIF_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasDumpPermission(this), SessionRouter.snapshot, Process.myUid())
+        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasReportAccess(this), SessionRouter.snapshot, Process.myUid())
         if (blocker != null) {
             startupMessage.value = blocker
             EqController.log("capture: start blocked — $blocker")
@@ -72,6 +72,7 @@ class CaptureService : Service() {
             return START_NOT_STICKY
         }
         startupMessage.value = ""
+        recoveryMessage.value = ""
 
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         @Suppress("DEPRECATION")
@@ -121,14 +122,14 @@ class CaptureService : Service() {
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
                 .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
-                .setBufferSizeInBytes(maxOf(minOut, frames * 2 * 4))
+                .setBufferSizeInBytes(maxOf(minOut, rate * 120 / 1000 * 8))
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .setTransferMode(AudioTrack.MODE_STREAM).build()
             track = output
             check(output.state == AudioTrack.STATE_INITIALIZED) { "output not initialized" }
-            output.setBufferSizeInFrames(maxOf(minOut / 8, frames))
-            var settings = SvanRepository.settings.value
-            var dsp = buildEngine(settings)
+            output.setBufferSizeInFrames(maxOf(minOut / 8, frames * 4))
+            val settings = SvanRepository.settings.value
+            val dsp = buildEngine(settings)
             engine = dsp
             synchronized(engineLock) { current = dsp }
             eqWatcher = Thread({
@@ -140,7 +141,7 @@ class CaptureService : Service() {
                     if (eq !== last || audioSettings != lastSettings) {
                         synchronized(engineLock) { current?.let {
                             applyProtection(it,eq,audioSettings)
-                            if(eq !== last)applyEq(it, eq)
+                            if(eq !== last)applyEq(it, eq, last)
                         } }
                         last = eq
                         lastSettings=audioSettings
@@ -158,7 +159,9 @@ class CaptureService : Service() {
             record = input
             activeRecord = input
             input.startRecording()
-            output.play()
+            var outputStarted = false
+            val fade = CaptureFade(rate / 100)
+            val recovery = CaptureBufferRecovery()
             EqController.log("capture: started, quality=${settings.quality}, DSP latency=${dsp.latencyFrames} frames, output buffer=${output.bufferSizeInFrames} frames")
             val buf = FloatArray(frames * 2)
             var levelPeak = 0f
@@ -173,32 +176,9 @@ class CaptureService : Service() {
             getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(playbackCallback, null)
             while (running) {
                 val next = SessionRouter.captureUids
-                if (next !== allowed) {
-                    // Route changes are rare. No record, filter or buffer allocation
-                    // occurs in steady playback. Never capture unknown/unmuted apps.
-                    input.stop(); input.release(); record = null; activeRecord = null
-                    allowed = next
-                    silentRun = 0; watchdogFired = false
-                    input = openRecord(mp, allowed)
-                    record = input; activeRecord = input
-                    input.startRecording()
-                    EqController.log("capture filter: ${allowed.size} muted UID(s)")
-                }
-                val now = SvanRepository.settings.value
-                if (!now.sameCaptureFormat(settings)) {
-                    // Build before swapping so an unsuccessful rebuild leaves a
-                    // valid handle for cleanup. Native parameter edits stay separate.
-                    val replacement = buildEngine(now)
-                    synchronized(engineLock) {
-                        current = replacement
-                        dsp.close()
-                        dsp = replacement
-                        engine = replacement
-                        settings = now
-                    }
-                    EqController.log("capture: engine rebuilt, quality=${now.quality}")
-                }
-                settings=now
+                // Fade the final block before reopening the recorder. Settings that change
+                // filter latency apply at the next capture start, never rebuild on this thread.
+                val sourceChanged = next != allowed
                 val n = input.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                 if (n < 0) { if (running) EqController.log("capture: read failed ($n)"); break }
                 if (n == 0) continue
@@ -229,6 +209,7 @@ class CaptureService : Service() {
                     // tails masquerade as music. Processing resumes with the next non-zero block.
                     java.util.Arrays.fill(buf, 0, n, 0f)
                 }
+                fade.apply(buf, n, fadeOut = sourceChanged)
                 for (i in 0 until n) outputPeak = maxOf(outputPeak, kotlin.math.abs(buf[i]))
                 processedFrames += n / 2
                 var written = 0
@@ -238,7 +219,28 @@ class CaptureService : Service() {
                     written += count
                     writtenFrames += count / 2
                 }
+                if (!outputStarted) { output.play(); outputStarted = true }
+                if (sourceChanged && running) {
+                    input.stop(); input.release(); record = null; activeRecord = null
+                    allowed = next
+                    silentRun = 0; watchdogFired = false
+                    input = openRecord(mp, allowed)
+                    record = input; activeRecord = input
+                    input.startRecording()
+                    fade.restart()
+                    EqController.log("capture filter: ${allowed.size} muted UID(s)")
+                }
                 if (levelFrames >= rate * 2) {
+                    val desired = recovery.nextSize(output.underrunCount, output.bufferSizeInFrames, output.bufferCapacityInFrames, frames)
+                    if (desired < 0) {
+                        recoveryMessage.value = "Capture could not keep up on this output. Svan returned to system effects. Try Efficient quality before restarting capture."
+                        EqController.log("capture: persistent underruns at maximum buffer; returning to system effects")
+                        break
+                    }
+                    if (desired > output.bufferSizeInFrames) {
+                        output.setBufferSizeInFrames(desired)
+                        EqController.log("capture: underrun recovery buffer=${output.bufferSizeInFrames} frames")
+                    }
                     val played = output.playbackHeadPosition.toLong() and 0xffffffffL
                     val queued = (writtenFrames - played).coerceAtLeast(0)
                     stats = Stats(output.bufferSizeInFrames * 1000.0 / rate, queued * 1000.0 / rate,
@@ -284,7 +286,7 @@ class CaptureService : Service() {
         return AudioRecord.Builder()
             .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                 .setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build())
-            .setBufferSizeInBytes(maxOf(minIn, 256 * 8))
+            .setBufferSizeInBytes(maxOf(minIn, 256 * 8 * 4))
             .setAudioPlaybackCaptureConfig(builder.build()).build().also {
                 if (it.state != AudioRecord.STATE_INITIALIZED) { it.release(); error("capture not initialized") }
             }
@@ -305,16 +307,18 @@ class CaptureService : Service() {
             applyEq(it, SvanRepository.eq.value)
         }
 
-    private fun applyEq(engine: NativeEngine, eq: EqState) {
+    private fun applyEq(engine: NativeEngine, eq: EqState, previous: EqState? = null) {
         // Preserve limiter history through adaptation; resetting it would release
         // attenuation abruptly every time Svaresa publishes a new curve.
-        engine.setDynamicEq(eq.dynamicEq)
-        engine.setBands(eq.effectiveBands().map { it.toNative() })
-        engine.setPreampDb(eq.effectivePreampDb())
-        engine.setBassCharacter(eq.bassCharacter, eq.bass.crossoverHz)
+        if (previous == null || eq.dynamicEq != previous.dynamicEq) engine.setDynamicEq(eq.dynamicEq)
+        val bands = eq.effectiveBands()
+        if (previous == null || bands != previous.effectiveBands()) engine.setBands(bands.map { it.toNative() })
+        if (previous == null || eq.effectivePreampDb() != previous.effectivePreampDb()) engine.setPreampDb(eq.effectivePreampDb())
+        if (previous == null || eq.bassCharacter != previous.bassCharacter || eq.bass.crossoverHz != previous.bass.crossoverHz)
+            engine.setBassCharacter(eq.bassCharacter, eq.bass.crossoverHz)
         val v = eq.activeVocal
         val i = eq.activeInstrument
-        engine.setStereoTuner(v.intimacy, v.warmth, v.smoothness, i.space, i.instruments)
+        if (previous == null || v != previous.activeVocal || i != previous.activeInstrument) engine.setStereoTuner(v.intimacy, v.warmth, v.smoothness, i.space, i.instruments, i.backingVocals, i.spatialDetail)
     }
 
     private fun applyProtection(engine: NativeEngine,eq: EqState,settings: AudioSettings) {
@@ -348,6 +352,7 @@ class CaptureService : Service() {
 
     companion object {
         val startupMessage = kotlinx.coroutines.flow.MutableStateFlow("")
+        val recoveryMessage = kotlinx.coroutines.flow.MutableStateFlow("")
         private val engineLock = Any()
         @Volatile private var current: NativeEngine? = null
 

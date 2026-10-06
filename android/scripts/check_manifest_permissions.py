@@ -9,9 +9,6 @@ if "E: manifest" not in manifest or "android.permission.MODIFY_AUDIO_SETTINGS" n
 
 # These are forbidden even on services/receivers, not only uses-permission nodes.
 forbidden = (
-    "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE",
-    "android.service.notification.NotificationListenerService",
-    "PlayerRecognitionService",
     "android.permission.BIND_ACCESSIBILITY_SERVICE",
     "android.accessibilityservice.AccessibilityService",
     "android.permission.READ_SMS",
@@ -27,4 +24,14 @@ forbidden = (
 found = [capability for capability in forbidden if capability in manifest]
 if found:
     sys.exit("FAIL APK permission policy: " + ", ".join(found))
-print("PASS APK permission policy: notification/SMS/accessibility access and forbidden capabilities absent")
+# The sole notification-access capability is the user-selected music-state fallback.
+# Keep the service protected by Android's system-only bind permission.
+import re
+services = re.split(r"(?m)^\s*E: service\b", manifest)[1:]
+recognition = [s for s in services if "PlayerRecognitionService" in s]
+if len(recognition) != 1 or "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" not in recognition[0] or "android.service.notification.NotificationListenerService" not in recognition[0]:
+    sys.exit("FAIL APK permission policy: missing protected player-recognition service")
+for capability in ("android.permission.BIND_NOTIFICATION_LISTENER_SERVICE", "android.service.notification.NotificationListenerService"):
+    if manifest.count(capability) != 2:  # aapt2 prints value plus (Raw: value)
+        sys.exit("FAIL APK permission policy: unexpected notification-access declaration count")
+print("PASS APK permission policy: one protected optional music listener; forbidden capabilities absent")

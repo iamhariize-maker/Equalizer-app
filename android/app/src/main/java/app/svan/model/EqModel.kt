@@ -159,7 +159,7 @@ data class EqState(
     /** System effects cannot run native dynamic EQ; keep their automatic smoothing. */
     val systemSmoothness: Double get() = if (!enabled) 0.0 else maxOf(vocal.smoothness, activeSmart?.smoothness ?: 0.0)
     val activeInstrument: InstrumentTuner get() = if (!enabled) InstrumentTuner() else activeSmart?.let {
-        InstrumentTuner(if (instrument.space != 0.0) instrument.space else it.space, maxOf(instrument.instruments, it.instruments))
+        InstrumentTuner(if (instrument.space != 0.0) instrument.space else it.space, maxOf(instrument.instruments, it.instruments), instrument.backingVocals, instrument.spatialDetail)
     } ?: instrument
 
     /** The user's own EQ layer (parametric or graphic). */
@@ -302,13 +302,19 @@ data class VocalTuner(
 data class InstrumentTuner(
     val space: Double = 0.0,       // -1 caved in .. +1 spacious
     val instruments: Double = 0.0, // 0..1 string/sax presence, body, air
+    val backingVocals: Double = 0.0,
+    val spatialDetail: Double = 0.0,
 ) {
-    val isOff: Boolean get() = space == 0.0 && instruments == 0.0
+    val isOff: Boolean get() = space == 0.0 && instruments == 0.0 && backingVocals == 0.0 && spatialDetail == 0.0
 
     fun toJson(): JSONObject = JSONObject().put("space", space).put("inst", instruments)
+        .put("backingVocals", backingVocals).put("spatialDetail", spatialDetail)
 
     companion object {
-        fun fromJson(o: JSONObject) = InstrumentTuner(o.optDouble("space", 0.0), o.optDouble("inst", 0.0))
+        fun fromJson(o: JSONObject): InstrumentTuner {
+            fun value(key: String, low: Double = 0.0) = o.optDouble(key, 0.0).let { if(it.isFinite()) it.coerceIn(low,1.0) else 0.0 }
+            return InstrumentTuner(value("space",-1.0), value("inst"), value("backingVocals"), value("spatialDetail"))
+        }
 
         val PRESETS = listOf(
             "Off" to InstrumentTuner(),
@@ -316,6 +322,8 @@ data class InstrumentTuner(
             "Strings & sax" to InstrumentTuner(0.3, 0.9),
             "Intimate stage" to InstrumentTuner(-0.5, 0.3),
             "Wide open" to InstrumentTuner(1.0, 0.6),
+            "Vocal layers" to InstrumentTuner(backingVocals = 0.5),
+            "Spatial detail" to InstrumentTuner(spatialDetail = 0.5),
         )
     }
 }
