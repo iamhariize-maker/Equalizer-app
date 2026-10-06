@@ -98,7 +98,7 @@ private fun DetectionWizard(fixture: String?) {
             WizardStep.START -> snapshot.running == true
             WizardStep.AUTHORIZE -> snapshot.authorized == true
             WizardStep.GRANT -> snapshot.dumpGranted
-            WizardStep.FINISH -> snapshot.dumpGranted && snapshot.debugging.verifiablyOff
+            WizardStep.FINISH -> snapshot.dumpGranted
         }
         val label = if (step == WizardStep.GRANT && error) "Unavailable · optional" else if (step == WizardStep.GRANT && !checked) "Optional" else if (snapshot.dumpGranted && step.ordinal < WizardStep.GRANT.ordinal && !checked) "Not needed now" else if (checked) "✓" else if (step == snapshot.step) "Current" else "Pending"
         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

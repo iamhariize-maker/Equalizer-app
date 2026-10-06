@@ -25,7 +25,7 @@ data class DebuggingState(
 enum class WizardStep(val title: String) {
     INSTALL("Shizuku installed"), DEBUGGING("Wireless debugging setup"),
     START("Shizuku running"), AUTHORIZE("Svan approved in Shizuku"),
-    GRANT("Enhanced detection (optional)"), FINISH("Turn debugging off"),
+    GRANT("Enhanced detection (optional)"), FINISH("Finish setup"),
 }
 
 data class WizardSnapshot(
