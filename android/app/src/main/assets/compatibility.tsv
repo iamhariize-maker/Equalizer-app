@@ -1,0 +1,9 @@
+# player	without setup	music detection	verification	limits
+CI capturable tone (session broadcast)	Yes (synthetic)	Not needed (synthetic)	CI fake player	AudioTrack fixture; API 33/34 CI. No commercial-player claim.
+CI capturable tone (no broadcast)	No (synthetic)	Yes (synthetic)	CI fake player	Fixed DUMP grant and measured routing in detection_release.sh on API 33/34.
+CI capture-blocked tone	System effects (synthetic)	Not needed with broadcast	CI fake player	Engine B capture is blocked; existing routing tests exercise Engine A fallback.
+YouTube Music	Unverified	Unverified	Owner phone	Earlier TECNO Android 14 report: capture delayed/doubled over Bluetooth. New onboarding and 0.5.5 routes unverified.
+Apple Music	Unverified	Unverified	Owner phone	Earlier TECNO report: once detected on IM4, later missing on a wired route. Not a compatibility guarantee.
+Spotify	Unverified	Unverified	Unverified	No real-device/player validation for this beta.
+Amazon Music	Unverified	Unverified	Unverified	No real-device/player validation for this beta.
+Neutron	Unverified	Unverified	Owner phone	Earlier TECNO report: no session detected. Direct/output modes and this beta unverified.

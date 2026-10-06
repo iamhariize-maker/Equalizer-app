@@ -101,3 +101,14 @@ $A shell am start -n app.svan/.MainActivity --es cmd svaramanas --ez on false >/
 $A shell am start -n app.svan/.MainActivity --es cmd blind_lab >/dev/null
 shot 7-blind-listening
 $A shell input keyevent KEYCODE_BACK
+
+# UI-only fixtures cover states that cannot be photographed live while adb is
+# verifiably off. Every image is labelled; none starts capture or grants access.
+for fixture in install debugging start authorize grant working error finish-on finish-off finish-unknown status-idle status-unreachable status-system status-audiophile status-unknown; do
+  $A shell am start -n app.svan/.MainActivity --es cmd onboarding_fixture --es fixture "$fixture" >/dev/null
+  shot "8-setup-$fixture"
+  swipe_up
+  shot "8-setup-$fixture-detail"
+  $A shell am start -n app.svan/.MainActivity --es cmd onboarding_close >/dev/null
+  sleep 1
+done

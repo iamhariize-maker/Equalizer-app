@@ -1,114 +1,55 @@
 package app.svan.ui
 
 import android.content.Intent
-import android.net.Uri
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.provider.Settings
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.Alignment
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.ui.text.style.TextAlign
-import app.svan.DetectionMonitor
-import app.svan.DetectionStatus
 import app.svan.DiagnosticReport
-import app.svan.Health
-import app.svan.LedgerSession
-import app.svan.Verification
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import app.svan.DetectionSetup
 import app.svan.PlaybackSessions
 import app.svan.PlaybackScanReport
 import app.svan.SystemEqService
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun DetectionCard() {
     val context = LocalContext.current
-    val state by DetectionSetup.state.collectAsState()
     val report by PlaybackSessions.report.collectAsState()
     var showDetails by remember { mutableStateOf(false) }
+    var working by remember { mutableStateOf(app.svan.OnboardingAndroid.working(context)) }
+    ObserveWhileVisible { working = app.svan.OnboardingAndroid.working(context) }
     SectionLabel("Music detection")
-    DetectionHealthCard()
+    WorkingStatusCard(working)
     SvanCard {
         Column {
-            if (state.stage == DetectionSetup.Stage.READY) {
-                Text("Enhanced detection enabled", style = MaterialTheme.typography.titleMedium)
-                Text("Svan checks again when playback starts, earbuds reconnect, or you unlock your phone. Brief reconnects and effect failures are retried automatically. Check Apps & engines below to see what is connected.",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                Text("Your earbuds are the output route; the player app (Spotify, Amazon Music, YouTube Music, and others) creates the session Svan detects.",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
-                TextButton(onClick = { SystemEqService.refreshDetection(context) }) { Text("Refresh music detection") }
-                ScanSummary(report, showDetails, { showDetails = !showDetails })
-            } else {
-                Text("Connect your music", style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
-                Text("Enhanced detection permission is not granted. Spotify, Amazon Music, YouTube Music and other players may need this one-time setup before Svan can find their audio sessions. Changing sound controls cannot fix a missing session.",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                Spacer(Modifier.height(8.dp))
-                Text("Phone-only setup · Android 11+ · Wi-Fi required", style = MaterialTheme.typography.labelLarge)
-                Text("1. Install and open Shizuku.\n2. Follow its Wireless debugging pairing and Start steps.\n3. Return here and enable music detection.",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                Text("This grants Android's audio-session discovery permission to Svan. Once enabled, you can stop Shizuku and turn off wireless debugging. No PC or root is needed. Reinstalling Svan resets this permission.",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
-                if (state.message.isNotEmpty()) Text(state.message, style = MaterialTheme.typography.bodySmall,
-                    color = if (state.stage == DetectionSetup.Stage.ERROR) Svan.Ember else Svan.TextMuted)
-                Button(onClick = {
-                    when (state.stage) {
-                        DetectionSetup.Stage.INSTALL -> context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/")))
-                        DetectionSetup.Stage.START -> {
-                            val launch = context.packageManager.getLaunchIntentForPackage(DetectionSetup.SHIZUKU_PACKAGE)
-                            if (launch != null) context.startActivity(launch) else DetectionSetup.refresh()
-                        }
-                        else -> DetectionSetup.enable()
-                    }
-                }, enabled = state.stage != DetectionSetup.Stage.WORKING, modifier = Modifier.fillMaxWidth()) {
-                    Text(when (state.stage) {
-                        DetectionSetup.Stage.INSTALL -> "Get Shizuku"
-                        DetectionSetup.Stage.START -> "Open Shizuku"
-                        DetectionSetup.Stage.WORKING -> "Enabling detection…"
-                        else -> "Enable music detection"
-                    })
-                }
-                OutlinedButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW,
-                    Uri.parse("https://shizuku.rikka.app/guide/setup/#start-via-wireless-debugging"))) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Phone setup guide")
-                }
-                TextButton(onClick = { DetectionSetup.refresh(); SystemEqService.refreshDetection(context) }) { Text("Check setup again") }
-            }
+            SetupHelpLinks()
+            TextButton(onClick = { SystemEqService.refreshDetection(context) }) { Text("Refresh music detection") }
+            ScanSummary(report, showDetails, { showDetails = !showDetails })
+            Text("Detailed reports stay local until you choose to share them in Android's share sheet.",
+                style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
+            DetailedReportButton()
         }
     }
+}
+
+@Composable
+private fun DetailedReportButton() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    TextButton(onClick = {
+        scope.launch {
+            val text = withContext(Dispatchers.Default) { DiagnosticReport.build(context).take(180_000) }
+            context.startActivity(Intent.createChooser(
+                Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, "Svan diagnostic report")
+                    .putExtra(Intent.EXTRA_TEXT, text), "Share diagnostic report"))
+        }
+    }) { Text("Share detailed report") }
 }
 
 @Composable
@@ -117,8 +58,8 @@ private fun ScanSummary(report: PlaybackScanReport, showDetails: Boolean, onTogg
     val context = LocalContext.current
     val scannedAt = if (report.scannedAtMs != 0L) DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(report.scannedAtMs)) else null
     if (report.error != null) {
-        Text(report.error, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-        return
+        Text("Android audio details are unavailable. Keep music playing and retry the scan.",
+            style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
     }
 
     val mediaCount = report.mediaSessions.size
@@ -168,108 +109,3 @@ private fun ScanSummary(report: PlaybackScanReport, showDetails: Boolean, onTogg
         }
     }
 }
-
-@Composable
-private fun DetectionHealthCard() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val st by DetectionMonitor.status.collectAsState()
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
-    var killed by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        while (true) { now = System.currentTimeMillis(); killed = SystemEqService.wasKilledByAndroid(context); delay(1000) }
-    }
-    val tone = when (st.health) {
-        Health.OK -> Svan.Glow
-        Health.IDLE -> Svan.TextFaint
-        else -> Svan.Ember
-    }
-    SvanCard {
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(10.dp).clip(CircleShape).background(tone))
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(st.headline, style = MaterialTheme.typography.titleMedium)
-                    if (st.advice.isNotBlank()) Text(st.advice, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                }
-            }
-            Spacer(Modifier.height(6.dp))
-            Text(sourceLine(st, now), style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint)
-            if (killed) {
-                Spacer(Modifier.height(6.dp))
-                Text("Android stopped Svan's background service. On TECNO/Infinix/itel (HiOS), Xiaomi, Oppo, Vivo and Samsung, allow Svan to auto-start and run in the background, lock it in recent apps, and set battery to unrestricted. Without that, no player can be detected while the screen is off.",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-                TextButton(onClick = {
-                    runCatching { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }
-                }) { Text("Open Svan's Android settings") }
-            }
-            st.sessions.forEach { s -> SessionRow(labelFor(context, s.session.packageName), s, st.verification[s.session.sessionId]) }
-            // Only players that are actually playing: an idle record without a session is not a problem.
-            val stuck = st.unresolved.filter { it.state == "started" }
-            if (stuck.isNotEmpty()) Text(
-                "Playing but no session to attach to: " + stuck.joinToString { labelFor(context, it.packageName.ifEmpty { "uid:${it.uid}" }) } +
-                    ". Android has not exposed an attachable audio session in this scan.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
-            )
-            Spacer(Modifier.height(8.dp))
-            // Two equal buttons with slim padding: one line each on a 320 dp phone (CI screenshot); larger font
-            // scales wrap instead of clipping.
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(modifier = Modifier.weight(1f), contentPadding = SlimButton, onClick = {
-                    if (SystemEqService.isRunning) SystemEqService.requestScanNow() else SystemEqService.start(context)
-                }) { Text("Scan now", textAlign = TextAlign.Center) }
-                OutlinedButton(modifier = Modifier.weight(1f), contentPadding = SlimButton, onClick = {
-                    scope.launch {
-                        val text = withContext(Dispatchers.Default) { DiagnosticReport.build(context).take(180_000) }
-                        runCatching {
-                            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Svan diagnostic report", text))
-                        }
-                        context.startActivity(Intent.createChooser(
-                            Intent(Intent.ACTION_SEND).setType("text/plain")
-                                .putExtra(Intent.EXTRA_SUBJECT, "Svan diagnostic report").putExtra(Intent.EXTRA_TEXT, text),
-                            "Share diagnostic report",
-                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                    }
-                }) { Text("Share report", textAlign = TextAlign.Center) }
-            }
-            Text("Share report sends a diagnostic report and copies it to your clipboard. It lists app names, session numbers and Android's audio tables; no audio and no account data. It is only shared if you send it.",
-                style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint)
-        }
-    }
-}
-
-private fun sourceLine(st: DetectionStatus, now: Long): String {
-    val age = if (st.atMs == 0L) "no scan yet" else "scanned ${((now - st.atMs) / 1000).coerceAtLeast(0)} s ago"
-    fun mark(ok: Boolean) = if (ok) "✓" else "✗"
-    return if (!st.dumpPermission) "Android says ${st.publicActive ?: "?"} playing · $age · detection setup needed"
-    else "Player list ${mark(st.playersOk)} · Audio server ${mark(st.serverOk)} · Android says ${st.publicActive ?: "?"} playing · $age"
-}
-
-@Composable
-private fun SessionRow(name: String, s: LedgerSession, v: Verification?) {
-    val state = if (s.session.state == "started" || s.serverActive == true) "playing" else "paused"
-    val route = when {
-        s.devices.contains("BLUETOOTH", true) -> "Bluetooth"
-        s.devices.contains("USB", true) -> "USB"
-        s.devices.contains("SPEAKER", true) -> "speaker"
-        s.devices.contains("WIRED", true) -> "wired"
-        else -> ""
-    }
-    val detail = listOfNotNull(
-        state, route.ifEmpty { null }, s.pathLabel.ifEmpty { null }?.let { "$it output" },
-        v?.takeIf { it != Verification.UNKNOWN }?.summary,
-    ).joinToString(" · ")
-    Column(Modifier.padding(top = 6.dp)) {
-        Text(name, style = MaterialTheme.typography.titleSmall)
-        Text(detail, style = MaterialTheme.typography.bodySmall,
-            color = if (v == Verification.PROCESSING) Svan.Gold else Svan.TextMuted)
-    }
-}
-
-/** The installed app's name, else the last package segment (same rule as the health headline). */
-private fun labelFor(context: android.content.Context, pkg: String): String = DetectionStatus.appLabel(pkg) { p ->
-    context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(p, 0)).toString()
-}.replaceFirstChar { it.uppercase() }
-
-private val SlimButton = PaddingValues(horizontal = 8.dp, vertical = 8.dp)

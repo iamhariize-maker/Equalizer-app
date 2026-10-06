@@ -48,6 +48,11 @@ measure() { # $1 = label
   echo "$1|$r" >> "$TMP/e2e_results.txt"
 }
 
+# Separate UX prelude; the 39 original measured audio checks below remain unchanged.
+if [ -z "${APK_DIR:-}" ]; then
+  bash scripts/onboarding_e2e.sh "$S" "$TMP/onboarding-e2e" "$APP_APK" || exit 1
+fi
+
 : > "$TMP/e2e_results.txt"
 $A logcat -s EqSpike:I EqTestSource:I > "$TMP/e2e_eqspike_full.log" 2>/dev/null &
 FULLLOG=$!

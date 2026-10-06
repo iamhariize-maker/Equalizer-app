@@ -27,7 +27,16 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(0xFF0C0A08.toInt()), // Svan.Black: warm charcoal
         )
         super.onCreate(savedInstanceState)
+        val priorSound = getSharedPreferences("svan", MODE_PRIVATE)
+        val onboarding = OnboardingAndroid.prefs(this)
+        val freshDefaults = FirstRunPolicy.needsFlatDefault(onboarding.getBoolean("defaults_checked", false),
+            priorSound.contains("eq") || priorSound.contains("settings") || priorSound.contains("presets"),
+            priorSound.getBoolean("smartEqDefaultApplied", false))
         SvanRepository.init(this)
+        // Use the existing complete Flat action only on a brand-new install.
+        // Updates, restores and saved user sound are never reset by onboarding.
+        if (freshDefaults) SvanRepository.resetSound()
+        onboarding.edit().putBoolean("defaults_checked", true).apply()
         SessionRouter.init(this)
         DetectionSetup.init(this)
         SystemEqService.startIfEnabled(this)
@@ -78,6 +87,33 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("quality")?.let { pendingQuality = QualityMode.valueOf(it) }
         EqController.log("CMD $cmd")
         when (cmd) {
+            "onboarding_state" -> {
+                val state = OnboardingAndroid.working(this)
+                val snapshot = OnboardingAndroid.wizard(this)
+                val data = org.json.JSONObject()
+                    .put("kind", state.kind.name).put("prompt", state.promptKey(OnboardingAndroid.dismissed(this)) != null)
+                    .put("dump", snapshot.dumpGranted).put("wizard", snapshot.step.name)
+                    .put("usb", snapshot.debugging.usb.name).put("wireless", snapshot.debugging.wireless.name)
+                    .put("system", SystemEqService.isRunning).put("capture", CaptureService.isRunning)
+                    .put("engineMode", SvanRepository.settings.value.engineMode.name)
+                    .put("preset", SvanRepository.eq.value.presetName).put("preamp", SvanRepository.eq.value.preampDb)
+                    .put("smart", app.svan.svaramanas.Svaramanas.request.value.enabled)
+                java.io.File(filesDir, "onboarding-state.json").writeText(data.toString())
+                EqController.log("ONBOARDING_STATE_READY")
+            }
+            "onboarding_fixture" -> {
+                if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    app.svan.ui.OnboardingUi.fixture.value = intent.getStringExtra("fixture")
+                    app.svan.ui.OnboardingUi.panel.value = app.svan.ui.HelpPanel.DETECTION
+                }
+            }
+            "onboarding_close" -> {
+                if (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+                    app.svan.ui.OnboardingUi.fixture.value = null
+                    app.svan.ui.OnboardingUi.panel.value = app.svan.ui.HelpPanel.NONE
+                }
+            }
+            "onboarding_reset_prompts" -> OnboardingAndroid.resetPrompts(this)
             "blind_lab" -> app.svan.listening.BlindLab.open.value=true
             "quality_lab" -> thread { runCatching {app.svan.listening.QualityLab.verify(this)}.onFailure {EqController.log("QUALITY_LAB_FAILED ${it.message}")} }
             "probe" -> thread { EqController.log(DynamicsProbe.run(this)) }

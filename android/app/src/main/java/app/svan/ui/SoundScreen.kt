@@ -146,6 +146,7 @@ fun SoundScreen() {
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
         item {
             ScreenTitle("Sound", "Make your headphones sound their best.")
+            FirstRunWelcome()
             Spacer(Modifier.height(12.dp))
             Box(
                 Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(20.dp)).background(Svan.Surface)

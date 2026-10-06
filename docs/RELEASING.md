@@ -1,7 +1,8 @@
 # Owner runbook: Svan 0.5.5 GitHub beta
 
-Package `app.svan`, versionName `0.5.5`, versionCode `12`. Release preparation changes only scripts,
-workflows and documentation; the owner's original APK remains the candidate. Nothing is published
+Package `app.svan`, versionName `0.5.5`, versionCode `12`. Initial verification preparation changed
+only scripts, workflows and documentation. Subsequent onboarding work needs a new signed asset;
+the owner's original APK remains the candidate for the original build only. Nothing is published
 by committing or pushing this work. Svan's original code is **All rights reserved**, per the owner's
 decision; third-party notices remain applicable. See [LICENSE](../LICENSE).
 
@@ -31,6 +32,16 @@ described in RELEASE_SIGNING.md; do not assume an arbitrary rebuild is the exact
 For this beta, the owner already has `Svan-0.5.5-owner-signed-a603146.apk`. Do not rebuild or re-sign
 that file just to publish it. Source application code remains at `a603146`; a later preparation tag
 can point at the docs/workflow commit that adds the verifier without claiming a new APK build.
+
+## Onboarding changes need a new asset
+
+The subsequent onboarding/detection work changes app UI after `a603146`. The original
+owner-signed APK/hash below predates it. To distribute that work, finish CI/phone review,
+privately build/sign a new APK outside CI, give it an accurate source-based filename,
+and update the release notes/hash after verifying it. Do not attach the old APK while
+claiming it contains the new onboarding. This task does not change version metadata;
+choose an owner-authorized future versionCode before a Play update or when required
+for a later release. Existing note/hash lines remain facts about the original file only.
 
 ## 2. Verify the owner APK
 

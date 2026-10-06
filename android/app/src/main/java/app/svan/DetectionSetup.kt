@@ -41,9 +41,11 @@ object DetectionSetup {
         refresh()
     }
 
-    fun refresh() {
+    fun refresh(clearError: Boolean = false) {
         if (!initialized || busy) return
         val ready = PlaybackSessions.hasDumpPermission(context)
+        // A visible failure must survive live polling until Retry (or a real late grant).
+        if (!ready && !clearError && mutableState.value.stage == Stage.ERROR) return
         mutableState.value = when {
             ready -> State(Stage.READY, "Enhanced app detection is enabled.")
             runCatching { Shizuku.pingBinder() }.getOrDefault(false) -> State(Stage.AUTHORIZE)
@@ -54,7 +56,7 @@ object DetectionSetup {
 
     fun enable() {
         if (busy) return
-        refresh()
+        refresh(clearError = true)
         if (mutableState.value.stage == Stage.READY) {
             SystemEqService.refreshDetection(context)
             return
@@ -66,7 +68,8 @@ object DetectionSetup {
                 mutableState.value = State(Stage.ERROR, "Open Shizuku → Authorized applications and allow Svan, then retry.")
             } else Shizuku.requestPermission(REQUEST)
         } catch (e: RuntimeException) {
-            mutableState.value = State(Stage.ERROR, "Could not request detection access: ${e.message}")
+            record("permission request failed: ${e.javaClass.simpleName}: ${e.message}")
+            mutableState.value = State(Stage.ERROR, "Could not ask Shizuku for access. Open Shizuku and retry.")
         }
     }
 
@@ -128,7 +131,7 @@ object DetectionSetup {
         } else {
             val reason = error ?: "Android did not grant detection access. Please retry."
             record(reason)
-            mutableState.value = State(Stage.ERROR, reason)
+            mutableState.value = State(Stage.ERROR, detectionGrantFailureMessage(grantPending))
         }
     }
 

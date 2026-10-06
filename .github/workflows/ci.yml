@@ -153,7 +153,7 @@ jobs:
           # No -noaudio: the test needs the emulator's audio HAL.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
-          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/quality_lab.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/quality" || exit 1 ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/precision_controls.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/precision" || exit 1 ; bash scripts/e2e.sh emulator-5554 ; bash scripts/eq_workspace.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/workspace" ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" ; bash scripts/production_release.sh emulator-5554 "$GITHUB_WORKSPACE/tested-production/Svan-production-test.apk" "$GITHUB_WORKSPACE/e2e-out/production" || exit 1
+          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/quality_lab.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/quality" || exit 1 ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/precision_controls.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/precision" || exit 1 ; bash scripts/e2e.sh emulator-5554 ; bash scripts/eq_workspace.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/workspace" ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" ; cp -r /tmp/onboarding-e2e "$GITHUB_WORKSPACE/e2e-out/onboarding" ; bash scripts/production_release.sh emulator-5554 "$GITHUB_WORKSPACE/tested-production/Svan-production-test.apk" "$GITHUB_WORKSPACE/e2e-out/production" || exit 1
       - name: Results
         if: always()
         run: |
@@ -177,6 +177,13 @@ jobs:
           cat e2e-out/detection/detection.txt
           if grep -q '^FAIL' e2e-out/detection/detection.txt; then echo 'release detection results contain a failure'; exit 1; fi
           test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 10
+          cat e2e-out/onboarding/results.txt
+          test "$(grep -c '^PASS' e2e-out/onboarding/results.txt)" -eq 8
+          ! grep -q '^FAIL' e2e-out/onboarding/results.txt
+          cat e2e-out/detection/onboarding.txt
+          test "$(grep -c '^PASS' e2e-out/detection/onboarding.txt)" -eq 5
+          ! grep -q '^FAIL' e2e-out/detection/onboarding.txt
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

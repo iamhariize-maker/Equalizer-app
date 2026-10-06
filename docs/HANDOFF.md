@@ -1,3 +1,38 @@
+## GitHub beta onboarding — 2026-10-06 (in progress)
+
+Owner extended release preparation to first-run/detection UX; work stays on
+`ccr-f859b567-dgrdoj`. No release/PR/Pages/Play submission is made. Original-code licence
+is All rights reserved. The uploaded owner APK at a603146 is unchanged and predates the UX:
+new owner signing and accurate asset hash/source notes are required to distribute it.
+Version/signing config and manifest remain unchanged; do not publish a CI test signer.
+
+Read OnboardingState.kt/OnboardingAndroid.kt and ui/OnboardingUi.kt for the new UI policy.
+First run reaches System effects with no setup gate. Existing bootstrap enabled automatic
+Svaresa; only genuinely fresh installs invoke the existing complete Flat reset. Saved sound,
+updates and restores are not reset. No DSP/chain/router/grant implementation changes.
+DetectionGrantService.kt is absent on this branch; ShizukuDetectionGrant.kt is the existing
+fixed own-package DUMP-only binder grant and remains untouched.
+
+Wizard observations/polling are limited to resumed UI. Errors use plain retry messages;
+raw grant failures remain in the existing bounded local audio log. Debugging reads never
+substitute false for missing/denied keys. Success uses existing gold rather than a new green,
+and makes no banking-app promise. Shizuku is stopped only by the user's own action.
+
+The contextual card uses actual activity plus missing session/DUMP evidence. Named dismissals
+are per package. Anonymous public configurations cannot identify an app; “A player” and an
+anonymous dismissal key are explicit limitations. Reset hidden prompts is always reachable.
+Hi-Fi status separates idle/unreachable/routed and unknown observations; service-running is
+not success. Copy diagnostic summary is local and limited; detailed sharing stays explicit.
+Bundled compatibility rows distinguish synthetic/earlier-owner/unverified evidence.
+
+Release verifier CI initially failed on SDK 36.1's per-scheme certificate labels; commit
+3008eb5 accepts those plus SDK 36.0, requires one signer and one consistent certificate.
+Both SDKs locally pass the owner APK and wrong-cert/additional-permission rejection tests.
+Baseline CI and new onboarding CI must be inspected; results are pending at writing.
+Existing 39 measured audio checks are byte-for-byte unchanged, with a separate UX prelude.
+Do not call measurements identical until comparing both API 33/34 baseline and new artifacts.
+See SETUP.md and PHONE_VALIDATION.md for live versus labelled fixture screenshots and gaps.
+
 ## Public beta preparation — 2026-10-06
 
 Owner requested release verification/automation and Play documents only, starting at `a603146`.

@@ -84,8 +84,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         SectionLabel("Background equalizer")
         SvanCard {
             Column {
-                Text(if (systemRunning) "System equalizer active" else "System equalizer stopped", style = MaterialTheme.typography.titleMedium)
-                Text("Keeps system effects active when you leave Svan. Android may still stop the app; phone testing is pending.",
+                Text(if (systemRunning) "Background service running" else "System equalizer stopped", style = MaterialTheme.typography.titleMedium)
+                Text("Keeps effects available when you leave Svan. Check Is it working? for an actual player connection; Android may stop background audio.",
                     style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                 OutlinedButton(onClick = { if (systemRunning) SystemEqService.stop(context) else SystemEqService.start(context) }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (systemRunning) "Stop all processing" else "Start system equalizer")

@@ -110,7 +110,9 @@ fun SvanApp(
     val blindOpen by app.svan.listening.BlindLab.open.collectAsState()
     if(blindOpen) BlindListening()
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    val detection by app.svan.DetectionMonitor.status.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var working by androidx.compose.runtime.remember { mutableStateOf(app.svan.OnboardingAndroid.working(context)) }
+    ObserveWhileVisible { working = app.svan.OnboardingAndroid.working(context) }
     val tabState = rememberSaveableStateHolder()
     // Boot animation once per app start (survives rotation, not a fresh launch).
     var booted by rememberSaveable { mutableStateOf(false) }
@@ -141,12 +143,7 @@ fun SvanApp(
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            if (tab != 3 && detection.atMs > 0 && !detection.dumpPermission && detection.knownAudioSessions == 0 &&
-                (detection.publicActive ?: 0) > 0) {
-                androidx.compose.material3.TextButton(onClick = { tab = 3 }) {
-                    Text("Music is playing · enable detection in Hi-Fi", color = Svan.Ember)
-                }
-            }
+            ContextualSetupPrompt(working)
             AnimatedContent(tab, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "tab") { t ->
                 tabState.SaveableStateProvider(t) {
                     when (t) {
@@ -161,5 +158,6 @@ fun SvanApp(
         }
     }
     if (!booted) BootAnimation(onDone = { booted = true })
+    SetupHelpHost()
     }
 }

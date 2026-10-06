@@ -1,3 +1,34 @@
+# Current onboarding validation (after a603146)
+
+The original owner-signed a603146 APK predates this flow. Use a new owner-signed build
+and its updated release hash when testing. Do not disable Play Protect.
+
+- Fresh install: Sound is immediately available with System effects, Flat and 0 dB preamp;
+  Audiophile and automatic tonal processing are off. Updates must retain saved sound/settings.
+- Play a broadcasting player without DUMP: check the actual System-effects route. No setup
+  prompt should appear for that connected player or when nothing plays.
+- Play a player whose session is hidden: check the dismissible prompt, per-app dismissal
+  where Android reveals identity, and Hi-Fi's Reset hidden setup prompts. Anonymous playback
+  is explicitly anonymous; the UI must not guess the foreground app or a song title.
+- Follow [SETUP.md](SETUP.md): confirm each real wizard state, declined authorization/retry,
+  missing settings/“can't tell,” grant success and returning from Developer options.
+  Turn USB and wireless debugging off; optionally stop Shizuku. Test payment/banking apps
+  yourself and record exact messages without account information. No compatibility promise.
+- Copy diagnostic summary: review the limited local fields; no title, account or device address.
+  Detailed report sharing is a separate action. Redact reports before public issues.
+- Open Background audio help and test with the screen off after any chosen settings change.
+  Verify actual shortcuts and manufacturer wording on TECNO/Infinix, Xiaomi, Realme/OPPO,
+  Samsung, LG and other skins. Test Android 11–15; emulator evidence does not cover OEM policy.
+- Confirm grants/hidden prompts/settings survive a same-key update, and are correctly
+  re-established after uninstall. Capture permission is still requested per new session;
+  onboarding must never start Audiophile automatically.
+
+The earlier listening/detection observations below are history, not proof that the new
+onboarding or 0.5.5 works with any particular phone/player. [Compatibility](COMPATIBILITY.md)
+keeps that evidence separate from synthetic tests. Existing Bluetooth delay/echo remains open.
+
+---
+
 For version 0.3.1: in Presets, use **Reset all sound to Flat** to clear headphone
 correction and every tuner before comparing. Start with Hi-Fi → **System effects
 only** (recommended). Complete Music detection if the player does not appear.

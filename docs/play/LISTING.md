@@ -36,7 +36,7 @@ unlock. Svan's original code is All rights reserved; third-party licences remain
 
 - Features and limitations: [0.5.5 lab](../QUALITY_LAB_0.5.5.md),
   [EQ workspace](../EQ_WORKSPACE_0.5.3.md), [phone validation](../PHONE_VALIDATION.md).
-- Package/version/SDK/ABIs: [build.gradle.kts](../../android/app/build.gradle.kts#L20).
+- Package/version/SDK/ABIs: [build.gradle.kts](https://github.com/iamhariize-maker/Equalizer-app/blob/a603146f7d23632b2b1234b10c961061bd750655/android/app/build.gradle.kts#L20).
 - Owner-provided original APK and identity: [beta notes](../releases/v0.5.5-beta.md).
 - TODO owner: developer/support contact, public privacy URL, audience/content-rating answers,
   final screenshots and required videos, and signing Option A or B. No listing or release is
