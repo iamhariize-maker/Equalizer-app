@@ -1,3 +1,31 @@
+## Public beta preparation — 2026-10-06
+
+Owner requested release verification/automation and Play documents only, starting at `a603146`.
+Work stays on `ccr-f859b567-dgrdoj`. Beta notes and the bug form are reused from
+`ccr-aa3465ac-bgvou9`, without merging that branch or changing app/DSP code, permissions,
+signing configuration or version metadata. Owner's licence decision: original Svan code is
+**All rights reserved**; third-party notices remain applicable (LICENSE).
+
+New `verify_release.sh` checks public certificate, package/version, exact compiled permission
+allowlist and 16 KB ELF/ZIP alignment, then prints the actual file SHA-256. CI exercises a real
+disposable-signed production-mode fixture plus wrong-certificate/additional-permission failures;
+the owner key is never needed. The owner APK passes local verification with the supplied hash.
+Core local baseline: 98 tests, zero failed checks. Android debug/release assembly, lint and
+102 JVM tests pass locally. New push CI results are pending at writing;
+do not infer a green run from older or cancelled checks.
+
+`release-verify.yml` has a read-only download/verification job and a separate contents-write
+checksum attachment job: GitHub cannot attach release assets with a read-only token. No custom
+secret, signing or sensitive comment is added. Runtime release upload is unverified until an
+owner-created published release exists. The workflow must be present on the default branch;
+the older default branch has not been changed. See RELEASING.md for owner setup/rollback.
+
+Play drafts have source-line evidence and explicit unresolved network/support-data handling,
+permission/FGS review and real-device gaps. Privacy HTML is prepared, Pages is not enabled,
+and contact/retention plus an in-app policy entry remain owner/future implementation work.
+The signing A/B choice is explicitly undecided. No release, PR, Pages deployment or Play
+submission is created by this task. After each push, inspect CI logs and screenshots.
+
 ## Quality engine continuation — 2026-10-05 (0.5.5 preview, code 12)
 
 Built true-peak estimation/lookahead, bounded selective dynamic EQ, measurement-derived headphone

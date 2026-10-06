@@ -1,0 +1,32 @@
+# Data safety draft — evidence, not a submitted form
+
+Scope: source app at `a603146`, production 0.5.5/code 12 and the owner APK's reviewed permission
+list. Every answer below is a working assessment. [Google's definitions](https://support.google.com/googleplay/android-developer/answer/10787469?hl=en)
+distinguish local access from off-device collection; privacy/consent must describe local access too.
+Assess all active Play versions and dependencies before submission. There is no completed
+"collects/shares no data" declaration here: third-party network and voluntarily sent support data
+still need owner review.
+
+| Console topic | Draft answer and limit | File/line evidence |
+| --- | --- | --- |
+| Playback audio / audio files | Processed locally; no automatic audio transmission described. Capture requires Android permission/consent. Do not mark audio as collected merely because RECORD_AUDIO is declared. | [PRIVACY.md:3](../PRIVACY.md#L3), [CaptureService.kt:274](../../android/app/src/main/java/app/svan/CaptureService.kt#L274) |
+| Imported WAV / temporary comparison capture | User-selected WAV or explicit already-authorized tap; excerpts remain in memory rather than uploaded/saved recordings. | [BlindListening.kt:57](../../android/app/src/main/java/app/svan/ui/BlindListening.kt#L57), [BlindListening.kt:88](../../android/app/src/main/java/app/svan/ui/BlindListening.kt#L88), [PRIVACY.md:48](../PRIVACY.md#L48) |
+| Preferences / calibration / listening votes | Local settings/curves and votes are retained on the phone. No off-device preference upload is described. | [SettingsBackup.kt:65](../../android/app/src/main/java/app/svan/SettingsBackup.kt#L65), [BlindListening.kt:75](../../android/app/src/main/java/app/svan/ui/BlindListening.kt#L75), [PRIVACY.md:50](../PRIVACY.md#L50) |
+| Headphone search/downloads | Search terms filter a locally downloaded index. Downloads use model-specific GitHub paths; IP/request metadata reaches GitHub/CDN. Final classification of those transmissions/third-party retention is **pending**, not automatically "ephemeral" or "none". | [AutoEqSource.kt:17](../../android/app/src/main/java/app/svan/tuning/AutoEqSource.kt#L17), [AutoEqSource.kt:49](../../android/app/src/main/java/app/svan/tuning/AutoEqSource.kt#L49), [AutoEqSource.kt:73](../../android/app/src/main/java/app/svan/tuning/AutoEqSource.kt#L73), [PRIVACY.md:11](../PRIVACY.md#L11) |
+| Diagnostics / installed or playing app information / device identifiers | Reports are local unless the user shares. They include device/build, player/session and output-device name/address data. Support intake can introduce off-device collection; the owner must decide destination, retention/deletion and applicable sharing exceptions. | [DiagnosticReport.kt:23](../../android/app/src/main/java/app/svan/DiagnosticReport.kt#L23), [DiagnosticReport.kt:43](../../android/app/src/main/java/app/svan/DiagnosticReport.kt#L43), [DiagnosticReport.kt:58](../../android/app/src/main/java/app/svan/DiagnosticReport.kt#L58), [PRIVACY.md:18](../PRIVACY.md#L18) |
+| Exports / sharing | Export writes settings/active curves to the user-selected destination; contains no recordings, votes or grants. Do not conflate a user-chosen transfer's sharing exception with a blanket collection exemption. | [PresetsScreen.kt:72](../../android/app/src/main/java/app/svan/ui/PresetsScreen.kt#L72), [SettingsBackup.kt:17](../../android/app/src/main/java/app/svan/SettingsBackup.kt#L17), [PRIVACY.md:56](../PRIVACY.md#L56) |
+| Advertising / analytics | No ads/analytics SDK in the reviewed dependency list; no ads/analytics collection described. Reassess if dependencies/features change. | [build.gradle.kts:81](../../android/app/build.gradle.kts#L81), [PRIVACY.md:20](../PRIVACY.md#L20) |
+| Encryption in transit | AutoEq downloads use HTTPS. This is evidence for that path, not a certification of every browser/share destination or third party. | [AutoEqSource.kt:17](../../android/app/src/main/java/app/svan/tuning/AutoEqSource.kt#L17), [AutoEqSource.kt:95](../../android/app/src/main/java/app/svan/tuning/AutoEqSource.kt#L95) |
+| Purpose and optionality | Audio/settings support EQ/app functionality; profile downloads support requested headphone correction. Sharing diagnostics is user-selected. For any declared network/support category, finalize purpose and optionality from actual practice. | [PRIVACY.md:3](../PRIVACY.md#L3), [PRIVACY.md:11](../PRIVACY.md#L11), [PRIVACY.md:18](../PRIVACY.md#L18), [AutoEqSource.kt:49](../../android/app/src/main/java/app/svan/tuning/AutoEqSource.kt#L49) |
+| Local retention/deletion | Clear results removes saved listening votes; uninstall clears local app data. Exports outside the sandbox and received support reports need separate handling. Do not select a server-side deletion badge without a working mechanism. | [BlindListening.kt:96](../../android/app/src/main/java/app/svan/ui/BlindListening.kt#L96), [PRIVACY.md:21](../PRIVACY.md#L21), [PRIVACY.md:60](../PRIVACY.md#L60) |
+| App account creation/deletion | No account-creation flow/dependency is present in the reviewed navigation/dependency list; confirm the final APK. A privacy contact is still required; no account service is introduced. | [SvanApp.kt:1](../../android/app/src/main/java/app/svan/ui/SvanApp.kt#L1), [build.gradle.kts:81](../../android/app/build.gradle.kts#L81), [PRIVACY.md:35](../PRIVACY.md#L35) |
+| Independent security certification | Do not claim one; source/manifest checks are not an independent audit. | [PERMISSIONS.md:20](../PERMISSIONS.md#L20) |
+
+## Owner actions before answering the top-level collection/sharing questions
+
+Review GitHub/CDN handling of IP and requested paths and any support intake. IP is not automatically
+location data unless used to infer location; classify according to actual use. Confirm dependency
+behavior for the final APK, then complete the applicable categories, purposes, optionality, retention
+and deletion answers. Evidence for the unresolved flows is above, not an invented server policy.
+Complete the contact/publication TODOs in [PRIVACY.md](../PRIVACY.md#L69) and match the form to the
+published policy and in-app disclosures. Nothing has been submitted.

@@ -46,18 +46,38 @@ checking that the backup exists, uninstall the preview, install the private-sign
 choose **Restore settings**. Android capture consent, background preferences and the optional
 music-detection setup may need to be granted again. Never disable Play Protect to install.
 
-## First Play submission
+## Owner decision required: Play signing identity
+
+**Undecided. The owner must select A or B before the initial upload/distribution.** This preparation
+does not enroll the app, import a key, change signing configuration or submit a bundle.
+
+| Option | Consequences | Owner action |
+| --- | --- | --- |
+| A — Google-generated app signing key | The existing owner-signed sideload APK and Play APK have different certificates. Switching from this direct build to Play requires settings export/uninstall/install/restore and grants again. | Keep the existing key as the upload key; let Google manage the store key. For future direct distribution under the Play identity, download a Play-signed universal APK from Console instead of publishing an upload-key-signed APK. |
+| B — import the owner's existing key when setting up the first upload | Play and privately signed GitHub APKs can share the current signing identity. Same package, compatible signing history and increasing versionCode are also needed; key rotation/Android-version differences and actual cross-channel updates require testing. | Privately follow Console's PEPK key-transfer instructions, supplying the existing private key (not just its certificate). Compare the Play app-signing certificate with docs/release-cert.sha256. Register a separate upload key if desired/recommended and keep both backups outside Git/CI. |
+
+The owner APK uses `CN=Svan Upload Key`, RSA-4096, certificate valid 2026-10-05 through 2054-02-20,
+and APK v2 signing only. Its certificate SHA-256 is
+`9cb9daca3b49fbdd17683d45dfb069fa9c6d05e3733934795f92546fef696b0f`.
+The label "Upload Key" does not assign its future Play role. Use [release-cert.sha256](release-cert.sha256)
+and [verify_release.sh](../android/scripts/verify_release.sh) to identify the direct APK.
+
+[Current Google guidance](https://support.google.com/googleplay/android-developer/answer/9842756?hl=en-EN)
+also permits changing the initial default before open-testing/production rollout. Decide during first
+upload setup rather than relying on a later change after testers have installed another identity.
+
+## First Play submission after that decision
 
 Create the Play Console app using package `app.svan` (availability must be confirmed in the
-console). Enroll in Play App Signing and let Google generate/protect the app signing key.
-Upload the private-signed AAB; this local key becomes the upload key. Keep its encrypted
+console). Configure Play App Signing according to the owner's A/B choice above.
+Upload the appropriately upload-signed AAB. Keep the encrypted
 keystore and recovery credentials in two secure locations. The public PEM is safe to share
 with Google when a certificate is requested.
 
-Google's store signing certificate will differ from the upload-signed sideload APK, requiring
-another settings migration for that APK. Future Play updates use the same store identity and
+With Option A, Google's store signing certificate differs from the current direct APK, requiring
+another settings migration. Option B still needs real update verification. Future Play updates use the store identity and
 increasing version codes. Signing alone does not mean approval: the privacy policy, Data
-safety answers, foreground-service declarations, MediaProjection explanation, licence choice,
+safety answers, foreground-service declarations, MediaProjection explanation,
 and required testing still need completion before publishing. This work does not publish the
 app or claim to resolve an earlier Play Protect finding.
 

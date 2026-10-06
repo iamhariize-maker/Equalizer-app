@@ -58,7 +58,7 @@ screenshots** — layout bugs only show there.
 3. **Tests first for DSP.** New processors need a measured test (see existing ones: expected vs measured dB). Keep the audio thread allocation-free and wait-free (see `ParametricEq`, `StereoTuner`).
 4. **Design:** one gold hue on warm charcoal (`Theme.kt` tokens: Gold/Molten/Bronze; Ember ONLY for warnings; Ash for "negative" sides). Serif titles. Polished, not colourful. Don't introduce new hues.
 5. **Brand:** app name "Svan"; full name "Svanam Shreshtham: Ultimate Sound"; EQ screen title is "EQ exten9ed" (the first "d" is a vertically flipped d = a 9; screen readers say "EQ Extended"). Every screen carries the SVANAM SHRESHTHAM brand line.
-6. **Licences:** do NOT copy GPL code (RootlessJamesDSP/JamesDSP are GPL — read-only reference only). AutoEq data/targets are MIT; icon glyphs are SIL OFL (attribution in README). App licence is **not chosen yet** — ask the user.
+6. **Licences:** do NOT copy GPL code (RootlessJamesDSP/JamesDSP are GPL — read-only reference only). AutoEq data/targets are MIT; icon glyphs are SIL OFL (attribution in README). Owner decision (6 October 2026): original Svan code is **All rights reserved**; retain third-party notices. See LICENSE.
 7. **Git:** commit messages end with the Co-Authored-By/Claude-Session lines used in `git log`. Use `git -c user.name=iamhariize-maker -c user.email=iamhariize@gmail.com`.
 
 Owner decision (5 October 2026, EQ follow-up): Svaresa controls Extended EQ by default and is
@@ -76,7 +76,7 @@ changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 ## Top open items (details in docs/HANDOFF.md)
 1. Verify on the next CI screenshots: boot name fits on one line with margins; the flipped **d** reads as a 9 (not "q"); the स्व icon on the Android 12+ splash.
 2. **Real-phone validation** (TECNO LH7n/Android 14 and LG V60/Android 13, no PC): the owner reports earlier listening success; new DSP, player/device coverage and LG Quad DAC behavior still need phone checks.
-3. Product gaps: per-app engine UI, foreground-service robustness, release signing, Play Store policy (MediaProjection/foreground service), app licence.
+3. Product gaps: per-app engine UI, foreground-service robustness, release signing, Play Store policy (MediaProjection/foreground service).
 
 0.5.5 adds reconstructed-peak protection, selective dynamic EQ, bounded headphone calibration
 and blind matched listening. See docs/QUALITY_LAB_0.5.5.md. Four release quality checks are required;

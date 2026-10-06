@@ -1,0 +1,78 @@
+name: Bug report
+description: Something sounds wrong, a player is missing, or the app misbehaves
+labels: [beta-feedback]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep Play Protect enabled. Review/redact reports before posting: issues are public.
+        Do not attach recordings, credentials, signing backups or payment/account details.
+  - type: dropdown
+    id: distribution
+    attributes:
+      label: Where did this build come from?
+      options: [Owner-signed GitHub beta, Shared-key preview, Play test, Other or unknown]
+    validations: {required: true}
+  - type: input
+    id: version
+    attributes:
+      label: Svan version
+      placeholder: "0.5.5"
+    validations: {required: true}
+  - type: input
+    id: device
+    attributes:
+      label: Phone and Android version
+      placeholder: "TECNO LH7n, Android 14"
+    validations: {required: true}
+  - type: input
+    id: player
+    attributes:
+      label: Player app
+      placeholder: "YouTube Music"
+    validations: {required: true}
+  - type: dropdown
+    id: route
+    attributes:
+      label: Output route
+      options: [Phone speaker, Wired, Bluetooth, USB DAC, Other]
+    validations: {required: true}
+  - type: input
+    id: codec
+    attributes:
+      label: Bluetooth codec or output details (if known)
+  - type: dropdown
+    id: engine
+    attributes:
+      label: Engine
+      options: [System effects, Audiophile engine, Both tried, Not started]
+    validations: {required: true}
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the settings, source playback and route changes needed to reproduce it.
+    validations: {required: true}
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      description: Include whether it is delay, echo, silence, crackle or a missing player. Do not share private information.
+    validations: {required: true}
+  - type: textarea
+    id: warning
+    attributes:
+      label: Exact Android or Play Protect message (if any)
+      description: Stop if installation is blocked. Do not bypass protection; redact private information.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Optional reviewed diagnostics or screenshots
+      description: Reports can contain device details, player names and output-device addresses. Redact first.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I verified the APK SHA-256 against the release notes
+        - label: I did not disable Play Protect

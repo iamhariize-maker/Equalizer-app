@@ -84,6 +84,15 @@ jobs:
           "$BT/zipalign" -c -P 16 4 build-kit/production-test/Svan-production-test.apk
           python3 scripts/check_native_alignment.py build-kit/production-test/Svan-production-test.apk build-kit/production-test/Svan-production-test.aab
           rm "$SVAN_KEYSTORE"
+      - name: Release verifier accepts fixture and rejects wrong certificate and added permission
+        working-directory: android
+        run: |
+          bash -n scripts/verify_release.sh scripts/test_verify_release.sh
+          if command -v shellcheck >/dev/null; then
+            shellcheck scripts/verify_release.sh scripts/test_verify_release.sh
+          fi
+          export SVAN_BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          bash scripts/test_verify_release.sh build-kit/production-test/Svan-production-test.apk
       - uses: actions/upload-artifact@v4
         with:
           name: Svan-production-test-build

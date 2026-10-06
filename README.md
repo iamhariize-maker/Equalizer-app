@@ -17,6 +17,17 @@ diagnostics shell for answering the open platform questions on real phones.
 
 Contributors and coding agents: start with [`AGENTS.md`](AGENTS.md) and [`docs/HANDOFF.md`](docs/HANDOFF.md).
 
+## Beta downloads
+
+Owner-signed betas will be listed in [GitHub Releases](https://github.com/iamhariize-maker/Equalizer-app/releases)
+as prereleases. Android 10+ (API 29+) and ARM64/x86_64 are the build requirements; commercial-player,
+OEM and output-route compatibility still needs real-device testing. Download the APK and `SHA256SUMS`
+and run `sha256sum -c SHA256SUMS`, or compare the APK's SHA-256 using a trusted file-hash tool.
+**Never disable Play Protect.** If it warns or blocks installation, stop and report the exact message.
+Earlier previews need [settings migration](docs/MOVING_FROM_PREVIEW.md). Report bugs using the
+[bug form](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml), including
+device, Android version, player, route and engine; review/redact diagnostics before posting publicly.
+
 ## The DSP core
 
 - **Parametric EQ:** up to 256 active stages per channel, independent L/R (Android allows 128 manual bands plus tuning and tuners). Peak, shelf, high/low-pass, band-pass, notch and all-pass filters.
@@ -60,8 +71,8 @@ Copyright (c) 2021 RikkaW. Its full notice ships in `assets/licenses/Shizuku-API
 
 ## Licence
 
-Not chosen yet. Note that reusing JamesDSP/ViPER code would require GPL;
-this core is written from scratch so the choice stays open.
+Svan's original code is **All rights reserved**, per the owner's decision. See [LICENSE](LICENSE).
+Third-party materials retain their own licences and attribution; no GPL implementation is copied.
 
 ## Brand assets
 

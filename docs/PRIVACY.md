@@ -1,4 +1,4 @@
-# Svan preview privacy notice
+# Svan Privacy Policy (beta)
 
 Svan processes audio locally on your Android device. The app does not upload,
 store as audio files, or send captured playback to a server. Engine B uses
@@ -56,3 +56,20 @@ or notification access is introduced.
 Settings export writes EQ, presets, Svaresa/audio preferences and active calibration curves only
 to a file you choose. The file may identify your headphone. It contains no recordings, listening
 votes, Android permissions or signing keys. Restore validates it locally without uploading it.
+
+## Optional floating controls and diagnostic detail
+
+SYSTEM_ALERT_WINDOW is used only for the optional Svaramanas bubble. It is not needed for
+in-app controls and is not enabled automatically. You can disable the bubble or revoke overlay
+access. Diagnostic reports can additionally include phone/build details and output-device names
+and addresses; review and redact a report before sharing it. Posting a report in a public GitHub
+issue makes it visible to others. Files exported outside Svan are not deleted by uninstalling it.
+
+## Publication and privacy contact
+
+TODO (owner): supply the public developer identity, monitored privacy contact or inquiry mechanism,
+effective publication date, and retention/deletion handling for reports voluntarily sent to support.
+Do not publish this as a completed Play policy until those fields are resolved. The generated
+`privacy.html` is suitable for a static Pages deployment but Pages has not been enabled by this work.
+The current app still needs a visible policy text/link before Play submission. No new data flow or
+permission is introduced by this documentation.
