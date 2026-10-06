@@ -34,6 +34,15 @@ production fixture of CI 37434953170. All 73 ZIP entry contents match the tested
 its public record is [v0.5.5-beta-payload.json](releases/v0.5.5-beta-payload.json). No new key was
 generated. The original a603146 owner APK is historical and lacks the new onboarding.
 
+For this owner-authorized beta, a workspace upload error requires
+`.github/workflows/stage-beta.yml`. It verifies the already-signed public APK referenced by
+the payload record, proves the two rejection cases, and attaches the APK/checksum to the
+unpublished draft. Its first job has contents-read access; only the isolated attachment job
+has contents-write access. It receives no owner key/password and does not sign or publish.
+The temporary public Git blob is a transfer mechanism, not a key backup. Read that workflow's
+logs and verify the draft assets before explicit publication. Do not rerun staging against
+an already-published release; its draft check deliberately rejects that operation.
+
 App version metadata remains 0.5.5/code 12. Real-phone in-place update/grant retention must be
 validated. A future Play update requires an owner-authorized increasing versionCode and
 corresponding verifier/notes updates; signing this beta does not change app version metadata.

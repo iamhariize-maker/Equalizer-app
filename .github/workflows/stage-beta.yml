@@ -1,0 +1,103 @@
+name: Stage verified beta assets
+
+on:
+  push:
+    branches: [ccr-f859b567-dgrdoj]
+    paths:
+      - .github/workflows/stage-beta.yml
+      - docs/releases/v0.5.5-beta-payload.json
+
+permissions: {}
+concurrency:
+  group: stage-owner-beta
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Retrieve only the already-signed public APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == iamhariize-maker/Equalizer-app ]]
+          record=docs/releases/v0.5.5-beta-payload.json
+          blob=$(jq -r '.github_apk_blob_sha' "$record")
+          name=$(jq -r '.apk_filename' "$record")
+          [[ "$blob" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$name" =~ ^Svan-[A-Za-z0-9._+-]+\.apk$ ]]
+          jq -e '.release_id == 404595654 and .release_tag == "v0.5.5-beta.1"' "$record" >/dev/null
+          mkdir -p candidate
+          gh api "repos/$GITHUB_REPOSITORY/git/blobs/$blob" --jq .content | base64 --decode > "candidate/$name"
+          [[ $(wc -c < "candidate/$name") -eq $(jq -r '.apk_size' "$record") ]]
+          actual=$(sha256sum "candidate/$name" | awk '{print $1}')
+          [[ "$actual" == $(jq -r '.apk_sha256' "$record") ]]
+          cp "$record" candidate/asset.json
+      - name: Verify identity, permissions, alignment and rejection cases
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0' >/dev/null
+          export SVAN_BUILD_TOOLS_DIR="$ANDROID_HOME/build-tools/36.0.0"
+          name=$(jq -r '.apk_filename' candidate/asset.json)
+          bash android/scripts/verify_release.sh "candidate/$name"
+          bash android/scripts/test_verify_release.sh "candidate/$name"
+          (cd candidate && sha256sum -- "$name" > SHA256SUMS)
+          cmp candidate/SHA256SUMS docs/releases/SHA256SUMS-v0.5.5-beta.1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verified-owner-beta-assets
+          path: |
+            candidate/*.apk
+            candidate/SHA256SUMS
+            candidate/asset.json
+          if-no-files-found: error
+          retention-days: 7
+
+  attach-to-draft:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: verified-owner-beta-assets
+          path: verified
+      - name: Attach verified public assets without publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == iamhariize-maker/Equalizer-app ]]
+          tag=$(jq -r '.release_tag' verified/asset.json)
+          name=$(jq -r '.apk_filename' verified/asset.json)
+          release_id=$(jq -r '.release_id' verified/asset.json)
+          [[ "$tag" == v0.5.5-beta.1 && "$release_id" == 404595654 ]]
+          [[ "$name" =~ ^Svan-[A-Za-z0-9._+-]+\.apk$ ]]
+          [[ $(wc -l < verified/SHA256SUMS) -eq 1 ]]
+          grep -Eq '^[0-9a-f]{64}  Svan-[A-Za-z0-9._+-]+\.apk$' verified/SHA256SUMS
+          [[ $(awk '{print $2}' verified/SHA256SUMS) == "$name" ]]
+          [[ $(awk '{print $1}' verified/SHA256SUMS) == $(jq -r '.apk_sha256' verified/asset.json) ]]
+          [[ $(wc -c < "verified/$name") -eq $(jq -r '.apk_size' verified/asset.json) ]]
+          (cd verified && sha256sum -c SHA256SUMS)
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > draft.json
+          jq -e --arg tag "$tag" '.draft == true and .prerelease == true and .tag_name == $tag' draft.json >/dev/null
+          # No signing inputs, owner credentials, or automatic publication.
+          gh release upload "$tag" "verified/$name" verified/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > uploaded.json
+          jq -e --arg name "$name" --arg digest "sha256:$(jq -r '.apk_sha256' verified/asset.json)" \
+            '([.assets[] | select(.name | endswith(".apk"))] | length) == 1 and
+             any(.assets[]; .name == $name and .digest == $digest) and
+             any(.assets[]; .name == "SHA256SUMS") and .draft == true' uploaded.json >/dev/null

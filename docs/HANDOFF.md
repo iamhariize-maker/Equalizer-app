@@ -6,14 +6,19 @@ certificate in release-cert.sha256 and is a private re-sign of the exact product
 from all-green CI 37434953170, source fbc2ff6d6ec624444feeb9991711d933511bf93a.
 All 73 ZIP entry contents are identical, including all four native libraries. The full owner
 release verifier passes; public hash/provenance are in releases/v0.5.5-beta.md and its payload
-record. Subsequent changes are release documentation only; permissions, audio, signing config
+record. Subsequent changes are release documentation and staging only; permissions, audio, signing config
 and app version/code remain untouched (0.5.5/12). Use the original identity for future updates.
 
 The backup remains private to the owner, outside Git/CI; do not publish it or recovery details.
 The prerelease is prepared as v0.5.5-beta.1. Publication/asset availability must be checked on
-GitHub, not inferred from this commit. The older default branch does not contain release-verify;
-until owner-authorized default-branch integration, verify locally and attach the generated
-SHA256SUMS manually. No branch-default change, other-branch push, Pages or Play submission is made.
+GitHub, not inferred from this commit. The older default branch does not contain release-verify.
+The workspace upload route returned Bad Content-Length; stage-beta.yml transfers only the
+already-signed public APK through a temporary Git blob, verifies it with read-only CI access,
+then attaches it and SHA256SUMS to the unpublished draft in a separate contents-write job.
+No key/password/signing operation is in CI and publication remains explicit. Automatic
+release-event verification still needs owner-authorized default-branch integration; the
+staging workflow does not replace that future setup. No branch-default change, other-branch
+push, Pages or Play submission is made.
 Phone updates/DUMP retention, OEM behavior, Bluetooth and payment apps still need validation.
 
 ## GitHub beta onboarding — 2026-10-06
