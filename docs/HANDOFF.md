@@ -866,3 +866,8 @@ a selectable isolated-feature or Fast-versus-Detailed qualification tool.
 Follow-up: live protection/unmasking controls now update the applied capture metadata, invalidate
 mixed-setting recordings, and survive UID reopens without applying pending format changes or
 undoing a Fast/48k fallback. Core 142 and Android build/lint/JVM 179 checks pass locally.
+Initial API34 full suites and all six width/font cases passed; images were inspected. Both API33
+runs disconnected after the two 320dp cases, so overall CI is not green. The follow-up corrects
+large-font Instruments wrapping and dock/tab clipping. Its harness keeps one physical display
+size and varies density (320/360/411.43dp) to investigate the suspected resize-related emulator
+failure, preserving all assertions. New screenshots/runtime results are still required.

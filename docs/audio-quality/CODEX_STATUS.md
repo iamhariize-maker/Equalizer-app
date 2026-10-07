@@ -6,7 +6,8 @@ Merge commit: `2f04da5`. Claude's branch was not rewritten. No PR, release or ve
 Implementation commit: `1c437cf7a90f6c13ed13dfbfda5cb9a7db7b1609`.
 This record includes a tested follow-up: live protection/unmasking metadata follows applied controls,
 clips cancel if those controls change mid-recording, and UID reopens retain them without applying
-pending format changes or undoing a Fast/48k safety fallback. Its own hosted CI is pending push.
+pending format changes or undoing a Fast/48k safety fallback. This fix is pushed as `2f27c71`;
+its CI runs are superseded by the subsequent layout/harness follow-up.
 Core, JNI/CMake, AGENTS, LICENSE, privacy docs, Claude STATUS and generated POLICY_RULES were not edited by Codex.
 
 ## Implementation
@@ -14,7 +15,7 @@ Core, JNI/CMake, AGENTS, LICENSE, privacy docs, Claude STATUS and generated POLI
 | Step | State | Evidence and limits |
 |---|---|---|
 | K0 | Local checks pass | Both arm64-v8a/x86_64 NDK builds accepted the supplied APIs. Core: 142 tests, 0 failed checks. Android debug/release/lint/JVM checks pass; 179 JVM tests, 0 failures/errors. Claude CI 37603033259 failed only the old PlaybackHeadClock fixture; Codex corrected the ambiguous jump, retaining wrap/reset assertions. No JNI fixes needed. |
-| K1 | UI/matrix ready; screenshots pending CI | Backing/Binaural first row; Resolve/Auto switch retained. Bass dials size from actual card width. Per-player text distinguishes native controls, system approximations, off and unavailable. Matrix covers 320/360/411 dp × font 1.0/1.5 and saves XML/PNG. |
+| K1 | Initial API34 images reviewed; follow-up pending CI | Backing/Binaural first row; Resolve/Auto switch retained. Bass dials size from actual card width. Per-player text distinguishes native controls, system approximations, off and unavailable. Inspection found mid-word wrapping of Instruments and clipped dock/tab labels at font 1.5; follow-up uses weighted label areas, a content-sized dock and explicit tab ellipses with full accessibility labels. Matrix targets 320/360/411 dp × font 1.0/1.5 and saves XML/PNG. |
 | K2 | Wired; phone tuning pending | Fast default/migration; Detailed flag through JNI; total native latency reported/aligned. Recorded clips retain applied settings, including Fast fallback. A physical missed deadline plus underrun, or existing exhausted-buffer recovery, retries Fast/48k once while preserving saved choices. No invented phone DSP% threshold. |
 | K3 | Wired; phone/clock qualification pending | Safe 48k default, serial RatePolicy candidates, strict client-format validation and safe fallback. Router ownership/mutes surround all epochs. Source changes reset native state at a faded boundary and invalidate clips. Frames, DSP, clips, WAV, renderer and probes use actual rates. RateFacts separate client/device formats; source/DAC unknown. Oversampling preserves internal family targets; phone performance unmeasured. |
 | K4 | Read-only UI/JVM parity wired | Compiled JSON supplies “How Svaresa decides”: inputs, bounds, reasons, coordination, rollback. JVM tests compare context/Resolve bounds to generated matrix. SvaresaBrain behavior unchanged. Runtime admission remains Claude's core work and UI explicitly says this. |
@@ -31,6 +32,9 @@ Core, JNI/CMake, AGENTS, LICENSE, privacy docs, Claude STATUS and generated POLI
 - Follow-up `live-controls-build.log` (3m47s): debug/release/lint and 179 JVM tests pass. Core repeated:
   `live-controls-core.log`: 142 tests, 0 failed checks. Two new regression tests pin static mode/rate/
   quality while live controls change and require mixed-setting clips to be invalidated.
+- Layout/harness follow-up `current-layout-build.log` (3m19s): full Android command passes
+  on the exact current sources; `layout-followup-core.log`: 142 tests, 0 failed checks;
+  11 Python assertions and shell syntax pass. New hosted screenshots are pending.
 - Python screenshot/control assertions: 11 pass; shell syntax and diff whitespace pass.
 - `AudioQualityLab` exercises actual Fast/Detailed JNI, aligned identity and exact extra N frames
   at 44.1/48/96k, five-field diagnostics and the 19-rule JSON. It runs in existing quality checks,
@@ -65,7 +69,17 @@ capture settings, so changing a saved mode afterward is not a valid mode-compari
   both passed core Release, generated policy parity, ASan/UBSan, TSan and Android build/lint/unit,
   preview install sanity, production APK/AAB and release-verifier positive/negative fixtures.
 - API 29/30/33/35/36 compatibility smoke matrix passed in the PR run. Full API 33/34 suites and
-  the new width/font screenshots are still pending at this checkpoint.
+  full API34 suite passed in both runs: routing 41 (including the established routing checks), detection 13, workspace 9, precision 8,
+  quality 4, continuity 4, production 4, source filter 3, onboarding 8, fallback 3, and setup
+  interaction 16 checks. The new native/matrix suite adds seven passes. Both API33 runs passed
+  the native lab (aligned max error 0; rules 19; diagnostics 5) and both 320dp font cases, then
+  the emulator went offline; overall CI is **not green**. Production on API33 was not reached.
+  Artifacts reviewed: API34 `11478565100` and API33 `11477294725` from the PR run; PNGs inspected
+  for 320dp normal/large fonts, 360/411dp large fonts, Resolve/Auto, first-row knobs and rules.
+- Harness follow-up: one fixed 720x1600 framebuffer, density 360/320/280 dpi. Logical widths
+  are exactly 320/360 and 411.43 dp (rounded target 411). Avoids repeated physical resizes suspected
+  in the API33 disconnects; causality/recovery are not yet proven. Bounds checks use physical
+  pixels, every six-case assertion remains mandatory, and failure capture survives restore errors.
 - Downloaded the **exact CI preview**, artifact `11476570771`, from the push run. APK SHA-256:
   `ada286a20f5a51c2a16c00499932dfc65a09b59630447f9b92e19056a8a15d26`.
   APK v2 signature verifies with the existing **preview** certificate `fd7955d1…`, not the owner

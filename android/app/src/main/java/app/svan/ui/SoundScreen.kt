@@ -386,9 +386,9 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
     SvanCard {
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Knob("Backing vocals", i.backingVocals, 0.0, 1.0, ::pct, step = 0.01,
+                Knob("Backing vocals", i.backingVocals, 0.0, 1.0, ::pct, step = 0.01, modifier = Modifier.weight(1f),
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(backingVocals = x)) } })
-                Knob("Binaural", i.spatialDetail, 0.0, 1.0, ::pct, step = 0.01,
+                Knob("Binaural", i.spatialDetail, 0.0, 1.0, ::pct, step = 0.01, modifier = Modifier.weight(1f),
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(spatialDetail = x)) } })
             }
             Spacer(Modifier.height(6.dp))
@@ -399,8 +399,8 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
                         s > 0 -> "Spacious ${pct(s)}"
                         else -> "Intimate ${pct(-s)}"
                     }
-                }, step = 0.01, onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(space = x)) } })
-                Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.01,
+                }, step = 0.01, modifier = Modifier.weight(1f), onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(space = x)) } })
+                Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.01, modifier = Modifier.weight(1f),
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(instruments = x)) } })
             }
             Spacer(Modifier.height(6.dp))
