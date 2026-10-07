@@ -31,3 +31,18 @@ below come from the owner's pasted handoff and implementation prompt). Branch
 * Backing vocals / Binaural now do nothing on material that is already wide (hard-panned or
   side >= half the mid). This is by design but is a change from 0.5.6.
 * System-effects (non-native) route does not run Resolve or the spatial processor.
+
+## Codex checklist (needs the Android SDK; not done in this session)
+
+Kotlin/JNI changes are uncompiled. In `android/` run:
+`./gradlew assembleDebug :app:assembleRelease lintDebug testDebugUnitTest`
+
+1. Compile check for: `model/EqModel.kt` (`BassTuner.resolve`/`resolveAuto`/`AUTO_RESOLVE`, `EqState.bassResolve`),
+   `NativeEngine.kt` + `cpp/jni_bridge.cpp` (`nativeSetBassResolve`), `CaptureService.kt`, `listening/BlindRenderer.kt`,
+   `ui/SoundScreen.kt` (Resolve knob, `SettingSwitchRow`, Orchestral row order).
+2. Unit tests: new cases in `model/BassTunerTest.kt` (migration, JSON round trip, Auto ownership).
+3. CI emulator e2e on API 33 and 34: look at the screenshots of the Bass tuner and Orchestral amplifier cards
+   (Backing vocals + Binaural in the first row; Resolve knob and switch) at 320/360/411 dp and large fonts.
+4. Phone checks (TECNO LH7n, LG V60): Backing vocals/Binaural on already-wide material now hold by design;
+   Bass Resolve against Feel at matched loudness.
+5. Remaining tickets are unchanged: AQ-02 streaming WOLA, AQ-03 B unmasking, AQ-04 rule registry, AQ-05 rate work, AQ-06.
