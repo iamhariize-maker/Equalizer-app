@@ -25,6 +25,7 @@ data class PlaybackSession(
     val pid: Int = -1,
     /** `type:` of the player (android.media.AudioTrack, AAudio, OpenSL ES…); empty if absent. */
     val playerType: String = "",
+    val contentType: String = "CONTENT_TYPE_UNKNOWN",
 ) {
     /** Usages AudioPlaybackCapture can see (docs: MEDIA, GAME, UNKNOWN). */
     val usageCapturable: Boolean get() = usage in CAPTURABLE_USAGES
@@ -57,14 +58,15 @@ data class PlaybackScanReport(
 
 /**
  * Finds other apps' audio sessions without relying on their OPEN broadcasts,
- * by reading the `audio` system service dump. DUMP is granted once through
- * the in-app Shizuku setup (or by ADB); it is not a normal runtime permission.
+ * by reading fixed audio-service reports as shell through Shizuku, or using an
+ * existing app DUMP grant. Broadcast detection works independently of either.
  */
 object PlaybackSessions {
 
     private val UID = Regex("""(?:u/pid\s*:\s*|(?:client)?uid\s*[:=]\s*)(-?\d+)""", RegexOption.IGNORE_CASE)
     private val PID = Regex("""u/pid\s*:\s*-?\d+\s*/\s*(-?\d+)""", RegexOption.IGNORE_CASE)
     private val TYPE = Regex("""\btype\s*:\s*(\S+)""", RegexOption.IGNORE_CASE)
+    private val CONTENT = Regex("""\bcontent(?:Type)?\s*[:=]\s*([\w]+)""", RegexOption.IGNORE_CASE)
     private val USAGE = Regex("""\busage\s*[:=]\s*([\w]+)""", RegexOption.IGNORE_CASE)
     private val STATE = Regex("""\bstate\s*[:=]\s*([\w]+)""", RegexOption.IGNORE_CASE)
     private val FLAGS = Regex("""\bflags\s*[:=]\s*(0[xX][0-9A-Fa-f]+|\d+)""", RegexOption.IGNORE_CASE)
@@ -167,6 +169,11 @@ object PlaybackSessions {
             flags = flags,
             pid = PID.find(line)?.groupValues?.get(1)?.toIntOrNull() ?: -1,
             playerType = TYPE.find(line)?.groupValues?.get(1) ?: "",
+            contentType = when(val c=CONTENT.find(line)?.groupValues?.get(1)?.uppercase()?.removePrefix("CONTENT_TYPE_")) {
+                "2", "MUSIC" -> "CONTENT_TYPE_MUSIC"
+                "4", "SONIFICATION" -> "CONTENT_TYPE_SONIFICATION"
+                else -> "CONTENT_TYPE_${c ?: "UNKNOWN"}"
+            },
         )
         if (sid <= 0) {
             // Session 0 / missing cannot be attached to a player effect directly.
@@ -179,6 +186,8 @@ object PlaybackSessions {
     fun hasDumpPermission(context: Context): Boolean =
         context.checkSelfPermission(android.Manifest.permission.DUMP) == PackageManager.PERMISSION_GRANTED
 
+    fun hasReportAccess(context: Context): Boolean = hasDumpPermission(context) || ShizukuAudioReports.ready
+
     /** Result of the last [queryPlayers]: every real app player, including those without a session id. */
     data class PlayerScan(val players: List<PlaybackSession>)
 
@@ -190,7 +199,7 @@ object PlaybackSessions {
      * the real session in the audio server's tables). Returns null if the report is unavailable.
      */
     fun queryPlayers(context: Context): List<PlaybackSession>? {
-        if (!hasDumpPermission(context)) {
+        if (!hasReportAccess(context)) {
             lastError = "Enhanced detection is not enabled. Open Hi-Fi → Music detection."
             mutableReport.value = mutableReport.value.copy(scannedAtMs = System.currentTimeMillis(), error = lastError)
             return null
@@ -212,7 +221,7 @@ object PlaybackSessions {
             scannedAtMs = System.currentTimeMillis(),
             playbackConfigCount = parsed.configLines.size,
             parsedSessionCount = sessions.size,
-            mediaSessions = sessions.filter { it.usageCapturable },
+            mediaSessions = sessions.filter { MusicSourcePolicy.exclusion(it) == null },
             unparsedConfigCount = parsed.unparsedConfigCount,
             configPreview = parsed.configLines.take(5).joinToString("\n").take(1600),
             sessionlessPlayers = sessionless,
@@ -243,49 +252,61 @@ object PlaybackSessions {
      * text read so far is returned on timeout/size limit (AudioFlinger prints the sections Svan needs
      * first and slow hardware dumps last).
      */
-    fun readService(name: String, timeoutMs: Long = 3_000L, maxBytes: Int = 2 * 1024 * 1024, keepPartial: Boolean = false): ServiceRead = try {
+    fun readService(name: String, timeoutMs: Long = 3_000L, maxBytes: Int = 2 * 1024 * 1024, keepPartial: Boolean = false): ServiceRead {
+        if (ShizukuAudioReports.ready) {
+            val shell = ShizukuAudioReports.readReport(name, timeoutMs, maxBytes, keepPartial)
+            if (shell.text != null) return shell
+            // A legacy/manual grant is an independent source if shell dies or the ROM denies it.
+            val local = readLocalService(name, timeoutMs, maxBytes, keepPartial)
+            return if (local.text != null) local else shell
+        }
+        return readLocalService(name, timeoutMs, maxBytes, keepPartial)
+    }
+
+    private fun readLocalService(name: String, timeoutMs: Long, maxBytes: Int, keepPartial: Boolean): ServiceRead = try {
         val binder = Class.forName("android.os.ServiceManager")
-            .getMethod("getService", String::class.java)
-            .invoke(null, name) as IBinder?
+            .getMethod("getService", String::class.java).invoke(null, name) as IBinder?
         if (binder == null) ServiceRead(null, error = "service '$name' not found")
         else {
             val pipe = ParcelFileDescriptor.createPipe()
-            val read = pipe[0]
-            val write = pipe[1]
-            read.use {
-                write.use { binder.dumpAsync(it.fileDescriptor, arrayOf()) }
-                val poll = StructPollfd().apply { fd = read.fileDescriptor; events = OsConstants.POLLIN.toShort() }
-                val deadline = SystemClock.elapsedRealtime() + timeoutMs
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(8192)
-                var partial = false
-                var failure: String? = null
-                while (true) {
-                    if (Thread.currentThread().isInterrupted) throw IOException("Audio scan cancelled")
-                    val remaining = deadline - SystemClock.elapsedRealtime()
-                    if (remaining <= 0) { failure = "$name report timed out; retrying automatically"; partial = true; break }
-                    if (Os.poll(arrayOf(poll), remaining.coerceAtMost(200).toInt()) == 0) continue
-                    val events = poll.revents.toInt()
-                    if (events and (OsConstants.POLLERR or OsConstants.POLLNVAL) != 0) throw IOException("$name report pipe closed unexpectedly")
-                    if (events and (OsConstants.POLLIN or OsConstants.POLLHUP) == 0) continue
-                    val count = Os.read(read.fileDescriptor, buffer, 0, buffer.size)
-                    if (count == 0) break
-                    if (output.size() + count > maxBytes) { failure = "$name report exceeded scan limit"; partial = true; break }
-                    output.write(buffer, 0, count)
-                }
-                val text = output.toString(Charsets.UTF_8.name())
-                when {
-                    failure != null && !(keepPartial && text.isNotBlank()) -> ServiceRead(null, error = failure)
-                    text.isBlank() -> ServiceRead(null, error = "Android returned an empty $name report.")
-                    text.contains("Permission Denial", ignoreCase = true) && text.length < 4096 ->
-                        ServiceRead(null, error = "Android denied the $name report. Re-enable music detection.")
-                    else -> ServiceRead(text, partial = partial, error = failure)
-                }
+            try {
+                pipe[1].use { binder.dumpAsync(it.fileDescriptor, emptyArray()) }
+                readPipe(pipe[0], name, timeoutMs, maxBytes, keepPartial)
+            } catch (e: Exception) { pipe[0].close(); throw e }
+        }
+    } catch (e: Exception) { ServiceRead(null, error = "${e.javaClass.simpleName}: ${e.message}") }
+
+    internal fun readPipe(read: ParcelFileDescriptor, name: String, timeoutMs: Long, maxBytes: Int, keepPartial: Boolean): ServiceRead = try {
+        read.use {
+            val poll = StructPollfd().apply { fd = read.fileDescriptor; events = OsConstants.POLLIN.toShort() }
+            val deadline = SystemClock.elapsedRealtime() + timeoutMs
+            val output = ByteArrayOutputStream()
+            val buffer = ByteArray(8192)
+            var partial = false
+            var failure: String? = null
+            while (true) {
+                if (Thread.currentThread().isInterrupted) throw IOException("Audio scan cancelled")
+                val remaining = deadline - SystemClock.elapsedRealtime()
+                if (remaining <= 0) { failure = "$name report timed out; retrying automatically"; partial = true; break }
+                if (Os.poll(arrayOf(poll), remaining.coerceAtMost(200).toInt()) == 0) continue
+                val events = poll.revents.toInt()
+                if (events and (OsConstants.POLLERR or OsConstants.POLLNVAL) != 0) throw IOException("$name report pipe closed unexpectedly")
+                if (events and (OsConstants.POLLIN or OsConstants.POLLHUP) == 0) continue
+                val count = Os.read(read.fileDescriptor, buffer, 0, buffer.size)
+                if (count == 0) break
+                if (output.size() + count > maxBytes) { failure = "$name report exceeded scan limit"; partial = true; break }
+                output.write(buffer, 0, count)
+            }
+            val text = output.toString(Charsets.UTF_8.name())
+            when {
+                failure != null && !(keepPartial && text.isNotBlank()) -> ServiceRead(null, error = failure)
+                text.isBlank() -> ServiceRead(null, error = "Android returned an empty $name report.")
+                text.contains("Permission Denial", ignoreCase = true) && text.length < 4096 ->
+                    ServiceRead(null, error = "Android denied the $name report. Re-enable music detection.")
+                else -> ServiceRead(text, partial = partial, error = failure)
             }
         }
-    } catch (e: Throwable) {
-        ServiceRead(null, error = "${e.javaClass.simpleName}: ${e.message}")
-    }
+    } catch (e: Exception) { ServiceRead(null, error = "${e.javaClass.simpleName}: ${e.message}") }
 
     fun dumpService(name: String): String? {
         val r = readService(name)

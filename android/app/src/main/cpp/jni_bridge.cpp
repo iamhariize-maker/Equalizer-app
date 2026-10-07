@@ -9,6 +9,7 @@
 #include "eqcore/comparison.h"
 #include "eqcore/engine.h"
 #include "eqcore/graphic_eq.h"
+#include "eqcore/policy.h"
 #include "eqcore/svaramanas.h"
 #include "eqcore/tuning.h"
 
@@ -92,6 +93,16 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeResetGainProtection(JNIE
   fromHandle(h)->resetGainProtection();
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetSpatialMode(JNIEnv*, jclass, jlong h, jint mode) {
+  fromHandle(h)->setSpatialMode(mode);
+}
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetSpatialLoadLimited(JNIEnv*, jclass, jlong h, jboolean on) {
+  fromHandle(h)->setSpatialLoadLimited(on == JNI_TRUE);
+}
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeDetailedMix(JNIEnv*, jclass, jlong h) {
+  return fromHandle(h)->detailedMix();
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeProcess(
     JNIEnv* env, jclass, jlong h, jfloatArray in, jfloatArray out, jint frames) {
   // Critical access avoids copies on the audio thread. No JNI calls in between.
@@ -148,6 +159,40 @@ JNIEXPORT jlong JNICALL Java_app_svan_NativeEngine_nativeCreateCustom(
   return reinterpret_cast<jlong>(new Engine(c));
 }
 
+// Same as nativeCreateCustom plus the Detailed (streaming spatial-residual) mode: Backing vocals and Binaural run
+// in the WOLA processor and the engine's latency grows by exactly N frames (see nativeLatency). Stereo only.
+JNIEXPORT jlong JNICALL Java_app_svan_NativeEngine_nativeCreateDetailed(
+    JNIEnv*, jclass, jint sampleRate, jint channels, jint oversample, jdouble stopbandDb, jint ditherBits,
+    jint ditherMode, jboolean autoHeadroom, jboolean gainProtection, jboolean spatialResidual) {
+  EngineConfig c;
+  c.truePeak = true;
+  c.sampleRate = sampleRate;
+  c.channels = channels;
+  c.oversample = oversample;
+  c.stopbandDb = stopbandDb;
+  c.ditherBits = ditherBits;
+  c.ditherMode = static_cast<DitherMode>(ditherMode < 0 || ditherMode > 2 ? 1 : ditherMode);
+  c.autoHeadroom = autoHeadroom;
+  c.gainProtection = gainProtection;
+  c.spatialResidual = spatialResidual == JNI_TRUE;
+  return reinterpret_cast<jlong>(new Engine(c));
+}
+
+// Returns [cut70, cut110, cut180, cut280 (dB, <= 0), noteHz (0 = no validated note)].
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeBassUnmaskDiagnostics(JNIEnv* env, jclass, jlong h) {
+  const Engine* e = fromHandle(h);
+  const auto cuts = e->bassUnmaskCutsDb();
+  const jdouble out[5] = {cuts[0], cuts[1], cuts[2], cuts[3], e->bassUnmaskNoteHz()};
+  jdoubleArray result = env->NewDoubleArray(5);
+  env->SetDoubleArrayRegion(result, 0, 5, out);
+  return result;
+}
+
+// The Svaresa/Svaramanas rule registry as JSON (read-only, for the "How Svaresa decides" screen).
+JNIEXPORT jstring JNICALL Java_app_svan_NativeEngine_nativePolicyRulesJson(JNIEnv* env, jclass) {
+  return env->NewStringUTF(eqcore::policy::rulesJson().c_str());
+}
+
 // Returns [preampDb, type0, freq0, gain0, q0, enabled0, type1, ...]; types use the
 // same ordinals as typeFromInt(). Lines that fail to parse are skipped.
 JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeParseParametric(JNIEnv* env, jclass,
@@ -173,9 +218,18 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassCharacter(JNIEnv*
   fromHandle(h)->setBassCharacter(character, crossoverHz);
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassResolve(JNIEnv*, jclass, jlong h, jdouble resolve) {
+  fromHandle(h)->setBassResolve(resolve);
+}
+
+// Selective bass unmasking: 0 = off (default, bit-exact). Not exposed in the UI until validated on music.
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassUnmask(JNIEnv*, jclass, jlong h, jdouble amount) {
+  fromHandle(h)->setBassUnmask(amount);
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetStereoTuner(
-    JNIEnv*, jclass, jlong h, jdouble intimacy, jdouble warmth, jdouble smoothness, jdouble space, jdouble instruments) {
-  fromHandle(h)->setStereoTuner({intimacy, warmth, smoothness, space, instruments});
+    JNIEnv*, jclass, jlong h, jdouble intimacy, jdouble warmth, jdouble smoothness, jdouble space, jdouble instruments, jdouble backingVocals, jdouble spatialDetail) {
+  fromHandle(h)->setStereoTuner({intimacy, warmth, smoothness, space, instruments, backingVocals, spatialDetail});
 }
 
 namespace {
@@ -257,9 +311,11 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeAnalysis(JNIEnv*
 // Svaramanas plan. features: packed SourceFeatures or null (static plan).
 // Returns [preamp, predictedDelta, bassChar, intimacy, warmth, smoothness, space, instruments,
 //          accepted, rejected, conflictWith, nNotes, notes..., nBands, (type, freq, gain, q)...].
-JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
-    JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine,
-    jboolean svaresaMode) {
+// With `withGates`, appends nGates, then (ruleIndex, skipCode) per consulted rule (skipCode 0 = admitted;
+// ruleIndex is the position in nativePolicyRulesJson()). `evidence` is null or
+// [featuresEpoch, currentEpoch, featuresAgeSeconds, featuresConfidence].
+static jdoubleArray planToArray(JNIEnv* env, jdoubleArray features, jint feel, jintArray order, jdouble strength,
+                                jboolean stereoEngine, jboolean svaresaMode, jdoubleArray evidence, bool withGates) {
   svaramanas::Request r;
   r.feel = static_cast<svaramanas::Feel>(feel < 0 || feel > 5 ? 0 : feel);
   const jsize n = order ? env->GetArrayLength(order) : 0;
@@ -272,6 +328,14 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
   r.strength = strength;
   r.stereoEngine = stereoEngine == JNI_TRUE;
   r.svaresaMode = svaresaMode == JNI_TRUE;
+  if (evidence && env->GetArrayLength(evidence) >= 4) {
+    jdouble e[4];
+    env->GetDoubleArrayRegion(evidence, 0, 4, e);
+    r.featuresEpoch = static_cast<uint64_t>(e[0] < 0 ? 0 : e[0]);
+    r.epoch = static_cast<uint64_t>(e[1] < 0 ? 0 : e[1]);
+    r.featuresAgeSeconds = e[2];
+    r.featuresConfidence = e[3];
+  }
   SourceFeatures f;
   bool have = false;
   if (features) {
@@ -294,9 +358,35 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
     out.push_back(b.gainDb);
     out.push_back(b.q);
   }
+  if (withGates) {
+    out.push_back(static_cast<double>(p.gates.size()));
+    for (const auto& g : p.gates) {
+      out.push_back(static_cast<double>(eqcore::policy::ruleIndex(g.rule)));
+      out.push_back(static_cast<double>(eqcore::policy::skipCode(g.skip)));
+    }
+  }
   jdoubleArray res = env->NewDoubleArray(static_cast<jsize>(out.size()));
   env->SetDoubleArrayRegion(res, 0, static_cast<jsize>(out.size()), out.data());
   return res;
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
+    JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine,
+    jboolean svaresaMode) {
+  return planToArray(env, features, feel, order, strength, stereoEngine, svaresaMode, nullptr, false);
+}
+
+// Same plan, with evidence identity in and the evidence-gate outcome appended (see planToArray).
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlanGated(
+    JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine,
+    jboolean svaresaMode, jdoubleArray evidence) {
+  return planToArray(env, features, feel, order, strength, stereoEngine, svaresaMode, evidence, true);
+}
+
+// Human text for a skip code returned by the gated plan ("" for 0 = admitted).
+JNIEXPORT jstring JNICALL Java_app_svan_NativeEngine_nativePolicySkipText(JNIEnv* env, jclass, jint code) {
+  const int c = code < 0 || code > static_cast<int>(eqcore::policy::Skip::AutoMasterOff) ? 0 : code;
+  return env->NewStringUTF(eqcore::policy::skipText(static_cast<eqcore::policy::Skip>(c)));
 }
 
 // Match the combined/slewed guide and context curve, not two independent trims.

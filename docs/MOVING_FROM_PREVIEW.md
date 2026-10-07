@@ -1,13 +1,14 @@
 # Moving from a preview to the owner-signed beta
 
-Earlier previews used a shared public development key. The owner-signed 0.5.5 APK has a different
+Previews use a shared public development key. The owner-signed beta has a different
 certificate, so Android cannot update an earlier preview in place. Uninstalling deletes Svan's
 local data and permissions; preserve settings first.
 
-The new `fbc2ff6` beta retains the original owner key used by `Svan-0.5.5-owner-signed-a603146.apk`.
-If that owner build is already installed, export settings as a precaution and try an in-place
+The 0.5.6 beta must retain the original owner key used by the owner-signed 0.5.5 APKs.
+If an owner build is already installed, export settings as a precaution and try an in-place
 update first; do not uninstall just because this guide describes preview migration. Real-phone
-update/grant retention is still unverified. The app version/code remain 0.5.5/12.
+update/grant retention is still unverified. 0.5.6 increases the versionCode from 12 to 13.
+Check the actual release asset and signer against its release notes before installing.
 
 1. While the preview is still installed, open **Presets → Export settings**. If the installed
    preview lacks this feature, update it with a compatible latest preview signed by the same
@@ -24,8 +25,10 @@ update/grant retention is still unverified. The app version/code remain 0.5.5/12
 5. Re-grant Android's audio permission when needed; approve a fresh capture session when starting
    the Audiophile engine. Re-enable notifications/optional overlay if desired and revisit the
    phone's background/battery settings.
-6. If using enhanced music detection, repeat the user-authorized Shizuku setup to restore DUMP.
-   Shizuku and wireless debugging can be stopped after the grant succeeds. Export/restore cannot
+6. If using enhanced music detection, repeat the user-authorized Shizuku setup. Shell-report mode
+   needs Shizuku running. To remove Shizuku, explicitly tap **Keep enhanced detection without
+   Shizuku** and confirm that the grant succeeds first. Shizuku can then be uninstalled;
+   turning Developer options off is optional for Svan's retained grant. Export/restore cannot
    preserve DUMP or other Android grants across uninstall.
 
 Start with **Hi-Fi → System effects only**, check an actively playing app, then test other engines

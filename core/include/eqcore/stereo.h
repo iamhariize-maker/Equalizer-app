@@ -14,18 +14,40 @@
 // Instrument amplifier (side only, above ~180 Hz so bass stays centred):
 //   space      -1..1 caved in .. spacious (side level, +-6 dB)
 //   instruments 0..1 string/sax presence, body and air on the sides
+//   backingVocals 0..1 vocal-layer de-masker. A static side bell (1600 Hz, up
+//                     to 2 dB) plus a dynamic side vocal-band lift (up to 4 dB)
+//                     that rises only while the side vocal band is masked by a
+//                     much louder centre (lead) vocal band, and backs off when
+//                     the layers are already prominent.
+//   spatialDetail 0..1 "Binaural" in the UI. Mono-safe image motion enhancer:
+//                     Blumlein-style side spaciousness bell (500 Hz, up to
+//                     2.5 dB), side air shelf (4 kHz, up to 1.5 dB), and a
+//                     dynamic per-band (<1k / 1-4k / >4k) side lift of up to
+//                     ~5 dB driven by how fast each band's left/right position
+//                     is moving. Static images stay put; channel-to-channel
+//                     movement already in the recording is exaggerated.
+// Every side-channel control leaves the mono sum unchanged. Fast adds no
+// spatial delay; a Detailed-capable stage delays both channels equally and
+// retains that delay while blending modes. No artificial reverb is created.
 #include <atomic>
 #include <array>
+#include <memory>
 
 #include "eqcore/biquad.h"
+#include "eqcore/spatial.h"
 
 namespace eqcore {
 
 struct StereoTunerParams {
   double intimacy = 0, warmth = 0, smoothness = 0;
   double space = 0, instruments = 0;
+  double backingVocals = 0, spatialDetail = 0; // 0..1, existing side detail only
+  bool operator==(const StereoTunerParams& b) const {
+    return intimacy==b.intimacy && warmth==b.warmth && smoothness==b.smoothness &&
+        space==b.space && instruments==b.instruments && backingVocals==b.backingVocals && spatialDetail==b.spatialDetail;
+  }
   bool isOff() const {
-    return intimacy == 0 && warmth == 0 && smoothness == 0 && space == 0 && instruments == 0;
+    return intimacy == 0 && warmth == 0 && smoothness == 0 && space == 0 && instruments == 0 && backingVocals == 0 && spatialDetail == 0;
   }
 };
 
@@ -35,9 +57,16 @@ std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double fre
 
 class StereoTuner {
  public:
-  explicit StereoTuner(double sampleRate);
+  // residual = true ("Detailed"): Backing vocals and Binaural run in the streaming spatial-residual
+  // processor (spatial.h) instead of the zero-latency biquad path. That adds a fixed delay of
+  // latencyFrames() to the whole stereo stage, so callers must report it.
+  explicit StereoTuner(double sampleRate, bool residual = false);
+  int latencyFrames() const { return residual_ ? residual_->latencyFrames() : 0; }
+  void setSpatialMode(int mode) { if (residual_) residual_->setMode(mode); }
+  void setSpatialLoadLimited(bool on) { if (residual_) residual_->setLoadLimited(on); }
+  double detailedMix() const { return residual_ ? residual_->detailedMix() : 0; }
 
-  // Any thread; picked up by process() at the next block.
+  // Any thread; live changes crossfade for 20 ms. Updates during a fade coalesce.
   void setParams(const StereoTunerParams& p);
 
   // In-place on one block of left/right samples. Allocation-free.
@@ -58,21 +87,41 @@ class StereoTuner {
       return y;
     }
   };
-  void redesign(const StereoTunerParams& p);
-
+  struct State {
+    StereoTunerParams p_;
+    Bq warmBell_, warmShelf_, intimacyBell_, harshBand_;
+    Bq sideHp_[2], bodyBell_, presenceBell_, airShelf_, backingBell_, detailShelf_, shuffleBell_;
+    double envBand_ = 1e-9, envFull_ = 1e-9, deharshGain_ = 1.0, spaceGain_ = 1.0;
+    double aBand_, rBand_, aFull_, rFull_, gSmooth_;
+    // Backing-vocal de-masker: matched vocal-band filters on side and mid.
+    Bq vocalSide_, vocalMid_;
+    double envVocalSide_ = 0, envVocalMid_ = 0, backingLiftDb_ = 0;
+    double aVocal_, rVocal_, aLift_, rLift_;
+    // Image-motion enhancer: complementary 3-band split (exact sum) of side and
+    // of a 180 Hz high-passed mid used for detection only.
+    static constexpr int kBands = 3;
+    Bq motionHp_[2], splitSide_[2], splitMid_[2];
+    double cross_[kBands] = {}, power_[kBands] = {}, panSlow_[kBands] = {}, motionGain_[kBands] = {1, 1, 1};
+    bool heard_[kBands] = {};
+    double aPan_, aSlow_, aMotionUp_, aMotionDown_;
+    double budgetMm_ = 0, budgetSs_ = 0, budgetSd_ = 0, budgetDd_ = 0, budgetScale_ = 1, aBudget_ = 0, aBudgetUp_ = 0;
+    double budgetedSpatialDelta(double side, double mid, double delta);
+    double backingLift(double highSide, double mid);
+    double motion(double highSide, double mid);
+    void redesign(const StereoTunerParams& p, double fs);
+    void reset();
+    double process(double& left, double& right, bool fastSpatial = true, double* fastDelta = nullptr);
+  };
+  std::unique_ptr<SpatialResidual> residual_;
   double fs_;
+  int fadeFrames_, fadeRemaining_ = 0, active_ = 0;
+  bool initialized_ = false;
+  std::array<State,2> states_;
   std::atomic<int> version_{0};
   int appliedVersion_ = -1;
-  StereoTunerParams pending_, p_;
+  StereoTunerParams pending_;
   std::atomic<bool> pendingLock_{false};
-
-  // mid (vocal)
-  Bq warmBell_, warmShelf_, intimacyBell_, harshBand_;
-  double envBand_ = 1e-9, envFull_ = 1e-9, deharshGain_ = 1.0, lastDeharshDb_ = 0.0;
-  double aBand_, rBand_, aFull_, rFull_, gSmooth_;
-  // side (instruments)
-  Bq sideLp_[2], sideHp_[2], bodyBell_, presenceBell_, airShelf_;  // LR4 crossover at 180 Hz
-  double spaceGain_ = 1.0;
+  double lastDeharshDb_ = 0;
 };
 
 }  // namespace eqcore

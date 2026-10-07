@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
@@ -46,6 +46,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 /** Dedicated shortcut dock: it never overlays a slider, dial or numeric readout. */
@@ -57,7 +58,7 @@ private fun SvaramanasDock(modifier: Modifier = Modifier) {
     val eq by app.svan.SvanRepository.eq.collectAsState()
     Row(
         modifier
-            .fillMaxWidth().height(56.dp)
+            .fillMaxWidth().heightIn(min = 56.dp)
             .background(Svan.Surface)
             .pointerInput(Unit) {
                 detectTapGestures(
@@ -74,7 +75,7 @@ private fun SvaramanasDock(modifier: Modifier = Modifier) {
                 contentDescription = "${request.mode.plainName}. Tap to open, hold to compare."
                 onClick(label="Open ${request.mode.plainName}") { app.svan.svaramanas.SvaramanasActivity.open(context); true }
             }
-            .padding(horizontal=16.dp),
+            .padding(horizontal=16.dp, vertical=8.dp),
         verticalAlignment=Alignment.CenterVertically,
     ) {
         if (request.mode == app.svan.svaramanas.SmartMode.SVARESA) {
@@ -129,7 +130,7 @@ fun SvanApp(
                         selected = tab == i,
                         onClick = { tab = i },
                         icon = { Icon(t.icon, contentDescription = t.label) },
-                        label = { Text(t.label, maxLines = 1, softWrap = false) },
+                        label = { Text(t.label, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Svan.Gold,
                             selectedTextColor = Svan.Gold,

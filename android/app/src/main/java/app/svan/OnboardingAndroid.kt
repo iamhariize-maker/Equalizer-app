@@ -20,7 +20,7 @@ object OnboardingAndroid {
             catch (_: PackageManager.NameNotFoundException) { false } catch (_: RuntimeException) { null },
         running = try { Shizuku.pingBinder() } catch (_: RuntimeException) { null },
         authorized = try { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED } catch (_: RuntimeException) { null },
-        dumpGranted = PlaybackSessions.hasDumpPermission(context), debugging = debugging(context),
+        dumpGranted = PlaybackSessions.hasReportAccess(context), debugging = debugging(context),
     )
 
     fun working(context: Context): WorkingState {
@@ -58,7 +58,7 @@ object OnboardingAndroid {
         // The public count is anonymous, not an app count. Never invent an identity from it.
         val publicOther = (if (fresh) st.publicActive else DetectionMonitor.publicActiveCount(context))
             ?.let { (it - if (CaptureService.isRunning) 1 else 0).coerceAtLeast(0) }
-        return WorkingState.derive(publicOther, players, PlaybackSessions.hasDumpPermission(context))
+        return WorkingState.derive(publicOther, players, PlaybackSessions.hasReportAccess(context))
     }
 
     private fun label(context: Context, key: String): String = if (key.startsWith("uid:") || key.startsWith("pid:")) "A player" else DetectionStatus.appLabel(key) { pkg ->

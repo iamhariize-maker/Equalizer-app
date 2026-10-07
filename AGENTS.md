@@ -22,10 +22,18 @@ suite on API 33 as well as API 34; emulators do not verify LG's Quad DAC or back
 `SessionRouter` gives every audio session to exactly ONE engine (they share one `DynamicsProcessing`
 instance per session; never attach both).
 
-Owner decision (5 October 2026): remove notification-access player recognition entirely.
-Do not reintroduce a notification listener, SMS access or accessibility permission for
-player discovery. Keep Play Protect enabled; do not ask users to bypass its warnings.
-The fixed Shizuku DUMP grant and real audio-session detection remain available.
+Owner follow-up (6 October 2026): implement OEM-safe detection fallbacks. Normal setup
+reads fixed audio reports via a Shizuku shell UserService instead of granting app DUMP.
+Owner decision (7 October 2026): payment apps refuse to run beside Shizuku, so a user-tapped
+"Keep enhanced detection without Shizuku" button (`DumpGrant`) grants Svan its own DUMP once
+through Shizuku. Never grant it without that tap, and never grant anything else.
+Keep the independent session-broadcast path, existing/manual grants, Play Protect, and all
+DSP/routing quality safeguards.
+
+Owner decision (7 October 2026, final): no notification listener, SMS or accessibility capability,
+for any purpose. Play Protect's enhanced fraud protection flagged the sideloaded 0.5.6 build as a
+financial-fraud risk because it declared a NotificationListenerService (optional player recognition).
+That feature is removed and `check_manifest_permissions.py` rejects any such declaration.
 
 ## Repo map
 | Path | What |
@@ -53,7 +61,7 @@ missing. Artifacts `e2e-results-api33` / `e2e-results-api34` have the log and sc
 screenshots** — layout bugs only show there.
 
 ## Rules that matter
-1. **Don't push to `main`/other branches.** Work on the branch your session instructs (currently `ccr-f859b567-dgrdoj`; `ccr-208702a3-2mju42` is older). No new PR unless the user asks.
+1. **Don't push to `main`/other branches.** Work on the branch your session instructs (currently `claude/codex-audio-crackling-amplifier-gkj007`, which contains all of `ccr-f859b567-dgrdoj`). No new PR unless the user asks.
 2. **Never claim sound quality you haven't measured.** Every number in the UI/docs comes from a test. The owner reports successful listening on TECNO/IM4 with 0.5.2; this does not establish a complete device/player matrix.
 3. **Tests first for DSP.** New processors need a measured test (see existing ones: expected vs measured dB). Keep the audio thread allocation-free and wait-free (see `ParametricEq`, `StereoTuner`).
 4. **Design:** one gold hue on warm charcoal (`Theme.kt` tokens: Gold/Molten/Bronze; Ember ONLY for warnings; Ash for "negative" sides). Serif titles. Polished, not colourful. Don't introduce new hues.

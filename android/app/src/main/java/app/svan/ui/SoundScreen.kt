@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -316,10 +317,12 @@ private fun BassTunerCard(b: BassTuner) {
     PresetRow(BassTuner.PRESETS, b) { p -> SvanRepository.update { it.copy(bass = p) } }
     SvanCard {
         Column {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val dialSize = ((maxWidth / 3) - 16.dp).coerceIn(56.dp, 78.dp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Knob("Amount", b.amountDb, -6.0, 12.0, ::formatDb, step = 0.1, entryUnit = "dB",
+                Knob("Amount", b.amountDb, -6.0, 12.0, ::formatDb, step = 0.1, entryUnit = "dB", size = dialSize,
                     onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(amountDb = v)) } })
-                Knob("Depth", b.focusHz, 40.0, 160.0, { f -> "%.0f Hz".format(f) }, default = 80.0, step = 1.0, entryUnit = "Hz",
+                Knob("Depth", b.focusHz, 40.0, 160.0, { f -> "%.0f Hz".format(f) }, default = 80.0, step = 1.0, entryUnit = "Hz", size = dialSize,
                     onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(focusHz = v)) } })
                 Knob("Feel", b.character, -1.0, 1.0, { c ->
                     when {
@@ -327,8 +330,24 @@ private fun BassTunerCard(b: BassTuner) {
                         c > 0 -> "Punch ${pct(c)}"
                         else -> "Sustain ${pct(-c)}"
                     }
-                }, step = 0.01, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
+                }, step = 0.01, size = dialSize, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
             }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Knob("Resolve", b.resolve, 0.0, 1.0, { r ->
+                    when {
+                        r == 0.0 && b.resolveAuto -> "Auto"
+                        r == 0.0 -> "Off"
+                        else -> pct(r)
+                    }
+                }, step = 0.01, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(resolve = v)) } })
+            }
+            SettingSwitchRow("Svaresa manages Resolve",
+                "Auto: while Svaresa is driving, Resolve is raised to ${pct(BassTuner.AUTO_RESOLVE)} (never below your own setting, which stays saved). Off: only your dial applies.",
+                b.resolveAuto, { on -> SvanRepository.update { it.copy(bass = it.bass.copy(resolveAuto = on)) } })
+            Text("Resolve protects each bass note's own shape: it limits how far Feel may bend an attack (to about 1.5 dB) or a sustained body (about 0.75 dB) and follows the note instead of single bass cycles, so low notes keep a defined, unhurried shape. Both channels share one gain, so bass never drifts between left and right. It does not add bass, sharpen notes or detect instruments. Native audiophile engine only.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
             Spacer(Modifier.height(6.dp))
             Text("Depth: deep sub (40 Hz) ↔ mid-bass (160 Hz). Feel: sustain lets notes bloom; punch sharpens kicks and " +
                 "tightens tails. Turn the rim or drag sideways; tap the value for exact entry. Double-tap to reset. A native transient shaper in the audiophile engine; an approximation on system effects. Tuned on synthetic signals; results vary with music.",
@@ -361,11 +380,18 @@ private fun VocalTunerCard(v: app.svan.model.VocalTuner) {
 
 @Composable
 private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
-    TunerHeader("Orchestral amplifier", "Stereo width and side energy above the bass.")
+    TunerHeader("Orchestral amplifier", "Width, vocal layers and the space within the recording.")
     TuningGuidance("Move one dial by one tick (1%) at a time. Presets change several controls together. Compare the same short passage at matched loudness; double-tap a dial to reset it.")
     PresetRow(app.svan.model.InstrumentTuner.PRESETS, i) { p -> SvanRepository.update { it.copy(instrument = p) } }
     SvanCard {
         Column {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Knob("Backing vocals", i.backingVocals, 0.0, 1.0, ::pct, step = 0.01, modifier = Modifier.weight(1f),
+                    onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(backingVocals = x)) } })
+                Knob("Binaural", i.spatialDetail, 0.0, 1.0, ::pct, step = 0.01, modifier = Modifier.weight(1f),
+                    onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(spatialDetail = x)) } })
+            }
+            Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 Knob("Space", i.space, -1.0, 1.0, { s ->
                     when {
@@ -373,10 +399,13 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
                         s > 0 -> "Spacious ${pct(s)}"
                         else -> "Intimate ${pct(-s)}"
                     }
-                }, step = 0.01, onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(space = x)) } })
-                Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.01,
+                }, step = 0.01, modifier = Modifier.weight(1f), onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(space = x)) } })
+                Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.01, modifier = Modifier.weight(1f),
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(instruments = x)) } })
             }
+            Spacer(Modifier.height(6.dp))
+            Text("Backing vocals and Binaural enhance eligible detail already present in the stereo recording. Fast uses frequency and motion cues and keeps the static response on a signal with no centre. Detailed uses decorrelated residual detail and adds about 21–23 ms of latency. Detailed holds on coherent panned or already-wide material. Both preserve the spatial stage's mono sum and share an automatic-detail energy budget. They cannot isolate backing vocals or identify instruments. They add no reverb or binaural-beat tones. Space and Instruments are separate manual widening controls. Choose the mode in Hi-Fi; start low and compare in Lab at matched loudness. Listening qualification is pending.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
             Spacer(Modifier.height(6.dp))
             Text("Shapes stereo side energy above the bass range. It cannot identify individual instruments; a centred instrument will not be boosted. No added reverb. Requires an app actively using the audiophile engine; has no effect on system effects.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)

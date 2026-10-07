@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Optional: the Svaramanas bubble floating over players. Everything also works without it. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- Granted manually over ADB for enhanced session detection (Engine A). -->
+    <!-- Compatibility with existing/manual grants; normal setup reads reports as shell. -->
     <uses-permission android:name="android.permission.DUMP"
         tools:ignore="ProtectedPermissions" />
 

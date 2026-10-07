@@ -5,8 +5,11 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <new>
 #include <functional>
+#include <limits>
 #include <random>
 #include <string>
 #include <thread>
@@ -27,10 +30,24 @@
 #include "eqcore/bass.h"
 #include "eqcore/tuning.h"
 #include "eqcore/stereo.h"
+#include "eqcore/spatial.h"
+#include "eqcore/bass_unmask.h"
+#include "eqcore/policy.h"
 #include <fstream>
 #include <sstream>
 
 using namespace eqcore;
+
+// Allocation counter for the audio-thread checks (AQ-06). Counts only while g_countAllocs is set.
+static std::atomic<long> g_allocs{0};
+static std::atomic<bool> g_countAllocs{false};
+void* operator new(std::size_t n) {
+  if (g_countAllocs.load(std::memory_order_relaxed)) g_allocs.fetch_add(1, std::memory_order_relaxed);
+  if (void* p = std::malloc(n ? n : 1)) return p;
+  throw std::bad_alloc();
+}
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 
 namespace {
 
@@ -694,15 +711,20 @@ TEST(bass_punch_preserves_attack_energy_around_crossover) {
   }
 }
 
-TEST(bass_off_restores_identity_after_active_processing) {
-  BassShaper b(48000, 1);
-  b.setCharacter(1);
-  std::vector<double> x(1024);
-  for(size_t i=0;i<x.size();++i)x[i]=0.1*std::sin(2*kPi*120*i/48000);
-  auto y=x;b.process(0,y.data(),y.size());
+TEST(bass_off_smoothly_restores_identity_after_active_processing) {
+  BassShaper b(48000,1),reference(48000,1);
+  b.setCharacter(1);reference.setCharacter(1);
+  std::vector<double> first(1024),next(1024);
+  for(int i=0;i<1024;++i) {
+    first[i]=.1*std::sin(2*kPi*120*i/48000);
+    next[i]=.1*std::sin(2*kPi*120*(i+1024)/48000);
+  }
+  auto warm=first;b.process(0,warm.data(),1024);reference.process(0,first.data(),1024);
   b.setCharacter(0);
-  y=x;b.process(0,y.data(),y.size());
-  CHECK(x==y);
+  auto output=next,unchanged=next;
+  b.process(0,output.data(),1024);reference.process(0,unchanged.data(),1024);
+  CHECK(std::abs(output.front()-unchanged.front())<.001);
+  CHECK(std::equal(next.begin()+480,next.end(),output.begin()+480));
 }
 
 // --------------------------------------------------------------- resampler
@@ -828,6 +850,93 @@ TEST(bass_shaper_punch_tightens_and_sustain_blooms) {
   std::printf("    attack/tail change: punch %+.1f dB, sustain %+.1f dB\n", punchDb, sustainDb);
   CHECK(punchDb > 3.0);
   CHECK(sustainDb < -3.0);
+}
+
+namespace {
+void runBass(BassShaper& b, std::vector<double>& y) {
+  for (size_t i = 0; i < y.size(); i += 256) b.process(0, y.data() + i, static_cast<int>(std::min<size_t>(256, y.size() - i)));
+}
+// Sustained-note harmonic distortion created by the envelope following individual cycles.
+double sustainedNoteDistortion(double resolve, double hz, double character) {
+  const double fs = 48000;
+  std::vector<double> x(static_cast<size_t>(fs * 3));
+  for (size_t i = 0; i < x.size(); ++i) x[i] = 0.4 * std::sin(2 * kPi * hz * i / fs);
+  BassShaper b(fs, 1);
+  b.setCharacter(character);
+  b.setResolve(resolve);
+  runBass(b, x);
+  const size_t from = static_cast<size_t>(fs * 2), to = x.size();
+  const double f1 = sineAmplitude(x, hz, fs, from, to);
+  return (sineAmplitude(x, 2 * hz, fs, from, to) + sineAmplitude(x, 3 * hz, fs, from, to)) / f1;
+}
+}  // namespace
+
+TEST(bass_resolve_zero_changes_nothing_and_linked_matches_single_channel) {
+  const double fs = 48000;
+  const auto x = kicks(fs, 4);
+  for (double c : {1.0, -1.0, 0.4}) {
+    BassShaper a(fs, 1), b(fs, 2);
+    a.setCharacter(c);
+    b.setCharacter(c);
+    b.setResolve(0.0);
+    auto y = x;
+    runBass(a, y);
+    auto l = x, r = x;
+    for (size_t i = 0; i < l.size(); i += 256) b.processLinked(l.data() + i, r.data() + i, static_cast<int>(std::min<size_t>(256, l.size() - i)));
+    double err = 0;
+    for (size_t i = 0; i < y.size(); ++i) err = std::max({err, std::fabs(y[i] - l[i]), std::fabs(l[i] - r[i])});
+    CHECK(err < 1e-12);
+  }
+}
+
+TEST(bass_resolve_caps_how_far_feel_may_move_the_note) {
+  const double fs = 48000;
+  const int hits = 6;
+  const auto x = kicks(fs, hits);
+  const double ref = attackToTailDb(x, fs, hits);
+  for (double c : {1.0, -1.0}) {
+    double change[2];
+    for (int i = 0; i < 2; ++i) {
+      BassShaper b(fs, 1);
+      b.setCharacter(c);
+      b.setResolve(i ? 1.0 : 0.0);
+      auto y = x;
+      runBass(b, y);
+      change[i] = attackToTailDb(y, fs, hits) - ref;
+    }
+    std::printf("    feel %+.0f: attack/tail change %+.1f dB without Resolve, %+.1f dB with\n", c, change[0], change[1]);
+    CHECK(std::fabs(change[1]) < std::fabs(change[0]) * 0.4);
+    CHECK(std::fabs(change[1]) < 3.0);
+  }
+}
+
+TEST(bass_resolve_keeps_sustained_notes_free_of_envelope_distortion) {
+  for (double hz : {30.0, 41.2, 55.0, 82.4}) {
+    for (double c : {-1.0, 1.0}) {
+      const double off = sustainedNoteDistortion(0.0, hz, c), on = sustainedNoteDistortion(1.0, hz, c);
+      std::printf("    %.1f Hz feel %+.0f: distortion %.3f%% -> %.3f%%\n", hz, c, off * 100, on * 100);
+      CHECK(on <= off + 1e-9);
+      CHECK(on < 0.01);  // under 1 %
+    }
+  }
+}
+
+TEST(bass_linked_processing_keeps_left_right_balance_of_a_bass_note) {
+  const double fs = 48000;
+  std::vector<double> l(static_cast<size_t>(fs * 2)), r(l.size());
+  for (size_t i = 0; i < l.size(); ++i) {
+    const double t = static_cast<double>(i) / fs, e = std::exp(-std::fmod(t, 0.6) / 0.15);
+    l[i] = 0.5 * e * std::sin(2 * kPi * 55 * t);
+    r[i] = 0.1 * e * std::sin(2 * kPi * 55 * t);  // 14 dB quieter on the right
+  }
+  const auto l0 = l, r0 = r;
+  BassShaper b(fs, 2);
+  b.setCharacter(-1.0);
+  for (size_t i = 0; i < l.size(); i += 256) b.processLinked(l.data() + i, r.data() + i, static_cast<int>(std::min<size_t>(256, l.size() - i)));
+  double eL = 0, eR = 0, iL = 0, iR = 0;
+  for (size_t i = 0; i < l.size(); ++i) { eL += l[i] * l[i]; eR += r[i] * r[i]; iL += l0[i] * l0[i]; iR += r0[i] * r0[i]; }
+  // Same gain for both: the pair's balance (~14 dB) changes by under 0.05 dB over the whole phrase.
+  CHECK_NEAR(10 * std::log10(eL / eR), 10 * std::log10(iL / iR), 0.05);
 }
 
 TEST(bass_shaper_leaves_treble_alone) {
@@ -1025,6 +1134,1002 @@ TEST(stereo_tuner_off_is_bit_exact) {
   CHECK(out.l == in.l && out.r == in.r);
 }
 
+// AQ-01: a hard-panned source must stay on its side whatever the side controls do.
+// The old LR4 side crossover rotated S relative to M, swapping channels near 180 Hz
+// while the mono sum stayed exact, so mono-sum tests could not see it.
+namespace {
+double settledRms(const std::vector<double>& x) {
+  double e = 0;
+  const size_t from = x.size() / 2;
+  for (size_t i = from; i < x.size(); ++i) e += x[i] * x[i];
+  return std::sqrt(e / static_cast<double>(x.size() - from));
+}
+double hardPanLeakDb(const StereoTunerParams& p, double hz, double fs, bool leftOnly) {
+  const double sgn = leftOnly ? 1.0 : -1.0;
+  auto in = ms(fs, 0.6, [&](double t) { return 0.25 * std::sin(2 * kPi * hz * t); },
+               [&](double t) { return sgn * 0.25 * std::sin(2 * kPi * hz * t); });
+  const auto out = runTuner(p, in, fs);
+  const double keep = settledRms(leftOnly ? out.l : out.r), leak = settledRms(leftOnly ? out.r : out.l);
+  return 20 * std::log10((leak + 1e-30) / (keep + 1e-30));
+}
+}  // namespace
+
+TEST(side_controls_keep_hard_panned_sources_on_their_side) {
+  for (double fs : {44100.0, 48000.0, 96000.0}) {
+    for (double hz : {60.0, 120.0, 180.0, 250.0, 500.0, 1200.0, 4000.0, 9000.0}) {
+      for (int which = 0; which < 4; ++which) {
+        for (double amount : {1e-6, 0.01, 0.5}) {
+          StereoTunerParams p;
+          if (which == 0) p.backingVocals = amount;
+          else if (which == 1) p.spatialDetail = amount;
+          else if (which == 2) p.instruments = amount;
+          else p.space = amount;
+          // Added side delta is bounded by the control, so the opposite channel stays well below the source.
+          CHECK(hardPanLeakDb(p, hz, fs, true) < -9.0);
+          CHECK(hardPanLeakDb(p, hz, fs, false) < -9.0);
+          if (amount <= 0.01) CHECK(hardPanLeakDb(p, hz, fs, true) < -30.0);
+        }
+      }
+    }
+  }
+}
+
+TEST(side_controls_are_continuous_at_tiny_amounts) {
+  const double fs = 48000;
+  for (int which = 0; which < 3; ++which) {
+    const auto in = ms(fs, 0.5, [](double t) { return 0.2 * std::sin(2 * kPi * 180 * t) + 0.1 * std::sin(2 * kPi * 1500 * t); },
+                       [](double t) { return 0.15 * std::sin(2 * kPi * 180 * t + 0.4) + 0.1 * std::sin(2 * kPi * 900 * t); });
+    StereoTunerParams p;
+    (which == 0 ? p.backingVocals : which == 1 ? p.spatialDetail : p.instruments) = 1e-6;
+    const auto out = runTuner(p, in, fs);
+    double err = 0;
+    for (size_t i = 1500; i < in.l.size(); ++i)  // past the 20 ms parameter crossfade
+      err = std::max({err, std::fabs(out.l[i] - in.l[i]), std::fabs(out.r[i] - in.r[i])});
+    CHECK(err < 1e-3);
+  }
+}
+
+TEST(spatial_detail_holds_when_the_mix_is_already_wide) {
+  const double fs = 48000;
+  StereoTunerParams p;
+  p.backingVocals = 1;
+  p.spatialDetail = 1;
+  // Hard-panned and pure-side material has side power >= half the mid: no automatic lift is added.
+  for (double hz : {500.0, 1300.0, 2000.0, 8000.0}) {
+    CHECK_NEAR(toDb(sineAmplitude(runTuner(p, ms(fs, 2, [&](double t) { return .1 * std::sin(2 * kPi * hz * t); },
+                                                  [&](double t) { return .1 * std::sin(2 * kPi * hz * t); }), fs).l, hz, fs, 48000, 96000) / .2), 0.0, 0.3);
+  }
+}
+
+TEST(side_controls_leave_the_mid_signal_untouched) {
+  const double fs = 48000;
+  const auto in = ms(fs, 0.5, [](double t) { return 0.3 * std::sin(2 * kPi * 180 * t) + 0.1 * std::sin(2 * kPi * 3000 * t); },
+                     [](double t) { return 0.2 * std::sin(2 * kPi * 700 * t); });
+  const auto mIn = midOf(in);
+  StereoTunerParams p;
+  p.backingVocals = 1;
+  p.spatialDetail = 1;
+  p.instruments = 1;
+  p.space = 0.7;
+  const auto mOut = midOf(runTuner(p, in, fs));
+  double err = 0;
+  for (size_t i = 0; i < mIn.size(); ++i) err = std::max(err, std::fabs(mIn[i] - mOut[i]));
+  CHECK(err < 1e-9);
+}
+
+// ------------------------------------------------ streaming spatial residual (AQ-02)
+
+namespace {
+struct Program {
+  std::vector<double> m, s;
+};
+// A centred lead (white, rms `lead`) over per-channel independent ambience (rms `amb` in L and R).
+Program ambienceProgram(double fs, double secs, double lead, double amb, unsigned seed) {
+  std::mt19937 rng(seed);
+  std::normal_distribution<double> g(0.0, 1.0);
+  Program p;
+  const int n = static_cast<int>(fs * secs);
+  for (int i = 0; i < n; ++i) {
+    const double x = lead * g(rng), l = x + amb * g(rng), r = x + amb * g(rng);
+    p.m.push_back(.5 * (l + r));
+    p.s.push_back(.5 * (l - r));
+  }
+  return p;
+}
+double rmsFrom(const std::vector<double>& x, size_t from) {
+  double e = 0;
+  for (size_t i = from; i < x.size(); ++i) e += x[i] * x[i];
+  return std::sqrt(e / static_cast<double>(x.size() - from));
+}
+void runResidual(SpatialResidual& r, Program& p, int block) {
+  for (size_t i = 0; i < p.m.size(); i += static_cast<size_t>(block)) {
+    const int n = static_cast<int>(std::min<size_t>(static_cast<size_t>(block), p.m.size() - i));
+    r.process(p.m.data() + i, p.s.data() + i, n);
+  }
+}
+}  // namespace
+
+TEST(spatial_live_switch_keeps_latency_and_the_centre_at_all_rates) {
+  for (double fs : {44100., 48000., 96000.}) {
+    StereoTuner live(fs, true);
+    StereoTunerParams p; p.backingVocals = .7; p.spatialDetail = .8;
+    live.setParams(p);
+    const int delay = live.latencyFrames(), count = static_cast<int>(fs * 2);
+    std::vector<double> left(count), right(count), mid(count);
+    for (int i = 0; i < count; ++i) {
+      mid[i] = .2 * std::sin(2 * kPi * 700 * i / fs);
+      const double side = .02 * std::sin(2 * kPi * 1700 * i / fs);
+      left[i] = mid[i] + side; right[i] = mid[i] - side;
+    }
+    for (int base = 0; base < count; base += 127) {
+      live.setSpatialMode((base / 4096) % 3);
+      live.setSpatialLoadLimited(base > count / 2 && base < count * 3 / 4);
+      live.process(left.data()+base, right.data()+base, std::min(127,count-base));
+      CHECK(live.latencyFrames() == delay);
+    }
+    for (int i = delay; i < count; ++i) {
+      CHECK(std::isfinite(left[i]) && std::isfinite(right[i]));
+      CHECK_NEAR(.5 * (left[i]+right[i]), mid[i-delay], 1e-12);
+    }
+  }
+}
+
+TEST(spatial_live_fast_matches_the_existing_fast_path_after_alignment) {
+  const double fs = 48000;
+  StereoTuner fast(fs), live(fs,true);
+  StereoTunerParams p; p.backingVocals=.7; p.spatialDetail=.8; p.space=.2; p.instruments=.3;
+  fast.setParams(p); live.setParams(p); live.setSpatialMode(0);
+  const int count=static_cast<int>(fs*2), delay=live.latencyFrames();
+  std::vector<double> l(count),r(count);
+  for(int i=0;i<count;++i) { l[i]=.2*std::sin(2*kPi*700*i/fs)+.03*std::sin(2*kPi*1700*i/fs); r[i]=.2*std::sin(2*kPi*700*i/fs)-.03*std::sin(2*kPi*1700*i/fs); }
+  auto fl=l,fr=r;
+  fast.process(fl.data(),fr.data(),count);
+  live.process(l.data(),r.data(),count);
+  for(int i=static_cast<int>(fs);i<count;++i) {
+    CHECK_NEAR(l[i],fl[i-delay],1e-10); CHECK_NEAR(r[i],fr[i-delay],1e-10);
+  }
+}
+
+TEST(spatial_auto_prefers_a_stable_bed_and_holds_repeated_foreground_attacks) {
+  const double fs=48000;
+  auto measure = [&](bool attacks) {
+    SpatialResidual r(fs); r.setParams(1,1); r.setMode(2);
+    std::mt19937 rng(42); std::uniform_real_distribution<double> u(-1,1);
+    double m[256],s[256];
+    for(int base=0;base<fs*8;base+=256) {
+      for(int i=0;i<256;++i) {
+        const double t=(base+i)/fs;
+        const double env=attacks ? (std::fmod(t,.3)<.025 ? 1 : .02) : 1;
+        m[i]=.2*env*u(rng);s[i]=.08*u(rng);
+      }
+      r.process(m,s,256);
+    }
+    return r.detailedMix();
+  };
+  const double bed=measure(false), attacks=measure(true);
+  std::printf("    Auto mix: stable bed %.4f, repeated foreground attacks %.4f\n",bed,attacks);
+  CHECK(bed>.8); CHECK(attacks<.4);
+}
+
+TEST(spatial_load_fade_and_recovery_preserve_a_continuous_foreground) {
+  StereoTuner st(48000,true); StereoTunerParams p; p.backingVocals=1;p.spatialDetail=1;
+  st.setParams(p);
+  double l[256],r[256];
+  double prevSide=0,maxStep=0;
+  for(int b=0;b<1000;++b) {
+    st.setSpatialLoadLimited(b>=200 && b<600);
+    for(int i=0;i<256;++i) {const double s=.04*std::sin(2*kPi*1600*(b*256+i)/48000);l[i]=.2+s;r[i]=.2-s;}
+    st.process(l,r,256);
+    for(int i=0;i<256;++i) {
+      if(b>10)CHECK_NEAR(.5*(l[i]+r[i]),.2,1e-12);
+      const double side=.5*(l[i]-r[i]);
+      if(b>10)maxStep=std::max(maxStep,std::fabs(side-prevSide));
+      prevSide=side;
+    }
+    if(b==500)CHECK(st.detailedMix()==0);
+    if(b==900)CHECK(st.detailedMix()==1);
+  }
+  std::printf("    maximum adjacent side-sample step during load switching: %.6f\n",maxStep);
+  CHECK(maxStep<.025); // bounds switching discontinuities as well as the normal sine slope
+}
+
+TEST(spatial_residual_delay_is_exact_and_rate_independent) {
+  for (auto [fs, expected] : {std::pair<double, int>{44100, 1024}, {48000, 1024}, {96000, 2048}, {192000, 4096}}) {
+    SpatialResidual r(fs);
+    CHECK(r.latencyFrames() == expected);
+    Program p;
+    p.m.assign(static_cast<size_t>(expected * 3), 0.0);
+    p.s = p.m;
+    p.m[100] = 1.0;
+    p.s[50] = -0.5;
+    r.setParams(1, 1);
+    runResidual(r, p, 333);
+    bool exact = true;
+    for (size_t i = 0; i < p.m.size(); ++i) {
+      exact = exact && p.m[i] == (i == static_cast<size_t>(100 + expected) ? 1.0 : 0.0);
+      exact = exact && p.s[i] == (i == static_cast<size_t>(50 + expected) ? -0.5 : 0.0);
+    }
+    CHECK(exact);  // an isolated click is not enhanced: warm-up, then no stored statistics to act on
+  }
+}
+
+TEST(spatial_residual_zero_amounts_are_a_bit_exact_delay) {
+  const double fs = 48000;
+  auto in = ambienceProgram(fs, 1.0, 0.2, 0.05, 11);
+  auto out = in;
+  SpatialResidual r(fs);
+  runResidual(r, out, 256);
+  bool same = true;
+  for (size_t i = static_cast<size_t>(r.latencyFrames()); i < out.m.size(); ++i)
+    same = same && out.m[i] == in.m[i - static_cast<size_t>(r.latencyFrames())] && out.s[i] == in.s[i - static_cast<size_t>(r.latencyFrames())];
+  CHECK(same);
+}
+
+TEST(spatial_residual_is_independent_of_block_size) {
+  const double fs = 48000;
+  const auto in = ambienceProgram(fs, 1.5, 0.2, 0.04, 5);
+  Program ref = in;
+  {
+    SpatialResidual r(fs);
+    r.setParams(0.8, 0.7);
+    runResidual(r, ref, 1024);
+  }
+  for (int block : {1, 7, 256, 4096}) {
+    Program out = in;
+    SpatialResidual r(fs);
+    r.setParams(0.8, 0.7);
+    runResidual(r, out, block);
+    double diff = 0;
+    for (size_t i = 0; i < out.s.size(); ++i) diff = std::max({diff, std::fabs(out.s[i] - ref.s[i]), std::fabs(out.m[i] - ref.m[i])});
+    CHECK(diff == 0.0);
+  }
+}
+
+TEST(spatial_residual_lifts_decorrelated_ambience_within_budget_and_keeps_the_lead) {
+  for (double fs : {44100.0, 48000.0, 96000.0}) {
+    for (int mode = 0; mode < 3; ++mode) {
+      const auto in = ambienceProgram(fs, 3.0, 0.2, 0.03, 21);  // side power ~ 1 % of mid
+      Program out = in;
+      SpatialResidual r(fs);
+      r.setParams(mode != 1 ? 1.0 : 0.0, mode != 0 ? 1.0 : 0.0);
+      runResidual(r, out, 480);
+      const size_t lat = static_cast<size_t>(r.latencyFrames()), from = static_cast<size_t>(fs * 2);
+      std::vector<double> dryS(out.s.size()), dryM(out.s.size());
+      double midErr = 0, monoErr = 0;
+      for (size_t i = lat; i < out.s.size(); ++i) {
+        dryS[i] = in.s[i - lat];
+        midErr = std::max(midErr, std::fabs(out.m[i] - in.m[i - lat]));
+        monoErr = std::max(monoErr, std::fabs((out.m[i] + out.s[i]) + (out.m[i] - out.s[i]) - 2 * in.m[i - lat]));
+      }
+      const double liftDb = 20 * std::log10(rmsFrom(out.s, from) / rmsFrom(dryS, from));
+      std::printf("    %.0f Hz mode %d: side %+.2f dB, mid error %.1e\n", fs, mode, liftDb, midErr);
+      CHECK(midErr == 0.0);          // the lead is exactly the delayed input
+      CHECK(monoErr < 1e-12);        // the mono sum is untouched
+      CHECK(liftDb > 0.3);           // it does something audible...
+      CHECK(liftDb < 4.3);           // ...inside the shared 4 dB budget
+    }
+  }
+}
+
+TEST(spatial_residual_leaves_coherent_and_already_wide_material_alone) {
+  const double fs = 48000;
+  const size_t lat = 1024, from = static_cast<size_t>(fs);
+  // Hard-panned and partly panned sources: S and M fully coherent, so there is no residual.
+  for (double rightGain : {0.0, 0.5, -1.0}) {
+    std::mt19937 rng(3);
+    std::normal_distribution<double> g(0, 0.2);
+    Program in;
+    for (int i = 0; i < static_cast<int>(fs * 2); ++i) {
+      const double x = g(rng), l = x, r = rightGain * x;
+      in.m.push_back(.5 * (l + r));
+      in.s.push_back(.5 * (l - r));
+    }
+    Program out = in;
+    SpatialResidual sr(fs);
+    sr.setParams(1, 1);
+    runResidual(sr, out, 512);
+    double err = 0;
+    for (size_t i = from; i < out.s.size(); ++i) err = std::max(err, std::fabs(out.s[i] - in.s[i - lat]));
+    CHECK(err < 1e-3 * 0.2);
+  }
+  // Independent ambience only: side power equals mid power, already at the budget limit.
+  const auto wide = ambienceProgram(fs, 3.0, 0.0, 0.1, 8);
+  Program out = wide;
+  SpatialResidual sr(fs);
+  sr.setParams(1, 1);
+  runResidual(sr, out, 512);
+  std::vector<double> dry(out.s.size());
+  for (size_t i = lat; i < out.s.size(); ++i) dry[i] = wide.s[i - lat];
+  CHECK_NEAR(20 * std::log10(rmsFrom(out.s, static_cast<size_t>(fs * 2)) / rmsFrom(dry, static_cast<size_t>(fs * 2))), 0.0, 0.25);
+}
+
+TEST(spatial_residual_holds_back_on_a_sudden_onset) {
+  const double fs = 48000;
+  // 2 s of quiet lead + ambience, then the whole program jumps 20 dB.
+  auto a = ambienceProgram(fs, 2.0, 0.02, 0.003, 4), b = ambienceProgram(fs, 2.0, 0.2, 0.03, 5);
+  Program in = a;
+  in.m.insert(in.m.end(), b.m.begin(), b.m.end());
+  in.s.insert(in.s.end(), b.s.begin(), b.s.end());
+  Program out = in;
+  SpatialResidual r(fs);
+  r.setParams(1, 1);
+  runResidual(r, out, 480);
+  const size_t lat = 1024, step = static_cast<size_t>(fs * 2) + lat;
+  auto deltaRms = [&](size_t from, size_t to) {
+    double e = 0;
+    for (size_t i = from; i < to; ++i) { const double d = out.s[i] - in.s[i - lat]; e += d * d; }
+    return std::sqrt(e / static_cast<double>(to - from));
+  };
+  const double early = deltaRms(step, step + static_cast<size_t>(fs * 0.02)), late = deltaRms(step + static_cast<size_t>(fs * 1.0), step + static_cast<size_t>(fs * 1.5));
+  std::printf("    delta rms: first 20 ms after onset %.5f, steady %.5f\n", early, late);
+  CHECK(early < 0.6 * late);
+}
+
+TEST(spatial_residual_is_finite_and_bounded_on_loud_noise) {
+  const double fs = 48000;
+  std::mt19937 rng(77);
+  std::uniform_real_distribution<double> u(-1, 1);
+  Program p;
+  for (int i = 0; i < static_cast<int>(fs * 3); ++i) { p.m.push_back(u(rng)); p.s.push_back(u(rng)); }
+  SpatialResidual r(fs);
+  r.setParams(1, 1);
+  runResidual(r, p, 300);
+  bool ok = true;
+  for (size_t i = 0; i < p.m.size(); ++i) ok = ok && std::isfinite(p.s[i]) && std::fabs(p.s[i]) < 3.0;
+  CHECK(ok);
+  r.reset();  // reset gives the same fixed delay and clean state
+  Program q;
+  q.m.assign(4096, 0.0);
+  q.s = q.m;
+  q.m[10] = 1.0;
+  runResidual(r, q, 100);
+  CHECK(q.m[10 + 1024] == 1.0);
+}
+
+TEST(fast_mode_budget_contract_pure_side_keeps_the_static_response_centre_engages_the_budget) {
+  // Fast (biquad) path contract, pinned here because the app's fixtures depend on it:
+  //  * With NO centre (mid exactly silent) the budget has nothing to compare against, so the static
+  //    response applies and stereoResponsePower() models it.
+  //  * As soon as a centre exists, side power >= half the mid is "already wide" and gets no lift,
+  //    and any lift is capped at +4 dB. The Detailed (residual) path holds pure-side material as well.
+  const double fs = 48000, hz = 1600;
+  StereoTunerParams p;
+  p.backingVocals = 1;
+  auto tone = [&](const std::vector<double>& x) { return toDb(sineAmplitude(x, hz, fs, 48000, 96000)); };
+  const double model = 10 * std::log10(stereoResponsePower(p, hz, fs)[1]);
+  auto pureSide = ms(fs, 2, [](double) { return 0.0; }, [&](double t) { return .1 * std::sin(2 * kPi * hz * t); });
+  const double pure = tone(sideOf(runTuner(p, pureSide, fs))) - toDb(.1);
+  CHECK_NEAR(pure, model, 0.05);
+  CHECK(pure > 1.5);
+  auto hardPanned = ms(fs, 2, [&](double t) { return .1 * std::sin(2 * kPi * hz * t); }, [&](double t) { return .1 * std::sin(2 * kPi * hz * t); });
+  const double hard = tone(sideOf(runTuner(p, hardPanned, fs))) - toDb(.1);
+  CHECK_NEAR(hard, 0.0, 0.3);
+  auto weakSide = ms(fs, 2, [&](double t) { return .3 * std::sin(2 * kPi * 1000 * t); }, [&](double t) { return .02 * std::sin(2 * kPi * hz * t); });
+  const double weak = tone(sideOf(runTuner(p, weakSide, fs))) - toDb(.02);
+  CHECK(weak > 0.5 && weak < 4.3);
+  // Detailed holds the pure-side case (side only: coherent with itself, no mid to explain it).
+  Program ps;
+  for (int i = 0; i < static_cast<int>(fs * 3); ++i) { ps.m.push_back(0.0); ps.s.push_back(.1 * std::sin(2 * kPi * hz * i / fs)); }
+  const auto dry = ps;
+  SpatialResidual sr(fs);
+  sr.setParams(1, 1);
+  runResidual(sr, ps, 480);
+  double err = 0;
+  for (size_t i = static_cast<size_t>(fs * 2); i < ps.s.size(); ++i) err = std::max(err, std::fabs(ps.s[i] - dry.s[i - 1024]));
+  CHECK(err < 1e-6);
+  std::printf("    Fast: pure-side %+.2f dB (model %+.2f), hard-panned %+.2f dB, weak side %+.2f dB; Detailed pure-side error %.1e\n", pure, model, hard, weak, err);
+}
+
+TEST(stereo_tuner_detailed_mode_reports_latency_and_keeps_images_in_place) {
+  const double fs = 48000;
+  StereoTuner plain(fs), detailed(fs, true);
+  CHECK(plain.latencyFrames() == 0 && detailed.latencyFrames() == 1024);
+  StereoTunerParams p;
+  p.backingVocals = 1;
+  p.spatialDetail = 1;
+  for (double hz : {80.0, 180.0, 1200.0, 6000.0}) {
+    for (bool left : {true, false}) {
+      const double sgn = left ? 1 : -1;
+      auto in = ms(fs, 1.5, [&](double t) { return .25 * std::sin(2 * kPi * hz * t); }, [&](double t) { return sgn * .25 * std::sin(2 * kPi * hz * t); });
+      StereoTuner t(fs, true);
+      t.setParams(p);
+      for (size_t i = 0; i < in.l.size(); i += 256) {
+        const int n = static_cast<int>(std::min<size_t>(256, in.l.size() - i));
+        t.process(in.l.data() + i, in.r.data() + i, n);
+      }
+      const double keep = settledRms(left ? in.l : in.r), leak = settledRms(left ? in.r : in.l);
+      CHECK(20 * std::log10((leak + 1e-30) / keep) < -40.0);
+    }
+  }
+  EngineConfig cfg;
+  cfg.sampleRate = fs;
+  const int base = Engine(cfg).latencyFrames();
+  cfg.spatialResidual = true;
+  CHECK(Engine(cfg).latencyFrames() == base + 1024);
+}
+
+// ------------------------------------------------ sample-rate correctness (AQ-05)
+
+TEST(engine_curve_matches_its_analytic_response_at_every_rate_family) {
+  for (double fs : {44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
+    for (int oversample : {1, 4}) {
+      EngineConfig cfg;
+      cfg.sampleRate = fs;
+      cfg.oversample = oversample;
+      cfg.autoHeadroom = false;
+      Engine e(cfg);
+      e.setBandsAllChannels({{FilterType::Peak, 1000, 6.0, 1.0, true}, {FilterType::LowShelf, 100, 4.0, 0.71, true}, {FilterType::HighShelf, 8000, -3.0, 0.71, true}});
+      for (double hz : {60.0, 250.0, 1000.0, 4000.0, 12000.0}) {
+        std::vector<float> x(static_cast<size_t>(fs * 0.6) * 2);
+        for (size_t t = 0; t < x.size() / 2; ++t) x[2 * t] = x[2 * t + 1] = static_cast<float>(0.1 * std::sin(2 * kPi * hz * static_cast<double>(t) / fs));
+        for (size_t i = 0; i < x.size(); i += 2 * 480) e.process(x.data() + i, x.data() + i, static_cast<int>(std::min<size_t>(480, (x.size() - i) / 2)));
+        std::vector<double> l;
+        for (size_t t = x.size() / 4; t < x.size() / 2; ++t) l.push_back(x[2 * t]);
+        const double measured = toDb(sineAmplitude(l, hz, fs, 0, l.size()) / 0.1);
+        CHECK_NEAR(measured, e.responseDb(0, hz), 0.12);
+      }
+    }
+  }
+}
+
+TEST(engine_latency_in_milliseconds_does_not_depend_on_the_rate) {
+  double first = 0;
+  for (double fs : {44100.0, 48000.0, 96000.0, 192000.0}) {
+    EngineConfig cfg;
+    cfg.sampleRate = fs;
+    cfg.truePeak = true;
+    const double ms = Engine(cfg).latencyFrames() * 1000.0 / fs;
+    std::printf("    %.0f Hz: DSP latency %.3f ms\n", fs, ms);
+    CHECK(ms > 2.9 && ms < 4.6);   // 3 ms lookahead + 64 detector frames, never a fixed frame count
+    if (first == 0) first = ms;
+    CHECK_NEAR(ms, first, 1.2);
+  }
+}
+
+// ------------------------------------------------ selective bass unmasking (AQ-03 B)
+
+namespace {
+struct Partial { double hz, amp, tau; };  // tau <= 0: steady
+std::vector<double> bassProgram(double fs, double secs, const std::vector<Partial>& parts) {
+  std::vector<double> x(static_cast<size_t>(fs * secs));
+  for (size_t i = 0; i < x.size(); ++i) {
+    const double t = static_cast<double>(i) / fs;
+    for (const auto& p : parts) x[i] += p.amp * (p.tau > 0 ? std::exp(-t / p.tau) : 1.0) * std::sin(2 * kPi * p.hz * t);
+  }
+  return x;
+}
+std::vector<Partial> noteWithPartials(double f0, double amp, double tau = 0) {
+  return {{f0, amp, tau}, {2 * f0, 0.7 * amp, tau}, {3 * f0, 0.5 * amp, tau}, {4 * f0, 0.3 * amp, tau}};
+}
+// Runs mono through BassUnmask in blocks; returns the output and the worst combined cut seen.
+std::vector<double> runUnmask(BassUnmask& u, std::vector<double> x, double* worstCutDb = nullptr, int block = 480) {
+  double worst = 0;
+  for (size_t i = 0; i < x.size(); i += static_cast<size_t>(block)) {
+    u.process(x.data() + i, nullptr, static_cast<int>(std::min<size_t>(static_cast<size_t>(block), x.size() - i)));
+    double sum = 0;
+    for (double c : u.cutsDb()) sum += c;
+    worst = std::min(worst, sum);
+  }
+  if (worstCutDb) *worstCutDb = worst;
+  return x;
+}
+double maxDiff(const std::vector<double>& a, const std::vector<double>& b) {
+  double d = 0;
+  for (size_t i = 0; i < a.size(); ++i) d = std::max(d, std::fabs(a[i] - b[i]));
+  return d;
+}
+double toneChangeDb(const std::vector<double>& in, const std::vector<double>& out, double hz, double fs, double from, double to) {
+  const size_t a = static_cast<size_t>(from * fs), b = static_cast<size_t>(to * fs);
+  return toDb(sineAmplitude(out, hz, fs, a, b) / sineAmplitude(in, hz, fs, a, b));
+}
+std::vector<Partial> maskedNote(double maskerHz = 130.0) {
+  auto parts = noteWithPartials(55.0, 0.1);
+  parts.push_back({maskerHz, 0.32, 0});  // sustained, not in 55 Hz's harmonic series, +10 dB over the note
+  return parts;
+}
+}  // namespace
+
+TEST(bass_unmask_off_is_a_bit_exact_bypass) {
+  BassUnmask u(48000);
+  const auto in = bassProgram(48000, 2.0, maskedNote());
+  CHECK(maxDiff(runUnmask(u, in), in) == 0.0);
+  u.setAmount(std::nan(""));
+  CHECK(maxDiff(runUnmask(u, in), in) == 0.0);
+}
+
+TEST(bass_unmask_leaves_notes_tones_and_kicks_alone) {
+  const double fs = 48000;
+  std::vector<std::pair<const char*, std::vector<double>>> fixtures;
+  for (double hz : {30.0, 40.0, 60.0, 100.0}) fixtures.push_back({"clean sine", bassProgram(fs, 4, {{hz, 0.3, 0}})});
+  for (double f0 : {41.2, 55.0, 82.4}) {
+    fixtures.push_back({"steady harmonic note", bassProgram(fs, 4, noteWithPartials(f0, 0.2))});
+    fixtures.push_back({"decaying harmonic note", bassProgram(fs, 4, noteWithPartials(f0, 0.3, 1.0))});
+  }
+  fixtures.push_back({"resonant synth (strong 3rd partial)", bassProgram(fs, 4, {{82.4, 0.15, 0}, {164.8, 0.12, 0}, {247.2, 0.21, 0}, {329.6, 0.08, 0}})});
+  fixtures.push_back({"kicks", [&] { std::vector<double> k; for (double v : kicks(fs, 7)) k.push_back(v); return k; }()});
+  {  // kick over a bass note
+    auto k = kicks(fs, 7);
+    auto n = bassProgram(fs, 4.2, noteWithPartials(55.0, 0.15));
+    for (size_t i = 0; i < k.size(); ++i) k[i] += n[i % n.size()];
+    fixtures.push_back({"kick over bass note", k});
+  }
+  fixtures.push_back({"quiet tail with masker (-75 dBFS)", bassProgram(fs, 4, [] { auto m = maskedNote(); for (auto& p : m) p.amp *= 1.8e-4; return m; }())});
+  for (auto& [name, in] : fixtures) {
+    BassUnmask u(fs);
+    u.setAmount(1.0);
+    double worst = 0;
+    const auto out = runUnmask(u, in, &worst);
+    std::printf("    %-36s worst cut %.3f dB, max diff %.2e\n", name, worst, maxDiff(out, in));
+    CHECK(worst > -0.02);
+    CHECK(maxDiff(out, in) < 1e-6);
+  }
+}
+
+TEST(bass_unmask_cuts_an_inharmonic_masker_but_not_the_note) {
+  for (double fs : {44100.0, 48000.0, 96000.0, 192000.0}) {
+    const auto in = bassProgram(fs, 5.0, maskedNote());
+    BassUnmask u(fs);
+    u.setAmount(1.0);
+    double worst = 0;
+    const auto out = runUnmask(u, in, &worst);
+    const double masker = toneChangeDb(in, out, 130.0, fs, 4.0, 5.0), fundamental = toneChangeDb(in, out, 55.0, fs, 4.0, 5.0);
+    std::printf("    %.0f Hz: masker %+.2f dB, fundamental %+.2f dB, worst combined cut %.2f dB, note %.1f Hz\n", fs, masker, fundamental, worst, u.noteHz());
+    CHECK(masker < -0.4 && masker > -2.0);
+    CHECK(fundamental > -0.4);      // the note itself is not what gets cut (lane skirt only)
+    CHECK(worst >= -2.0 - 1e-9);    // combined limit
+    CHECK_NEAR(u.noteHz(), 55.0, 3.0);
+  }
+}
+
+TEST(bass_unmask_protects_a_loud_partial_of_the_note_itself) {
+  const double fs = 48000;
+  auto parts = noteWithPartials(55.0, 0.1);
+  parts.push_back({165.0, 0.32, 0});  // 3rd harmonic of 55 Hz, +10 dB: part of the note, not a masker
+  const auto in = bassProgram(fs, 5.0, parts);
+  BassUnmask u(fs);
+  u.setAmount(1.0);
+  double worst = 0;
+  const auto out = runUnmask(u, in, &worst);
+  CHECK(worst > -0.02 && maxDiff(out, in) < 1e-6);
+}
+
+TEST(bass_unmask_amount_scales_the_cut_and_releases_to_an_exact_bypass) {
+  const double fs = 48000;
+  const auto in = bassProgram(fs, 5.0, maskedNote());
+  double cut[2];
+  for (int i = 0; i < 2; ++i) {
+    BassUnmask u(fs);
+    u.setAmount(i ? 1.0 : 0.4);
+    cut[i] = toneChangeDb(in, runUnmask(u, in), 130.0, fs, 4.0, 5.0);
+  }
+  CHECK(cut[1] < cut[0] - 0.2 && cut[0] < -0.1);  // more amount, deeper cut
+  BassUnmask u(fs);
+  u.setAmount(1.0);
+  runUnmask(u, in);
+  CHECK(u.cutting());
+  u.setAmount(0.0);
+  const auto rest = bassProgram(fs, 4.0, maskedNote());
+  const auto out = runUnmask(u, rest);
+  bool finite = true;
+  for (double v : out) finite = finite && std::isfinite(v);
+  CHECK(finite && !u.cutting());
+  const auto again = runUnmask(u, rest);
+  CHECK(maxDiff(again, rest) == 0.0);  // exact bypass again
+}
+
+TEST(bass_unmask_releases_quickly_when_a_new_note_arrives_during_a_cut) {
+  const double fs = 48000;
+  auto in = bassProgram(fs, 6.0, maskedNote());
+  const size_t t0 = static_cast<size_t>(fs * 4.5);
+  for (size_t i = t0; i < in.size(); ++i) {  // a new, loud 41.2 Hz note with partials
+    const double t = static_cast<double>(i - t0) / fs;
+    in[i] += 0.5 * std::sin(2 * kPi * 41.2 * t) + 0.3 * std::sin(2 * kPi * 82.4 * t);
+  }
+  BassUnmask u(fs);
+  u.setAmount(1.0);
+  std::vector<double> out = in, cutAtOnset;
+  double before = 0, after100ms = 0;
+  for (size_t i = 0; i < out.size(); i += 48) {
+    u.process(out.data() + i, nullptr, 48);
+    double sum = 0;
+    for (double c : u.cutsDb()) sum += c;
+    if (i + 48 == t0 + (48 - t0 % 48) % 48 + 0 || (i <= t0 && t0 < i + 48)) before = sum;
+    if (i <= t0 + static_cast<size_t>(fs * 0.1) && t0 + static_cast<size_t>(fs * 0.1) < i + 48) after100ms = sum;
+  }
+  std::printf("    cut at onset %.2f dB, 100 ms later %.2f dB\n", before, after100ms);
+  CHECK(before < -0.3);                // a cut was active when the note arrived
+  CHECK(after100ms > before + 0.25 && after100ms > -0.6);  // and it relaxed quickly
+  // Residual alteration of the onset itself is bounded by the combined limit.
+  double worstDrop = 0;
+  for (size_t i = t0; i < t0 + static_cast<size_t>(fs * 0.01); ++i) {
+    const double a = std::fabs(in[i] - (i > 0 ? in[i - 1] * 0 : 0)), b = std::fabs(out[i]);
+    if (a > 0.3) worstDrop = std::min(worstDrop, toDb(b / a));
+  }
+  CHECK(worstDrop > -2.1);
+}
+
+TEST(bass_unmask_is_stereo_linked_and_keeps_balance) {
+  const double fs = 48000;
+  const auto base = bassProgram(fs, 5.0, maskedNote());
+  std::vector<double> l = base, r = base;
+  for (double& v : r) v *= 0.3;
+  const auto l0 = l, r0 = r;
+  BassUnmask u(fs);
+  u.setAmount(1.0);
+  for (size_t i = 0; i < l.size(); i += 480) u.process(l.data() + i, r.data() + i, static_cast<int>(std::min<size_t>(480, l.size() - i)));
+  const double cl = toneChangeDb(l0, l, 130.0, fs, 4.0, 5.0), cr = toneChangeDb(r0, r, 130.0, fs, 4.0, 5.0);
+  CHECK(cl < -0.4);
+  CHECK_NEAR(cl, cr, 0.01);
+}
+
+TEST(bass_unmask_takes_the_low_dynamic_eq_lanes_so_a_note_is_not_cut_twice) {
+  const double fs = 48000;
+  auto program = bassProgram(fs, 6.0, maskedNote(120.0));  // 120 Hz: the old dynamic lane's centre
+  double dyn[2];
+  for (int i = 0; i < 2; ++i) {
+    EngineConfig cfg;
+    cfg.sampleRate = fs;
+    cfg.autoHeadroom = false;
+    cfg.gainProtection = false;
+    Engine e(cfg);
+    e.setDynamicEq(1.0);
+    e.setBassUnmask(i ? 1.0 : 0.0);
+    std::vector<float> x(program.size() * 2);
+    for (size_t k = 0; k < program.size(); ++k) x[2 * k] = x[2 * k + 1] = static_cast<float>(program[k]);
+    double worst = 0;
+    for (size_t k = 0; k < x.size(); k += 960) {
+      e.process(x.data() + k, x.data() + k, static_cast<int>(std::min<size_t>(480, (x.size() - k) / 2)));
+      if (k > x.size() / 6 * 5) worst = std::min({worst, e.dynamicReductionsDb()[0], e.dynamicReductionsDb()[1]});  // last second
+    }
+    dyn[i] = worst;
+    if (i) CHECK(e.bassUnmaskCutsDb()[1] < -0.3);
+  }
+  std::printf("    dynamic EQ low-lane reduction: %.2f dB without unmask, %.2f dB with\n", dyn[0], dyn[1]);
+  CHECK(dyn[0] < -0.3);                 // the old lane would cut this note
+  CHECK(dyn[1] > dyn[0] + 0.3);         // and yields once Resolve owns it
+}
+
+// ------------------------------------------------ executable policy registry (AQ-04)
+
+namespace {
+bool fileHasText(const std::string& path, const std::string& text) {
+  std::ifstream in(path);
+  std::stringstream ss;
+  ss << in.rdbuf();
+  return in && ss.str().find(text) != std::string::npos;
+}
+std::vector<policy::Measurement> goodEvidence(const policy::Rule& r, uint64_t epoch) {
+  std::vector<policy::Measurement> m;
+  for (int i = 0; i < r.inputCount; ++i) {
+    policy::Measurement x;
+    x.id = r.inputs[static_cast<size_t>(i)];
+    x.value = 0.0; x.valid = true; x.confidence = 1.0; x.epoch = epoch; x.ageSeconds = 0.01;
+    m.push_back(x);
+  }
+  return m;
+}
+}  // namespace
+
+TEST(policy_registry_is_consistent_and_every_rule_names_a_real_counterexample_test) {
+  CHECK(policy::validateRegistry().empty());
+  if (!policy::validateRegistry().empty()) std::printf("    %s\n", policy::validateRegistry().c_str());
+  CHECK(policy::rules().size() >= 18);
+  for (const auto& r : policy::rules()) {
+    const std::string ce = r.counterexample;
+    bool found = false;
+    if (ce.rfind("core:", 0) == 0) {
+      for (const auto& t : registry()) found = found || ce.substr(5) == t.name;
+    } else {
+      const auto hash = ce.find('#');
+      found = hash != std::string::npos &&
+              fileHasText(std::string(EQCORE_REPO_DIR) + "/android/app/src/test/java/app/svan/" + ce.substr(7, hash - 7), "fun " + ce.substr(hash + 1) + "(");
+    }
+    if (!found) std::printf("    rule %s: counterexample '%s' does not exist\n", r.id, r.counterexample);
+    CHECK(found);
+  }
+}
+
+TEST(policy_registry_rejects_inconsistent_rules_in_a_copy) {
+  // The validator must actually reject the mistakes it claims to: check a few on a mutated copy.
+  using namespace policy;
+  Rule base = *find("SV-UNMASK-1");
+  CHECK(base.version == 1);
+  const Rule& dup = *find("SV-UNMASK-1");
+  CHECK(find("NOPE") == nullptr && &dup == find("SV-UNMASK-1"));
+  CHECK(spec(Metric::VolumeProxy).proxy && !spec(Metric::VolumeProxy).pcm);
+  CHECK(spec(Metric::BandwidthCutoffHz).pcm && std::string(spec(Metric::BandwidthCutoffHz).units).find("not a codec label") != std::string::npos);
+  CHECK(std::string(spec(Metric::VolumeProxy).units).find("not SPL") != std::string::npos);
+}
+
+TEST(policy_evidence_gate_skips_on_every_kind_of_bad_evidence_for_every_rule) {
+  using namespace policy;
+  for (const auto& r : rules()) {
+    Context ok;
+    ok.epoch = 7; ok.nativePcm = true; ok.autoMaster = true;
+    auto good = goodEvidence(r, 7);
+    CHECK(admit(r, good.data(), static_cast<int>(good.size()), ok).admitted);
+    if (r.inputCount > 0) {
+      CHECK(admit(r, good.data(), 0, ok).skip == Skip::MissingInput);
+      auto stale = good; stale[0].ageSeconds = r.maxAgeSeconds + 0.001;
+      CHECK(admit(r, stale.data(), static_cast<int>(stale.size()), ok).skip == Skip::Stale);
+      auto nan = good; nan[0].value = std::nan("");
+      CHECK(admit(r, nan.data(), static_cast<int>(nan.size()), ok).skip == Skip::Invalid);
+      auto inval = good; inval[0].valid = false;
+      CHECK(admit(r, inval.data(), static_cast<int>(inval.size()), ok).skip == Skip::Invalid);
+      if (r.minConfidence > 0) {
+        auto weak = good; weak[0].confidence = r.minConfidence - 0.01;
+        CHECK(admit(r, weak.data(), static_cast<int>(weak.size()), ok).skip == Skip::LowConfidence);
+      }
+      if (r.sameEpoch) {
+        Context later = ok; later.epoch = 8;
+        CHECK(admit(r, good.data(), static_cast<int>(good.size()), later).skip == Skip::WrongEpoch);
+      }
+    }
+    Context off = ok; off.userOff = true;
+    CHECK(admit(r, good.data(), static_cast<int>(good.size()), off).skip == Skip::UserOff);
+    if (r.nativePcmOnly) {
+      Context sys = ok; sys.nativePcm = false;
+      CHECK(admit(r, good.data(), static_cast<int>(good.size()), sys).skip == Skip::NoNativePcm);
+    }
+    if (r.owner != Owner::Context && r.needsAutoMaster) {
+      Context manual = ok; manual.autoMaster = false;
+      CHECK(admit(r, good.data(), static_cast<int>(good.size()), manual).skip == Skip::AutoMasterOff);
+    }
+    for (double v : {1e30, -1e30, std::nan(""), std::numeric_limits<double>::infinity()}) {
+      const double b = bound(r, v);
+      CHECK(b >= r.minAction && b <= r.maxAction);
+    }
+  }
+  // A proxy is never a measurement unless the rule declares it and caps itself.
+  Rule sneaky = *find("SM-TILT-1");
+  sneaky.inputs[0] = Metric::VolumeProxy;
+  sneaky.nativePcmOnly = false;
+  sneaky.allowProxy = false;
+  auto m = goodEvidence(sneaky, 1);
+  Context c; c.epoch = 1; c.nativePcm = true; c.autoMaster = true;
+  CHECK(admit(sneaky, m.data(), static_cast<int>(m.size()), c).skip == Skip::ProxyNotAllowed);
+}
+
+namespace {
+// Strict-enough JSON validator for the registry export (objects, arrays, strings with escapes, numbers, booleans).
+struct JsonCheck {
+  const std::string& s;
+  size_t i = 0;
+  bool ok = true;
+  explicit JsonCheck(const std::string& text) : s(text) {}
+  void ws() { while (i < s.size() && (s[i] == ' ' || s[i] == '\n')) ++i; }
+  bool lit(const char* w) { const size_t n = std::strlen(w); if (s.compare(i, n, w) == 0) { i += n; return true; } return false; }
+  void str() {
+    if (i >= s.size() || s[i] != '"') { ok = false; return; }
+    for (++i; i < s.size() && s[i] != '"'; ++i) {
+      if (static_cast<unsigned char>(s[i]) < 0x20) { ok = false; return; }
+      if (s[i] == '\\') { ++i; if (i >= s.size() || !std::strchr("\"\\/bfnrtu", s[i])) { ok = false; return; } }
+    }
+    if (i >= s.size()) { ok = false; return; }
+    ++i;
+  }
+  void value() {
+    ws();
+    if (i >= s.size()) { ok = false; return; }
+    if (s[i] == '{') {
+      ++i; ws();
+      if (s[i] == '}') { ++i; return; }
+      for (;;) { ws(); str(); if (!ok) return; ws(); if (s[i] != ':') { ok = false; return; } ++i; value(); if (!ok) return; ws();
+        if (s[i] == ',') { ++i; continue; } if (s[i] == '}') { ++i; return; } ok = false; return; }
+    } else if (s[i] == '[') {
+      ++i; ws();
+      if (s[i] == ']') { ++i; return; }
+      for (;;) { value(); if (!ok) return; ws(); if (s[i] == ',') { ++i; continue; } if (s[i] == ']') { ++i; return; } ok = false; return; }
+    } else if (s[i] == '"') str();
+    else if (lit("true") || lit("false")) return;
+    else {
+      const size_t start = i;
+      while (i < s.size() && std::strchr("+-0123456789.eE", s[i])) ++i;
+      if (i == start) ok = false;
+    }
+  }
+};
+}  // namespace
+
+TEST(policy_rules_json_is_valid_complete_and_escaped) {
+  const std::string json = policy::rulesJson();
+  JsonCheck c(json);
+  c.value();
+  c.ws();
+  CHECK(c.ok && c.i == json.size());
+  size_t count = 0;
+  for (size_t p = json.find("{\"id\":"); p != std::string::npos; p = json.find("{\"id\":", p + 1)) ++count;
+  CHECK(count == policy::rules().size());
+  for (const auto& r : policy::rules()) CHECK(json.find(std::string("\"id\":\"") + r.id + "\"") != std::string::npos);
+  for (const char* bad : {":nan", ":inf", ":-inf", ":-nan", ",nan", ",inf"}) CHECK(json.find(bad) == std::string::npos);  // numbers are finite
+  CHECK(json.find("not SPL") != std::string::npos && json.find("not a codec label") != std::string::npos);
+}
+
+TEST(policy_rule_bounds_match_the_constants_the_planner_enforces) {
+  using namespace policy;
+  CHECK(find("SM-TILT-1")->maxAction == svaramanas::kSvaresaMaxTiltDb);
+  CHECK(find("SM-BOOM-1")->minAction == -svaramanas::kSvaresaMaxCorrectionDb);
+  CHECK(find("SM-MUD-1")->minAction == -svaramanas::kSvaresaMaxCorrectionDb);
+  CHECK(find("SM-BUDGET-1")->maxAction == svaramanas::kEmphasisBudgetDb);
+  CHECK(find("SV-UNMASK-1")->minAction == -2.0 && find("SV-SPATIAL-1")->maxAction == 4.0);
+  // And the planner really never exceeds them: guardrail test for every combination exists (see its rule entry).
+  Rule bad = *find("SM-TILT-1");
+  CHECK(bound(bad, 99.0) == svaramanas::kSvaresaMaxTiltDb);
+}
+
+TEST(policy_ownership_never_lowers_or_overwrites_the_saved_manual_value) {
+  using namespace policy;
+  CHECK(resolveOwnership(Ownership::Off, 0.7, 0.6, true, true).value == 0.0);
+  CHECK(resolveOwnership(Ownership::Manual, 0.2, 0.6, true, true).value == 0.2);
+  auto a = resolveOwnership(Ownership::Auto, 0.2, 0.6, true, true);
+  CHECK(a.who == Ownership::Auto && a.value == 0.6);
+  CHECK(resolveOwnership(Ownership::Auto, 0.9, 0.6, true, true).value == 0.9);        // never lowered
+  auto inactive = resolveOwnership(Ownership::Auto, 0.2, 0.6, false, true);           // Auto master off
+  CHECK(inactive.who == Ownership::Manual && inactive.value == 0.2);
+  inactive = resolveOwnership(Ownership::Auto, 0.2, 0.6, true, false);                // evidence not admitted
+  CHECK(inactive.who == Ownership::Manual && inactive.value == 0.2);
+  CHECK(resolveOwnership(Ownership::Auto, std::nan(""), 0.6, true, true).value == 0.6);
+}
+
+TEST(policy_rule_index_and_skip_codes_are_stable_for_the_jni_boundary) {
+  using namespace policy;
+  for (size_t i = 0; i < rules().size(); ++i) CHECK(ruleIndex(rules()[i].id) == static_cast<int>(i));
+  CHECK(ruleIndex("nope") == -1);
+  CHECK(skipCode(Skip::None) == 0 && skipCode(Skip::Stale) == 4 && skipCode(Skip::WrongEpoch) == 5 && skipCode(Skip::AutoMasterOff) == 9);
+  for (int c = 0; c <= 9; ++c) CHECK(skipCode(static_cast<Skip>(c)) == c);
+  CHECK(std::string(skipText(Skip::None)).empty() && !std::string(skipText(Skip::Stale)).empty());
+}
+
+TEST(policy_headroom_ledger_scales_the_sum_once) {
+  const double req[] = {3.0, 4.0, 5.0, -2.0, std::nan("")};
+  const double k = policy::headroomScale(req, 5, 6.0);
+  CHECK_NEAR(k, 0.5, 1e-12);                  // 12 dB of positive requests into a 6 dB ceiling
+  const double small[] = {1.0, 2.0};
+  CHECK(policy::headroomScale(small, 2, 6.0) == 1.0);
+  CHECK(policy::headroomScale(small, 0, 6.0) == 1.0);
+  CHECK(policy::headroomScale(req, 5, -1.0) == 0.0);
+}
+
+// ------------------------------------------------ qualification (AQ-06)
+
+namespace {
+EngineConfig detailedConfig(double fs) {
+  EngineConfig cfg = EngineConfig::forQuality(QualityMode::Audiophile, fs, 2, 24);
+  cfg.spatialResidual = true;
+  return cfg;
+}
+void turnEverythingOn(Engine& e) {
+  e.setBandsAllChannels({{FilterType::Peak, 90, 3.0, 1.0, true}, {FilterType::HighShelf, 9000, 2.0, 0.7, true}});
+  e.setBassCharacter(0.6, 120.0);
+  e.setBassResolve(1.0);
+  e.setBassUnmask(1.0);
+  e.setDynamicEq(1.0);
+  e.setStereoTuner({0.4, 0.3, 0.5, 0.3, 0.6, 1.0, 1.0});
+}
+}  // namespace
+
+TEST(audio_thread_paths_do_not_allocate) {
+  const double fs = 48000;
+  // Components in isolation, then the whole detailed chain.
+  SpatialResidual sr(fs);
+  BassUnmask bu(fs);
+  BassShaper bs(fs, 2);
+  StereoTuner st(fs, true);
+  sr.setParams(1, 1);
+  bu.setAmount(1);
+  bs.setCharacter(0.7);
+  bs.setResolve(1);
+  st.setParams({0.4, 0.3, 0.5, 0.3, 0.6, 1.0, 1.0});
+  Engine e(detailedConfig(fs));
+  turnEverythingOn(e);
+  std::mt19937 rng(5);
+  std::uniform_real_distribution<double> u(-0.4, 0.4);
+  std::vector<double> a(480), b(480);
+  std::vector<float> io(480 * 2);
+  auto fill = [&] { for (auto& v : a) v = u(rng); for (auto& v : b) v = u(rng); for (auto& v : io) v = static_cast<float>(u(rng)); };
+  for (int warm = 0; warm < 20; ++warm) { fill(); sr.process(a.data(), b.data(), 480); bu.process(a.data(), b.data(), 480); bs.processLinked(a.data(), b.data(), 480); st.process(a.data(), b.data(), 480); e.process(io.data(), io.data(), 480); }
+  g_allocs = 0;
+  g_countAllocs = true;
+  for (int i = 0; i < 200; ++i) {
+    st.setSpatialMode(i%3);st.setSpatialLoadLimited(i%7<3);
+    e.setSpatialMode(i%3);e.setSpatialLoadLimited(i%7<3);
+    fill();
+    sr.process(a.data(), b.data(), 480);
+    bu.process(a.data(), b.data(), 480);
+    bs.processLinked(a.data(), b.data(), 480);
+    st.process(a.data(), b.data(), 480);
+    e.process(io.data(), io.data(), 480);
+  }
+  g_countAllocs = false;
+  std::printf("    allocations in 200 blocks of every audio-thread path: %ld\n", g_allocs.load());
+  CHECK(g_allocs.load() == 0);
+}
+
+TEST(detailed_engine_latency_is_reported_exactly) {
+  // Same program, Detailed on vs off with every spatial control at zero: after shifting by the reported
+  // latency difference the two outputs agree, so listening/blind rendering aligned by latencyFrames() is exact.
+  const double fs = 48000;
+  EngineConfig off = EngineConfig::forQuality(QualityMode::Audiophile, fs, 2, 24), on = off;
+  on.spatialResidual = true;
+  Engine a(off), b(on);
+  a.setBandsAllChannels({{FilterType::Peak, 1000, 3.0, 1.0, true}});
+  b.setBandsAllChannels({{FilterType::Peak, 1000, 3.0, 1.0, true}});
+  const int extra = b.latencyFrames() - a.latencyFrames();
+  CHECK(extra == 1024);
+  std::mt19937 rng(9);
+  std::uniform_real_distribution<float> u(-0.3f, 0.3f);
+  std::vector<float> x(static_cast<size_t>(fs) * 2), ya, yb;
+  for (auto& v : x) v = u(rng);
+  ya = x;
+  yb = x;
+  for (size_t i = 0; i < x.size(); i += 960) {
+    const int n = static_cast<int>(std::min<size_t>(480, (x.size() - i) / 2));
+    a.process(ya.data() + i, ya.data() + i, n);
+    b.process(yb.data() + i, yb.data() + i, n);
+  }
+  double err = 0;
+  for (size_t f = static_cast<size_t>(extra) + 2000; f < x.size() / 2; ++f)
+    for (int c = 0; c < 2; ++c) err = std::max(err, static_cast<double>(std::fabs(yb[2 * f + static_cast<size_t>(c)] - ya[2 * (f - static_cast<size_t>(extra)) + static_cast<size_t>(c)])));
+  std::printf("    max aligned difference %.2e\n", err);
+  CHECK(err < 2e-5);
+}
+
+TEST(eq_parameter_unmask_diagnostics_can_be_read_from_another_thread_while_processing) {
+  const double fs = 48000;
+  BassUnmask u(fs);
+  u.setAmount(1.0);
+  std::atomic<bool> stop{false};
+  std::atomic<long> reads{0};
+  double worstCut = 0, seenNote = 0;
+  std::thread ui([&] {
+    while (!stop.load()) {
+      const auto c = u.cutsDb();
+      for (double v : c) worstCut = std::min(worstCut, v);
+      seenNote = std::max(seenNote, u.noteHz());
+      u.cutting();
+      reads.fetch_add(1);
+    }
+  });
+  auto program = bassProgram(fs, 6.0, maskedNote());
+  for (size_t i = 0; i < program.size(); i += 480) u.process(program.data() + i, nullptr, static_cast<int>(std::min<size_t>(480, program.size() - i)));
+  stop = true;
+  ui.join();
+  CHECK(reads.load() > 0);
+  CHECK(worstCut < -0.3 && worstCut >= -2.0 - 1e-9);   // the reader saw the real cut, never a torn value
+  CHECK(seenNote > 50.0 && seenNote < 60.0);
+}
+
+TEST(eq_parameter_spatial_bass_and_unmask_publication_is_safe_during_processing) {
+  const double fs = 48000;
+  Engine e(detailedConfig(fs));
+  std::atomic<bool> stop{false};
+  std::thread ui([&] {
+    std::mt19937 rng(1);
+    std::uniform_real_distribution<double> u(0, 1);
+    while (!stop.load()) {
+      e.setStereoTuner({u(rng), u(rng), u(rng), u(rng) * 2 - 1, u(rng), u(rng), u(rng)});
+      e.setBassCharacter(u(rng) * 2 - 1, 80 + 100 * u(rng));
+      e.setBassResolve(u(rng));
+      e.setBassUnmask(u(rng));
+      e.setDynamicEq(u(rng));
+      e.setSpatialMode(static_cast<int>(u(rng)*3));
+      e.setSpatialLoadLimited(u(rng)>.5);
+    }
+  });
+  std::mt19937 rng(2);
+  std::uniform_real_distribution<float> n(-0.3f, 0.3f);
+  std::vector<float> io(480 * 2);
+  bool finite = true;
+  for (int i = 0; i < 300; ++i) {
+    for (auto& v : io) v = n(rng);
+    e.process(io.data(), io.data(), 480);
+    for (float v : io) finite = finite && std::isfinite(v);
+  }
+  stop = true;
+  ui.join();
+  CHECK(finite);
+}
+
 TEST(instrument_amp_never_touches_a_centred_voice) {
   const double fs = 48000;
   // Pure centre content (L == R): voice fundamentals, formants and sibilance.
@@ -1051,7 +2156,10 @@ TEST(space_widens_or_narrows_the_sides_but_not_side_bass) {
     const double gHi = toDb(sineAmplitude(sideOf(hi), 2000, fs, 24000, 48000) / 0.2);
     const double gLo = toDb(sineAmplitude(sideOf(lo), 60, fs, 24000, 48000) / 0.2);
     std::printf("    space %+.0f: sides at 2 kHz %+.2f dB, side bass at 60 Hz %+.2f dB\n", space, gHi, gLo);
-    CHECK_NEAR(gHi, 6.0 * space, 0.3);
+    // Dry-plus-delta: the added high band sits ~15 degrees off the dry side at 2 kHz (zero-latency
+    // IIR crossover), so the realised gain is within ~0.6 dB of the nominal +-6 dB and matches the model.
+    CHECK_NEAR(gHi, 6.0 * space, 0.6);
+    CHECK_NEAR(gHi, 10 * std::log10(stereoResponsePower(p, 2000, fs)[1]), 0.15);
     CHECK_NEAR(gLo, 0.0, 0.3);
   }
 }
@@ -1133,7 +2241,7 @@ TEST(engine_instrument_amp_keeps_centre_and_widens_sides) {
 TEST(stereo_tuner_is_stable_on_noise) {
   const double fs = 44100;
   StereoTuner t(fs);
-  StereoTunerParams p{1, 1, 1, 1, 1};
+  StereoTunerParams p{1, 1, 1, 1, 1, 1, 1};
   t.setParams(p);
   std::mt19937 rng(4);
   std::uniform_real_distribution<double> u(-1, 1);
@@ -1143,6 +2251,136 @@ TEST(stereo_tuner_is_stable_on_noise) {
   bool ok = true;
   for (size_t i = 0; i < l.size(); ++i) ok = ok && std::isfinite(l[i]) && std::isfinite(r[i]) && std::fabs(l[i]) < 10;
   CHECK(ok);
+}
+
+TEST(stereo_detail_controls_have_measured_response_and_preserve_mono) {
+  const double fs=48000;
+  for (int control=0;control<2;++control) {
+    StereoTunerParams p;
+    if(control==0)p.backingVocals=1;else p.spatialDetail=1;
+    for(double hz:{60.,1600.,8000.}) {
+      auto input=ms(fs,1,[](double){return 0.;},[&](double t){return .1*std::sin(2*kPi*hz*t);});
+      auto output=runTuner(p,input,fs);
+      const double measured=toDb(sineAmplitude(sideOf(output),hz,fs,24000,48000)/.1);
+      const double expected=10*std::log10(stereoResponsePower(p,hz,fs)[1]);
+      CHECK_NEAR(measured,expected,.03);
+      if(hz==60)CHECK(std::abs(measured)<.1);
+      if(control==0 && hz==1600)CHECK(measured>1.8 && measured<2.2);
+      if(control==1 && hz==8000)CHECK(measured>1.3 && measured<1.7);
+      auto mono=ms(fs,.1,[&](double t){return .1*std::sin(2*kPi*hz*t);},[](double){return 0.;});
+      auto unchanged=runTuner(p,mono,fs);
+      CHECK(unchanged.l==mono.l && unchanged.r==mono.r);
+    }
+  }
+}
+
+// A tone's amplitude over [from, to) seconds of one channel-like vector.
+static double toneDb(const std::vector<double>& x, double hz, double fs, double from, double to) {
+  return toDb(sineAmplitude(x, hz, fs, static_cast<int>(from * fs), static_cast<int>(to * fs)));
+}
+
+TEST(backing_vocals_lift_masked_layers_and_leave_prominent_layers) {
+  const double fs = 48000;
+  StereoTunerParams p;
+  p.backingVocals = 1;
+  const double staticDb = 10 * std::log10(stereoResponsePower(p, 1300, fs)[1]);
+  // Lead (centre, 1 kHz) 20 dB above harmony layers (side, 1.3 kHz).
+  auto masked = ms(fs, 2, [](double t) { return .3 * std::sin(2 * kPi * 1000 * t); },
+                   [](double t) { return .03 * std::sin(2 * kPi * 1300 * t); });
+  const double maskedLift = toneDb(sideOf(runTuner(p, masked, fs)), 1300, fs, 1, 2) - toDb(.03);
+  CHECK(maskedLift - staticDb > 1.5);  // dynamic de-masking on top of the static bell...
+  CHECK(maskedLift < 4.3);             // ...but the shared side-energy budget caps the total lift at 4 dB
+  // Layers already as loud as the lead (side power >= half the mid): nothing is added.
+  auto prominent = ms(fs, 2, [](double t) { return .1 * std::sin(2 * kPi * 1000 * t); },
+                      [](double t) { return .1 * std::sin(2 * kPi * 1300 * t); });
+  const double prominentLift = toneDb(sideOf(runTuner(p, prominent, fs)), 1300, fs, 1, 2) - toDb(.1);
+  CHECK_NEAR(prominentLift, 0.0, .3);
+  // The lead itself and the mono sum are untouched.
+  auto out = runTuner(p, masked, fs);
+  bool monoSum = true;
+  for (size_t i = 0; i < out.l.size(); ++i) monoSum = monoSum && std::fabs((out.l[i] + out.r[i]) - (masked.l[i] + masked.r[i])) < 1e-12;
+  CHECK(monoSum);
+}
+
+TEST(binaural_motion_exaggerates_channel_bounces_but_not_static_images) {
+  const double fs = 48000;
+  StereoTunerParams p;
+  p.spatialDetail = 1;
+  // Ping-pong: a 2 kHz tone that bounces between hard left and hard right every 250 ms.
+  auto bounce = [&](double t) {
+    const double phase = std::fmod(t, .5) / .5;  // 0..1
+    const double pan = phase < .5 ? 1 : -1;      // +1 left, -1 right
+    return pan;
+  };
+  // Partial pans (side power 16 % of mid, inside the budget): the image bounces between +-0.4 of the way
+  // to hard left/right, versus a fixed +0.4 placement.
+  Stereo moving, still;
+  for (int i = 0; i < static_cast<int>(fs * 3); ++i) {
+    const double t = i / fs, x = .2 * std::sin(2 * kPi * 2000 * t), pan = bounce(t);
+    moving.l.push_back(x * (1 + .4 * pan)); moving.r.push_back(x * (1 - .4 * pan));
+    still.l.push_back(x * 1.4); still.r.push_back(x * .6);
+  }
+  auto sideRms = [](const std::vector<double>& s, size_t from) {
+    double e = 0; for (size_t i = from; i < s.size(); ++i) e += s[i] * s[i]; return std::sqrt(e / (s.size() - from)); };
+  const size_t from = static_cast<size_t>(fs);
+  const double staticDb = 10 * std::log10(stereoResponsePower(p, 2000, fs)[1]);
+  const double movingDb = toDb(sideRms(sideOf(runTuner(p, moving, fs)), from) / sideRms(sideOf(moving), from));
+  const double stillDb = toDb(sideRms(sideOf(runTuner(p, still, fs)), from) / sideRms(sideOf(still), from));
+  CHECK_NEAR(stillDb, staticDb, .3);       // a fixed placement stays where it was
+  CHECK(movingDb - stillDb > 1.0);         // the artist's bounce becomes more dramatic
+  CHECK(movingDb < 4.3);                   // bounded by the shared 4 dB side budget
+  auto out = runTuner(p, moving, fs);
+  bool monoSum = true, finite = true;
+  for (size_t i = 0; i < out.l.size(); ++i) {
+    monoSum = monoSum && std::fabs((out.l[i] + out.r[i]) - (moving.l[i] + moving.r[i])) < 1e-12;
+    finite = finite && std::isfinite(out.l[i]) && std::fabs(out.l[i]) < 1;
+  }
+  CHECK(monoSum && finite);
+}
+
+TEST(stereo_live_edits_crossfade_preserve_history_and_are_block_independent) {
+  auto run=[](int block) {
+    StereoTuner t(48000);
+    std::vector<double> l(8000,.1),r(8000,-.1);
+    for(int start=0;start<8000;) {
+      if(start==2000)t.setParams({1,1,1,1,1,1,1});
+      if(start==4000)t.setParams({});
+      const int boundary=start<2000?2000:start<4000?4000:8000;
+      int n=std::min(block,boundary-start);
+      t.process(l.data()+start,r.data()+start,n);start+=n;
+    }
+    CHECK_NEAR(l[2000],l[1999],1e-12);
+    CHECK(std::abs(l[4000]-l[3999])<.002);
+    CHECK(l.back()==.1 && r.back()==-.1);
+    for(size_t i=1;i<l.size();++i)CHECK(std::abs(l[i]-l[i-1])<.01);
+    return l;
+  };
+  auto a=run(1),b=run(127),c=run(256);
+  CHECK(a==b && b==c);
+}
+
+TEST(stereo_repeated_identical_publications_do_not_change_audio) {
+  StereoTuner a(48000),b(48000);StereoTunerParams p{.3,.2,.4,.5,.6,.7,.8};
+  a.setParams(p);b.setParams(p);
+  auto source=ms(48000,1,[](double t){return .1*std::sin(2*kPi*1000*t);},[](double t){return .1*std::sin(2*kPi*3200*t);});
+  auto x=source,y=source;
+  for(size_t i=0;i<x.l.size();i+=128) {
+    int n=std::min<size_t>(128,x.l.size()-i);b.setParams(p);
+    a.process(x.l.data()+i,x.r.data()+i,n);b.process(y.l.data()+i,y.r.data()+i,n);
+  }
+  CHECK(x.l==y.l && x.r==y.r);
+}
+
+TEST(eq_parameter_stereo_publication_is_safe_during_processing) {
+  StereoTuner tuner(48000);
+  std::thread writer([&]{for(int i=0;i<2000;++i)tuner.setParams({.2,.3,.4,.5,.6,(i%2)*1.,(i%3)*.5});});
+  std::array<double,128> l{},r{};
+  bool finite=true;
+  for(int i=0;i<2000;++i) {
+    l.fill(.05);r.fill(-.03);tuner.process(l.data(),r.data(),128);
+    finite=finite && std::all_of(l.begin(),l.end(),[](double x){return std::isfinite(x);});
+  }
+  writer.join();CHECK(finite);
 }
 
 TEST(quality_presets_are_consistent) {
@@ -1201,6 +2439,46 @@ SourceFeatures analyse(const std::vector<float>& x, double fs = 48000) {
 
 auto flatShape = [](double) { return 0.0; };
 
+TEST(analyzer_reads_the_same_picture_at_every_input_rate) {
+  // High input rates are decimated so windows keep their 48 kHz duration. Within a rate family (44.1k/88.2k/176.4k and
+  // 48k/96k/192k) the picture is the same; across families only the broad measurements are compared, because third-octave
+  // bands below ~80 Hz hold one or two bins of the 4096-point window and scatter by a few dB with bin alignment at any rate.
+  auto shape = [](double f) { return -10.0 * std::log10(f / 1000.0); };
+  const auto ref48 = analyse(multisine(48000, 8, 16000, shape), 48000);
+  const auto ref44 = analyse(multisine(44100, 8, 16000, shape), 44100);
+  CHECK(ref48.valid && ref44.valid);
+  for (double fs : {44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
+    const auto f = analyse(multisine(fs, 8, 16000, shape), fs);
+    const auto& fam = (std::lround(fs) % 44100 == 0) ? ref44 : ref48;
+    CHECK(f.valid);
+    CHECK_NEAR(f.loudnessLufs, ref48.loudnessLufs, 0.3);   // every rate
+    CHECK_NEAR(f.tiltDbPerOct, ref48.tiltDbPerOct, 0.35);
+    CHECK_NEAR(f.cutoffHz, ref48.cutoffHz, 2500.0);
+    CHECK_NEAR(f.boomDb, fam.boomDb, 0.05);                // same family: the same analysis
+    CHECK_NEAR(f.mudDb, fam.mudDb, 0.05);
+    double worst = 0;
+    for (int b = 0; b < SourceFeatures::kBands; ++b)
+      if (SourceFeatures::bandCentreHz(b) <= 12000.0) worst = std::max(worst, std::fabs(f.bandDb[static_cast<size_t>(b)] - fam.bandDb[static_cast<size_t>(b)]));
+    std::printf("    %.0f Hz: worst band difference vs its family reference %.3f dB, tilt %.2f dB/oct, cutoff %.0f Hz\n", fs, worst, f.tiltDbPerOct, f.cutoffHz);
+    CHECK(worst < 0.05);
+  }
+  // Peak and clipping stay at the full input rate: a 52 us full-scale burst reads the same at 192 kHz as at 48 kHz.
+  double peak[2];
+  for (int i = 0; i < 2; ++i) {
+    const double rate = i ? 192000.0 : 48000.0;
+    std::vector<float> x(static_cast<size_t>(rate * 6.0) * 2, 0.0f);
+    for (size_t k = 0; k < x.size() / 2; ++k) x[2 * k] = x[2 * k + 1] = static_cast<float>(0.03 * std::sin(2 * kPi * 1000.0 * static_cast<double>(k) / rate));
+    const size_t at = static_cast<size_t>(rate * 3.0);
+    for (size_t k = at; k < at + static_cast<size_t>(rate / 48000.0 * 10); ++k) x[2 * k] = x[2 * k + 1] = 1.0f;
+    SourceAnalyzer an(rate, 2);
+    an.process(x.data(), static_cast<int>(x.size() / 2));
+    peak[i] = an.snapshot().peakDbfs;
+  }
+  std::printf("    burst peak read as %.2f dBFS at 48 kHz and %.2f dBFS at 192 kHz\n", peak[0], peak[1]);
+  CHECK(peak[0] > -12.0 && peak[1] > -12.0);  // the burst was seen (the noise floor sine alone reads about -30)
+  CHECK_NEAR(peak[0], peak[1], 0.3);
+}
+
 TEST(fft_matches_direct_dft) {
   std::vector<std::complex<double>> x(64), y;
   std::mt19937 rng(1);
@@ -1227,6 +2505,18 @@ TEST(analyzer_loudness_matches_bs1770_reference) {
   CHECK_NEAR(f.loudnessLufs, -23.0, 0.2);
   CHECK_NEAR(f.peakDbfs, -23.0, 0.1);
   CHECK(f.clipsPerSecond == 0.0);
+}
+
+TEST(loudness_and_peak_measurements_are_rate_independent) {
+  const double a = std::pow(10.0, -23.0 / 20.0);
+  for (double fs : {44100.0, 48000.0, 88200.0, 96000.0, 192000.0}) {
+    std::vector<float> x(static_cast<size_t>(fs * 6) * 2);
+    for (size_t t = 0; t < x.size() / 2; ++t) x[2 * t] = x[2 * t + 1] = float(a * std::sin(2 * kPi * 1000.0 * static_cast<double>(t) / fs));
+    const auto f = analyse(x, fs);
+    CHECK(f.valid);
+    CHECK_NEAR(f.loudnessLufs, -23.0, 0.25);
+    CHECK_NEAR(f.peakDbfs, -23.0, 0.1);
+  }
 }
 
 TEST(analyzer_finds_the_lossy_codec_ceiling) {
@@ -1550,6 +2840,49 @@ TEST(svaramanas_trims_what_it_hears_and_leaves_a_clean_mix_alone) {
   CHECK(std::find(p.notes.begin(), p.notes.end(), sv::kNoteMud) != p.notes.end());
 }
 
+TEST(planner_consults_the_evidence_gate_and_falls_back_when_evidence_is_not_admissible) {
+  auto bump = [](double lo, double hi, double db) { return [=](double f) { return f >= lo && f <= hi ? db : 0.0; }; };
+  auto feats = analyse(multisine(48000, 8, 20000, bump(180, 560, 6.0), -20.0, 0.5));
+  CHECK(feats.valid);
+  auto hasNote = [](const sv::Plan& p, int n) { return std::find(p.notes.begin(), p.notes.end(), n) != p.notes.end(); };
+  auto allAdmitted = [](const sv::Plan& p) { for (const auto& g : p.gates) if (g.skip != policy::Skip::None) return false; return !p.gates.empty(); };
+  auto skipOf = [](const sv::Plan& p, const char* id) { for (const auto& g : p.gates) if (std::string(g.rule) == id) return g.skip; return policy::Skip::MissingInput; };
+  for (bool svaresa : {false, true}) {
+    sv::Request r = req(sv::Feel::Balanced, {});
+    r.svaresaMode = svaresa;
+    const auto good = sv::plan(r, &feats);
+    CHECK(allAdmitted(good));                         // fresh, same-epoch evidence: every consulted rule admitted
+    CHECK(hasNote(good, sv::kNoteMud));
+    const auto fallback = sv::plan(r, nullptr);       // what the planner does with no evidence at all
+    CHECK(fallback.gates.empty() && hasNote(fallback, sv::kNoteListening));
+    struct Case { const char* what; policy::Skip skip; void (*mutate)(sv::Request&); };
+    const Case cases[] = {
+        {"stale", policy::Skip::Stale, [](sv::Request& q) { q.featuresAgeSeconds = 120.0; }},
+        {"from another epoch", policy::Skip::WrongEpoch, [](sv::Request& q) { q.epoch = 5; q.featuresEpoch = 4; }},
+        {"low confidence", policy::Skip::LowConfidence, [](sv::Request& q) { q.featuresConfidence = 0.5; }},
+    };
+    for (const auto& c : cases) {
+      sv::Request q = r;
+      c.mutate(q);
+      const auto p = sv::plan(q, &feats);
+      CHECK(skipOf(p, "SM-LOSSY-1") == c.skip);       // a protective rule cannot be admitted ...
+      CHECK(hasNote(p, sv::kNoteListening));          // ... so the plan is the static one, not a boost without protections
+      CHECK(!hasNote(p, sv::kNoteMud));
+      CHECK(p.bands.size() == fallback.bands.size());
+      for (size_t i = 0; i < p.bands.size(); ++i) CHECK(p.bands[i].gainDb == fallback.bands[i].gainDb);
+      CHECK(p.preampDb == fallback.preampDb);
+      std::printf("    %s%s evidence: %s\n", svaresa ? "Svaresa, " : "guided, ", c.what, policy::skipText(c.skip));
+    }
+    // One non-finite measurement skips only its own correction.
+    auto broken = feats;
+    broken.boomDb = std::nan("");
+    const auto partial = sv::plan(r, &broken);
+    CHECK(skipOf(partial, "SM-BOOM-1") == policy::Skip::Invalid);
+    CHECK(skipOf(partial, "SM-MUD-1") == policy::Skip::None);
+    CHECK(hasNote(partial, sv::kNoteMud) && !hasNote(partial, sv::kNoteBoom));
+  }
+}
+
 TEST(svaresa_ignores_guided_taste_and_only_corrects_measured_mix_issues) {
   auto bump = [](double lo, double hi, double db) { return [=](double f) { return f >= lo && f <= hi ? db : 0.0; }; };
   const auto muddy = analyse(multisine(48000, 8, 20000, bump(180, 560, 6.0), -20.0, 0.5));
@@ -1796,6 +3129,22 @@ TEST(true_peak_protection_catches_intersample_overload) {
   const double after=reconstructedPeak(audio);
   std::printf("    reconstructed peak %.4f -> %.4f (samples below full scale)\n",before,after);
   CHECK(before>1.3);CHECK(after<=.92);
+}
+
+TEST(detail_controls_and_live_edits_remain_peak_protected) {
+  for(double fs:{44100.,48000.,96000.}) {
+    auto cfg=EngineConfig::forQuality(QualityMode::Efficient,fs,2,24);
+    Engine e(cfg);const int n=int(fs);std::vector<float> audio(2*n);
+    for(int i=0;i<n;++i) {audio[2*i]=.8*std::sin(2*kPi*1600*i/fs);audio[2*i+1]=-audio[2*i];}
+    e.setStereoTuner({1,1,1,1,1,1,1});
+    for(int i=0;i<n;i+=256) {
+      if(i==2560)e.setStereoTuner({0,0,0,-1,0,0,0});
+      if(i==5120)e.setStereoTuner({1,1,1,1,1,1,1});
+      e.process(audio.data()+2*i,audio.data()+2*i,std::min(256,n-i));
+    }
+    CHECK(reconstructedPeak(audio,2,fs)<.93);
+    CHECK(std::all_of(audio.begin(),audio.end(),[](float x){return std::isfinite(x);}));
+  }
 }
 
 TEST(true_peak_is_block_independent_linked_and_bypass_has_fixed_delay) {

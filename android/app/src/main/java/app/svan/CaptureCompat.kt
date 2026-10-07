@@ -105,6 +105,6 @@ class CaptureCompat(context: Context) {
 
     companion object {
         /** Usage list for the main (mixed) capture. */
-        val MIX_USAGES = intArrayOf(AudioAttributes.USAGE_MEDIA, AudioAttributes.USAGE_GAME, AudioAttributes.USAGE_UNKNOWN)
+        val MIX_USAGES = intArrayOf(AudioAttributes.USAGE_MEDIA)
     }
 }

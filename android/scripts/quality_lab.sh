@@ -33,3 +33,5 @@ PY
 sleep 3
 "${A[@]}" exec-out screencap -p > "$OUT/blind-listening-release.png"
 "${A[@]}" shell input keyevent KEYCODE_BACK
+
+bash scripts/continuity_lab.sh "$S" "$OUT/continuity"

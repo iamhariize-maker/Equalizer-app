@@ -70,15 +70,15 @@ class TonePlayerService : Service() {
         // Simulates a stream that opts out of playback capture mid-session (DRM'd track, ad, ...).
         val noCapture = intent.getBooleanExtra("nocapture", false)
         playing = true
-        thread = Thread { play(freq, amp, broadcast, noCapture) }.also { it.start() }
+        thread = Thread { play(freq, amp, broadcast, noCapture, intent.getIntExtra("usage", AudioAttributes.USAGE_MEDIA), intent.getIntExtra("content", AudioAttributes.CONTENT_TYPE_MUSIC)) }.also { it.start() }
     }
 
-    private fun play(freq: Double, amp: Float, broadcast: Boolean, noCapture: Boolean) {
+    private fun play(freq: Double, amp: Float, broadcast: Boolean, noCapture: Boolean, usage: Int, content: Int) {
         val rate = 48000
         val track = AudioTrack.Builder()
             .setAudioAttributes(
-                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                AudioAttributes.Builder().setUsage(usage)
+                    .setContentType(content)
                     .setAllowedCapturePolicy(if (noCapture) AudioAttributes.ALLOW_CAPTURE_BY_NONE else AudioAttributes.ALLOW_CAPTURE_BY_ALL)
                     .build(),
             )

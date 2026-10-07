@@ -121,7 +121,7 @@ object SessionLedger {
                 named
             } ?: run {
                 val uid = ref?.uid?.takeIf { it >= 0 } ?: uidByPid[pid] ?: -1
-                val usage = when (tracks.firstOrNull()?.usage) { 14 -> "USAGE_GAME"; 0 -> "USAGE_UNKNOWN"; else -> "USAGE_MEDIA" }
+                val usage = when (tracks.firstOrNull()?.usage) { 14 -> "USAGE_GAME"; 1 -> "USAGE_MEDIA"; else -> "USAGE_UNKNOWN" }
                 val pkg = ref?.packageName?.takeIf { it.isNotBlank() && it != "?" } ?: packageForUid(uid) ?: if (uid >= 0) "uid:$uid" else "pid:$pid"
                 PlaybackSession(d.sid, uid, usage, if (activeOnServer == true) "started" else "paused", 0, pkg, pid)
             }
@@ -199,6 +199,7 @@ enum class Health { OK, IDLE, DEGRADED, BLIND, NO_PERMISSION }
 /** One scan's complete outcome, rendered by the UI and the shareable diagnostic report. */
 data class DetectionStatus(
     val atMs: Long = 0L,
+    /** Audio-report capability: existing app DUMP or a validated shell helper. */
     val dumpPermission: Boolean = false,
     val serviceRunning: Boolean = false,
     val playersOk: Boolean = false,
@@ -230,9 +231,9 @@ data class DetectionStatus(
             if (!dumpPermission) {
                 return if (other != null && other > 0) Triple(Health.NO_PERMISSION,
                     "Android reports $other player(s) playing, but Svan cannot see which",
-                    "Enhanced detection permission is not granted. Complete Music detection below with Shizuku running, then keep your song playing. Capture and sound controls cannot fix a missing audio session.")
-                else Triple(Health.NO_PERMISSION, "Music detection setup is not finished",
-                    "Complete the one-time setup below to discover players that do not announce their audio session.")
+                    "Basic detection is active. Keep music playing; if no audio connection appears, restart the song or try the optional Music detection options below. Sound controls cannot fix a missing audio session.")
+                else Triple(Health.NO_PERMISSION, "Basic music detection is active",
+                    "Play a song. Players that announce their audio connection can work now. Enhanced detection below is optional.")
             }
             if (!playersOk && !serverOk) return Triple(Health.BLIND, "Android would not share the audio report",
                 "Both audio reports failed this scan. Svan retries automatically; if this stays, share the diagnostic report.")

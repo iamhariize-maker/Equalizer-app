@@ -72,6 +72,8 @@ class SystemEqService : Service() {
             .addAction(Notification.Action.Builder(null, "Svaramanas", smart).build())
             .addAction(Notification.Action.Builder(null, "Stop", stop).build()).build(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        DetectionSetup.init(this)
+        ShizukuAudioReports.connect(this)
         SvanRepository.init(this)
         if (app.svan.svaramanas.Svaramanas.bubble.value) app.svan.svaramanas.SvaramanasBubbleService.start(this)
         SessionRouter.init(this)
@@ -126,6 +128,7 @@ class SystemEqService : Service() {
                                     outcome.ledger.sessions.associateBy { it.session.sessionId }, st.verification,
                                 )
                             } else SessionRouter.repairKnownSessions()
+                            MixFallback.evaluate(this)
                         }
                     }
                 } catch (e: Exception) {
@@ -160,6 +163,7 @@ class SystemEqService : Service() {
         callback?.let { runCatching { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(it) } }
         runCatching { getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(deviceCallback) }
         executor.shutdownNow()
+        Thread { EqController.globalEq.setMixFallback(false) }.start()
         stopService(Intent(this, CaptureService::class.java))
         SessionRouter.shutdown()
         EqController.log("system service: stopped")

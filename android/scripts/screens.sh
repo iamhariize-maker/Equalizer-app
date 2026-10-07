@@ -13,14 +13,19 @@ for frame in 1 2 3 4 5; do
   $A exec-out screencap -p > "$OUT/system-splash-$frame.png"
   sleep 0.1
 done
+
 wait "$LAUNCH"
 sleep 3
 # Boot animation: cold start, capture mid-morph and at the full name.
 $A shell am force-stop app.svan; $A shell am start -n app.svan/.MainActivity >/dev/null
 sleep 1.0; $A exec-out screencap -p > "$OUT/boot-1.png"
 sleep 0.5; $A exec-out screencap -p > "$OUT/boot-2.png"
+for frame in 3 4 5 6 7 8; do
+  sleep 0.5
+  $A exec-out screencap -p > "$OUT/boot-$frame.png"
+done
 echo "saved boot frames"
-sleep 6
+sleep 3
 tap_text() { # taps the centre of the first node whose text equals $1
   $A shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
   local b; b=$($A shell cat /sdcard/ui.xml | grep -o "text=\"$1\"[^>]*bounds=\"[^\"]*\"" | head -1 | grep -o 'bounds="[^"]*"')
@@ -49,6 +54,8 @@ swipe_up; shot 0b-sound-tuners
 swipe_up; shot 0c-sound-tuners
 swipe_up; shot 0d-sound-tuners
 swipe_up; shot 0e-sound-tuners
+swipe_up; shot 0f-orchestral-details
+swipe_up; shot 0g-orchestral-guidance
 AFTER=$(state) || AFTER=""
 if [ -n "$BEFORE" ] && [ "$BEFORE" = "$AFTER" ]; then
   echo "PASS sound scroll preserves EQ settings" > "$OUT/interaction.txt"
@@ -119,3 +126,10 @@ for fixture in install debugging start authorize grant working error finish-on f
   $A shell am start -n app.svan/.MainActivity --es cmd onboarding_close >/dev/null
   sleep 1
 done
+
+# The existing CI results gate rejects any FAIL in interaction.txt. Preserve its
+# established check counts while making the new layout/JNI suite a required gate.
+if ! bash scripts/audio_quality_ui.sh "$S" "$OUT/audio-quality"; then
+  echo "FAIL audio-quality layout or JNI checks" >> "$OUT/interaction.txt"
+  exit 1
+fi

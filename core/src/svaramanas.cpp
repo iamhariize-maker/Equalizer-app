@@ -201,7 +201,45 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   // (boom, mud, harshness, overall tonal balance), within bounded limits that
   // are wider than the guided mode's because nothing it does is a matter of taste.
   const double strength = std::clamp(r.svaresaMode ? std::min(r.strength, 1.0) : r.strength, 0.0, 1.5);
-  const bool heard = features && features->valid;
+  bool heard = features && features->valid;
+  // Evidence gate (policy.h): every analyser-driven correction needs admitted evidence. A correction whose
+  // evidence is stale, from another epoch, low-confidence or non-finite is skipped with a recorded reason;
+  // if a protective rule (lossy ceiling, crushed master, mono) cannot be admitted, the whole plan falls back
+  // to the static one rather than boosting without its protections.
+  policy::Context gateCtx;
+  gateCtx.epoch = r.epoch;
+  gateCtx.nativePcm = true;   // features only exist when the native engine tapped the PCM
+  gateCtx.autoMaster = true;  // the planner is the adaptive layer; the caller does not call it when the listener switched it off
+  auto gate = [&](const char* id, std::initializer_list<std::pair<policy::Metric, double>> inputs) {
+    policy::Measurement m[3];
+    int n = 0;
+    for (const auto& in : inputs) {
+      m[n].id = in.first;
+      m[n].value = in.second;
+      m[n].valid = heard && std::isfinite(in.second);
+      m[n].confidence = r.featuresConfidence;
+      m[n].epoch = r.featuresEpoch;
+      m[n].ageSeconds = r.featuresAgeSeconds;
+      ++n;
+    }
+    const policy::Rule* rule = policy::find(id);
+    const policy::Decision d = rule ? policy::admit(*rule, m, n, gateCtx) : policy::Decision{false, policy::Skip::MissingInput};
+    p.gates.push_back({id, d.skip});
+    return d.admitted;
+  };
+  bool okBoom = false, okMud = false, okHarsh = false, okTilt = false, okLoud = false, okStereo = false;
+  if (heard) {
+    const bool protective = gate("SM-LOSSY-1", {{policy::Metric::BandwidthCutoffHz, features->cutoffHz}}) &
+                            gate("SM-CRUSH-1", {{policy::Metric::PlrDb, features->plrDb}, {policy::Metric::ClipsPerSecond, features->clipsPerSecond}}) &
+                            gate("SM-MONO-1", {{policy::Metric::MonoLike, features->monoLike ? 1.0 : 0.0}, {policy::Metric::SideToMidDb, features->sideToMidDb}});
+    okBoom = gate("SM-BOOM-1", {{policy::Metric::BoomDb, features->boomDb}});
+    okMud = gate("SM-MUD-1", {{policy::Metric::MudDb, features->mudDb}});
+    okHarsh = gate("SM-HARSH-1", {{policy::Metric::HarshDb, features->harshDb}});
+    okTilt = gate("SM-TILT-1", {{policy::Metric::TiltDbPerOct, features->tiltDbPerOct}});
+    okLoud = gate("SM-LOUD-1", {{policy::Metric::LoudnessLufs, features->loudnessLufs}});
+    okStereo = gate("SM-STEREO-1", {{policy::Metric::SideToMidDb, features->sideToMidDb}, {policy::Metric::Correlation, features->correlation}});
+    if (!protective) heard = false;
+  }
   if (!heard) addNote(p, kNoteListening);
 
   // ---- 2. the listener's request: feel + accepted categories -----------------
@@ -290,15 +328,15 @@ Plan plan(const Request& r, const SourceFeatures* features) {
     const double maxCorr = sv ? kSvaresaMaxCorrectionDb : kMaxCorrectionDb;
     const double slope = sv ? 1.1 : 0.6;
     auto excess = [&](double x, double thr) { return x > thr ? std::min(maxCorr, slope * (x - thr)) * cs : 0.0; };
-    const double boom = excess(features->boomDb, sv ? 2.0 : 3.0);
-    const double mud = excess(features->mudDb, sv ? 1.5 : 2.0);
-    const double harsh = excess(features->harshDb, sv ? 1.5 : 2.0);
+    const double boom = okBoom ? excess(features->boomDb, sv ? 2.0 : 3.0) : 0.0;
+    const double mud = okMud ? excess(features->mudDb, sv ? 1.5 : 2.0) : 0.0;
+    const double harsh = okHarsh ? excess(features->harshDb, sv ? 1.5 : 2.0) : 0.0;
     if (sv) {
-      svaresaSmooth = std::clamp((features->harshDb - 1.5) / 6.0, 0.0, 0.5) * cs;
+      svaresaSmooth = okHarsh ? std::clamp((features->harshDb - 1.5) / 6.0, 0.0, 0.5) * cs : 0.0;
       // Overall tonal balance: a thin/bright or dark/heavy mix moves toward a healthy tilt.
       const double dev = features->tiltDbPerOct - kSvaresaTiltTargetDbPerOct;
       const double beyond = std::fabs(dev) - kSvaresaTiltDeadbandDbPerOct;
-      if (beyond > 0 && features->tiltDbPerOct != 0.0) {
+      if (okTilt && beyond > 0 && features->tiltDbPerOct != 0.0) {
         const double move = std::min(kSvaresaMaxTiltDb, 0.55 * beyond) * cs;
         const bool fullBandForOpening = features->cutoffHz <= 0.0 || features->cutoffHz >= 15000.0;
         if (dev > 0) {  // too bright / thin: ease the top, restore body
@@ -369,7 +407,7 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   if (r.svaresaMode) p.stereo.smoothness = clampStereo(svaresaSmooth, 0.0);
 
   // ---- 1. loudness match: never win by being louder ------------------------------
-  p.predictedDeltaDb = predictedGuideLoudnessDeltaDb(p.bands, p.stereo, heard ? features : nullptr);
+  p.predictedDeltaDb = predictedGuideLoudnessDeltaDb(p.bands, p.stereo, heard && okLoud && okStereo ? features : nullptr);
   p.preampDb = std::clamp(-p.predictedDeltaDb, -18.0, 1.5);
   if (std::fabs(p.predictedDeltaDb) > 0.05) addNote(p, kNoteLoudnessMatched);
   return p;

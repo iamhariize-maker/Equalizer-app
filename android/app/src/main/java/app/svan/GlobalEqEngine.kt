@@ -28,20 +28,73 @@ class GlobalEqEngine(bandCount: Int = 128) {
 
     private val effects = ConcurrentHashMap<Int, DynamicsProcessing>()
     private val lastSent = ConcurrentHashMap<DynamicsProcessing, FloatArray>()
+    private data class DynamicsState(val character: Double, val crossover: Double, val smoothness: Double, val levelling: Double?)
+    private val lastDynamics = ConcurrentHashMap<DynamicsProcessing, DynamicsState>()
+    private val lastProtection = ConcurrentHashMap<DynamicsProcessing, Boolean>()
     @Volatile private var centersHz: DoubleArray = logSpaced(bandCount, 20.0, 20000.0)
     @Volatile private var gainsDb: DoubleArray = DoubleArray(bandCount)
     @Volatile private var protection = true
-    @Volatile private var eqEnabled = true
     @Volatile private var inputGainDb: Float = 0f
     @Volatile private var bassCharacter: Double = 0.0
     @Volatile private var bassCrossoverHz: Double = 120.0
     @Volatile private var deharsh: Double = 0.0
     /** Svaresa's gentle level-evening, 0..1; null = not requested (no MBC just for it). */
     @Volatile private var levelling: Double? = null
-    /** MBC only exists in effects created while a bass feel was set (config is fixed at creation). */
-    @Volatile private var mbcInUse = false
+    // Keep a neutral MBC allocated: toggling a tuner must never destroy a live effect.
 
     val attachedSessions: Set<Int> get() = effects.keys
+
+    /** Whole-output-mix effect (session 0) used only by [MixFallback]; null when off. */
+    @Volatile private var mix: DynamicsProcessing? = null
+    @Volatile private var mixRefusedAtMs = 0L
+    val mixFallbackOn: Boolean get() = mix != null
+
+    /**
+     * Applies the same curve to the output mix while a playing app hides its session. The output-mix
+     * chain receives only master volume (unity on phones), so the per-session stream-volume handling
+     * in [attach] does not apply. A refusal (some OEMs block session 0) is retried after a minute.
+     */
+    private fun fadeMix(dp: DynamicsProcessing, from: Double, to: Double) {
+        for (step in 1..MIX_FADE_STEPS) {
+            applyTo(dp, from + (to - from) * step / MIX_FADE_STEPS)
+            if (step < MIX_FADE_STEPS) SystemClock.sleep(MIX_FADE_STEP_MS)
+        }
+    }
+
+    @Synchronized
+    fun setMixFallback(on: Boolean): Boolean {
+        val current = mix
+        if (on && current != null && runCatching { current.hasControl() && current.enabled }.getOrDefault(false)) return true
+        if (current != null) {
+            mix = null
+            runCatching { fadeMix(current, 1.0, 0.0) } // reach flat before bypassing: no tonal jump or click
+            lastSent.remove(current); lastDynamics.remove(current); lastProtection.remove(current)
+            runCatching { current.enabled = false }
+            runCatching { current.release() }
+            if (!on) EqController.log("whole-mix fallback: off")
+        }
+        if (!on || SystemClock.elapsedRealtime() - mixRefusedAtMs < MIX_RETRY_MS && mixRefusedAtMs != 0L) return false
+        // A player attached moments ago may not be in the router's snapshot yet: never stack on it.
+        val now = SystemClock.elapsedRealtime()
+        if (attachedAt.values.any { now - it < HANDOVER_GUARD_MS }) return false
+        var candidate: DynamicsProcessing? = null
+        return try {
+            val dp = DynamicsProcessing(PRIORITY, 0, buildConfig())
+            candidate = dp
+            dp.enabled = true // flat: the curve fades in below rather than jumping
+            fadeMix(dp, 0.0, 1.0)
+            check(dp.hasControl() && dp.enabled) { "Android did not enable the output-mix effect" }
+            mix = dp
+            mixRefusedAtMs = 0L
+            EqController.log("whole-mix fallback: on (an unannounced player is playing)")
+            true
+        } catch (e: RuntimeException) {
+            candidate?.let { lastSent.remove(it); lastDynamics.remove(it); lastProtection.remove(it); runCatching { it.release() } }
+            mixRefusedAtMs = SystemClock.elapsedRealtime()
+            EqController.log("whole-mix fallback: unavailable on this phone ($e)")
+            false
+        }
+    }
     /** elapsedRealtime when each session's current effect started being created (for audio-server verification). */
     private val attachedAt = ConcurrentHashMap<Int, Long>()
     fun attachedAtMs(sessionId: Int): Long? = attachedAt[sessionId]
@@ -58,20 +111,44 @@ class GlobalEqEngine(bandCount: Int = 128) {
         // An output reconnect can invalidate an effect while its old session
         // remains in our map. Re-create it instead of reporting false success.
         detach(sessionId)
+        // A routed player must never be equalised twice: fade out and release the whole-mix
+        // fallback before this session's own effect exists. MixFallback re-evaluates after scans.
+        if (mix != null) setMixFallback(false)
         var candidate: DynamicsProcessing? = null
         val startedMs = SystemClock.elapsedRealtime()
         return try {
-            val dp = DynamicsProcessing(PRIORITY, sessionId, buildConfig())
+            // Right after a player or our own process restarts, the audio server
+            // can briefly refuse a new effect (NO_INIT) while it tears down the old one.
+            val dp = runCatching { DynamicsProcessing(PRIORITY, sessionId, buildConfig()) }.getOrElse {
+                SystemClock.sleep(RETRY_CREATE_MS)
+                DynamicsProcessing(PRIORITY, sessionId, buildConfig())
+            }
             candidate = dp
-            applyTo(dp)
+            // DynamicsProcessing applies the stream volume itself (the mixer then
+            // plays at unity), and configuring its architecture resets that gain
+            // to 0 dB. AudioFlinger resends the volume only when the volume or the
+            // controlling effect changes, or the effect really restarts.
+            // An effect created before its player started is pinned to the session
+            // and outlives our process; after a restart our new handle joins that
+            // still-active orphan. Its client starts "enabled" while the server
+            // handle does not, so a plain off/on is a no-op on the server. Take
+            // ownership (off, on), then stop for longer than AudioFlinger's disable
+            // wait and start again, while the curve is still flat. Measured in CI
+            // before this: +32.5 dB (API 34) / +36.6 dB (API 33) after a restart.
+            dp.enabled = false
             dp.enabled = true
+            SystemClock.sleep(VOLUME_REARM_MS)
+            dp.enabled = false
+            SystemClock.sleep(VOLUME_REARM_MS)
+            dp.enabled = true
+            applyTo(dp)
             check(dp.hasControl() && dp.enabled) { "Android did not enable the session effect" }
             effects[sessionId] = dp
             attachedAt[sessionId] = startedMs
             Log.i(TAG, "attached to session $sessionId ($bandCount bands)")
             true
         } catch (e: RuntimeException) {
-            candidate?.let { lastSent.remove(it); runCatching { it.release() } }
+            candidate?.let { lastSent.remove(it); lastDynamics.remove(it); lastProtection.remove(it); runCatching { it.release() } }
             // UnsupportedOperationException / IllegalStateException on some OEM builds.
             Log.w(TAG, "attach failed for session $sessionId", e)
             EqController.log("system effects: attach failed for session $sessionId: $e")
@@ -98,13 +175,15 @@ class GlobalEqEngine(bandCount: Int = 128) {
         attachedAt.remove(sessionId)
         effects.remove(sessionId)?.let {
             lastSent.remove(it)
+            lastDynamics.remove(it)
+            lastProtection.remove(it)
             runCatching { it.enabled = false }
             runCatching { it.release() }
         }
     }
 
     @Synchronized
-    fun releaseAll() = effects.keys.toList().forEach(::detach)
+    fun releaseAll() { setMixFallback(false); effects.keys.toList().forEach(::detach) }
 
     /** Changes the band count; attached sessions are re-created with the new layout. */
     @Synchronized
@@ -117,13 +196,13 @@ class GlobalEqEngine(bandCount: Int = 128) {
         centersHz = logSpaced(bands, 20.0, 20000.0)
         gainsDb = DoubleArray(bands)
         sessions.forEach { attach(it) }
+        if (mix != null) { setMixFallback(false); setMixFallback(true) }
     }
 
     /** Samples [engine]'s parametric curve into the band gains and pushes it to every session. */
     @Synchronized
-    fun applyCurveFrom(engine: NativeEngine, gainProtection: Boolean = true, enabled: Boolean = true) {
+    fun applyCurveFrom(engine: NativeEngine, gainProtection: Boolean = true) {
         protection = gainProtection
-        eqEnabled = enabled
         val response = engine.responseDb(centersHz)
         if (response.size != bandCount) return // raced with reconfigure(); the next update fixes it
         // The native response already contains preamp and chosen headroom.
@@ -134,6 +213,12 @@ class GlobalEqEngine(bandCount: Int = 128) {
     }
 
     private fun forEachEffect(apply: (DynamicsProcessing) -> Unit) {
+        mix?.let { dp ->
+            try { apply(dp) } catch (e: RuntimeException) {
+                EqController.log("whole-mix fallback: update failed: $e")
+                setMixFallback(false)
+            }
+        }
         effects.entries.toList().forEach { (sid, dp) ->
             try { apply(dp) } catch (e: RuntimeException) {
                 // Players can close a session while binder updates are in flight.
@@ -149,7 +234,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
             CHANNELS,
             true, bandCount,   // pre-EQ: our curve
-            mbcInUse, if (mbcInUse) 4 else 0, // MBC: bass feel + vocal smoothness (see setDynamics)
+            true, 4, // MBC: bass feel + vocal smoothness (see setDynamics)
             false, 0,          // post-EQ
             true,              // limiter
         ).setPreferredFrameDuration(frameDurationMs.toFloat()).build()
@@ -164,25 +249,19 @@ class GlobalEqEngine(bandCount: Int = 128) {
      */
     @Synchronized
     fun setDynamics(character: Double, crossoverHz: Double, smoothness: Double, levellingAmount: Double? = null) {
-        // Svaresa asks for the compressor up front (even at 0) so night starting never re-creates effects mid-song.
-        val needMbc = character != 0.0 || smoothness > 0.0 || levellingAmount != null
+        val next = DynamicsState(character, crossoverHz, smoothness, levellingAmount)
+        val previous = DynamicsState(bassCharacter, bassCrossoverHz, deharsh, levelling)
+        if (next == previous) return
         bassCharacter = character
         bassCrossoverHz = crossoverHz
         deharsh = smoothness
         levelling = levellingAmount
-        if (needMbc != mbcInUse) {
-            mbcInUse = needMbc
-            EqController.log("system effects: dynamics ${if (needMbc) "on" else "off"} (${effects.size} session(s) re-created)")
-            val sessions = effects.keys.toList()
-            sessions.forEach(::detach)
-            sessions.forEach { attach(it) }
-        } else {
-            forEachEffect(::applyMbc)
-        }
+        forEachEffect(::applyMbc)
     }
 
     private fun applyMbc(dp: DynamicsProcessing) {
-        if (!mbcInUse) return
+        val state = DynamicsState(bassCharacter, bassCrossoverHz, deharsh, levelling)
+        if (lastDynamics[dp] == state) return
         val c = bassCharacter.toFloat()
         val xo = bassCrossoverHz.toFloat().coerceAtMost(2000f)
         val bass = when {
@@ -204,6 +283,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
         dp.setMbcBandAllChannelsTo(1, evened(neutral(2500f), true, 2500f))
         dp.setMbcBandAllChannelsTo(2, evened(harsh, d <= 0f, 6000f))
         dp.setMbcBandAllChannelsTo(3, evened(neutral(20000f), true, 20000f))
+        lastDynamics[dp] = state
     }
 
     private fun neutral(cutoff: Float) = DynamicsProcessing.MbcBand(true, cutoff, 1f, 60f, 1f, 0f, 0f, -90f, 1f, 0f, 0f)
@@ -213,11 +293,15 @@ class GlobalEqEngine(bandCount: Int = 128) {
      * band, ~250 ms for all 128). Only push bands whose gain actually changed,
      * so dragging one control costs a handful of calls, not the whole curve.
      */
-    private fun applyTo(dp: DynamicsProcessing) {
+    /** [scale] morphs the curve from flat (0) to full (1) in dB, for click-free fades. */
+    private fun applyTo(dp: DynamicsProcessing, scale: Double = 1.0) {
         val centers = centersHz
-        val gains = gainsDb
+        val gains = if (scale == 1.0) gainsDb else DoubleArray(gainsDb.size) { gainsDb[it] * scale }
         val sent = lastSent.getOrPut(dp) { FloatArray(centers.size) { Float.NaN } }
-        for (i in centers.indices) {
+        // Apply attenuation first, so a partial binder update cannot stack old boosts
+        // with new boosts before their compensating cuts have reached the session.
+        val order = centers.indices.sortedBy { if (sent[it].isNaN() || gains[it] < sent[it]) 0 else 1 }
+        for (i in order) {
             val g = gains[i].toFloat()
             if (abs(g - sent[i]) < 0.01f) continue
             // Upper edge = geometric midpoint to the next centre.
@@ -225,11 +309,11 @@ class GlobalEqEngine(bandCount: Int = 128) {
             dp.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, cutoff.toFloat(), g))
             sent[i] = g
         }
-        dp.setInputGainAllChannelsTo(inputGainDb)
+        if (lastProtection[dp] == null) dp.setInputGainAllChannelsTo(inputGainDb)
         applyMbc(dp)
-        dp.setLimiterAllChannelsTo(
+        if (lastProtection[dp] != protection) dp.setLimiterAllChannelsTo(
             DynamicsProcessing.Limiter(
-                true, protection && eqEnabled, 0,
+                true, protection, 0,
                 1f,    // attack ms
                 60f,   // release ms
                 10f,   // ratio
@@ -237,6 +321,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
                 0f,    // post gain
             ),
         )
+        lastProtection[dp] = protection
     }
 
     companion object {
@@ -244,6 +329,14 @@ class GlobalEqEngine(bandCount: Int = 128) {
         private const val CHANNELS = 2
         /** Above the default 0 so a stock/OEM equalizer doesn't override us. */
         private const val PRIORITY = Int.MAX_VALUE
+        /** Longer than AudioFlinger's disable wait (about 50 ms plus a mix period on slow outputs). */
+        private const val VOLUME_REARM_MS = 150L
+        private const val RETRY_CREATE_MS = 250L
+        private const val MIX_RETRY_MS = 60_000L
+        private const val HANDOVER_GUARD_MS = 10_000L
+        /** About 0.3 s from flat to full curve; each step changes bands by a small fraction of their gain. */
+        private const val MIX_FADE_STEPS = 12
+        private const val MIX_FADE_STEP_MS = 25L
 
         fun logSpaced(n: Int, lo: Double, hi: Double): DoubleArray =
             DoubleArray(n) { exp(ln(lo) + (ln(hi) - ln(lo)) * it / max(1, n - 1)) }

@@ -13,6 +13,8 @@ jobs:
           cmake -S core -B build/core
           cmake --build build/core -j
           ./build/core/eqcore_tests
+      - name: Policy rule matrix is generated from the registry
+        run: ./build/core/eqcore_policy_doc | diff -u docs/audio-quality/POLICY_RULES.md -
       - name: Test with ASan + UBSan
         run: |
           cmake -S core -B build/asan -DEQCORE_SANITIZE=address,undefined -DCMAKE_BUILD_TYPE=Debug
@@ -35,9 +37,9 @@ jobs:
       - name: Assemble debug APK, lint, unit tests
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug testDebugUnitTest
-      - name: Test screenshot assertions
+      - name: Test screenshot and control assertions
         working-directory: android
-        run: python3 -m unittest discover -s scripts -p test_setup_screen_assertions.py
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Prepare phone preview
         run: |
           mkdir -p android/build-kit
@@ -157,7 +159,7 @@ jobs:
           # No -noaudio: the test needs the emulator's audio HAL.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
-          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/quality_lab.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/quality" || exit 1 ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/precision_controls.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/precision" || exit 1 ; bash scripts/e2e.sh emulator-5554 ; bash scripts/eq_workspace.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/workspace" ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" ; bash scripts/production_release.sh emulator-5554 "$GITHUB_WORKSPACE/tested-production/Svan-production-test.apk" "$GITHUB_WORKSPACE/e2e-out/production" || exit 1
+          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/quality_lab.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/quality" || exit 1 ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/precision_controls.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/precision" || exit 1 ; bash scripts/e2e.sh emulator-5554 ; bash scripts/source_filter.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/source-filter" || exit 1 ; bash scripts/eq_workspace.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/workspace" ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" ; bash scripts/production_release.sh emulator-5554 "$GITHUB_WORKSPACE/tested-production/Svan-production-test.apk" "$GITHUB_WORKSPACE/e2e-out/production" || exit 1
       - name: Results
         if: always()
         run: |
@@ -174,6 +176,12 @@ jobs:
           cat e2e-out/precision/results.txt
           if grep -q '^FAIL' e2e-out/precision/results.txt; then exit 1; fi
           test "$(grep -c '^PASS' e2e-out/precision/results.txt)" -eq 8
+          cat e2e-out/source-filter/results.txt
+          test "$(grep -c '^PASS' e2e-out/source-filter/results.txt)" -eq 3
+          ! grep -q '^FAIL' e2e-out/source-filter/results.txt
+          cat e2e-out/quality/continuity/results.txt
+          test "$(grep -c '^PASS' e2e-out/quality/continuity/results.txt)" -eq 4
+          ! grep -q '^FAIL' e2e-out/quality/continuity/results.txt
           cat e2e-out/quality/results.txt
           if grep -q '^FAIL' e2e-out/quality/results.txt; then exit 1; fi
           test "$(grep -c '^PASS' e2e-out/quality/results.txt)" -eq 4
@@ -182,10 +190,13 @@ jobs:
           ! grep -q '^FAIL' e2e-out/production/results.txt
           cat e2e-out/detection/detection.txt
           if grep -q '^FAIL' e2e-out/detection/detection.txt; then echo 'release detection results contain a failure'; exit 1; fi
-          test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 10
+          test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 13
           cat e2e-out/onboarding/results.txt
           test "$(grep -c '^PASS' e2e-out/onboarding/results.txt)" -eq 8
           ! grep -q '^FAIL' e2e-out/onboarding/results.txt
+          cat e2e-out/onboarding/fallbacks/results.txt
+          test "$(grep -c '^PASS' e2e-out/onboarding/fallbacks/results.txt)" -eq 3
+          ! grep -q '^FAIL' e2e-out/onboarding/fallbacks/results.txt
           cat e2e-out/detection/onboarding.txt
           test "$(grep -c '^PASS' e2e-out/detection/onboarding.txt)" -eq 6
           ! grep -q '^FAIL' e2e-out/detection/onboarding.txt
