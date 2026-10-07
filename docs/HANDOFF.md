@@ -1,5 +1,10 @@
 ## Public beta released — 2026-10-07, 0.5.6
 
+> **Audio-quality follow-up (7 Oct 2026):** see `docs/audio-quality/STATUS.md` for what is implemented
+> (stereo phase fix, side-energy budget, Bass Resolve) versus still gated (streaming WOLA, unmasking,
+> rule registry, rate negotiation, device validation).
+
+
 [v0.5.6-beta.1](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.6-beta.1)
 is published with the original owner signer, package `app.svan`, version 0.5.6/code 13.
 The exact green production fixture from `64b5ae0` was privately re-signed; all 73 payload

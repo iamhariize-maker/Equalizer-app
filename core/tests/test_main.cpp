@@ -1172,6 +1172,18 @@ TEST(side_controls_are_continuous_at_tiny_amounts) {
   }
 }
 
+TEST(spatial_detail_holds_when_the_mix_is_already_wide) {
+  const double fs = 48000;
+  StereoTunerParams p;
+  p.backingVocals = 1;
+  p.spatialDetail = 1;
+  // Hard-panned and pure-side material has side power >= half the mid: no automatic lift is added.
+  for (double hz : {500.0, 1300.0, 2000.0, 8000.0}) {
+    CHECK_NEAR(toDb(sineAmplitude(runTuner(p, ms(fs, 2, [&](double t) { return .1 * std::sin(2 * kPi * hz * t); },
+                                                  [&](double t) { return .1 * std::sin(2 * kPi * hz * t); }), fs).l, hz, fs, 48000, 96000) / .2), 0.0, 0.3);
+  }
+}
+
 TEST(side_controls_leave_the_mid_signal_untouched) {
   const double fs = 48000;
   const auto in = ms(fs, 0.5, [](double t) { return 0.3 * std::sin(2 * kPi * 180 * t) + 0.1 * std::sin(2 * kPi * 3000 * t); },
@@ -1346,13 +1358,13 @@ TEST(backing_vocals_lift_masked_layers_and_leave_prominent_layers) {
   auto masked = ms(fs, 2, [](double t) { return .3 * std::sin(2 * kPi * 1000 * t); },
                    [](double t) { return .03 * std::sin(2 * kPi * 1300 * t); });
   const double maskedLift = toneDb(sideOf(runTuner(p, masked, fs)), 1300, fs, 1, 2) - toDb(.03);
-  CHECK(maskedLift - staticDb > 3.0);  // dynamic de-masking on top of the static bell
-  CHECK(maskedLift < staticDb + 4.3);  // bounded at 4 dB
-  // Layers already as loud as the lead: only the static bell.
+  CHECK(maskedLift - staticDb > 1.5);  // dynamic de-masking on top of the static bell...
+  CHECK(maskedLift < 4.3);             // ...but the shared side-energy budget caps the total lift at 4 dB
+  // Layers already as loud as the lead (side power >= half the mid): nothing is added.
   auto prominent = ms(fs, 2, [](double t) { return .1 * std::sin(2 * kPi * 1000 * t); },
                       [](double t) { return .1 * std::sin(2 * kPi * 1300 * t); });
   const double prominentLift = toneDb(sideOf(runTuner(p, prominent, fs)), 1300, fs, 1, 2) - toDb(.1);
-  CHECK_NEAR(prominentLift, staticDb, .3);
+  CHECK_NEAR(prominentLift, 0.0, .3);
   // The lead itself and the mono sum are untouched.
   auto out = runTuner(p, masked, fs);
   bool monoSum = true;
@@ -1370,11 +1382,13 @@ TEST(binaural_motion_exaggerates_channel_bounces_but_not_static_images) {
     const double pan = phase < .5 ? 1 : -1;      // +1 left, -1 right
     return pan;
   };
+  // Partial pans (side power 16 % of mid, inside the budget): the image bounces between +-0.4 of the way
+  // to hard left/right, versus a fixed +0.4 placement.
   Stereo moving, still;
   for (int i = 0; i < static_cast<int>(fs * 3); ++i) {
     const double t = i / fs, x = .2 * std::sin(2 * kPi * 2000 * t), pan = bounce(t);
-    moving.l.push_back(pan > 0 ? x : 0); moving.r.push_back(pan > 0 ? 0 : x);
-    still.l.push_back(x); still.r.push_back(0);
+    moving.l.push_back(x * (1 + .4 * pan)); moving.r.push_back(x * (1 - .4 * pan));
+    still.l.push_back(x * 1.4); still.r.push_back(x * .6);
   }
   auto sideRms = [](const std::vector<double>& s, size_t from) {
     double e = 0; for (size_t i = from; i < s.size(); ++i) e += s[i] * s[i]; return std::sqrt(e / (s.size() - from)); };
@@ -1382,9 +1396,9 @@ TEST(binaural_motion_exaggerates_channel_bounces_but_not_static_images) {
   const double staticDb = 10 * std::log10(stereoResponsePower(p, 2000, fs)[1]);
   const double movingDb = toDb(sideRms(sideOf(runTuner(p, moving, fs)), from) / sideRms(sideOf(moving), from));
   const double stillDb = toDb(sideRms(sideOf(runTuner(p, still, fs)), from) / sideRms(sideOf(still), from));
-  CHECK_NEAR(stillDb, staticDb, .3);       // a fixed hard-left image stays where it was
-  CHECK(movingDb - staticDb > 2.0);        // the artist's bounce becomes more dramatic
-  CHECK(movingDb - staticDb < 5.2);        // bounded (+0.8 side gain at most)
+  CHECK_NEAR(stillDb, staticDb, .3);       // a fixed placement stays where it was
+  CHECK(movingDb - stillDb > 1.0);         // the artist's bounce becomes more dramatic
+  CHECK(movingDb < 4.3);                   // bounded by the shared 4 dB side budget
   auto out = runTuner(p, moving, fs);
   bool monoSum = true, finite = true;
   for (size_t i = 0; i < out.l.size(); ++i) {

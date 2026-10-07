@@ -94,6 +94,8 @@ class StereoTuner {
     double cross_[kBands] = {}, power_[kBands] = {}, panSlow_[kBands] = {}, motionGain_[kBands] = {1, 1, 1};
     bool heard_[kBands] = {};
     double aPan_, aSlow_, aMotionUp_, aMotionDown_;
+    double budgetMm_ = 0, budgetSs_ = 0, budgetSd_ = 0, budgetDd_ = 0, budgetScale_ = 1, aBudget_ = 0, aBudgetUp_ = 0;
+    double budgetedSpatialDelta(double side, double mid, double delta);
     double backingLift(double highSide, double mid);
     double motion(double highSide, double mid);
     void redesign(const StereoTunerParams& p, double fs);

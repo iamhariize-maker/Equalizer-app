@@ -67,6 +67,7 @@ void StereoTuner::State::redesign(const StereoTunerParams& p, double fs_) {
   set(splitSide_[0], FilterType::LowPass, 1000.0, 0.0, .7071067811865476);
   set(splitSide_[1], FilterType::LowPass, 4000.0, 0.0, .7071067811865476);
   splitMid_[0].c=splitSide_[0].c;splitMid_[1].c=splitSide_[1].c;
+  aBudget_=coeff(150,fs_);aBudgetUp_=coeff(100,fs_);
   aPan_=coeff(15,fs_);aSlow_=coeff(600,fs_);aMotionUp_=coeff(10,fs_);aMotionDown_=coeff(300,fs_);
   spaceGain_ = std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0);
 }
@@ -80,6 +81,8 @@ void StereoTuner::State::reset() {
   for (int b = 0; b < kBands; ++b) { cross_[b] = power_[b] = panSlow_[b] = 0; motionGain_[b] = 1; heard_[b] = false; }
   envBand_ = envFull_ = 1e-9;
   deharshGain_ = 1.0;
+  budgetMm_ = budgetSs_ = budgetSd_ = budgetDd_ = 0;
+  budgetScale_ = 1;
 }
 
 double StereoTuner::State::process(double& left, double& right) {
@@ -117,15 +120,45 @@ double StereoTuner::State::process(double& left, double& right) {
     // bass between channels); only the *difference* between the shaped and plain high
     // band is added, so every control is continuous at zero and cannot move an image.
     const double plain = sideHp_[1].run(sideHp_[0].run(s));
-    double high = detailShelf_.run(backingBell_.run(airShelf_.run(presenceBell_.run(bodyBell_.run(plain)))));
-    if (p_.spatialDetail > 0) high = shuffleBell_.run(high);
-    if (p_.backingVocals > 0) high = backingLift(high, m);
-    if (p_.spatialDetail > 0) high = motion(high, m);
-    s += spaceGain_ * high - plain;
+    const double instr = bodyBell_.run(plain);
+    const double hi1 = airShelf_.run(presenceBell_.run(instr));
+    s += spaceGain_ * hi1 - plain;  // Space and Instruments: explicit widening, honoured as asked
+    if (p_.backingVocals > 0 || p_.spatialDetail > 0) {
+      double high = detailShelf_.run(backingBell_.run(hi1));
+      if (p_.spatialDetail > 0) high = shuffleBell_.run(high);
+      if (p_.backingVocals > 0) high = backingLift(high, m);
+      if (p_.spatialDetail > 0) high = motion(high, m);
+      s += budgetedSpatialDelta(s, m, spaceGain_ * (high - hi1));
+    }
   }
   left = m + s;
   right = m - s;
   return minGain;
+}
+
+// Side-energy budget for the automatic spatial detail (Backing vocals + Binaural). With P the
+// smoothed (150 ms) powers of mid (Pmm) and of the side before this delta (Pss), q = E[s d] and
+// Pdd = E[d^2], the output side power is Pss + 2 a q + a^2 Pdd. The delta may not take it past
+// min(0.5 Pmm, Pss * 10^(4/10)): the side stays under half the mid power and gains at most 4 dB.
+// A side already at the limit gets no further lift; a delta that narrows is never limited.
+// The scale falls at once and recovers over 100 ms so the budget is never overspent.
+double StereoTuner::State::budgetedSpatialDelta(double s, double m, double d) {
+  budgetMm_ = aBudget_ * budgetMm_ + (1 - aBudget_) * m * m;
+  budgetSs_ = aBudget_ * budgetSs_ + (1 - aBudget_) * s * s;
+  budgetSd_ = aBudget_ * budgetSd_ + (1 - aBudget_) * s * d;
+  budgetDd_ = aBudget_ * budgetDd_ + (1 - aBudget_) * d * d;
+  double a = 1.0;
+  const double pss = budgetSs_, q = budgetSd_, pdd = budgetDd_;
+  if (budgetMm_ > 1e-8 && pdd > 1e-18) {  // a mid above about -80 dBFS and a real delta to judge
+    const double limit = std::max(std::min(0.5 * budgetMm_, pss * 2.5118864315095801), pss);
+    if (pss + 2 * q + pdd > limit) {
+      const double slack = limit - pss;  // >= 0
+      const double disc = std::sqrt(q * q + pdd * slack);
+      a = std::clamp(q >= 0 ? slack / (disc + q + 1e-300) : (disc - q) / pdd, 0.0, 1.0);
+    }
+  }
+  budgetScale_ = a < budgetScale_ ? a : aBudgetUp_ * budgetScale_ + (1 - aBudgetUp_) * a;
+  return budgetScale_ * d;
 }
 
 // Backing vocals are commonly doubled/harmony layers spread off-centre, where
