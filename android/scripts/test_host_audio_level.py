@@ -1,6 +1,7 @@
 import array
 import importlib.util
 import math
+import struct
 from pathlib import Path
 import tempfile
 import unittest
@@ -44,6 +45,29 @@ class HostAudioLevelTest(unittest.TestCase):
             f.flush()
             with self.assertRaises(ValueError):
                 self.meter.level_db(Path(f.name))
+
+    def test_live_emulator_wav_uses_only_new_frames_without_final_chunk_sizes(self):
+        header = struct.pack('<4sI4s4sIHHIIHH4sI', b'RIFF', 0, b'WAVE', b'fmt ', 16,
+                             1, 2, 48000, 192000, 4, 16, b'data', 0)
+        pcm = array.array('h', [3276, -3276] * (48000 * 2))
+        with tempfile.NamedTemporaryFile() as f:
+            f.write(header)
+            array.array('h', [0, 0] * 48000).tofile(f)
+            pcm.tofile(f)
+            f.flush()
+            values = self.meter.read_new_wav_frames(Path(f.name), 48000)
+        self.assertEqual(len(values), 48000 * 2 * 2)
+        self.assertEqual(values[0], 3276 / 32768)
+        self.assertEqual(values[1], -3276 / 32768)
+
+    def test_live_emulator_wav_rejects_an_unexpected_format(self):
+        header = struct.pack('<4sI4s4sIHHIIHH4sI', b'RIFF', 0, b'WAVE', b'fmt ', 16,
+                             1, 2, 44100, 176400, 4, 16, b'data', 0)
+        with tempfile.NamedTemporaryFile() as f:
+            f.write(header)
+            f.flush()
+            with self.assertRaises(ValueError):
+                self.meter.read_new_wav_frames(Path(f.name), 0)
 
 
 if __name__ == "__main__":

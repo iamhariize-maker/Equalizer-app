@@ -67,18 +67,19 @@ headroom/protection and user settings apply to either system-effect path.
 Seven new JVM tests cover history retention/expiry, generations, unrelated closes, ID/UID reuse,
 announcement validation and exclusive capture policy. Combined local total: 211 JVM tests pass,
 including 17 recorder tests, two multi-rate export tests and explicit Apple/Amazon media-policy
-checks. All 151 native tests and 11 Python UI/control assertions pass. Four additional host-meter
-tests verify known stereo RMS, a 6 dB change, channel inversion and rejected silent/short captures. Full assembly/lint passes;
+checks. All 151 native tests and 11 Python UI/control assertions pass. Six additional host-meter
+tests verify known stereo RMS, a 6 dB change, channel inversion, live WAV frame conversion and
+rejected silent/short/unexpected-format captures. Full assembly/lint passes;
 the final rerun and CI evidence are recorded in HANDOFF.md.
 `basic_detection.sh` adds 12 independent CI checks with DUMP revoked. It exercises explicitly
 addressed and general announcements, pause/resume, lost-effect repair, four session replacements,
 missing announcements, the EQ-panel contract and a wrong-package CLOSE. It measures a known
-1 kHz EQ cut downstream using a CI-only PulseAudio monitor of the emulator's actual host output, including on a source
+1 kHz EQ cut downstream using the emulator's built-in host WAV output driver, including on a source
 that never announces a session, and checks no stacked effects, capture blocking, restoration
 and the output-change handler. Test instrumentation reads source IDs only to exercise the public
 panel contract; Svan does not receive them in the unannounced/shared-output cases. Android's
 session-0 Visualizer precedes global insert effects and cannot verify their response; the host
-monitor measures after them. Silent, short or unavailable host captures fail. It is still an
+WAV driver measures after them. Silent, short or unavailable host captures fail. It is still an
 emulated digital output, not physical-phone or acoustic evidence. Separate detection-only CI
 jobs provide early feedback; the complete e2e jobs require the same twelve checks as well.
 

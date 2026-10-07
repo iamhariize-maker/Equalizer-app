@@ -146,16 +146,19 @@ jobs:
           mkdir -p e2e-out
           curl -fL --retry 3 https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk -o shizuku.apk
           echo '6e273ab0e991c4e79bc8b1bbb9b9dd739ccac1a8712a541a214078886b7b790f  shizuku.apk' | sha256sum -c -
-      - name: Verify and prepare emulator host audio measurement
+      - name: Verify emulator host audio measurement
         run: |
           python3 -m unittest discover -s android/scripts -p test_host_audio_level.py
-          bash android/scripts/prepare_host_audio.sh
       - name: Run e2e on emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
           SHIZUKU_APK: ${{ github.workspace }}/shizuku.apk
           SVAN_ONBOARDING_OUT: ${{ github.workspace }}/e2e-out/onboarding
-          QEMU_AUDIO_DRV: pa
+          QEMU_AUDIO_DRV: wav
+          QEMU_WAV_PATH: /tmp/svan-emulator-output.wav
+          QEMU_WAV_FREQUENCY: '48000'
+          QEMU_WAV_DAC_FIXED_CHANNELS: '2'
+          QEMU_WAV_FORMAT: s16
         with:
           api-level: ${{ matrix.api }}
           target: default
@@ -246,15 +249,18 @@ jobs:
         with:
           name: app-debug
           path: tested-debug
-      - name: Verify and prepare emulator host audio measurement
+      - name: Verify emulator host audio measurement
         run: |
           python3 -m unittest discover -s android/scripts -p test_host_audio_level.py
-          bash android/scripts/prepare_host_audio.sh
           mkdir -p basic-out
       - name: Exercise DUMP-free connections and measure processed host output
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          QEMU_AUDIO_DRV: pa
+          QEMU_AUDIO_DRV: wav
+          QEMU_WAV_PATH: /tmp/svan-emulator-output.wav
+          QEMU_WAV_FREQUENCY: '48000'
+          QEMU_WAV_DAC_FIXED_CHANNELS: '2'
+          QEMU_WAV_FORMAT: s16
         with:
           api-level: ${{ matrix.api }}
           target: default
