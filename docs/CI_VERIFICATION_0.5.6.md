@@ -69,6 +69,14 @@ signing; passwords were read only in memory and passed via child-process environ
 No replacement key or signing credentials were committed, uploaded or placed in CI.
 Publication and hosted-release verification are the next gates.
 
+The workspace's release-asset upload endpoint rejected both CLI and API uploads with
+HTTP 401 while ordinary repository API access worked. The draft remains unpublished.
+The staging workflow transfers only the already-signed public APK through a Git blob,
+waits for both complete CI runs on its own commit, checks all 73 payload entries against
+that fresh run's production fixture, and attaches the verified APK/checksum to the draft.
+No private signing material enters this workflow. Publication still requires the fresh
+CI and staging jobs to pass, followed by the published-release verifier.
+
 Owner phone evidence remains positive and separate: current-preview Spotify/playback and
 BHIM/GPay after Shizuku removal, with Developer options still enabled. Final-beta updates,
 grant retention, Bluetooth, LG V60 and other payment-app/phone combinations need phone tests.

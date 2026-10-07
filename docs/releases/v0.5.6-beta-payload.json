@@ -17,5 +17,8 @@
   "ci_artifact_name": "Svan-production-test-build",
   "ci_artifact_id": 11461863363,
   "payload_digest_algorithm": "SHA-256 of UTF-8 compact JSON mapping sorted ZIP entry names to their uncompressed SHA-256 values; keys sorted, separators comma and colon.",
-  "release_tag": "v0.5.6-beta.1"
+  "release_tag": "v0.5.6-beta.1",
+  "release_id": 405434911,
+  "github_apk_blob_sha": "697f022d5ebdd90db889ba269e66a27a0e50d482",
+  "blob_usage": "Temporary transfer of the already-signed public APK for verified CI staging; no private signing material."
 }
