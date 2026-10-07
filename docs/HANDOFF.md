@@ -886,3 +886,25 @@ buttons and existing screenshots are unchanged. Live GitHub Pages was checked th
 source `ccr-f859b567-dgrdoj:/docs`, status built. This differs from the only push branch allowed by
 AGENTS. Resolve a notes-only deployment-branch exception with the owner before publishing; do not
 merge the app branch, change the Pages source or attach a preview-signed APK as a public update.
+
+Final source `281e4d8`: push CI `37615943549` and PR CI `37615950311` now pass all nine jobs,
+including both full emulator suites with 41 routing/13 detection/4 production/7 added matrix-native
+passes each. The owner then explicitly renewed the instruction to sign and upload to the website:
+this permits a website-docs-only update on the existing Pages branch, not an app merge or redesign.
+The original owner certificate matches; the exact tested production artifact `11479767100` was
+re-signed, not rebuilt. All 73 ZIP payloads/four native hashes match. Local private signing material
+was deleted; none enters GitHub/CI. Candidate records are `releases/v0.5.6-beta.2*`, app 0.5.6/code13
+unchanged, with beta 1 retained. Confirm hosted release verification and Pages readback before
+calling publication complete. Phone qualification and true live gate reporting remain pending.
+
+Upload is now blocked: draft beta 2 release `405749853` exists with zero assets; uploads.github.com
+returns HTTP 401 on upload and retry while api.github.com works. Do not publish the empty draft,
+overwrite beta 1, claim website upload succeeded or retrieve the signing key again. The verified
+signed APK is `/workspace/scratch/audio-quality-design/Svan-0.5.6-owner-signed-281e4d8.apk`, SHA-256
+`84ddca6e6a05344cf3a316945ef86c425461bbdcb74e61cc858ba7269591959e` (also handed to owner).
+Restore release-upload authentication via workspace/product settings. Upload this exact file and
+checksum, remove the candidate-only note, publish/verify, then update the prepared site links to
+beta 2 and deploy its docs-only changes. Current prepared links remain the existing published beta 1;
+live Pages is still unchanged. Do not add a credential to Git/CI or bypass authentication controls.
+Before publishing, point the still-untagged draft at the docs-only release-record commit; confirm
+its diff from tested `281e4d8` contains only docs. Never retarget an existing published tag.

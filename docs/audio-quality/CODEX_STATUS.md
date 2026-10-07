@@ -16,7 +16,7 @@ Core, JNI/CMake, AGENTS, LICENSE, privacy docs, Claude STATUS and generated POLI
 | Step | State | Evidence and limits |
 |---|---|---|
 | K0 | Local checks pass | Both arm64-v8a/x86_64 NDK builds accepted the supplied APIs, including the follow-up gated planner API. Core: 147 tests, 0 failed checks. Android debug/release/lint/JVM checks pass; 179 JVM tests, 0 failures/errors. Claude CI 37603033259 failed only the old PlaybackHeadClock fixture; Codex corrected the ambiguous jump, retaining wrap/reset assertions. No JNI fixes needed. |
-| K1 | Initial API34 images reviewed; follow-up pending CI | Backing/Binaural first row; Resolve/Auto switch retained. Bass dials size from actual card width. Per-player text distinguishes native controls, system approximations, off and unavailable. Inspection found mid-word wrapping of Instruments and clipped dock/tab labels at font 1.5; follow-up uses weighted label areas, a content-sized dock and explicit tab ellipses with full accessibility labels. Matrix targets 320/360/411 dp × font 1.0/1.5 and saves XML/PNG. |
+| K1 | API33/34 full matrix passes; images reviewed | Backing/Binaural first row; Resolve/Auto switch retained. Bass dials size from actual card width. Per-player text distinguishes native controls, system approximations, off and unavailable. Inspection found mid-word wrapping of Instruments and clipped dock/tab labels at font 1.5; weighted label areas, a content-sized dock and explicit tab ellipses fix these. Matrix targets 320/360/411 dp × font 1.0/1.5 and saves XML/PNG. Large-font content needs scrolling; not every control fits simultaneously. |
 | K2 | Wired; phone tuning pending | Fast default/migration; Detailed flag through JNI; total native latency reported/aligned. Recorded clips retain applied settings, including Fast fallback. A physical missed deadline plus underrun, or existing exhausted-buffer recovery, retries Fast/48k once while preserving saved choices. No invented phone DSP% threshold. |
 | K3 | Wired; phone/clock qualification pending | Safe 48k default, serial RatePolicy candidates, strict client-format validation and safe fallback. Router ownership/mutes surround all epochs. Source changes reset native state at a faded boundary and invalidate clips. Frames, DSP, clips, WAV, renderer and probes use actual rates. RateFacts separate client/device formats; source/DAC unknown. Oversampling preserves internal family targets; phone performance unmeasured. |
 | K4 | Read-only UI/JVM parity wired | Compiled JSON supplies “How Svaresa decides”: inputs, bounds, reasons, coordination, rollback. JVM tests compare context/Resolve bounds to generated matrix. SvaresaBrain behavior unchanged. Claude's core now admits planner evidence; Kotlin still uses the legacy API's fresh/same-epoch defaults. Genuine feature-age/epoch provenance and live skip reporting remain pending; the screen is not a live decision audit. |
@@ -28,15 +28,47 @@ Core, JNI/CMake, AGENTS, LICENSE, privacy docs, Claude STATUS and generated POLI
 - Website request: concise preview notes added to `docs/index.html` using existing classes;
   no design, screenshot, download, app-version or release changes. Unique IDs and local anchors
   checked. Live Pages currently publishes `ccr-f859b567-dgrdoj:/docs`, not the Codex branch.
-  A push here does not publish the site; deployment-branch authority must be resolved before
-  claiming a live update, because AGENTS restricts pushes to this Codex branch.
+  A push here does not publish the site. The owner's renewed instruction to upload the signed
+  app and notes authorizes a narrow website-docs-only publication on its existing Pages branch;
+  no app-branch merge, default-branch change, privacy edit or website redesign is included.
 - After merging `62c43cf`, `claude-followup-build.log` passes the full Android command (46s),
   including both NDK ABIs; `claude-followup-core.log` passes 147 core tests with 0 failed checks.
   Generated policy matrix parity is clean. The earlier host JNI result below predates this merge.
 - Final silent-centre copy/website-notes follow-up: `website-notes-build.log` passes the full
   Android command in 3m35s; 179 JVM tests have zero failures/errors. `website-notes-core.log`:
   147 tests, 0 failed checks; 11 Python tests pass and diff whitespace is clean. Hosted CI for
-  this newest combined tree is still required; earlier runs do not certify a later core merge.
+  this newest combined tree now passes, as recorded in the final checkpoint below; earlier runs
+  alone would not certify a later core merge.
+
+## Final source and owner signing checkpoint
+
+Source `281e4d89f3428968ac4f4df2bb03657890a1c832`: push CI `37615943549` and PR CI
+`37615950311` both pass all nine jobs. Every current PR check is SUCCESS; PR #6 remains open.
+Final artifacts API33 `11481369252` / API34 `11481514315` have 41 routing, 13 detection,
+4 production and 7 added native/matrix passes per API, with no failures. Native fixtures report
+aligned max error 0, 19 rules and five diagnostics at 44.1/48/96k. The fixed layout commit also
+passed all jobs in `37614319083`; actual normal/large-font PNGs were reviewed at all target widths,
+including first-row knobs, Resolve/Auto and the rules page. No screenshots were added to the site.
+
+The original Drive backup was recovered after the gate passed. Its actual keystore certificate
+matches `release-cert.sha256`. Exact production artifact `11479767100` was re-signed without a
+rebuild. `verify_release.sh` and the compiled forbidden-capability check pass. All 73 ZIP entry
+contents and four native hashes are identical. Public payload/checksum records are under
+`docs/releases/v0.5.6-beta.2*`. Local signing archive, keystore and recovery password files were
+deleted immediately after signing/checks; no private material was uploaded to GitHub or CI.
+The new prerelease retains app version 0.5.6/code 13 to preserve the tested APK; beta 1 is untouched.
+Hosted release verification and live Pages publication must be confirmed separately.
+
+Publication blocker: draft `v0.5.6-beta.2`, release ID `405749853`, was created, but the APK
+asset upload failed with HTTP 401 at uploads.github.com, including one normal retry after a
+GitHub connector read. api.github.com repository/release reads and writes work, so this is
+specifically the release-upload authentication path; do not describe it as failed CI or signing.
+The draft has zero assets and no published tag. No site-branch write was attempted; live Pages
+still links the older 0.5.5 beta. Prepared site downloads remain the already-published beta 1 until
+the new file is hosted and verified. No owner credentials are needed again: restore GitHub upload
+authentication through the workspace/product settings, never paste a token into chat or Git.
+After upload, attach the recorded checksum, publish the prerelease, require release-verify success,
+then switch the site download links/copy to beta 2 and deploy only the prepared website files.
 - Core Release tests: `/workspace/scratch/release-build-environment/core-build/eqcore_tests`;
   `/workspace/scratch/audio-quality-design/k0-core.log`: 142 tests, 0 failed checks.
 - Android logs under `/workspace/scratch/audio-quality-design/`: `kotlin-integration-build.log`
@@ -51,8 +83,8 @@ Core, JNI/CMake, AGENTS, LICENSE, privacy docs, Claude STATUS and generated POLI
 - Python screenshot/control assertions: 11 pass; shell syntax and diff whitespace pass.
 - `AudioQualityLab` exercises actual Fast/Detailed JNI, aligned identity and exact extra N frames
   at 44.1/48/96k, five-field diagnostics and the 19-rule JSON. It runs in existing quality checks,
-  including production UI checks, and separately in the screenshot suite. Device execution is
-  pending CI; do not call it passed without its READY marker.
+  including production UI checks, and separately in the screenshot suite. Final API33/34 CI
+  artifacts contain its READY marker and zero aligned error; phone execution remains pending.
 - Separate **host** JNI execution against the actual compiled Kotlin NativeEngine and unmodified
   JNI/core passes 44.1/48/88.2/96/176.4/192k constructor/delay/identity calls: aligned max error 0;
   diagnostics length 5; rule count 19. This is not Android execution. Harness and host shared library
