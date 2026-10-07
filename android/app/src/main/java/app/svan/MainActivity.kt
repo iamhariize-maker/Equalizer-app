@@ -115,6 +115,20 @@ class MainActivity : ComponentActivity() {
             }
             "onboarding_reset_prompts" -> OnboardingAndroid.resetPrompts(this)
             "blind_lab" -> app.svan.listening.BlindLab.open.value=true
+            "proof_start" -> if (BuildConfig.DEBUG) {
+                runCatching { app.svan.listening.ProofCapture.start(this, matchLevel = true) }
+                    .onFailure { EqController.log("PROOF_FAILED ${it.message}") }
+            }
+            "proof_countdown" -> if (BuildConfig.DEBUG) {
+                app.svan.ui.ProofRecordingUi.wavBits = 16
+                app.svan.ui.ProofRecordingUi.matchLevel = true
+                app.svan.ui.ProofRecordingUi.countdown.value = 3
+            }
+            "proof_status" -> if (BuildConfig.DEBUG) thread {
+                runCatching { app.svan.listening.RecordingEvidence.write(this); EqController.log("PROOF_EVIDENCE_READY") }
+                    .onFailure { EqController.log("PROOF_FAILED ${it.message}") }
+            }
+            "proof_dismiss" -> if (BuildConfig.DEBUG) app.svan.listening.ProofCapture.dismiss()
             "quality_lab" -> thread { runCatching {app.svan.listening.QualityLab.verify(this)}.onFailure {EqController.log("QUALITY_LAB_FAILED ${it.message}")} }
             "probe" -> thread { EqController.log(DynamicsProbe.run(this)) }
             "resolution" -> runResolutionProbe()

@@ -53,7 +53,7 @@ missing. Artifacts `e2e-results-api33` / `e2e-results-api34` have the log and sc
 screenshots** — layout bugs only show there.
 
 ## Rules that matter
-1. **Don't push to `main`/other branches.** Work on the branch your session instructs (currently `ccr-f859b567-dgrdoj`; `ccr-208702a3-2mju42` is older). No new PR unless the user asks.
+1. **Don't push to `main`/other branches.** Work on the branch your session instructs (this recording-mode session: `ccr-c220a1e1-hikg7s`; older briefs name earlier branches). No new PR unless the user asks.
 2. **Never claim sound quality you haven't measured.** Every number in the UI/docs comes from a test. The owner reports successful listening on TECNO/IM4 with 0.5.2; this does not establish a complete device/player matrix.
 3. **Tests first for DSP.** New processors need a measured test (see existing ones: expected vs measured dB). Keep the audio thread allocation-free and wait-free (see `ParametricEq`, `StereoTuner`).
 4. **Design:** one gold hue on warm charcoal (`Theme.kt` tokens: Gold/Molten/Bronze; Ember ONLY for warnings; Ash for "negative" sides). Serif titles. Polished, not colourful. Don't introduce new hues.
@@ -74,9 +74,10 @@ Owner's engine follow-up: give Svaresa broader authority only where it improves 
 changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
-1. Verify on the next CI screenshots: boot name fits on one line with margins; the flipped **d** reads as a 9 (not "q"); the स्व icon on the Android 12+ splash.
+1. Verify recording-mode CI logs/screenshots (API 33/34): committed-frame clock, fixed labels/buttons across tabs, countdown, MediaStore WAV/AAC and exact sync tails. Verify on the next CI screenshots: boot name fits on one line with margins; the flipped **d** reads as a 9 (not "q"); the स्व icon on the Android 12+ splash.
 2. **Real-phone validation** (TECNO LH7n/Android 14 and LG V60/Android 13, no PC): the owner reports earlier listening success; new DSP, player/device coverage and LG Quad DAC behavior still need phone checks.
-3. Product gaps: per-app engine UI, foreground-service robustness, release signing, Play Store policy (MediaProjection/foreground service).
+3. Recording owner checks remain open: TECNO screen readability in LG video, measured flash/click timing, speaker-only routing with headphones and VN 16/24-bit WAV/M4A import. See `docs/PHONE_VALIDATION.md`.
+4. Product gaps: per-app engine UI, foreground-service robustness, release signing, Play Store policy (MediaProjection/foreground service).
 
 0.5.5 adds reconstructed-peak protection, selective dynamic EQ, bounded headphone calibration
 and blind matched listening. See docs/QUALITY_LAB_0.5.5.md. Four release quality checks are required;
@@ -85,4 +86,4 @@ Production signing uses a private owner key outside Git/CI, never preview.keysto
 production-mode checks use a disposable CI key. See docs/RELEASE_SIGNING.md; preserve settings
 export/restore and the production Activity's rejection of scripted command extras.
 
-Recording mode (Hi-Fi) is being finalised as audio-only with a sync marker, for editing in VN against a phone screen recording: see `docs/CODEX_RECORDING_MODE.md` (brief + prompt) and `docs/RECORDING_MODE.md`.
+Recording mode (Hi-Fi) is audio-only with a frame clock, sync flash/speaker cue and aligned exports, for editing in VN against an LG camera video of the TECNO screen: see `docs/CODEX_RECORDING_MODE.md` (brief + prompt) and `docs/RECORDING_MODE.md`.

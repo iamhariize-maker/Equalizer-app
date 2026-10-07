@@ -1,3 +1,39 @@
+# Recording-mode owner checks — pending
+
+Use the new recording-mode build identified in [HANDOFF.md](HANDOFF.md), not the older
+owner-signed beta named below. **None of these physical-phone checks has passed yet.**
+TECNO LH7n / Android 14 runs Svan; LG V60 / Android 13 films the TECNO screen from outside.
+Follow [RECORDING_MODE.md](RECORDING_MODE.md) and keep Play Protect enabled.
+
+1. At normal filming distance and room light, is the `m:ss.mmm` clock readable in the LG
+   video? Are the current segment and Sync/Mark now/Stop controls readable? Does the white
+   flash show clearly, including with settings on another tab? Check the screen stays awake.
+2. Does the LG microphone clearly record three speaker clicks? In VN, measure the flash-to-click
+   interval: record several syncs; locate the first bright frame and the first click's waveform
+   onset; subtract their timeline times. Note LG video frame rate, recording resolution, distance,
+   each measured interval in ms and its spread. Check the displayed clock against `syncSeconds`,
+   and whether flash, clock and click agree within one LG video frame. A video frame only bounds
+   the visual instant; this measures aggregate flash/click/camera timing, not DAC latency.
+   Prefer the visible clock if clicks are delayed, inconsistent or unavailable. No speaker
+   latency or “few tens of ms” precision is claimed before this measurement.
+3. Play and import the full and from-sync WAVs, cue copy and M4A in VN. Test both the default
+   16-bit TPDF WAV and the optional 24-bit WAV. Record VN version and which formats actually
+   import/play, plus any AAC offset. Finish a short exported VN video using plain processed
+   audio, remove the cue copy and mute the LG microphone audio.
+4. With the owner's headphones on the TECNO, does the edited dry/processed A/B resemble the
+   live demonstration? Compare at matched RMS level; keep DAC/Bluetooth/acoustic differences
+   separate from the digital-output proof. Do not infer listening preference from file tests.
+5. While headphones remain connected (wired/USB/Bluetooth as available), does Sync use only
+   the TECNO speaker? Do headphones remain on their music route? Confirm the cue is absent
+   from plain dry/processed and matched WAVs and M4A, and absent from headphones. Disconnect
+   or switch routes during a sync to test cue suppression. Retain any cue-routing message.
+
+Also test countdown cancel, multiple syncs, typed manual labels, a long demo and storage failure.
+Keep the report's dropped-frame count with each observation. Record results as actual device
+observations with date, source player and output route; emulator tests cannot establish these.
+
+---
+
 # Current onboarding validation (after a603146)
 
 Use `Svan-0.5.5-owner-signed-fbc2ff6.apk` and the hash in the

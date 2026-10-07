@@ -1,3 +1,44 @@
+## Audio-only Recording mode — 2026-10-07
+
+Work is on `ccr-c220a1e1-hikg7s`, with no PR or other-branch push. The TECNO runs Svan;
+the LG films its screen externally. Real soundtrack files are Svan's processed digital
+output, excluding the output mixer/DAC/Bluetooth/acoustics. See [RECORDING_MODE.md](RECORDING_MODE.md).
+
+Removed ScreenDemoRecorder, WetTap, projection exposure/screenUsed and Movies/video publishing.
+CaptureService's dry-before-DSP/wet-after-DSP hooks and DSP chain are unchanged. A persistent,
+fixed recording panel on every tab shows committed-frame `m:ss.mmm`, the segment and Sync/Mark
+now/Stop. Recording/countdown keeps the app window awake and bright, with restoration afterward.
+Countdown cancels safely and seeds its first sync at frame zero. Manual labels are capped at 40 chars.
+
+Sync records exact committed frames and epoch timestamps, requests a white flash and plays the
+same tested three-burst waveform on a separate capture-excluded AudioTrack preferring/checking
+built-in-speaker routing. Missing/changed routes suppress or stop clicks; no volume/focus changes.
+Android preference is advisory: headphone exclusion/OEM behavior and acoustic latency remain
+owner checks. No unmeasured latency guarantee is made; use the displayed file clock.
+
+After finishing, exact PCM tails start at the first sync, plus a disposable click-mixed alignment
+copy. Report adds ordered sync arrays, first-signal block time, clock/request epochs and matched
+gains. Default UI export is 16-bit TPDF PCM; 24-bit remains selectable. VN import is unverified.
+MediaCodec/MediaMuxer produce full-duration AAC-LC at requested 48 kHz/stereo/256 kbps; AAC failure
+preserves WAV publishing and is reported. Optional per-segment RMS matching defaults off, with
+peak limits explicitly reported. Plain recordings never receive generated cue samples.
+
+Segments now analyse the finished PCM at exact marker frames, fixing late markers after writer
+drain, duplicate empty opening/end stretches, and missed EQ/tuner changes with unchanged band
+count. Overall measurements precede export; segment RMS/spectrum includes saved PCM quantisation.
+Charts say louder often sounds better and comparisons require matched RMS; no LUFS claims.
+The latest successful private session is retained for diagnostics; older published private
+sessions are cleaned on subsequent success. Failed private exports are retained.
+
+Verification: native baseline 98 tests passed. Local debug/release assembly, lint and 150 JVM tests
+(including 16 ProofRecorder tests) pass on the final implementation. Compiled permission and
+16 KB native-alignment gates pass. offerDry/commitWet/copyIn are textually unchanged.
+The unchanged e2e PASS sets remain required. A separate recording_mode.sh CI check uses real
+Engine B testsource audio, UI Sync/Mark/Stop, byte-identical MediaStore payloads, AAC packets,
+exact tails, cue isolation and countdown frame zero, and captures recording/mark/countdown/EQ
+screenshots on API 33/34. Final CI run links, measured results and screenshot review are pending.
+No owner-phone or VN checks are claimed passed; see the new PHONE_VALIDATION.md checklist.
+
 ## Owner-authorized GitHub beta candidate — 2026-10-06
 
 The owner recovered the original private signing backup and authorized signing/publication.

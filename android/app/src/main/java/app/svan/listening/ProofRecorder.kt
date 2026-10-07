@@ -4,6 +4,8 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
+import java.util.Locale
+import java.util.Random
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,25 +38,35 @@ object ProofRecorder {
     class Segment(
         val label: String, val settings: Map<String, Any?>, val startSeconds: Double, val seconds: Double,
         val dry: LevelMeter, val processed: LevelMeter, val bands: List<SpectrumBand>,
-    )
+        val startFrame: Long, val endFrame: Long,
+    ) {
+        val rmsChangeDb = processed.rmsDbfs - dry.rmsDbfs
+        val matchedGain = ProofWav.matchingGain(dry, processed)
+    }
 
     class Result(
         val directory: File, val dryWav: File, val processedWav: File, val reportJson: File,
         val seconds: Double, val dry: LevelMeter, val processed: LevelMeter,
         val bands: List<SpectrumBand>, val droppedFrames: Long, val report: JSONObject,
         val segments: List<Segment> = emptyList(),
+        val dryFromSyncWav: File? = null, val processedFromSyncWav: File? = null,
+        val syncCueWav: File? = null, val matchedWav: File? = null,
     )
 
-    /** Receives the processed stream on the writer thread, e.g. an MP4 muxer. */
-    interface WetTap {
-        /** [floats] interleaved stereo; [firstBlockNanos] is System.nanoTime() of the first committed block; [startFrame] is this chunk's first frame. */
-        fun onChunk(chunk: FloatArray, floats: Int, firstBlockNanos: Long, startFrame: Long)
-        fun onEnd()
-    }
+    data class Options(val wavBits: Int = 24, val matchLevel: Boolean = false, val startWithSync: Boolean = false)
+    data class Sync(val frame: Long, val epochMs: Long)
 
     private class Marker(val position: Long, val label: String, val settings: Map<String, Any?>)
 
     val state = MutableStateFlow<State>(State.Idle)
+    val currentLabel = MutableStateFlow("Opening settings")
+    val lastSync = MutableStateFlow<Sync?>(null)
+    val recordedFrames: Long get() = session?.written?.div(2) ?: 0L
+    val sampleRate: Int get() = session?.rate ?: 48000
+    fun clockText(frame: Long = recordedFrames, rate: Int = sampleRate): String {
+        val ms = frame * 1000 / rate
+        return String.format(Locale.US, "%d:%02d.%03d", ms / 60000, ms / 1000 % 60, ms % 1000)
+    }
 
     private const val RING_FLOATS = 48000 * 2 * 4   // four seconds of stereo
     private const val MAX_SECONDS = 600             // 10 min ≈ 173 MB per WAV
@@ -62,10 +74,13 @@ object ProofRecorder {
 
     private class Session(
         val dir: File, val rate: Int, val meta: Map<String, Any?>, val stats: () -> Map<String, Any?>?,
-        val onFinished: (Result) -> Unit, val startedAtMs: Long, val tap: WetTap?,
+        val onFinished: (Result) -> Unit, val startedAtMs: Long, val options: Options,
     ) {
         val markers = ConcurrentLinkedQueue<Marker>()
+        val syncs = ConcurrentLinkedQueue<Sync>()
+        val startedAtNanos = System.nanoTime()
         @Volatile var markerCount = 0
+        @Volatile var ignoredMarkers = 0
         @Volatile var firstBlockNanos = 0L
         val dryRing = FloatArray(RING_FLOATS)
         val wetRing = FloatArray(RING_FLOATS)
@@ -115,11 +130,17 @@ object ProofRecorder {
      * readings even if capture stops first. [onFinished] runs on the writer thread.
      */
     @Synchronized
-    fun start(dir: File, rate: Int, meta: Map<String, Any?>, stats: () -> Map<String, Any?>?, tap: WetTap? = null, onFinished: (Result) -> Unit) {
-        check(session == null) { "Already recording" }
+    fun start(dir: File, rate: Int, meta: Map<String, Any?>, stats: () -> Map<String, Any?>?, options: Options = Options(), onFinished: (Result) -> Unit) {
+        check(session == null && state.value !is State.Finishing) { "Already recording or saving" }
+        require(options.wavBits == 16 || options.wavBits == 24)
         require(rate in 8000..192000)
         dir.mkdirs()
-        val s = Session(dir, rate, meta, stats, onFinished, System.currentTimeMillis(), tap)
+        val s = Session(dir, rate, meta, stats, onFinished, System.currentTimeMillis(), options)
+        currentLabel.value = "Opening settings"
+        lastSync.value = null
+        if (options.startWithSync) {
+            val sync = Sync(0, s.startedAtMs); s.syncs.add(sync); lastSync.value = sync
+        }
         session = s
         state.value = State.Recording(s.startedAtMs)
         Thread({ writerLoop(s) }, "svan-proof-writer").apply { priority = Thread.NORM_PRIORITY; start() }
@@ -131,16 +152,77 @@ object ProofRecorder {
      * Starts a new measured segment at the current position: call after the listener has
      * changed a setting and it has settled. Beyond [MAX_SEGMENTS] changes merge into the last segment.
      */
-    fun mark(label: String, settings: Map<String, Any?>) {
-        val s = session ?: return
-        if (s.stop.get() || s.markerCount >= MAX_SEGMENTS - 1) return
+    @Synchronized
+    fun mark(label: String, settings: Map<String, Any?>, expectedRecording: State? = null): Boolean {
+        val s = session ?: return false
+        if (s.stop.get() || (expectedRecording != null && state.value !== expectedRecording)) return false
+        if (s.markerCount >= MAX_SEGMENTS - 1) {
+            s.ignoredMarkers++
+            currentLabel.value = "Changes merged into final segment"
+            return false
+        }
         s.markerCount++
         s.markers.add(Marker(s.written, label, settings))
+        currentLabel.value = label
+        return true
     }
 
-    private class Open(val label: String, val settings: Map<String, Any?>, val startFrame: Long, rate: Int) {
-        val dry = LevelMeter(); val wet = LevelMeter(); val spectrum = SpectrumPair(rate)
-        fun close(endFrame: Long, rate: Int) = Segment(label, settings, startFrame.toDouble() / rate, (endFrame - startFrame).toDouble() / rate, dry, wet, spectrum.bands())
+    /** Control-thread only. The volatile frame position has the same semantics as mark. */
+    @Synchronized
+    fun markSync(): Sync? {
+        val s = session ?: return null
+        if (s.stop.get()) return null
+        val sync = Sync(s.written / 2, System.currentTimeMillis())
+        s.syncs.add(sync); lastSync.value = sync
+        return sync
+    }
+
+    /** Fixed 240-frame blocks, independent of disk chunk size and settings boundaries. */
+    private class SignalBlocks {
+        var firstFrame: Long? = null
+        private var frame = 0L; private var fill = 0; private var dryEnergy = 0.0; private var wetEnergy = 0.0
+        fun add(dry: FloatArray, wet: FloatArray, n: Int) {
+            for (i in 0 until n step 2) {
+                dryEnergy += dry[i].toDouble() * dry[i] + dry[i + 1].toDouble() * dry[i + 1]
+                wetEnergy += wet[i].toDouble() * wet[i] + wet[i + 1].toDouble() * wet[i + 1]
+                frame++; fill++
+                if (fill == 240) close()
+            }
+        }
+        fun close() {
+            if (fill > 0 && firstFrame == null && maxOf(dryEnergy, wetEnergy) / (fill * 2) > 1e-9)
+                firstFrame = frame - fill // RMS above -90 dBFS, before export dither
+            fill = 0; dryEnergy = 0.0; wetEnergy = 0.0
+        }
+    }
+
+    /** Analyse finished PCM at exact marker frames; a late marker cannot miss drained data. */
+    private fun analyseSegments(s: Session, dry: File, wet: File, frames: Long): List<Segment> {
+        val boundaries = ArrayList<Marker>()
+        boundaries.add(Marker(0, "Opening settings", s.meta))
+        s.markers.forEach { m ->
+            if (m.position / 2 < frames) {
+                if (boundaries.last().position == m.position) boundaries[boundaries.lastIndex] = m else boundaries.add(m)
+            }
+        }
+        val h = ProofWav.header(dry)
+        return boundaries.mapIndexed { index, marker ->
+            val start = marker.position / 2
+            val end = boundaries.getOrNull(index + 1)?.position?.div(2) ?: frames
+            val d = LevelMeter(); val w = LevelMeter(); val spectrum = SpectrumPair(s.rate)
+            RandomAccessFile(dry, "r").use { input ->
+                input.seek(44 + start * h.frameBytes)
+                val bytes = ByteArray(4096 * h.frameBytes); val buf = FloatArray(8192)
+                ProofWav.visit(wet, start, end) { b, n, _ ->
+                    input.readFully(bytes, 0, n * h.bits / 8)
+                    ProofWav.decodeInto(bytes, n * h.bits / 8, h.bits, buf)
+                    for (i in 0 until n) { d.add(buf[i]); w.add(b[i]) }
+                    spectrum.add(buf, b, 0, n)
+                }
+            }
+            Segment(marker.label, marker.settings, start.toDouble() / s.rate, (end - start).toDouble() / s.rate,
+                d, w, if (maxOf(d.rmsDbfs, w.rmsDbfs) > -90) spectrum.bands() else emptyList(), start, end)
+        }
     }
 
     // ---- writer thread --------------------------------------------------------------
@@ -153,31 +235,23 @@ object ProofRecorder {
         var frames = 0L
         var lastStats: Map<String, Any?>? = null
         var lastPoll = 0L
-        val segments = ArrayList<Segment>()
-        var open = Open("Opening settings", s.meta, 0, s.rate)
+        val signal = SignalBlocks()
+        val dryDither = if (s.options.wavBits == 16) Random() else null
+        val wetDither = if (s.options.wavBits == 16) Random() else null
         try {
             BufferedOutputStream(FileOutputStream(dryFile), 1 shl 16).use { dryOut ->
                 BufferedOutputStream(FileOutputStream(wetFile), 1 shl 16).use { wetOut ->
-                    writeHeader(dryOut, s.rate, 0); writeHeader(wetOut, s.rate, 0)
+                    ProofWav.writeHeader(dryOut, s.rate, 0, s.options.wavBits); ProofWav.writeHeader(wetOut, s.rate, 0, s.options.wavBits)
                     val dryChunk = FloatArray(8192); val wetChunk = FloatArray(8192)
                     val bytes = ByteArray(8192 * 3)
                     while (true) {
                         val stopping = s.stop.get()
                         val available = s.written - s.consumed
-                        // A marker at or before the read position starts a new segment.
-                        while (true) {
-                            val m = s.markers.peek() ?: break
-                            if (m.position > s.consumed) break
-                            s.markers.poll()
-                            segments.add(open.close(frames, s.rate))
-                            open = Open(m.label, m.settings, frames, s.rate)
-                        }
                         if (available <= 0) {
                             if (stopping) break
                             Thread.sleep(15)
                         } else {
-                            var n = minOf(available, dryChunk.size.toLong()).toInt()
-                            s.markers.peek()?.let { n = minOf(n.toLong(), it.position - s.consumed).toInt() } // never straddle a marker
+                            val n = minOf(available, dryChunk.size.toLong()).toInt()
                             val at = (s.consumed % RING_FLOATS).toInt()
                             val first = minOf(n, RING_FLOATS - at)
                             System.arraycopy(s.dryRing, at, dryChunk, 0, first)
@@ -189,13 +263,11 @@ object ProofRecorder {
                             s.consumed += n
                             for (i in 0 until n) {
                                 dryMeter.add(dryChunk[i]); wetMeter.add(wetChunk[i])
-                                open.dry.add(dryChunk[i]); open.wet.add(wetChunk[i])
                             }
-                            dryOut.write(bytes, 0, pcm24(dryChunk, n, bytes))
-                            wetOut.write(bytes, 0, pcm24(wetChunk, n, bytes))
+                            dryOut.write(bytes, 0, ProofWav.encode(dryChunk, n, bytes, s.options.wavBits, dryDither))
+                            wetOut.write(bytes, 0, ProofWav.encode(wetChunk, n, bytes, s.options.wavBits, wetDither))
                             spectrum.add(dryChunk, wetChunk, 0, n)
-                            open.spectrum.add(dryChunk, wetChunk, 0, n)
-                            s.tap?.let { t -> runCatching { t.onChunk(wetChunk, n, s.firstBlockNanos, frames) } }
+                            signal.add(dryChunk, wetChunk, n)
                             frames += n / 2
                             if (frames >= s.rate.toLong() * MAX_SECONDS) s.stop.set(true)
                         }
@@ -207,33 +279,45 @@ object ProofRecorder {
                     }
                 }
             }
-            segments.add(open.close(frames, s.rate))
-            patchHeader(dryFile, s.rate, frames); patchHeader(wetFile, s.rate, frames)
-            session = null
+            signal.close()
+            ProofWav.patchHeader(dryFile, s.rate, frames, s.options.wavBits); ProofWav.patchHeader(wetFile, s.rate, frames, s.options.wavBits)
             state.value = State.Finishing
+            session = null
+            val segments = analyseSegments(s, dryFile, wetFile, frames)
+            var drySync: File? = null; var wetSync: File? = null; var cue: File? = null
+            s.syncs.peek()?.let { sync ->
+                drySync = File(s.dir, "svan-dry-from-sync.wav").also { ProofWav.tail(dryFile, it, sync.frame) }
+                wetSync = File(s.dir, "svan-processed-from-sync.wav").also { ProofWav.tail(wetFile, it, sync.frame) }
+                cue = File(s.dir, "svan-processed-sync-cue.wav").also { ProofWav.withCue(wetSync!!, it) }
+            }
+            val matched = if (s.options.matchLevel) File(s.dir, "svan-processed-matched.wav").also { ProofWav.matched(wetFile, it, segments) } else null
             val seconds = frames.toDouble() / s.rate
             val bands = spectrum.bands()
-            s.tap?.let { runCatching { it.onEnd() } }
-            val report = buildReport(s, seconds, dryMeter, wetMeter, bands, lastStats, segments)
+            val report = buildReport(s, seconds, dryMeter, wetMeter, bands, lastStats, segments, signal.firstFrame)
             val reportFile = File(s.dir, "svan-proof-report.json").apply { writeText(report.toString(2)) }
-            val result = Result(s.dir, dryFile, wetFile, reportFile, seconds, dryMeter, wetMeter, bands, s.dropped / 2, report, segments)
+            val result = Result(s.dir, dryFile, wetFile, reportFile, seconds, dryMeter, wetMeter, bands, s.dropped / 2, report, segments, drySync, wetSync, cue, matched)
             s.onFinished(result)
         } catch (e: Throwable) {
-            s.tap?.let { runCatching { it.onEnd() } }
             session = null
             state.value = State.Failed(e.message ?: e.javaClass.simpleName)
         }
     }
 
-    private fun buildReport(s: Session, seconds: Double, dry: LevelMeter, wet: LevelMeter, bands: List<SpectrumBand>, stats: Map<String, Any?>?, segments: List<Segment>): JSONObject {
+    private fun buildReport(s: Session, seconds: Double, dry: LevelMeter, wet: LevelMeter, bands: List<SpectrumBand>, stats: Map<String, Any?>?, segments: List<Segment>, firstSignal: Long?): JSONObject {
         val notes = JSONArray()
             .put("Recorded inside Svan's audiophile (capture) engine. Apps handled by system effects are not in these files.")
             .put("'Dry' is what the source app sent, tapped before any Svan processing. 'Processed' is the exact buffer Svan hands to Android's AudioTrack.")
             .put("This is Svan's digital output. It does not include the phone's own mixer, the DAC, Bluetooth encoding or the headphones, and it is not an acoustic measurement.")
+            .put("Louder often sounds better. Judge segments at matched RMS level; these are RMS measurements, not LUFS.")
+            .put("Speaker-click latency is unmeasured. Allow for device-dependent output delay; the frame-derived on-screen clock is the precise file reference. Flash/click timing must be checked on the owner phones.")
+            .put("The sync-cue WAV is for alignment only; its mixed cue may clip. Delete it from the final video. Plain WAVs never contain the generated cue.")
+            .put("Whole-recording levels/spectrum precede export; segment measurements use saved PCM, including quantisation/dither. Silent levels are represented by the meter floor (-180 dBFS).")
+            .put("Matching uses a constant gain per segment with a peak cap; gain changes at boundaries may be audible. Processed silence cannot be raised to nonzero dry RMS.")
             .put("Levels are sample peaks (not true-peak). The spectrum is a Welch-averaged third-octave estimate of the mid (L+R) signal; only the dry-to-processed difference is meaningful.")
+        if (s.ignoredMarkers > 0) notes.put("Segment limit reached: ${s.ignoredMarkers} later markers merged into the final stretch; its listed settings describe only its start.")
         if (s.dropped > 0) notes.put("The recorder dropped ${s.dropped / 2} frames because storage fell behind; both files skip the same frames.")
         if (bands.isEmpty()) notes.put("No signal was present, so there is no spectrum. Make sure the song is playing through the audiophile engine before recording.")
-        if (wet.overs > 0) notes.put("${wet.overs} processed samples exceeded full scale and are clamped in the 24-bit WAV.")
+        if (wet.overs > 0) notes.put("${wet.overs} processed samples exceeded full scale and are clamped in the exported WAV.")
         val spec = JSONArray()
         bands.forEach { spec.put(JSONObject().put("hz", round1(it.hz)).put("dryDb", round2(it.dryDb)).put("processedDb", round2(it.processedDb)).put("deltaDb", round2(it.deltaDb))) }
         fun level(m: LevelMeter) = JSONObject().put("peakDbfs", round2(m.peakDbfs)).put("rmsDbfs", round2(m.rmsDbfs))
@@ -243,13 +327,26 @@ object ProofRecorder {
             g.bands.forEach { sp.put(JSONObject().put("hz", round1(it.hz)).put("dryDb", round2(it.dryDb)).put("processedDb", round2(it.processedDb)).put("deltaDb", round2(it.deltaDb))) }
             segs.put(JSONObject().put("change", g.label).put("startSeconds", round2(g.startSeconds)).put("durationSeconds", round2(g.seconds))
                 .put("settings", JSONObject(g.settings.filterValues { it != null }))
-                .put("dry", level(g.dry)).put("processed", level(g.processed)).put("rmsChangeDb", round2(g.processed.rmsDbfs - g.dry.rmsDbfs))
+                .put("dry", level(g.dry)).put("processed", level(g.processed)).put("rmsChangeDb", round2(g.rmsChangeDb))
+                .put("startFrame", g.startFrame).put("endFrame", g.endFrame)
+                .put("matchedGainLinear", if (s.options.matchLevel) g.matchedGain else JSONObject.NULL)
+                .put("matchedGainDb", if (s.options.matchLevel && g.matchedGain > 0) LevelMeter.toDb(g.matchedGain) else JSONObject.NULL)
+                .put("matchLimitedByPeak", s.options.matchLevel && g.dry.sumSquares > 0 && g.processed.sumSquares > 0 && kotlin.math.abs(g.rmsChangeDb + LevelMeter.toDb(g.matchedGain)) > 0.05)
                 .put("measurable", g.bands.isNotEmpty()).put("spectrum", sp))
         }
         if (segments.size > 1) notes.put("'segments' measure each stretch between setting changes separately, so the dry-to-processed difference in each one belongs to the settings listed for it. Svaresa (auto) can also change settings; those changes start segments too.")
         return JSONObject()
-            .put("recordedAtEpochMs", s.startedAtMs).put("durationSeconds", round2(seconds))
-            .put("sampleRateHz", s.rate).put("format", "24-bit PCM stereo WAV, sample-aligned")
+            .put("recordedAtEpochMs", s.startedAtMs)
+            .put("clockStartEpochMs", if (s.firstBlockNanos == 0L) JSONObject.NULL else s.startedAtMs + (s.firstBlockNanos - s.startedAtNanos) / 1_000_000)
+            .put("syncFrames", JSONArray(s.syncs.map { it.frame }))
+            .put("syncSeconds", JSONArray(s.syncs.map { it.frame.toDouble() / s.rate }))
+            .put("syncEpochMs", JSONArray(s.syncs.map { it.epochMs }))
+            .put("firstSignalSeconds", firstSignal?.toDouble()?.div(s.rate) ?: JSONObject.NULL)
+            .put("firstSignalBlockFrames", 240).put("firstSignalThresholdDbfs", -90)
+            .put("durationSeconds", seconds)
+            .put("sampleRateHz", s.rate).put("format", "${s.options.wavBits}-bit PCM stereo WAV, sample-aligned").put("wavBits", s.options.wavBits)
+            .put("exportDither", if (s.options.wavBits == 16) "TPDF, one LSB" else "none")
+            .put("segmentLimitReached", s.ignoredMarkers > 0)
             .put("droppedFrames", s.dropped / 2)
             .put("dry", level(dry)).put("processed", level(wet).put("oversSamples", wet.overs))
             .put("rmsChangeDb", round2(wet.rmsDbfs - dry.rmsDbfs))
@@ -262,32 +359,4 @@ object ProofRecorder {
     private fun round1(x: Double) = Math.round(x * 10) / 10.0
     private fun round2(x: Double) = Math.round(x * 100) / 100.0
 
-    // ---- WAV ------------------------------------------------------------------------
-
-    /** Float → little-endian signed 24-bit, clamped. Returns bytes written. */
-    internal fun pcm24(src: FloatArray, n: Int, out: ByteArray): Int {
-        var o = 0
-        for (i in 0 until n) {
-            val v = Math.round(src[i].toDouble().coerceIn(-1.0, 1.0) * 8388607.0).toInt()
-            out[o++] = v.toByte(); out[o++] = (v shr 8).toByte(); out[o++] = (v shr 16).toByte()
-        }
-        return o
-    }
-
-    internal fun writeHeader(out: java.io.OutputStream, rate: Int, frames: Long) {
-        val dataBytes = frames * 6
-        fun le32(v: Long) = byteArrayOf(v.toByte(), (v shr 8).toByte(), (v shr 16).toByte(), (v shr 24).toByte())
-        fun le16(v: Int) = byteArrayOf(v.toByte(), (v shr 8).toByte())
-        out.write("RIFF".toByteArray()); out.write(le32(36 + dataBytes)); out.write("WAVE".toByteArray())
-        out.write("fmt ".toByteArray()); out.write(le32(16)); out.write(le16(1)); out.write(le16(2))
-        out.write(le32(rate.toLong())); out.write(le32(rate * 6L)); out.write(le16(6)); out.write(le16(24))
-        out.write("data".toByteArray()); out.write(le32(dataBytes))
-    }
-
-    private fun patchHeader(file: File, rate: Int, frames: Long) {
-        RandomAccessFile(file, "rw").use { f ->
-            val h = java.io.ByteArrayOutputStream(44).also { writeHeader(it, rate, frames) }.toByteArray()
-            f.seek(0); f.write(h)
-        }
-    }
 }

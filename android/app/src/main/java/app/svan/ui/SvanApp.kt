@@ -144,6 +144,7 @@ fun SvanApp(
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            ProofRecordingPanel()
             ContextualSetupPrompt(working)
             AnimatedContent(tab, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "tab") { t ->
                 tabState.SaveableStateProvider(t) {
@@ -160,5 +161,6 @@ fun SvanApp(
     }
     if (!booted) BootAnimation(onDone = { booted = true })
     SetupHelpHost()
+    ProofRecordingOverlay()
     }
 }
