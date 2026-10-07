@@ -67,15 +67,47 @@ verifier and compiled-capability policy pass. [The signed payload record](releas
 records the resulting hash. The private backup/keystore were deleted immediately after
 signing; passwords were read only in memory and passed via child-process environment.
 No replacement key or signing credentials were committed, uploaded or placed in CI.
-Publication and hosted-release verification are the next gates.
+Publication and hosted-release verification are recorded below.
 
 The workspace's release-asset upload endpoint rejected both CLI and API uploads with
 HTTP 401 while ordinary repository API access worked. The draft remains unpublished.
 The staging workflow transfers only the already-signed public APK through a Git blob,
 waits for both complete CI runs on its own commit, checks all 73 payload entries against
 that fresh run's production fixture, and attaches the verified APK/checksum to the draft.
-No private signing material enters this workflow. Publication still requires the fresh
+No private signing material enters this workflow. Publication requires the fresh
 CI and staging jobs to pass, followed by the published-release verifier.
+
+## Published public beta
+
+[v0.5.6-beta.1](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.6-beta.1)
+was published on 7 October 2026 at 07:03:38 UTC as a prerelease, with the owner-signed APK
+and `SHA256SUMS`. The tag targets `e24e4f04930f166d668cfcba37ec1a846f8c9db8`.
+The application source remains the original green `64b5ae0` fixture; subsequent changes
+before publication were documentation and the public-asset staging workflow.
+
+- Fresh [push CI 37580842075](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37580842075)
+  and [PR CI 37580846530](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37580846530)
+  pass all nine jobs each on the tag's commit.
+- Both fresh emulator result ZIPs were digest-checked and reviewed: 13/13 detection
+  checks per API, real retained DUMP grants, -6.3 dB hidden-player processing after Shizuku
+  removal, and visible -12.0/-24.0 dBFS live capture peaks.
+- Fresh production artifact ID `11464887680` has ZIP SHA-256
+  `cee87ea76ebe7220207e4bbd12d1fae180d255ff4a31e484bc9a05c9b5b5b954`.
+  All 73 payload entries match the original fixture and signed APK.
+- [Staging 37580842157](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37580842157)
+  passes CI gate, signer/payload verification and draft attachment. The verifier's wrong
+  fingerprint and extra-permission rejection checks also pass.
+- Both [hosted verification 37585033909](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37585033909)
+  and [37585033892](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37585033892)
+  pass `verify` and `upload-checksum` after publication.
+- The APK downloaded from the public release URL is byte-for-byte identical to the
+  privately signed candidate, SHA-256
+  `e246bdecab364dad7eb342ed21a1079c8a860a6d75102129526d23a6d0b60ea4`.
+
+The private backup/keystore temporary directory is gone; owner passwords were never written
+to files, logs, Git or CI. PR #6 remains unmerged and the default branch is unchanged.
+The final documentation follow-up updates evidence and download links without changing
+the tagged APK, application source, verifier or staging workflow.
 
 Owner phone evidence remains positive and separate: current-preview Spotify/playback and
 BHIM/GPay after Shizuku removal, with Developer options still enabled. Final-beta updates,

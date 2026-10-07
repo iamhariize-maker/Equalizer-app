@@ -8,7 +8,7 @@ A system-wide equalizer for Android.
 ![Android 10+](https://img.shields.io/badge/Android-10%2B-green.svg)
 [![CI](https://github.com/iamhariize-maker/Equalizer-app/actions/workflows/ci.yml/badge.svg)](https://github.com/iamhariize-maker/Equalizer-app/actions/workflows/ci.yml)
 
-[Download the beta](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1) ·
+[Download the beta](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.6-beta.1) ·
 [Report your device](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml) ·
 [Compatibility](docs/COMPATIBILITY.md) ·
 [Setup guide](docs/SETUP.md)
@@ -40,7 +40,7 @@ A fresh install starts on System effects with a flat curve and 0 dB preamp. More
 
 ## Getting started
 
-1. Download the APK and `SHA256SUMS` from the [release page](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1) and check the hash with `sha256sum -c SHA256SUMS`. Keep Play Protect on. If Android blocks the install, stop and [send me the exact message](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml).
+1. Export settings before updating. Download the APK and `SHA256SUMS` from the [release page](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.6-beta.1) and check the hash with `sha256sum -c SHA256SUMS`. Keep Play Protect on. If Android blocks the install, stop and [send me the exact message](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml).
 2. Open Svan and play some music. You don't have to set anything up first.
 3. Go to Hi-Fi and look at "Is it working?" to see whether your player and output are listed.
 4. If your player isn't reachable, the optional Fix music detection wizard uses Shizuku to sort it out. [docs/SETUP.md](docs/SETUP.md) walks through it.

@@ -1,3 +1,22 @@
+## Public beta released — 2026-10-07, 0.5.6
+
+[v0.5.6-beta.1](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.6-beta.1)
+is published with the original owner signer, package `app.svan`, version 0.5.6/code 13.
+The exact green production fixture from `64b5ae0` was privately re-signed; all 73 payload
+entries are unchanged. The private backup/keystore were deleted, passwords stayed in memory,
+and no signing material entered GitHub or CI. Read [the evidence record](CI_VERIFICATION_0.5.6.md)
+for original/fresh CI, public payload hashes, staging and passing hosted verification.
+PR #6 remains open/unmerged; the default branch remains `ccr-208702a3-2mju42`.
+
+Notification-listener recognition is removed; no SMS or accessibility capability is allowed.
+Enhanced detection is retained only by the explicit user-tapped keep-enhanced grant. The
+owner reports working preview playback and BHIM/GPay after Shizuku removal while Developer
+options remain enabled. Final-beta updates/grant retention, reboot/background behavior,
+Bluetooth, LG V60 and broader phone/player/payment coverage need phone evidence.
+
+The sections below record earlier work; their notification-listener descriptions and
+unpublished/signing-pending status are superseded by this entry and AGENTS.md.
+
 ## OEM detection fallbacks — 2026-10-06, 0.5.6 follow-up
 
 The current request supersedes the earlier notification-access restriction for optional player

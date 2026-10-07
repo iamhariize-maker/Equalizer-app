@@ -11,8 +11,11 @@ and [the investigation](RELEASE_INVESTIGATION_0.5.6.md).
 
 Current status: [source 64b5ae0 passes every required CI job](CI_VERIFICATION_0.5.6.md).
 The original owner key has now been recovered and matched privately. The signed candidate
-passes release verification and retains every tested ZIP payload entry. Publication and
-hosted-release verification are next; see [the beta notes](releases/v0.5.6-beta.md).
+passes release verification and retains every tested ZIP payload entry.
+[v0.5.6-beta.1 is published](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.6-beta.1).
+Fresh staging-head CI and both hosted-release verification runs pass; the public download
+matches the signed candidate byte for byte. See [the beta notes](releases/v0.5.6-beta.md)
+and [publication evidence](CI_VERIFICATION_0.5.6.md#published-public-beta).
 
 ## Required before publication
 

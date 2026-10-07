@@ -94,4 +94,12 @@ The owner subsequently supplied the backup's Drive link. Its certificate matched
 original before signing, and the exact CI production APK was re-signed without rebuilding.
 All 73 entry payloads remain identical. Local release/capability verification passes.
 The private backup/keystore were deleted immediately; credentials stayed in memory only.
-See releases/v0.5.6-beta-payload.json. Publication/hosted verification follow this record.
+See releases/v0.5.6-beta-payload.json.
+
+The upload workaround added a narrowly scoped staging workflow, followed by fresh green
+push/PR CI on `e24e4f0` (37580842075 / 37580846530). Staging 37580842157 checks the original
+owner signer and all 73 payload entries against fresh CI, then attaches only public assets.
+The beta is published as `v0.5.6-beta.1`; hosted verification 37585033909 and 37585033892
+passes both jobs each. A public download matches the signed candidate byte for byte.
+PR #6 remains unmerged and the default branch unchanged. Remaining phone tests are listed
+in [the final evidence record](CI_VERIFICATION_0.5.6.md#published-public-beta).
