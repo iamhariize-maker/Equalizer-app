@@ -1,4 +1,4 @@
-# Svan 0.5.6: green CI, owner signing pending
+# Svan 0.5.6: green CI and verified owner signing
 
 Release source: `64b5ae05181bab2d52535525e5d613cad2fbb78e` on PR #6.
 Both the [push run 37573374711](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37573374711)
@@ -56,14 +56,18 @@ This fixture uses a disposable CI signer and is **not a public release asset**. 
 be privately re-signed with the original owner key, then pass the owner release verifier
 and an identical-payload comparison. Do not rebuild its payload or publish its CI signer.
 
-## Publication blocker
+## Original signing identity recovered
 
-Drive is connected, but project-name, keystore/signing and recent-archive metadata searches
-did not locate the original private signing backup. No private key was downloaded or used,
-no replacement generated, and no 0.5.6 release created. The owner must supply the original
-backup's Drive link or exact location. Its certificate must match
-`9cb9daca3b49fbdd17683d45dfb069fa9c6d05e3733934795f92546fef696b0f` before signing.
-The final owner-signed APK hash/payload record and published-release verification are pending.
+After metadata searches failed, the owner supplied the original backup's Drive link.
+The original certificate was checked before signing and matches
+`9cb9daca3b49fbdd17683d45dfb069fa9c6d05e3733934795f92546fef696b0f`.
+The exact production fixture was re-signed privately without rebuilding. All 73 ZIP
+entry contents and four native-library hashes remain identical, and the owner release
+verifier and compiled-capability policy pass. [The signed payload record](releases/v0.5.6-beta-payload.json)
+records the resulting hash. The private backup/keystore were deleted immediately after
+signing; passwords were read only in memory and passed via child-process environment.
+No replacement key or signing credentials were committed, uploaded or placed in CI.
+Publication and hosted-release verification are the next gates.
 
 Owner phone evidence remains positive and separate: current-preview Spotify/playback and
 BHIM/GPay after Shizuku removal, with Developer options still enabled. Final-beta updates,

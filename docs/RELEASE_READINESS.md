@@ -10,8 +10,9 @@ See [the release prompt](CODEX_RELEASE_PROMPT.md), [private signing](RELEASE_SIG
 and [the investigation](RELEASE_INVESTIGATION_0.5.6.md).
 
 Current status: [source 64b5ae0 passes every required CI job](CI_VERIFICATION_0.5.6.md).
-The tested production APK is retained. Owner signing/publication await the original
-signing backup's Drive location; no replacement key or 0.5.6 release has been created.
+The original owner key has now been recovered and matched privately. The signed candidate
+passes release verification and retains every tested ZIP payload entry. Publication and
+hosted-release verification are next; see [the beta notes](releases/v0.5.6-beta.md).
 
 ## Required before publication
 

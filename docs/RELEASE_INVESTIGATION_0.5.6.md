@@ -89,3 +89,9 @@ Final artifacts and live screenshots confirm all suites, including 13 detection 
 capture peaks. [The final CI record](CI_VERIFICATION_0.5.6.md) identifies the exact production
 artifact and payload retained for signing. No key was found through connected Drive metadata
 searches; owner signing/publication remain blocked on the original backup's location.
+
+The owner subsequently supplied the backup's Drive link. Its certificate matched the
+original before signing, and the exact CI production APK was re-signed without rebuilding.
+All 73 entry payloads remain identical. Local release/capability verification passes.
+The private backup/keystore were deleted immediately; credentials stayed in memory only.
+See releases/v0.5.6-beta-payload.json. Publication/hosted verification follow this record.
