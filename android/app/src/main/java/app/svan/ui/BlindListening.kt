@@ -58,7 +58,7 @@ fun BlindListening() {
         if(uri!=null)prepare {withContext(Dispatchers.IO){
             val bytes=context.contentResolver.openInputStream(uri)?.use {input->
                 val out=ByteArrayOutputStream();val buffer=ByteArray(16384)
-                while(true){val n=input.read(buffer);if(n<0)break;require(out.size()+n<=12_000_000){"Choose a WAV smaller than 12 MB"};out.write(buffer,0,n)};out.toByteArray()
+                while(true){val n=input.read(buffer);if(n<0)break;require(out.size()+n<=16_777_216){"Choose a WAV smaller than 16 MB"};out.write(buffer,0,n)};out.toByteArray()
             } ?: error("Couldn't open the file")
             WavClip.decode(bytes)
         }}

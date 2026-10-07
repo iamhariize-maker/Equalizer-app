@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -316,10 +317,12 @@ private fun BassTunerCard(b: BassTuner) {
     PresetRow(BassTuner.PRESETS, b) { p -> SvanRepository.update { it.copy(bass = p) } }
     SvanCard {
         Column {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val dialSize = ((maxWidth / 3) - 16.dp).coerceIn(56.dp, 78.dp)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Knob("Amount", b.amountDb, -6.0, 12.0, ::formatDb, step = 0.1, entryUnit = "dB",
+                Knob("Amount", b.amountDb, -6.0, 12.0, ::formatDb, step = 0.1, entryUnit = "dB", size = dialSize,
                     onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(amountDb = v)) } })
-                Knob("Depth", b.focusHz, 40.0, 160.0, { f -> "%.0f Hz".format(f) }, default = 80.0, step = 1.0, entryUnit = "Hz",
+                Knob("Depth", b.focusHz, 40.0, 160.0, { f -> "%.0f Hz".format(f) }, default = 80.0, step = 1.0, entryUnit = "Hz", size = dialSize,
                     onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(focusHz = v)) } })
                 Knob("Feel", b.character, -1.0, 1.0, { c ->
                     when {
@@ -327,7 +330,8 @@ private fun BassTunerCard(b: BassTuner) {
                         c > 0 -> "Punch ${pct(c)}"
                         else -> "Sustain ${pct(-c)}"
                     }
-                }, step = 0.01, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
+                }, step = 0.01, size = dialSize, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
+            }
             }
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -400,7 +404,7 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(instruments = x)) } })
             }
             Spacer(Modifier.height(6.dp))
-            Text("Backing vocals lifts off-centre harmonies and doubles while the lead masks them, and backs off when they are already clear. Binaural follows each band's left/right position and widens only sounds that are moving between channels, so the recording's own bounces and pans become more dramatic while fixed placements stay put. Both leave the mono sum untouched, never move a hard-panned sound to the other side, and add no reverb or delay. A shared budget stops them once the side is half as strong as the centre or has already grown 4 dB, so they cannot bury the lead, guitar, bass or drums; a mix that is already wide is left alone. Centre-panned harmonies cannot be separated. Start low and compare in Lab at matched loudness.",
+            Text("Backing vocals and Binaural enhance eligible detail already present in the stereo recording. Fast uses frequency and motion cues; Detailed uses decorrelated residual detail and adds about 21–23 ms of latency. Detailed holds on coherent panned or already-wide material. Both preserve the spatial stage's mono sum and share an automatic-detail energy budget. They cannot isolate backing vocals or identify instruments. They add no reverb or binaural-beat tones. Space and Instruments are separate manual widening controls. Choose the mode in Hi-Fi; start low and compare in Lab at matched loudness. Listening qualification is pending.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
             Spacer(Modifier.height(6.dp))
             Text("Shapes stereo side energy above the bass range. It cannot identify individual instruments; a centred instrument will not be boosted. No added reverb. Requires an app actively using the audiophile engine; has no effect on system effects.",

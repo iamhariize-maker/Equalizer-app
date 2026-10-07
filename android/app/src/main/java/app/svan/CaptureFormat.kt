@@ -17,14 +17,34 @@ data class RateFacts(
     val mixerHintHz: Int?,
     /** `AudioDeviceInfo.getSampleRates()` of the routed output; empty means "any rate" or unreported. */
     val deviceReportedHz: List<Int>,
+    /** Device-side recording format, if Android exposes it; not the player's original source. */
+    val captureDeviceHz: Int? = null,
 ) {
     /** True when the granted client formats match what was requested; a mismatch must be surfaced, not hidden. */
-    val granted: Boolean get() = (captureClientHz ?: requestedHz) == requestedHz && (outputClientHz ?: requestedHz) == requestedHz
+    val granted: Boolean get() = captureClientHz == requestedHz && outputClientHz == requestedHz
 
     fun summary(): String = "rates: requested=$requestedHz capture-client=${captureClientHz ?: "?"} output-client=${outputClientHz ?: "?"} " +
         "mixer-hint=${mixerHintHz ?: "?"} device-reported=${if (deviceReportedHz.isEmpty()) "any/unreported" else deviceReportedHz.joinToString("/")} " +
-        "granted=$granted; original source rate=unknown; DAC rate=unknown"
+        "record-device=${captureDeviceHz ?: "?"} granted=$granted; original source rate=unknown; DAC rate=unknown"
 }
+
+/** Serial negotiation; the opener owns cleanup if a candidate fails. Never releases source mutes. */
+object RateNegotiation {
+    data class Result<T>(val rate: Int, val value: T, val failures: List<Int>)
+    fun <T> open(candidates: List<Int>, opener: (Int) -> T): Result<T> {
+        val failures = mutableListOf<Int>()
+        val rates = (candidates.filter { it in setOf(44100, 48000, 88200, 96000, 176400, 192000) } + RatePolicy.SAFE_HZ).distinct()
+        var cause: Exception? = null
+        for (rate in rates) {
+            try { return Result(rate, opener(rate), failures.toList()) }
+            catch (e: Exception) { failures += rate; cause = e }
+        }
+        throw IllegalStateException("No capture/output format initialized, including safe 48 kHz", cause)
+    }
+}
+
+data class CaptureEpoch(val id: Long, val sampleRate: Int, val latencyFrames: Int, val detailed: Boolean,
+    val appliedSettings: app.svan.model.AudioSettings)
 
 /**
  * Order in which to try capture/DSP rates. This only proposes candidates: the caller opens them serially

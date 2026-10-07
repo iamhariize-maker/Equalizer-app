@@ -8,7 +8,9 @@ import kotlin.math.abs
 
 object BlindRenderer {
     data class Render(val rate: Int,val original: FloatArray,val enhanced: FloatArray,val levels: DoubleArray,val headphone: String,val configuration: String)
-    fun render(context: Context,clip: WavClip,eq: EqState,settings: AudioSettings,request: SmartRequest): Render {
+    fun render(context: Context,clip: WavClip,eq: EqState,requestedSettings: AudioSettings,request: SmartRequest): Render {
+        // Recorded excerpts retain the mode/quality actually applied, including a Fast fallback.
+        val settings = clip.captureSettings ?: requestedSettings
         var snapshot=eq
         // The automatic plan hears this exact excerpt, not whichever track was playing earlier.
         if(request.enabled) {
@@ -26,12 +28,15 @@ object BlindRenderer {
             }
             snapshot=eq.copy(smart=layer,smartBypass=false)
         }
-        fun engine(state: EqState)=NativeEngine(clip.rate,2,settings.quality.oversample,settings.quality.stopbandDb,
-            if(settings.dither==DitherChoice.OFF)0 else settings.outputBits,settings.dither.nativeMode,true,true).also {
+        fun engine(state: EqState)=NativeEngine(clip.rate,2,settings.oversampleAt(clip.rate),settings.quality.stopbandDb,
+            if(settings.dither==DitherChoice.OFF)0 else settings.outputBits,settings.dither.nativeMode,
+            settings.effectiveFor(state).autoHeadroom,settings.effectiveFor(state).gainProtection,
+            settings.spatialMode==SpatialMode.DETAILED).also {
             it.setBands(state.effectiveBands().map(Band::toNative));it.setPreampDb(state.effectivePreampDb())
             it.setBassCharacter(state.bassCharacter,state.bass.crossoverHz);it.setBassResolve(state.bassResolve)
             val v=state.activeVocal;val i=state.activeInstrument;it.setStereoTuner(v.intimacy,v.warmth,v.smoothness,i.space,i.instruments,i.backingVocals,i.spatialDetail)
             it.setDynamicEq(state.dynamicEq)
+            it.setBassUnmask(if(settings.experimentalBassUnmask && state === snapshot && state.enabled) 1.0 else 0.0)
         }
         fun process(state: EqState): FloatArray =engine(state).use {e->
             val warm=clip.samples.copyOfRange(0,minOf(clip.samples.size,clip.rate*2));e.process(warm,warm,warm.size/2)
@@ -47,7 +52,7 @@ object BlindRenderer {
         val applied=org.json.JSONObject().put("bands",org.json.JSONArray().apply {snapshot.effectiveBands().forEach {put(it.toJson())}})
             .put("preamp",snapshot.effectivePreampDb()).put("dynamic",snapshot.dynamicEq)
             .put("vocal",snapshot.activeVocal.toJson()).put("instrument",snapshot.activeInstrument.toJson()).put("bassCharacter",snapshot.bassCharacter).put("bassResolve",snapshot.bassResolve)
-        val description=snapshot.toJson().toString()+settings.toJson().toString()+request.toJson().toString()+applied.toString()
+        val description="rate=${clip.rate};"+snapshot.toJson().toString()+settings.toJson().toString()+request.toJson().toString()+applied.toString()
         val hash=java.security.MessageDigest.getInstance("SHA-256").digest(description.toByteArray()).joinToString("") {"%02x".format(it)}
         return Render(clip.rate,original,enhanced,levels,snapshot.tuning?.headphone ?: "Uncalibrated",hash)
     }

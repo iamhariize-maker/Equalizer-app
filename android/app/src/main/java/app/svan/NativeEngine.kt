@@ -35,9 +35,10 @@ class NativeEngine(
         ditherMode: Int,
         autoHeadroom: Boolean,
         gainProtection: Boolean,
+        spatialResidual: Boolean = false,
     ) : this(sampleRate, channels, Quality.EFFICIENT) {
         nativeDestroy(handle)
-        handle = nativeCreateCustom(sampleRate, channels, oversample, stopbandDb, ditherBits, ditherMode, autoHeadroom, gainProtection)
+        handle = nativeCreateDetailed(sampleRate, channels, oversample, stopbandDb, ditherBits, ditherMode, autoHeadroom, gainProtection, spatialResidual && channels == 2)
     }
 
     val latencyFrames: Int get() = nativeLatency(handle)
@@ -62,6 +63,7 @@ class NativeEngine(
     fun setBassResolve(resolve: Double) = nativeSetBassResolve(handle, resolve)
     /** Selective bass unmasking 0..1; default 0 (off). Not wired to any setting yet. */
     fun setBassUnmask(amount: Double) = nativeSetBassUnmask(handle, amount)
+    fun bassUnmaskDiagnostics(): DoubleArray = nativeBassUnmaskDiagnostics(handle)
 
     /** Vocal tuner (mid) + instrument amplifier (side). Stereo engines only. */
     fun setStereoTuner(intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double, backingVocals: Double = 0.0, spatialDetail: Double = 0.0) =
@@ -139,6 +141,12 @@ class NativeEngine(
             sampleRate: Int, channels: Int, oversample: Int, stopbandDb: Double, ditherBits: Int, ditherMode: Int,
             autoHeadroom: Boolean, gainProtection: Boolean,
         ): Long
+        @JvmStatic external fun nativeCreateDetailed(
+            sampleRate: Int, channels: Int, oversample: Int, stopbandDb: Double, ditherBits: Int, ditherMode: Int,
+            autoHeadroom: Boolean, gainProtection: Boolean, spatialResidual: Boolean,
+        ): Long
+        @JvmStatic external fun nativeBassUnmaskDiagnostics(handle: Long): DoubleArray
+        @JvmStatic external fun nativePolicyRulesJson(): String
         @JvmStatic external fun nativeCurveDb(handle: Long, channel: Int, freqs: DoubleArray): DoubleArray
         @JvmStatic external fun nativeAppliedGainDb(handle: Long): Double
         @JvmStatic external fun nativeGainProtectionDb(handle: Long): Double

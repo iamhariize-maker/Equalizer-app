@@ -13,6 +13,7 @@ for frame in 1 2 3 4 5; do
   $A exec-out screencap -p > "$OUT/system-splash-$frame.png"
   sleep 0.1
 done
+
 wait "$LAUNCH"
 sleep 3
 # Boot animation: cold start, capture mid-morph and at the full name.
@@ -125,3 +126,10 @@ for fixture in install debugging start authorize grant working error finish-on f
   $A shell am start -n app.svan/.MainActivity --es cmd onboarding_close >/dev/null
   sleep 1
 done
+
+# The existing CI results gate rejects any FAIL in interaction.txt. Preserve its
+# established check counts while making the new layout/JNI suite a required gate.
+if ! bash scripts/audio_quality_ui.sh "$S" "$OUT/audio-quality"; then
+  echo "FAIL audio-quality layout or JNI checks" >> "$OUT/interaction.txt"
+  exit 1
+fi

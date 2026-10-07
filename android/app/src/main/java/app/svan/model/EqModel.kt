@@ -389,6 +389,11 @@ enum class EngineMode(val title: String, val detail: String) {
     SYSTEM_ONLY("System effects only", "Android DynamicsProcessing on each app. Avoids capture and replay; gain-per-band EQ."),
 }
 
+enum class SpatialMode(val title: String, val detail: String) {
+    FAST("Fast", "Lower latency spatial processing. Default; native capture only."),
+    DETAILED("Detailed", "Enhances decorrelated detail already in the recording; adds about 21–23 ms. Holds on already-wide or hard-panned material. Cannot isolate backing vocals. Phone qualification pending."),
+}
+
 /** Svan processing settings. */
 data class AudioSettings(
     val engineMode: EngineMode = EngineMode.SYSTEM_ONLY,
@@ -401,17 +406,32 @@ data class AudioSettings(
     val systemFrameMs: Int = 80,
     /** EQ the whole output mix while a playing app hides its audio session (see MixFallback). */
     val wholeMixFallback: Boolean = true,
+    val spatialMode: SpatialMode = SpatialMode.FAST,
+    val captureRateMode: app.svan.RatePolicy.Mode = app.svan.RatePolicy.Mode.SAFE,
+    /** Explicit experiment only; Auto master never enables this. */
+    val experimentalBassUnmask: Boolean = false,
 ) {
     /** Auto master may add protection, but never rewrites the listener's saved choices. */
     fun effectiveFor(eq: EqState): AudioSettings = if (eq.smartProtection)
         copy(autoHeadroom=true,gainProtection=true) else this
 
     fun sameCaptureFormat(other: AudioSettings): Boolean = quality==other.quality &&
-        outputBits==other.outputBits && dither==other.dither
+        outputBits==other.outputBits && dither==other.dither && spatialMode==other.spatialMode &&
+        captureRateMode==other.captureRateMode
+
+    /** Maintain the original internal-rate target as the client rate increases. */
+    fun oversampleAt(rate: Int): Int {
+        val family = if (rate in listOf(44100, 88200, 176400)) 44100 else 48000
+        val target = family * quality.oversample
+        var factor = 1
+        while (factor < 8 && rate * factor < target) factor *= 2
+        return factor
+    }
 
     fun toJson(): JSONObject = JSONObject()
         .put("engine", engineMode.name).put("quality", quality.name).put("bits", outputBits)
         .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs).put("mixFallback", wholeMixFallback)
+        .put("spatialMode", spatialMode.name).put("captureRateMode", captureRateMode.name).put("bassUnmaskExperimental", experimentalBassUnmask)
 
     companion object {
         fun fromJson(o: JSONObject) = AudioSettings(
@@ -424,6 +444,9 @@ data class AudioSettings(
             systemFrameMs = o.optInt("sysFrameMs", 80).takeIf { it in listOf(10, 40, 80) } ?: 80,
             systemBands = o.optInt("sysBands", 128).takeIf { it in listOf(64, 128, 256) } ?: 128,
             wholeMixFallback = o.optBoolean("mixFallback", true),
+            spatialMode = runCatching { SpatialMode.valueOf(o.getString("spatialMode")) }.getOrDefault(SpatialMode.FAST),
+            captureRateMode = runCatching { app.svan.RatePolicy.Mode.valueOf(o.getString("captureRateMode")) }.getOrDefault(app.svan.RatePolicy.Mode.SAFE),
+            experimentalBassUnmask = o.optBoolean("bassUnmaskExperimental", false),
         )
     }
 }

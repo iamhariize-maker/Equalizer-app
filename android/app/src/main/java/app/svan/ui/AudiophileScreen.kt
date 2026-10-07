@@ -44,6 +44,8 @@ import app.svan.SvanRepository
 import app.svan.model.DitherChoice
 import app.svan.model.EngineMode
 import app.svan.model.QualityMode
+import app.svan.model.SpatialMode
+import app.svan.RatePolicy
 import kotlinx.coroutines.delay
 
 /** Svan processing controls and observed routing status. */
@@ -60,6 +62,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     var verdicts by remember { mutableStateOf(SessionRouter.compat().all()) }
     var running by remember { mutableStateOf(CaptureService.isRunning) }
     var routes by remember { mutableStateOf(SessionRouter.snapshot.toList()) }
+    var showRules by remember { mutableStateOf(false) }
+    if (showRules) PolicyRulesScreen { showRules = false }
     val detection by DetectionMonitor.status.collectAsState()
     val captureStartup by CaptureService.startupMessage.collectAsState()
     val captureRecovery by CaptureService.recoveryMessage.collectAsState()
@@ -82,6 +86,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         ScreenTitle("Hi-Fi", "Choose processing, then check what each app actually uses.")
+        OutlinedButton(onClick = { showRules = true }, modifier = Modifier.fillMaxWidth()) { Text("How Svaresa decides") }
 
         DetectionCard(captureStats = stats)
 
@@ -142,6 +147,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         Text("Signal peak · in %.1f dBFS · out %.1f dBFS".format(st.inputPeakDb, st.outputPeakDb), style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
                         Text("Output queue %.1f ms · buffer %.1f ms".format(st.queuedMs, st.bufferMs), style = MaterialTheme.typography.bodySmall)
                         Text("DSP %.1f ms · load %.1f%% · underruns %d".format(st.dspLatencyMs, st.dspPercent, st.underruns), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                        Text("Spatial mode applied: ${if (CaptureService.epoch?.detailed == true) "Detailed" else "Fast"}", style = MaterialTheme.typography.bodySmall)
+                        CaptureService.rateFacts?.let { Text(it.summary(), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
                         Text("Applied gain %.1f dB · protection %.1f dB".format(st.gainDb, st.protectionDb), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     }
                     Text("These readings exclude capture, Android mixing and Bluetooth delay. Svan increases buffering after underruns and returns to system effects if capture repeatedly cannot keep up.",
@@ -176,6 +183,12 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         else -> "Not playing right now (remembered from earlier)"
                     }
                     Text(status, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+                    Text(when {
+                        !eq.enabled -> "Processing off. Saved tuner values are retained."
+                        appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_B_MUTED } -> "Orchestral controls and Bass Resolve applied through native capture. ${if (CaptureService.epoch?.detailed == true) "Detailed" else "Fast"} spatial mode."
+                        appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_A } -> "System-effects approximation for EQ, bass Feel and vocal tone. Orchestral controls and Resolve unavailable on this route."
+                        else -> "Tuner capability unavailable until a player is connected."
+                    }, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     appRoutes.firstOrNull { it.owner == SessionRouter.Owner.ENGINE_A }?.let { r ->
                         val v = SessionRouter.verification[r.sessionId]
                         val path = SessionRouter.evidence[r.sessionId]?.pathLabel.orEmpty()
@@ -195,6 +208,26 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                     }
                 }
             }
+        }
+
+        SectionLabel("Spatial processing")
+        SpatialMode.entries.forEach { mode ->
+            ChoiceRow(mode.title, mode.detail, s.spatialMode == mode, onClick = { SvanRepository.updateSettings { it.copy(spatialMode = mode) } })
+        }
+        Text("Mode and rate changes apply when capture restarts. If Detailed misses an audio deadline with an underrun, or buffering cannot recover, Svan retries Fast at safe 48 kHz. Device-specific load thresholds await phone measurements.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        SectionLabel("Capture rate")
+        RatePolicy.Mode.entries.forEach { mode ->
+            val label = when (mode) { RatePolicy.Mode.SAFE -> "Safe 48 kHz"; RatePolicy.Mode.EVIDENCE_HIGH_RATE -> "High-rate (device evidence)"; RatePolicy.Mode.EXPERIMENTAL_192K -> "Experimental 192 kHz" }
+            val detail = when (mode) { RatePolicy.Mode.SAFE -> "Default and fallback. Stereo float transport."; RatePolicy.Mode.EVIDENCE_HIGH_RATE -> "Try 88.2/96 kHz only when reported by the routed output; fall back serially to 48 kHz."; RatePolicy.Mode.EXPERIMENTAL_192K -> "Also try reported 176.4/192 kHz. Phone performance and listening checks are pending." }
+            ChoiceRow(label, detail, s.captureRateMode == mode, onClick = { SvanRepository.updateSettings { it.copy(captureRateMode = mode) } })
+        }
+        Text("Client rates describe Svan's transport. Original streaming-file rate and physical DAC rate remain unknown.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
+
+        SectionLabel("Experimental bass unmasking")
+        SettingSwitchRow("Experimental bass unmasking", "Off by default. May cut sustained peaks outside a detected bass note's harmonics, up to 2 dB combined. Validated on synthetic fixtures only; it can misclassify music. Auto master never enables this.",
+            s.experimentalBassUnmask, { on -> SvanRepository.updateSettings { it.copy(experimentalBassUnmask = on) } })
+        if (s.experimentalBassUnmask && running) CaptureService.bassUnmaskDiagnostics()?.let { d ->
+            if (d.size == 5) Text("70/110/180/280 Hz cuts: ${d.take(4).joinToString { "%.2f dB".format(it) }} · estimated note ${if (d[4] > 0) "%.1f Hz".format(d[4]) else "unknown"}", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         }
 
         SectionLabel("Capture processing quality")

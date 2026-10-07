@@ -7,8 +7,7 @@ import org.json.JSONObject
 
 /** Release/JNI regression. Memory only: does not play tones or alter saved controls. */
 object ContinuityLab {
-    fun verify() {
-        val fs=48000
+    fun verify(fs: Int = app.svan.CaptureService.epoch?.sampleRate ?: app.svan.RatePolicy.SAFE_HZ) {
         fun measure(backing: Double, detail: Double, hz: Double): Double {
             val audio=FloatArray(fs*2)
             repeat(fs){ val x=(.05*sin(2*PI*hz*it/fs)).toFloat();audio[it*2]=x;audio[it*2+1]=-x }

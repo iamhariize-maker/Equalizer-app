@@ -128,6 +128,7 @@ class MainActivity : ComponentActivity() {
             }
             "continuity_lab" -> thread { runCatching {app.svan.listening.ContinuityLab.verify()}.onFailure {EqController.log("CONTINUITY_LAB_FAILED ${it.message}")} }
             "quality_lab" -> thread { runCatching {app.svan.listening.QualityLab.verify(this)}.onFailure {EqController.log("QUALITY_LAB_FAILED ${it.message}")} }
+            "audio_quality_lab" -> thread { runCatching {app.svan.listening.AudioQualityLab.verify()}.onFailure {EqController.log("AUDIO_QUALITY_LAB_FAILED ${it.message}")} }
             "probe" -> thread { EqController.log(DynamicsProbe.run(this)) }
             "resolution" -> runResolutionProbe()
             "sessions" -> thread { EqController.log(sessionReport()) }

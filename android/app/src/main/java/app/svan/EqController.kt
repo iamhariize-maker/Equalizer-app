@@ -5,10 +5,11 @@ package app.svan
  * session effects when processing is stopped.
  */
 object EqController {
-    const val SAMPLE_RATE = 48000
+    /** Nominal reference for Android system-effects curves, not the live capture format. */
+    const val CURVE_SAMPLE_RATE = 48000
 
     /** Parametric curve source of truth; also renders the curve for Engine A. */
-    val curveEngine: NativeEngine by lazy { NativeEngine(SAMPLE_RATE, 2, NativeEngine.Quality.EFFICIENT) }
+    val curveEngine: NativeEngine by lazy { NativeEngine(CURVE_SAMPLE_RATE, 2, NativeEngine.Quality.EFFICIENT) }
 
     val globalEq = GlobalEqEngine(bandCount = 128)
 

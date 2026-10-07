@@ -49,12 +49,44 @@ class CaptureFormatTest {
         assertTrue(s.contains("original source rate=unknown") && s.contains("DAC rate=unknown"))
         assertTrue(s.contains("any/unreported"))
         assertFalse(RateFacts(96000, 48000, 96000, null, listOf(96000)).granted)  // granted client rate differs: surfaced
+        assertFalse(RateFacts(96000, null, null, null, listOf(96000)).granted)
+    }
+
+    @Test fun negotiationTriesSerialCandidatesThenSafeAndDoesNotRetouchSuccess() {
+        val attempts = mutableListOf<Int>()
+        val result = RateNegotiation.open(listOf(192000, 96000, 48000)) { rate ->
+            attempts += rate
+            if (rate > 48000) error("HAL rejected")
+            "opened"
+        }
+        assertEquals(listOf(192000, 96000, 48000), attempts)
+        assertEquals(48000, result.rate)
+        assertEquals(listOf(192000, 96000), result.failures)
+        assertEquals("opened", result.value)
+        attempts.clear()
+        assertEquals(96000, RateNegotiation.open(listOf(96000, 48000)) { attempts += it; true }.rate)
+        assertEquals(listOf(96000), attempts)
+    }
+
+    @Test fun negotiationBoundsInvalidDuplicatedCandidatesAndPropagatesTotalFailure() {
+        val attempts = mutableListOf<Int>()
+        try {
+            RateNegotiation.open(listOf(0, 192000, 192000, -1)) { rate -> attempts += rate; error("failed") }
+            org.junit.Assert.fail("must fail open at caller if every rate fails")
+        } catch (e: IllegalStateException) {
+            assertTrue(e.message!!.contains("safe 48 kHz"))
+        }
+        assertEquals(listOf(192000, 48000), attempts)
     }
 
     @Test
     fun playbackHeadSurvivesTheUnsigned32BitWrap() {
         val clock = PlaybackHeadClock()
         assertEquals(1000L, clock.unwrap(1000))
+        // Successive observations must be less than half a counter apart; otherwise
+        // forward motion and a backwards reset are indistinguishable.
+        assertEquals(0x70000000L, clock.unwrap(0x70000000))
+        assertEquals(0xe0000000L, clock.unwrap(0xe0000000.toInt()))
         assertEquals(0xfffffff0L, clock.unwrap(0xfffffff0.toInt()))   // large unsigned value
         assertEquals(0x100000010L, clock.unwrap(0x10))                // wrapped past 2^32: keeps counting
         assertEquals(0x100000110L, clock.unwrap(0x110))

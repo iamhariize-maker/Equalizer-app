@@ -845,3 +845,15 @@ and a visible failure reason. See DETECTION_FALLBACKS.md. Unverified on HiOS unt
 Keep enhanced detection without Shizuku (owner request; payment apps block Shizuku): a one-tap,
 user-initiated DUMP self-grant through Shizuku (`DumpGrant`, `KeepEnhancedCard`). CI taps it, then
 uninstalls Shizuku and measures a hidden player. See DETECTION_FALLBACKS.md.
+
+## Audio-quality Kotlin integration — 7 October 2026
+
+Claude core/JNI branch `ccr-2e937472-6z53b0` at `b3022a9` merged without conflict as `2f04da5`.
+Read `audio-quality/COORDINATION.md`, `CODEX_STATUS.md` and `REQUESTS_FROM_CODEX.md` for ownership,
+exact verification and remaining evidence. Codex left core/JNI and Claude-owned status/rules untouched.
+Fast/Detailed, Safe/high-rate capture candidates, variable-rate clips/rendering, per-player tuner
+capability, a compiled rule explanation screen and optional off-by-default unmasking are wired in
+Kotlin. Existing defaults remain Fast and safe 48k. Core: 142 pass. Android debug/release/lint/JVM
+checks pass locally (177 JVM tests); API33/34 screenshots pending. No phone CPU/battery/listening
+claims. No new version, PR, release or merge of PR #6. The earlier LR4-side "gotcha" above is obsolete:
+Claude fixed the relative-phase defect with dry plus delta processing; do not reintroduce it.

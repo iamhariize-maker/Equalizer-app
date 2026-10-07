@@ -24,7 +24,6 @@ import kotlin.math.sin
  */
 object ResolutionProbe {
 
-    private const val RATE = 48000
     private const val TONE_SEC = 0.35
 
     /** Fast way to push a whole curve: one Eq object instead of N per-band calls. */
@@ -59,7 +58,7 @@ object ResolutionProbe {
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build())
                 .setAudioFormat(
                     AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                        .setSampleRate(RATE).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build(),
+                        .setSampleRate(CaptureService.epoch?.sampleRate ?: RatePolicy.SAFE_HZ).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build(),
                 )
                 .setSessionId(session)
                 .setTransferMode(AudioTrack.MODE_STREAM)
@@ -115,10 +114,11 @@ object ResolutionProbe {
     }
 
     private fun levelMb(track: AudioTrack, vis: Visualizer, freq: Double): Int {
-        val n = (RATE * TONE_SEC).toInt()
+        val rate = track.sampleRate
+        val n = (rate * TONE_SEC).toInt()
         val buf = FloatArray(n * 2)
         for (i in 0 until n) {
-            val v = (0.1 * sin(2 * PI * freq * i / RATE)).toFloat()
+            val v = (0.1 * sin(2 * PI * freq * i / rate)).toFloat()
             buf[2 * i] = v; buf[2 * i + 1] = v
         }
         // Two chunks: by the time the second is queued the first is playing,
