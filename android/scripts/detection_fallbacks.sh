@@ -41,9 +41,13 @@ if grep -q "NotificationListenerService\|BIND_NOTIFICATION_LISTENER_SERVICE" "$O
     echo "FAIL installed app declares no notification listener" | tee -a "$OUT/results.txt"; exit 1
 fi
 echo "PASS installed app declares no notification listener" >> "$OUT/results.txt"
+# Give the player's activity time to start its foreground service before Svan's activity is launched
+# on top of it (an immediate launch can win the race on API 34 and the tone never plays).
 tone --ef freq 1000 --ef amp 0.1 --ez broadcast true
+sleep 4
 check 'basic session broadcasts reach System effects without Shizuku' \
     "s['connectedPlayers']==1 and s['kind']=='ROUTED' and not s['dump'] and not s['capture']"
 tone --ez stop true
+sleep 3
 check 'stopping the player returns basic detection to idle' "s['kind']=='IDLE'"
 cat "$OUT/results.txt"
