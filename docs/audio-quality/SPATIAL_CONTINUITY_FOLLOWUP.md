@@ -41,7 +41,7 @@ for the processing on commercial recordings or guarantee behavior on every phone
 The existing FFT measures residual and mid/side energy in the Binaural body/air region.
 Residual share begins eligibility at 1.5% and reaches full eligibility at 5.5%; a side/mid
 power ratio from 0.25 to 0.5 reduces eligibility. A >3 dB rise in mid power per hop or a
-mid crest above roughly 14 dB holds it back, with 400 ms activity decay. The target falls
+mid crest above 10 dB holds it back, with 400 ms activity decay. The target falls
 with an 80 ms time constant and rises with 1.5 seconds, then passes through the bounded
 sample-level blend. No center/no sustained eligible residual means no Detailed request.
 Stable endpoints snap within 2% of Detailed or 0.5% of Fast so an unchanged Auto decision
