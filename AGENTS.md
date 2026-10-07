@@ -84,3 +84,5 @@ keep the ten detection, 39 routing, nine workspace and eight control checks inta
 Production signing uses a private owner key outside Git/CI, never preview.keystore. Four additional
 production-mode checks use a disposable CI key. See docs/RELEASE_SIGNING.md; preserve settings
 export/restore and the production Activity's rejection of scripted command extras.
+
+Recording mode (Hi-Fi) is being finalised as audio-only with a sync marker, for editing in VN against a phone screen recording: see `docs/CODEX_RECORDING_MODE.md` (brief + prompt) and `docs/RECORDING_MODE.md`.

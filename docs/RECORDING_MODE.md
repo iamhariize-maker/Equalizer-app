@@ -1,3 +1,5 @@
+> **Direction changed:** the final shape is audio-only plus a sync marker; see [CODEX_RECORDING_MODE.md](CODEX_RECORDING_MODE.md). The screen+sound MP4 path below is untested on a phone and is slated for removal.
+
 # Recording mode (Hi-Fi → Recording mode)
 
 **Problem.** Android screen recorders cannot capture the audiophile engine: Svan's output opts out of
