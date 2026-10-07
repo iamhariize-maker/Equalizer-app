@@ -200,6 +200,10 @@ class CaptureService : Service() {
                             applyProtection(it,eq,audioSettings)
                             it.setBassUnmask(if (audioSettings.experimentalBassUnmask && eq.enabled) 1.0 else 0.0)
                             if(eq !== last)applyEq(it, eq, last)
+                            epoch = epoch?.let { active ->
+                                active.copy(appliedSettings = active.appliedSettings.withLiveCaptureControls(audioSettings))
+                            }
+                            app.svan.listening.ClipRecorder.captureChanged(epoch)
                         } }
                         last = eq
                         lastSettings=audioSettings
@@ -303,12 +307,13 @@ class CaptureService : Service() {
                     synchronized(engineLock) {
                         current = null
                         dsp.close()
-                        dsp = buildEngine(settings, rate)
+                        // Retain live protection/experimental choices, but not pending format changes.
+                        dsp = buildEngine(epoch?.appliedSettings ?: settings, rate)
                         engine = dsp
                         current = dsp
+                        epoch = epoch?.copy(id = nextEpoch.incrementAndGet())
                     }
                     fade.restart()
-                    epoch = epoch?.copy(id = nextEpoch.incrementAndGet())
                     app.svan.listening.ClipRecorder.captureChanged(epoch)
                     EqController.log("capture filter: ${allowed.size} muted UID(s)")
                 }

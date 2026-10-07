@@ -1,8 +1,9 @@
 ## Public beta released — 2026-10-07, 0.5.6
 
 > **Audio-quality follow-up (7 Oct 2026):** see `docs/audio-quality/STATUS.md` for what is implemented
-> (stereo phase fix, side-energy budget, Bass Resolve) versus still gated (streaming WOLA, unmasking,
-> rule registry, rate negotiation, device validation).
+> in Claude's core/JNI and `docs/audio-quality/CODEX_STATUS.md` for the Kotlin integration and exact
+> verification. Detailed WOLA, optional unmasking, rule JSON and rate negotiation are now wired;
+> phone qualification and runtime registry admission remain gated. This follow-up is not a new release.
 
 
 [v0.5.6-beta.1](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.6-beta.1)
@@ -854,6 +855,14 @@ exact verification and remaining evidence. Codex left core/JNI and Claude-owned 
 Fast/Detailed, Safe/high-rate capture candidates, variable-rate clips/rendering, per-player tuner
 capability, a compiled rule explanation screen and optional off-by-default unmasking are wired in
 Kotlin. Existing defaults remain Fast and safe 48k. Core: 142 pass. Android debug/release/lint/JVM
-checks pass locally (177 JVM tests); API33/34 screenshots pending. No phone CPU/battery/listening
+checks pass locally (179 JVM tests after the live-controls fix); API33/34 screenshots pending. No phone CPU/battery/listening
 claims. No new version, PR, release or merge of PR #6. The earlier LR4-side "gotcha" above is obsolete:
 Claude fixed the relative-phase defect with dry plus delta processing; do not reintroduce it.
+Implementation is pushed as `1c437cf`. Both CI runs 37607981934/37607988956 passed core sanitizers,
+Android checks and production APK/AAB verification; full emulator screenshots are still pending.
+The downloaded CI preview uses the preview signer, not the owner signer; do not present it as a
+public-beta update. The existing blind UI is a combined tuned-versus-original comparison, not yet
+a selectable isolated-feature or Fast-versus-Detailed qualification tool.
+Follow-up: live protection/unmasking controls now update the applied capture metadata, invalidate
+mixed-setting recordings, and survive UID reopens without applying pending format changes or
+undoing a Fast/48k fallback. Core 142 and Android build/lint/JVM 179 checks pass locally.

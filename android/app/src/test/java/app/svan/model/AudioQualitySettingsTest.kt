@@ -33,4 +33,26 @@ class AudioQualitySettingsTest {
             assertEquals(2, AudioSettings(quality = QualityMode.EXTREME).oversampleAt(base * 4))
         }
     }
+    @Test fun liveControlsDoNotUndoFallbackOrApplyPendingFormatChanges() {
+        val applied = AudioSettings(quality = QualityMode.EFFICIENT)
+        val requested = applied.copy(quality = QualityMode.EXTREME, outputBits = 16,
+            dither = DitherChoice.SHAPED, spatialMode = SpatialMode.DETAILED,
+            captureRateMode = RatePolicy.Mode.EXPERIMENTAL_192K, autoHeadroom = false,
+            gainProtection = false, experimentalBassUnmask = true)
+        assertEquals(applied.copy(autoHeadroom = false, gainProtection = false,
+            experimentalBassUnmask = true), applied.withLiveCaptureControls(requested))
+    }
+    @Test fun recordingMetadataChangesOnlyForAppliedNotPendingControls() {
+        val applied = AudioSettings(spatialMode = SpatialMode.DETAILED,
+            captureRateMode = RatePolicy.Mode.EVIDENCE_HIGH_RATE)
+        val epoch = app.svan.CaptureEpoch(7, 96000, 2048, true, applied)
+        val pending = applied.copy(spatialMode = SpatialMode.FAST, quality = QualityMode.EXTREME)
+        assertEquals(epoch, epoch.copy(appliedSettings = applied.withLiveCaptureControls(pending)))
+        val changed = epoch.copy(appliedSettings = applied.withLiveCaptureControls(
+            pending.copy(experimentalBassUnmask = true)))
+        assertNotEquals(epoch, changed) // a mixed-setting recording must be invalidated
+        assertEquals(SpatialMode.DETAILED, changed.appliedSettings.spatialMode)
+        assertEquals(QualityMode.AUDIOPHILE, changed.appliedSettings.quality)
+        assertTrue(changed.appliedSettings.experimentalBassUnmask) // retained on UID reopen
+    }
 }

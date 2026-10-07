@@ -419,6 +419,13 @@ data class AudioSettings(
         outputBits==other.outputBits && dither==other.dither && spatialMode==other.spatialMode &&
         captureRateMode==other.captureRateMode
 
+    /** Runtime controls update without applying a pending format change or undoing a safety fallback. */
+    fun withLiveCaptureControls(requested: AudioSettings): AudioSettings = copy(
+        autoHeadroom = requested.autoHeadroom,
+        gainProtection = requested.gainProtection,
+        experimentalBassUnmask = requested.experimentalBassUnmask,
+    )
+
     /** Maintain the original internal-rate target as the client rate increases. */
     fun oversampleAt(rate: Int): Int {
         val family = if (rate in listOf(44100, 88200, 176400)) 44100 else 48000
