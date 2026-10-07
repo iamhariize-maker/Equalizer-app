@@ -2,6 +2,7 @@ package app.svan.listening
 
 import app.svan.EqController
 import app.svan.NativeEngine
+import app.svan.model.SpatialMode
 import app.svan.svaramanas.PolicyRule
 import org.json.JSONObject
 import kotlin.math.abs
@@ -27,6 +28,20 @@ object AudioQualityLab {
             val offset = n * 2
             for (i in fast.second.indices) maxError = maxOf(maxError, abs(fast.second[i] - detailed.second[i + offset]).toDouble())
             check(maxError < 1e-6) { "Detailed zero-control aligned identity error $maxError" }
+            NativeEngine(fs,2,1,120.0,0,0,false,false,true).use { engine ->
+                val latency=engine.latencyFrames
+                for (mode in SpatialMode.entries) {
+                    engine.setSpatialMode(mode)
+                    val input=FloatArray(fs / 5 * 2) { .1f }
+                    engine.process(input,input,input.size/2)
+                    check(engine.latencyFrames==latency && engine.detailedMix in 0.0..1.0)
+                }
+                engine.setSpatialLoadLimited(true)
+                val input=FloatArray(fs/5*2) { .1f }
+                engine.process(input,input,input.size/2)
+                check(engine.detailedMix==0.0 && engine.latencyFrames==latency)
+                check(input.takeLast(fs/10).all { abs(it-.1f)<1e-6 })
+            }
         }
         val rules = PolicyRule.parse(NativeEngine.nativePolicyRulesJson())
         check(rules.size == 19 && rules.any { it.id == "SV-RESOLVE-1" })

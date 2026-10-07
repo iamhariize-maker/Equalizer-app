@@ -31,7 +31,8 @@ object BlindRenderer {
         fun engine(state: EqState)=NativeEngine(clip.rate,2,settings.oversampleAt(clip.rate),settings.quality.stopbandDb,
             if(settings.dither==DitherChoice.OFF)0 else settings.outputBits,settings.dither.nativeMode,
             settings.effectiveFor(state).autoHeadroom,settings.effectiveFor(state).gainProtection,
-            settings.spatialMode==SpatialMode.DETAILED).also {
+            settings.spatialMode!=SpatialMode.FAST).also {
+            it.setSpatialMode(settings.spatialMode)
             it.setBands(state.effectiveBands().map(Band::toNative));it.setPreampDb(state.effectivePreampDb())
             it.setBassCharacter(state.bassCharacter,state.bass.crossoverHz);it.setBassResolve(state.bassResolve)
             val v=state.activeVocal;val i=state.activeInstrument;it.setStereoTuner(v.intimacy,v.warmth,v.smoothness,i.space,i.instruments,i.backingVocals,i.spatialDetail)

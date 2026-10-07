@@ -389,9 +389,10 @@ enum class EngineMode(val title: String, val detail: String) {
     SYSTEM_ONLY("System effects only", "Android DynamicsProcessing on each app. Avoids capture and replay; gain-per-band EQ."),
 }
 
-enum class SpatialMode(val title: String, val detail: String) {
-    FAST("Fast", "Lower latency spatial processing. Default; native capture only."),
-    DETAILED("Detailed", "Enhances decorrelated detail already in the recording; adds about 21–23 ms. Holds on already-wide or hard-panned material. Cannot isolate backing vocals. Phone qualification pending."),
+enum class SpatialMode(val title: String, val detail: String, val nativeMode: Int) {
+    FAST("Fast", "Lower latency at capture start. A live switch from Auto or Detailed retains its timing for smooth playback.", 0),
+    DETAILED("Detailed", "Enhances existing decorrelated detail; adds about 21–23 ms. Holds on already-wide or hard-panned material. Cannot isolate backing vocals. Phone qualification pending.", 1),
+    AUTO("Auto · Svaresa", "Blends toward Detailed for sustained ambience and toward Fast for attacks or dominant sides. Uses local audio cues, with your Backing/Binaural amounts. Experimental; compare by ear.", 2),
 }
 
 /** Svan processing settings. */

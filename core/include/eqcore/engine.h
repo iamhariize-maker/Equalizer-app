@@ -77,6 +77,9 @@ class Engine {
   void setBassResolve(double resolve) { bassResolve_.store(std::isfinite(resolve) ? resolve : 0.0); }
   // Vocal tuner + instrument amplifier (stereo engines only; mono ignores it).
   void setStereoTuner(const StereoTunerParams& p) { stereo_.setParams(p); }
+  void setSpatialMode(int mode) { stereo_.setSpatialMode(mode); }
+  void setSpatialLoadLimited(bool on) { stereo_.setSpatialLoadLimited(on); }
+  double detailedMix() const { return stereo_.detailedMix(); }
 
   // Interleaved float I/O. In-place (in == out) is allowed. Allocation-free.
   void process(const float* in, float* out, int frames);

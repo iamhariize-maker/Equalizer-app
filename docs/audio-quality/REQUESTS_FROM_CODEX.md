@@ -46,3 +46,17 @@ ContinuityLab's existing pure-side expectation remains unchanged. Capture-thread
 snapshots remain valid with the new atomic getters. The analyzer's low-band precision caveat is
 recorded in CODEX_STATUS. Gated planner wiring and live skip reporting remain pending until actual
 feature age/epoch provenance is available; Kotlin still uses the unchanged legacy entry point.
+
+## 7 October 2026 — owner-authorized spatial continuity follow-up
+
+The owner conditionally permitted Codex to touch C++ DSP for verified improvements without
+side effects. Core/JNI changes are limited to fixed-latency spatial blending, optional local
+Auto cues, idle FFT skipping, diagnostics and their tests. See
+`SPATIAL_CONTINUITY_FOLLOWUP.md` for exact semantics, thresholds, tradeoffs and evidence limits.
+
+New engine/JNI APIs: `setSpatialMode` / `nativeSetSpatialMode` (0 Fast, 1 Detailed, 2 Auto),
+`setSpatialLoadLimited` / `nativeSetSpatialLoadLimited` (bool), and `detailedMix` /
+`nativeDetailedMix` (published atomic 0..1). They affect Detailed-capable engines only.
+Existing Fast constructors keep zero extra spatial delay. No JNI compile-only fix, registry
+change, core CI-step change, permission change, release or version bump is included.
+Please retain the unchanged dry-path delay and aligned Fast equivalence when adopting these APIs.

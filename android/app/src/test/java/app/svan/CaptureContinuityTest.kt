@@ -19,4 +19,34 @@ class CaptureContinuityTest {
         assertEquals(2048,recovery.nextSize(4,2048,2048,256))
         assertEquals(-1,recovery.nextSize(5,2048,2048,256))
     }
+    @Test fun shortSchedulingStallsDoNotExhaustRecoveryAtFasterPolling() {
+        val recovery=CaptureBufferRecovery()
+        var underruns=0
+        repeat(20) {
+            repeat(4) { assertEquals(2048,recovery.nextSize(++underruns,2048,2048,256,250)) }
+            assertEquals(2048,recovery.nextSize(underruns,2048,2048,256,250))
+        }
+    }
+    @Test fun sustainedStarvationStillFailsOpenAfterSixSecondsAtCapacity() {
+        val recovery=CaptureBufferRecovery()
+        repeat(23) { assertEquals(2048,recovery.nextSize(it+1,2048,2048,256,250)) }
+        assertEquals(-1,recovery.nextSize(24,2048,2048,256,250))
+    }
+    @Test fun startupAndResetCountersDoNotLookLikeNewPlaybackFailures() {
+        val recovery=CaptureBufferRecovery(initialUnderruns=7)
+        assertEquals(512,recovery.nextSize(7,512,2048,256,250))
+        repeat(20) { assertEquals(2048,recovery.nextSize(8,2048,2048,256,250)) }
+        assertEquals(2048,recovery.nextSize(0,2048,2048,256,250))
+        assertEquals(768,recovery.nextSize(1,512,2048,256,250))
+    }
+    @Test fun spatialWorkShedsImmediatelyAndNeedsTenCleanSecondsToReturn() {
+        val r=CaptureSpatialRecovery(initialUnderruns=3)
+        assertFalse(r.observe(3,250))
+        assertTrue(r.observe(4,250))
+        repeat(39) { assertTrue(r.observe(4,250)) }
+        assertTrue(r.observe(5,250)) // another stall restarts the recovery dwell
+        repeat(39) { assertTrue(r.observe(5,250)) }
+        assertFalse(r.observe(5,250))
+        assertFalse(r.observe(5,250))
+    }
 }

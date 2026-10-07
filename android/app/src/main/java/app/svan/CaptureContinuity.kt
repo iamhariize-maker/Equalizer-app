@@ -16,15 +16,34 @@ class CaptureFade(private val fadeFrames: Int) {
     }
 }
 
-/** Grow only on new underruns; never shrink during a song or hide persistent starvation. */
-class CaptureBufferRecovery {
-    private var previous=0
-    private var exhaustedWindows=0
-    fun nextSize(underruns: Int, current: Int, capacity: Int, burst: Int): Int {
+/** Grow on new underruns; a short scheduling stall must not stop capture.
+ * The fail-open deadline is elapsed audio time, independent of polling frequency. */
+class CaptureBufferRecovery(initialUnderruns: Int = 0) {
+    private var previous=initialUnderruns
+    private var exhaustedMs=0L
+    fun nextSize(underruns: Int, current: Int, capacity: Int, burst: Int, windowMs: Int = 2000): Int {
         val increased=underruns>previous
         previous=underruns
-        if(!increased) { exhaustedWindows=0;return current }
-        if(current<capacity) { exhaustedWindows=0;return minOf(capacity,maxOf(current+burst,current+current/2)) }
-        return if(++exhaustedWindows>=3) -1 else current
+        if(!increased) { exhaustedMs=0;return current }
+        if(current<capacity) { exhaustedMs=0;return minOf(capacity,maxOf(current+burst,current+current/2)) }
+        exhaustedMs+=windowMs.coerceAtLeast(0)
+        return if(exhaustedMs>=6000) -1 else current
+    }
+}
+
+/** Shed spatial FFT work without reopening audio; recover only after a quiet interval. */
+class CaptureSpatialRecovery(initialUnderruns: Int = 0) {
+    private var previous=initialUnderruns
+    private var healthyMs=0L
+    var limited=false
+        private set
+    fun observe(underruns: Int, windowMs: Int): Boolean {
+        if (underruns>previous) { limited=true;healthyMs=0 }
+        else if (limited) {
+            healthyMs+=windowMs.coerceAtLeast(0)
+            if (healthyMs>=10000) { limited=false;healthyMs=0 }
+        }
+        previous=underruns
+        return limited
     }
 }

@@ -1,5 +1,34 @@
 # Codex Kotlin integration status — 7 October 2026
 
+## Owner dropout/spatial follow-up — current work
+
+See [spatial continuity follow-up](SPATIAL_CONTINUITY_FOLLOWUP.md) for changes, conditional
+native authorization, cue bounds and the TECNO × IM4/Realme Air 8 × Spotify/Amazon/YT Music
+phone matrix. This entry supersedes K2's immediate deadline-triggered restart description.
+Existing mode preferences are retained; Auto is an explicit experimental choice.
+
+Local verification on this follow-up:
+
+- Release core: 151 tests, zero failed checks; generated 19-rule matrix parity unchanged.
+- Android debug/release assembly, lintDebug and all 184 JVM tests pass. Final incremental
+  verification after the settled-path optimization passes in 5m33s; the initial clean build
+  took 16m25s. Both arm64-v8a/x86_64 JNI libraries compile.
+- ThreadSanitizer: four parameter/publication tests pass, including concurrent spatial mode
+  and load-limit setters. ASan/UBSan full-suite and final focused checks are recorded below
+  when complete; do not infer their success from this entry.
+- Actual compiled Kotlin NativeEngine with host JNI: 44.1/48/96k mode/load calls keep latency
+  fixed, preserve the center and reach exactly zero Detailed mix under load. This is host
+  execution, not Android playback or proof of player compatibility.
+- Eleven Python screenshot/control assertion tests pass. Release-preview signature verification,
+  forbidden-capability check and ZIP/ELF 16 KB alignment checks pass (four native libraries).
+- Host spatial fixture: 32 seconds of audio takes 0.803 s in Detailed and 0.718 s in aligned
+  Fast. This single fixture is not a phone CPU measurement or an Auto worst-case benchmark.
+
+No phone is attached and local KVM is unavailable. Hosted API33/API34 checks, screenshot
+inspection and phone listening remain separate verification. No owner key was accessed,
+no public release/site update or version bump was made. A preview uses the existing preview
+signer and cannot update an owner-signed public installation in place.
+
 Codex branch: `claude/codex-audio-crackling-amplifier-gkj007`.
 Claude branch merged without conflicts: `ccr-2e937472-6z53b0`, source `b3022a9863621b5d79cf3342c9ded89e156be08b`.
 Merge commit: `2f04da5`. Follow-up source `62c43cf` merged without conflicts as `a682deb`.

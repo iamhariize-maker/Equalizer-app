@@ -26,8 +26,9 @@
 //                     ~5 dB driven by how fast each band's left/right position
 //                     is moving. Static images stay put; channel-to-channel
 //                     movement already in the recording is exaggerated.
-// Every side-channel control leaves L+R (the mono sum) unchanged: nothing is
-// synthesized, delayed or reverberated.
+// Every side-channel control leaves the mono sum unchanged. Fast adds no
+// spatial delay; a Detailed-capable stage delays both channels equally and
+// retains that delay while blending modes. No artificial reverb is created.
 #include <atomic>
 #include <array>
 #include <memory>
@@ -61,6 +62,9 @@ class StereoTuner {
   // latencyFrames() to the whole stereo stage, so callers must report it.
   explicit StereoTuner(double sampleRate, bool residual = false);
   int latencyFrames() const { return residual_ ? residual_->latencyFrames() : 0; }
+  void setSpatialMode(int mode) { if (residual_) residual_->setMode(mode); }
+  void setSpatialLoadLimited(bool on) { if (residual_) residual_->setLoadLimited(on); }
+  double detailedMix() const { return residual_ ? residual_->detailedMix() : 0; }
 
   // Any thread; live changes crossfade for 20 ms. Updates during a fade coalesce.
   void setParams(const StereoTunerParams& p);
@@ -106,7 +110,7 @@ class StereoTuner {
     double motion(double highSide, double mid);
     void redesign(const StereoTunerParams& p, double fs);
     void reset();
-    double process(double& left, double& right);
+    double process(double& left, double& right, bool fastSpatial = true, double* fastDelta = nullptr);
   };
   std::unique_ptr<SpatialResidual> residual_;
   double fs_;

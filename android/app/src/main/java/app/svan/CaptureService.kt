@@ -141,6 +141,8 @@ class CaptureService : Service() {
         val settings = SvanRepository.settings.value.let {
             if (safeFallback) it.copy(spatialMode = SpatialMode.FAST, captureRateMode = RatePolicy.Mode.SAFE) else it
         }
+        val spatialCapable = settings.spatialMode != SpatialMode.FAST
+        val spatialLimited = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
             var allowed: Set<Int> = SessionRouter.captureUids
             val manager = getSystemService(AudioManager::class.java)
@@ -187,7 +189,7 @@ class CaptureService : Service() {
             var dsp = buildEngine(settings, rate)
             engine = dsp
             synchronized(engineLock) { current = dsp }
-            epoch = CaptureEpoch(nextEpoch.incrementAndGet(), rate, dsp.latencyFrames, settings.spatialMode == SpatialMode.DETAILED, settings)
+            epoch = CaptureEpoch(nextEpoch.incrementAndGet(), rate, dsp.latencyFrames, spatialCapable, settings)
             app.svan.listening.ClipRecorder.captureChanged(epoch)
             eqWatcher = Thread({
                 var last: EqState? = null
@@ -199,9 +201,13 @@ class CaptureService : Service() {
                         synchronized(engineLock) { current?.let {
                             applyProtection(it,eq,audioSettings)
                             it.setBassUnmask(if (audioSettings.experimentalBassUnmask && eq.enabled) 1.0 else 0.0)
+                            if (spatialCapable) it.setSpatialMode(audioSettings.spatialMode)
                             if(eq !== last)applyEq(it, eq, last)
                             epoch = epoch?.let { active ->
-                                active.copy(appliedSettings = active.appliedSettings.withLiveCaptureControls(audioSettings))
+                                val live = active.appliedSettings.withLiveCaptureControls(audioSettings)
+                                active.copy(appliedSettings = if (spatialCapable) live.copy(
+                                    spatialMode = if (spatialLimited.get()) SpatialMode.FAST else audioSettings.spatialMode
+                                ) else live)
                             }
                             app.svan.listening.ClipRecorder.captureChanged(epoch)
                         } }
@@ -213,7 +219,6 @@ class CaptureService : Service() {
             }, "svan-eq-watch").apply { start() }
 
             val fade = CaptureFade(rate / 100)
-            val recovery = CaptureBufferRecovery()
             EqController.log("capture: started, quality=${settings.quality}, DSP latency=${dsp.latencyFrames} frames, output buffer=${output.bufferSizeInFrames} frames")
             val buf = FloatArray(frames * 2)
             // Prime before play: starting on one 5 ms block underruns at the first hiccup.
@@ -221,6 +226,9 @@ class CaptureService : Service() {
             // Count what the track actually accepted: primed silence is queued audio too.
             val primedWritten = if (primed > 0) output.write(FloatArray(primed), 0, primed, AudioTrack.WRITE_NON_BLOCKING) else 0
             output.play()
+            val recovery = CaptureBufferRecovery(output.underrunCount)
+            val spatialRecovery = CaptureSpatialRecovery(output.underrunCount)
+            var recoveryFrames = 0L
             runCatching {
                 val facts = RateFacts(rate, input.sampleRate, output.sampleRate,
                     mixerHint,
@@ -236,8 +244,6 @@ class CaptureService : Service() {
             val headClock = PlaybackHeadClock()
             var dspNanos = 0L
             var processedFrames = 0L
-            var deadlineMisses = 0
-            var lastUnderruns = output.underrunCount
             // Frames of exact digital silence in a row (a capture-blocked or paused source).
             var silentRun = 0L
             var watchdogFired = false
@@ -280,7 +286,6 @@ class CaptureService : Service() {
                     dsp.process(buf, buf, n / 2)
                     val elapsed = System.nanoTime() - begin
                     dspNanos += elapsed
-                    if (elapsed > (n / 2L) * 1_000_000_000L / rate) deadlineMisses++
                 } else {
                     // No admitted source, or >1 s of digital silence (filter state has fully
                     // decayed): do not spend phone CPU oversampling silence or let dither/filter
@@ -308,7 +313,8 @@ class CaptureService : Service() {
                         current = null
                         dsp.close()
                         // Retain live protection/experimental choices, but not pending format changes.
-                        dsp = buildEngine(epoch?.appliedSettings ?: settings, rate)
+                        dsp = buildEngine(epoch?.appliedSettings ?: settings, rate, spatialCapable)
+                        dsp.setSpatialLoadLimited(spatialLimited.get())
                         engine = dsp
                         current = dsp
                         epoch = epoch?.copy(id = nextEpoch.incrementAndGet())
@@ -317,12 +323,30 @@ class CaptureService : Service() {
                     app.svan.listening.ClipRecorder.captureChanged(epoch)
                     EqController.log("capture filter: ${allowed.size} muted UID(s)")
                 }
-                if (levelFrames >= rate * 2) {
-                    rateFacts = rateFacts?.copy(deviceReportedHz = output.routedDevice?.sampleRates?.toList().orEmpty(),
-                        captureDeviceHz = runCatching { input.activeRecordingConfiguration?.format?.sampleRate }.getOrNull())
-                    val desired = recovery.nextSize(output.underrunCount, output.bufferSizeInFrames, output.bufferCapacityInFrames, frames)
+                recoveryFrames += n / 2
+                // Check recovery independently of the two-second diagnostic window. A
+                // late DSP block alone is not failure: queued audio can cover it.
+                if (recoveryFrames >= rate / 4) {
+                    val windowMs = (recoveryFrames * 1000 / rate).toInt()
+                    val desired = recovery.nextSize(output.underrunCount, output.bufferSizeInFrames,
+                        output.bufferCapacityInFrames, frames, windowMs)
+                    val limited = spatialRecovery.observe(output.underrunCount, windowMs)
+                    if (spatialCapable && limited != spatialLimited.get()) {
+                        synchronized(engineLock) {
+                            spatialLimited.set(limited)
+                            dsp.setSpatialMode(SvanRepository.settings.value.spatialMode)
+                            dsp.setSpatialLoadLimited(limited)
+                            epoch = epoch?.let { active -> active.copy(appliedSettings = active.appliedSettings.copy(
+                                spatialMode = if (limited) SpatialMode.FAST else SvanRepository.settings.value.spatialMode)) }
+                            app.svan.listening.ClipRecorder.captureChanged(epoch)
+                        }
+                        recoveryMessage.value = if (limited)
+                            "Playback buffer ran short. Spatial processing is fading to Fast while capture keeps running; it can recover after ten seconds without new underruns."
+                        else "Playback recovered. Your selected spatial mode is resuming smoothly."
+                    }
+                    recoveryFrames = 0
                     if (desired < 0) {
-                        if (!safeFallback && (settings.spatialMode == SpatialMode.DETAILED || rate != RatePolicy.SAFE_HZ)) {
+                        if (!safeFallback && rate != RatePolicy.SAFE_HZ) {
                             recoveryMessage.value = "Persistent underruns: restarting in Fast mode at safe 48 kHz. Your saved choices are unchanged."
                             return true
                         }
@@ -334,6 +358,10 @@ class CaptureService : Service() {
                         output.setBufferSizeInFrames(desired)
                         EqController.log("capture: underrun recovery buffer=${output.bufferSizeInFrames} frames")
                     }
+                }
+                if (levelFrames >= rate * 2) {
+                    rateFacts = rateFacts?.copy(deviceReportedHz = output.routedDevice?.sampleRates?.toList().orEmpty(),
+                        captureDeviceHz = runCatching { input.activeRecordingConfiguration?.format?.sampleRate }.getOrNull())
                     val played = headClock.unwrap(output.playbackHeadPosition)
                     val queued = (writtenFrames - played).coerceAtLeast(0)
                     stats = Stats(output.bufferSizeInFrames * 1000.0 / rate, queued * 1000.0 / rate,
@@ -341,14 +369,8 @@ class CaptureService : Service() {
                         dspNanos.toDouble() / (processedFrames * 1e9 / rate) * 100.0,
                         dsp.appliedGainDb, dsp.gainProtectionDb,
                         20.0 * kotlin.math.log10(maxOf(levelPeak.toDouble(), 1e-6)),
-                        20.0 * kotlin.math.log10(maxOf(outputPeak.toDouble(), 1e-6)))
+                        20.0 * kotlin.math.log10(maxOf(outputPeak.toDouble(), 1e-6)), dsp.detailedMix)
                     unmaskSnapshot = dsp.bassUnmaskDiagnostics() // audio-thread snapshot; UI never races DSP getters
-                    if (!safeFallback && settings.spatialMode == SpatialMode.DETAILED && deadlineMisses > 0 && output.underrunCount > lastUnderruns) {
-                        recoveryMessage.value = "Detailed processing missed an audio deadline and playback underrun occurred; restarting Fast at safe 48 kHz."
-                        return true
-                    }
-                    lastUnderruns = output.underrunCount
-                    deadlineMisses = 0
                     val muted = SessionRouter.snapshot.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.joinToString { it.pkg }
                     EqController.log("capture level: peak=%.4f over %d frames; output queued=%.1f ms, underruns=%d, DSP=%.1f%%, muted=[%s], otherPlayers=%d".format(levelPeak, levelFrames, stats!!.queuedMs, stats!!.underruns, stats!!.dspPercent, muted, otherActivePlayers))
                     levelPeak = 0f; outputPeak = 0f; levelFrames = 0; dspNanos = 0; processedFrames = 0
@@ -378,7 +400,7 @@ class CaptureService : Service() {
         return AudioTrack.Builder()
             .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
             .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_STEREO).build())
-            .setBufferSizeInBytes(maxOf(min, rate * 120 / 1000 * 8))
+            .setBufferSizeInBytes(maxOf(min, rate * OUTPUT_CAPACITY_MS / 1000 * 8))
             .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY).setTransferMode(AudioTrack.MODE_STREAM).build().also {
                 if (it.state != AudioTrack.STATE_INITIALIZED) { it.release(); error("output not initialized") }
             }
@@ -404,7 +426,7 @@ class CaptureService : Service() {
             }
     }
 
-    private fun buildEngine(s: AudioSettings, rate: Int): NativeEngine =
+    private fun buildEngine(s: AudioSettings, rate: Int, spatialCapable: Boolean = s.spatialMode != SpatialMode.FAST): NativeEngine =
         NativeEngine(
             rate, 2,
             oversample = s.oversampleAt(rate),
@@ -414,8 +436,9 @@ class CaptureService : Service() {
             ditherMode = s.dither.nativeMode,
             autoHeadroom = s.effectiveFor(SvanRepository.eq.value).autoHeadroom,
             gainProtection = s.effectiveFor(SvanRepository.eq.value).gainProtection,
-            spatialResidual = s.spatialMode == SpatialMode.DETAILED,
+            spatialResidual = spatialCapable,
         ).also {
+            it.setSpatialMode(s.spatialMode)
             it.setAnalysis(true) // Svaramanas listens to the source (preallocated mid/side analysis every 85 ms)
             applyEq(it, SvanRepository.eq.value)
             it.setBassUnmask(if (s.experimentalBassUnmask && SvanRepository.eq.value.enabled) 1.0 else 0.0)
@@ -463,7 +486,7 @@ class CaptureService : Service() {
 
     data class Stats(val bufferMs: Double, val queuedMs: Double, val dspLatencyMs: Double,
         val underruns: Int, val dspPercent: Double, val gainDb: Double, val protectionDb: Double,
-        val inputPeakDb: Double, val outputPeakDb: Double)
+        val inputPeakDb: Double, val outputPeakDb: Double, val detailedMix: Double)
 
     companion object {
         val startupMessage = kotlinx.coroutines.flow.MutableStateFlow("")
@@ -487,7 +510,8 @@ class CaptureService : Service() {
         private const val CHANNEL = "capture"
         private const val NOTIF_ID = 1
         private const val SILENCE_FAILOPEN_S = 4
-        private const val OUTPUT_CUSHION_MS = 40
+        private const val OUTPUT_CUSHION_MS = 80
+        private const val OUTPUT_CAPACITY_MS = 240
         private const val CAPTURE_BACKLOG_MS = 250
         const val ACTION_STOP = "app.svan.STOP_CAPTURE"
         const val EXTRA_RESULT_CODE = "resultCode"

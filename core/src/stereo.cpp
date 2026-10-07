@@ -87,12 +87,15 @@ void StereoTuner::State::reset() {
   budgetScale_ = 1;
 }
 
-double StereoTuner::State::process(double& left, double& right) {
+double StereoTuner::State::process(double& left, double& right, bool fastSpatial, double* fastDelta) {
+  if (fastDelta) *fastDelta = 0;
   if (p_.isOff()) {
     return 1.;  // bit-exact passthrough
   }
   const bool vocal = p_.intimacy != 0 || p_.warmth != 0 || p_.smoothness != 0;
-  const bool side = p_.space != 0 || p_.instruments != 0 || p_.backingVocals != 0 || p_.spatialDetail != 0;
+  const bool side = p_.space != 0 || p_.instruments != 0 ||
+      (fastSpatial && (p_.backingVocals != 0 || p_.spatialDetail != 0));
+  if (!vocal && !side) return 1.;
   // De-harsh: band level relative to the whole voice, above a threshold that
   // drops as smoothness rises; up to 12 dB of reduction.
   const double thrDb = -4.0 - 8.0 * p_.smoothness;
@@ -125,12 +128,13 @@ double StereoTuner::State::process(double& left, double& right) {
     const double instr = bodyBell_.run(plain);
     const double hi1 = airShelf_.run(presenceBell_.run(instr));
     s += spaceGain_ * hi1 - plain;  // Space and Instruments: explicit widening, honoured as asked
-    if (p_.backingVocals > 0 || p_.spatialDetail > 0) {
+    if (fastSpatial && (p_.backingVocals > 0 || p_.spatialDetail > 0)) {
       double high = detailShelf_.run(backingBell_.run(hi1));
       if (p_.spatialDetail > 0) high = shuffleBell_.run(high);
       if (p_.backingVocals > 0) high = backingLift(high, m);
       if (p_.spatialDetail > 0) high = motion(high, m);
-      s += budgetedSpatialDelta(s, m, spaceGain_ * (high - hi1));
+      const double delta = budgetedSpatialDelta(s, m, spaceGain_ * (high - hi1));
+      if (fastDelta) *fastDelta = delta; else s += delta;
     }
   }
   left = m + s;
@@ -226,12 +230,9 @@ void StereoTuner::process(double* L,double* R,int frames) {
   if(fadeRemaining_==0 && v!=appliedVersion_ && !pendingLock_.exchange(true,std::memory_order_acquire)) {
     const auto next=pending_;
     pendingLock_.store(false,std::memory_order_release);
-    auto cmp=next;
-    if(residual_){cmp.backingVocals=0;cmp.spatialDetail=0;}
-    if(!(cmp==states_[active_].p_)) {
+    if(!(next==states_[active_].p_)) {
       states_[1-active_]=states_[active_]; // retain histories; fixed-size, no allocation
       auto designed=next;
-      if(residual_){designed.backingVocals=0;designed.spatialDetail=0;}  // those two run in the residual stage
       states_[1-active_].redesign(designed,fs_);
       if(!initialized_)active_=1-active_;else fadeRemaining_=fadeFrames_;
     }
@@ -239,27 +240,33 @@ void StereoTuner::process(double* L,double* R,int frames) {
   }
   initialized_=true;
   double minGain=1.;
-  for(int i=0;i<frames;++i) {
+  // Fixed stack chunks feed both spatial paths through the same delay. Only
+  // spatial deltas blend; the vocal/Space/Instruments path is shared.
+  double m[256],s[256],fast[256];
+  for(int base=0;base<frames;base+=256) {
+   const int count=std::min(256,frames-base);
+   const bool needFast = !residual_ || residual_->needsFastPath();
+   for(int j=0;j<count;++j) {
+    const int i=base+j;
+    double d=0;
     if(fadeRemaining_>0) {
       double l=L[i],r=R[i];
-      minGain=std::min(minGain,states_[active_].process(L[i],R[i]));
-      minGain=std::min(minGain,states_[1-active_].process(l,r));
+      double nextDelta=0;
+      minGain=std::min(minGain,states_[active_].process(L[i],R[i],needFast,residual_?&d:nullptr));
+      minGain=std::min(minGain,states_[1-active_].process(l,r,needFast,residual_?&nextDelta:nullptr));
       const double t=1.-static_cast<double>(fadeRemaining_)/fadeFrames_;
       L[i]+=t*(l-L[i]);R[i]+=t*(r-R[i]);
+      d+=t*(nextDelta-d);
       if(--fadeRemaining_==0)active_=1-active_;
-    } else minGain=std::min(minGain,states_[active_].process(L[i],R[i]));
-  }
-  lastDeharshDb_=20*std::log10(minGain);
-  if(residual_) {
-    // Dry mid/side delayed by latencyFrames(), plus the bounded side delta. 256-frame stack chunks.
-    double m[256],s[256];
-    for(int base=0;base<frames;base+=256) {
-      const int n=std::min(256,frames-base);
-      for(int i=0;i<n;++i){m[i]=.5*(L[base+i]+R[base+i]);s[i]=.5*(L[base+i]-R[base+i]);}
-      residual_->process(m,s,n);
-      for(int i=0;i<n;++i){L[base+i]=m[i]+s[i];R[base+i]=m[i]-s[i];}
+    } else minGain=std::min(minGain,states_[active_].process(L[i],R[i],needFast,residual_?&d:nullptr));
+    if(residual_) { m[j]=.5*(L[i]+R[i]);s[j]=.5*(L[i]-R[i]);fast[j]=d; }
+   }
+   if(residual_) {
+      residual_->process(m,s,count,fast);
+      for(int j=0;j<count;++j){L[base+j]=m[j]+s[j];R[base+j]=m[j]-s[j];}
     }
   }
+  lastDeharshDb_=20*std::log10(minGain);
 }
 
 }  // namespace eqcore

@@ -23,6 +23,10 @@
 //     (exact quadratic root); the scale falls at once and recovers over ~100 ms
 //   - onset/motion guard: a residual that suddenly exceeds its own long-term level is held back
 //   - floors: silence and a 200 ms warm-up (then a 100 ms ramp) after start/reset
+// Live mode changes blend only the spatial deltas over 50 ms, using the same
+// N-frame delay for the Fast and Detailed paths. Fast can skip FFT work once
+// settled. Adaptive mode uses bounded local residual/foreground/onset cues;
+// it is an experimental controller, not a genre recognizer or trained model.
 #include <atomic>
 #include <complex>
 #include <vector>
@@ -37,10 +41,17 @@ class SpatialResidual {
 
   // Any thread. backing, binaural in [0, 1]; non-finite values are treated as 0.
   void setParams(double backing, double binaural);
+  // 0 Fast, 1 Detailed, 2 adaptive. Live changes retain the fixed delay.
+  void setMode(int mode) { mode_.store(mode >= 0 && mode <= 2 ? mode : 0); }
+  void setLoadLimited(bool on) { loadLimited_.store(on); }
+  // Audio thread only; avoid computing both paths once Auto settles at Detailed.
+  bool needsFastPath() const { return mode_.load() == 0 || loadLimited_.load() || blend_ < 1.0 ||
+      (mode_.load() == 2 && adaptiveTarget_ < 1.0); }
+  double detailedMix() const { return publishedMix_.load(); }
 
   // In place on one block of mid and side. Output is delayed by latencyFrames(); mid is exactly
   // the delayed input, side is the delayed input plus the bounded delta. Allocation-free.
-  void process(double* mid, double* side, int frames);
+  void process(double* mid, double* side, int frames, const double* fastDelta = nullptr);
 
   void reset();
 
@@ -51,13 +62,14 @@ class SpatialResidual {
   using Cx = std::complex<double>;
   void fft(Cx* x, bool inverse) const;
   void runFrame();
+  void resetStatistics();
 
   double fs_;
   int n_, hop_, bins_;
   std::vector<double> window_;               // sqrt-Hann, periodic
   std::vector<Cx> twiddle_;
   std::vector<int> bitrev_;
-  std::vector<double> midRing_, sideRing_;   // last n_ input samples
+  std::vector<double> midRing_, sideRing_, fastRing_;   // latency-aligned paths
   std::vector<double> acc_;                  // overlap-add accumulator (delta only)
   std::vector<Cx> work_, spec_;              // FFT scratch
   std::vector<double> maskBacking_, maskBinaural_;
@@ -71,6 +83,12 @@ class SpatialResidual {
   double warmFrames_;
   double lastDeltaDb_ = 0;
   std::atomic<double> backing_{0}, binaural_{0};
+  std::atomic<int> mode_{1};
+  std::atomic<bool> loadLimited_{false};
+  std::atomic<double> publishedMix_{1};
+  double blend_ = 1, adaptiveTarget_ = 0, transientActivity_ = 0;
+  long long warmStart_ = 0;
+  bool frameActive_ = true;
 };
 
 }  // namespace eqcore

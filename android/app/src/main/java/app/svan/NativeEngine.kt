@@ -42,6 +42,9 @@ class NativeEngine(
     }
 
     val latencyFrames: Int get() = nativeLatency(handle)
+    fun setSpatialMode(mode: app.svan.model.SpatialMode) = nativeSetSpatialMode(handle, mode.nativeMode)
+    fun setSpatialLoadLimited(on: Boolean) = nativeSetSpatialLoadLimited(handle, on)
+    val detailedMix: Double get() = nativeDetailedMix(handle)
 
     /** [channel] = -1 applies to every channel. */
     fun setBands(bands: List<Band>, channel: Int = -1) {
@@ -184,6 +187,9 @@ class NativeEngine(
         @JvmStatic external fun nativeProcess(handle: Long, input: FloatArray, output: FloatArray, frames: Int)
         @JvmStatic external fun nativeResponseDb(handle: Long, channel: Int, freqs: DoubleArray): DoubleArray
         @JvmStatic external fun nativeLatency(handle: Long): Int
+        @JvmStatic external fun nativeSetSpatialMode(handle: Long, mode: Int)
+        @JvmStatic external fun nativeSetSpatialLoadLimited(handle: Long, on: Boolean)
+        @JvmStatic external fun nativeDetailedMix(handle: Long): Double
         @JvmStatic external fun nativeSetAnalysis(handle: Long, on: Boolean)
         @JvmStatic external fun nativeAnalysis(handle: Long): DoubleArray
         fun fitGraphic(bands: List<app.svan.model.Band>, count: Int): Fit {

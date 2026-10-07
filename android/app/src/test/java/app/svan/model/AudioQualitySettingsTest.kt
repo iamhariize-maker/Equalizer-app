@@ -24,6 +24,13 @@ class AudioQualitySettingsTest {
         assertEquals(SpatialMode.FAST, settings.spatialMode)
         assertEquals(RatePolicy.Mode.SAFE, settings.captureRateMode)
     }
+    @Test fun autoSpatialIsAnExplicitSavedChoiceAndNativeModesStayStable() {
+        val settings=AudioSettings(spatialMode=SpatialMode.AUTO)
+        assertEquals(settings,AudioSettings.fromJson(settings.toJson()))
+        assertEquals(0,SpatialMode.FAST.nativeMode)
+        assertEquals(1,SpatialMode.DETAILED.nativeMode)
+        assertEquals(2,SpatialMode.AUTO.nativeMode)
+    }
     @Test fun internalRateTargetIsPreservedAcrossBothFamilies() {
         for (base in listOf(44100, 48000)) {
             val audiophile = AudioSettings(quality = QualityMode.AUDIOPHILE)

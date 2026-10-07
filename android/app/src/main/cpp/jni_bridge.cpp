@@ -93,6 +93,16 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeResetGainProtection(JNIE
   fromHandle(h)->resetGainProtection();
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetSpatialMode(JNIEnv*, jclass, jlong h, jint mode) {
+  fromHandle(h)->setSpatialMode(mode);
+}
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetSpatialLoadLimited(JNIEnv*, jclass, jlong h, jboolean on) {
+  fromHandle(h)->setSpatialLoadLimited(on == JNI_TRUE);
+}
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeDetailedMix(JNIEnv*, jclass, jlong h) {
+  return fromHandle(h)->detailedMix();
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeProcess(
     JNIEnv* env, jclass, jlong h, jfloatArray in, jfloatArray out, jint frames) {
   // Critical access avoids copies on the audio thread. No JNI calls in between.

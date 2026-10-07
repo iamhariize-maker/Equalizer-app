@@ -30,6 +30,7 @@ SpatialResidual::SpatialResidual(double fs)
   }
   midRing_.assign(static_cast<size_t>(n_), 0.0);
   sideRing_.assign(static_cast<size_t>(n_), 0.0);
+  fastRing_.assign(static_cast<size_t>(n_), 0.0);
   acc_.assign(static_cast<size_t>(n_), 0.0);
   work_.resize(static_cast<size_t>(n_));
   spec_.resize(static_cast<size_t>(n_));
@@ -62,14 +63,25 @@ void SpatialResidual::setParams(double backing, double binaural) {
 void SpatialResidual::reset() {
   std::fill(midRing_.begin(), midRing_.end(), 0.0);
   std::fill(sideRing_.begin(), sideRing_.end(), 0.0);
+  std::fill(fastRing_.begin(), fastRing_.end(), 0.0);
   std::fill(acc_.begin(), acc_.end(), 0.0);
+  resetStatistics();
+  pos_ = 0;
+  sinceFrame_ = 0;
+  backingSm_ = binauralSm_ = 0;
+  blend_ = mode_.load() == 1 && !loadLimited_.load() ? 1 : 0;
+  publishedMix_.store(blend_);
+  adaptiveTarget_ = transientActivity_ = 0;
+  warmStart_ = 0;
+  frameActive_ = true;
+}
+
+void SpatialResidual::resetStatistics() {
   for (auto* v : {&pmm_, &pss_, &paSlow_, &paFast_, &scale_}) std::fill(v->begin(), v->end(), 0.0);
   std::fill(gain_.begin(), gain_.end(), 0.0);
   std::fill(csm_.begin(), csm_.end(), Cx(0, 0));
   for (auto& s : scale_) s = 1.0;
-  pos_ = 0;
-  sinceFrame_ = 0;
-  guard_ = prevMid_ = backingSm_ = binauralSm_ = 0;
+  guard_ = prevMid_ = 0;
   lastDeltaDb_ = 0;
 }
 
@@ -92,18 +104,26 @@ void SpatialResidual::fft(Cx* x, bool inverse) const {
   }
 }
 
-void SpatialResidual::process(double* mid, double* side, int frames) {
+void SpatialResidual::process(double* mid, double* side, int frames, const double* fastDelta) {
   const double bTarget = backing_.load(std::memory_order_relaxed), nTarget = binaural_.load(std::memory_order_relaxed);
+  const int mode = mode_.load();
+  const bool limited = loadLimited_.load();
+  if (pos_ == 0) blend_ = mode == 1 && !limited ? 1 : 0;
+  const double step = 1.0 / (fs_ * .050); // bounded, 50 ms linear transition; no timeline jump
   for (int i = 0; i < frames; ++i) {
     const size_t slot = static_cast<size_t>(pos_ % n_);
     const double dryM = midRing_[slot], dryS = sideRing_[slot];   // the sample from exactly n_ frames ago
     const double delta = acc_[slot];
+    const double fast = fastRing_[slot];
+    fastRing_[slot] = fastDelta ? fastDelta[i] : 0;
     acc_[slot] = 0.0;
     const double xm = std::isfinite(mid[i]) ? mid[i] : 0.0, xs = std::isfinite(side[i]) ? side[i] : 0.0;
     midRing_[slot] = xm;
     sideRing_[slot] = xs;
     mid[i] = dryM;
-    side[i] = dryS + delta;
+    const double target = limited || mode == 0 ? 0 : mode == 1 ? 1 : adaptiveTarget_;
+    blend_ += std::clamp(target - blend_, -step, step);
+    side[i] = dryS + blend_ * delta + (1 - blend_) * fast;
     ++pos_;
     if (++sinceFrame_ == hop_) {
       sinceFrame_ = 0;
@@ -114,31 +134,51 @@ void SpatialResidual::process(double* mid, double* side, int frames) {
       runFrame();
     }
   }
+  publishedMix_.store(blend_, std::memory_order_relaxed);
 }
 
 void SpatialResidual::runFrame() {
+  // Once faded to Fast (or both dials are off), avoid FFT/bin work. Keep the
+  // input/delay rings moving, so recovery never drops or repeats dry samples.
+  if ((blend_ == 0 && (mode_.load() == 0 || loadLimited_.load())) ||
+      (backingSm_ == 0 && binauralSm_ == 0 &&
+       !std::any_of(gain_.begin(), gain_.end(), [](double g) { return g != 0; }))) {
+    frameActive_ = false;
+    lastDeltaDb_ = 0;
+    return;
+  }
+  if (!frameActive_) {
+    resetStatistics();
+    warmStart_ = pos_;
+    frameActive_ = true;
+  }
   const int n = n_;
   // Window the last n_ samples (oldest first) of mid and side into one complex FFT: z = M + iS.
   const size_t start = static_cast<size_t>(pos_ % n);
-  double midPow = 0;
+  double midPow = 0, midPeak = 0;
   for (int i = 0; i < n; ++i) {
     const size_t idx = (start + static_cast<size_t>(i)) % static_cast<size_t>(n);
     const double w = window_[static_cast<size_t>(i)];
     work_[static_cast<size_t>(i)] = Cx(midRing_[idx] * w, sideRing_[idx] * w);
     midPow += midRing_[idx] * midRing_[idx];
+    midPeak = std::max(midPeak, std::fabs(midRing_[idx]));
   }
   midPow /= n;
   // Frame onset guard: a sudden rise in mid power holds the enhancement back (50 ms decay).
   const double rise = midPow > 1e-9 ? midPow / (prevMid_ + 1e-9) : 1.0;
   guard_ = std::max(aGuard_ * guard_, rise > 4.0 ? 1.0 : 0.0);  // > 6 dB in one hop
   prevMid_ = midPow;
+  transientActivity_ = std::max(std::exp(-static_cast<double>(hop_) / (fs_ * .4)) * transientActivity_,
+      rise > 2.0 || midPeak * midPeak > 10 * midPow ? 1.0 : 0.0);
   fft(work_.data(), false);
   const double norm = 1.0 / n;
-  const double warm = std::clamp((static_cast<double>(pos_) / hop_ - warmFrames_) / (0.5 * warmFrames_), 0.0, 1.0);  // 200 ms warm-up, 100 ms ramp
+  const double warm = std::clamp((static_cast<double>(pos_ - warmStart_) / hop_ - warmFrames_) / (0.5 * warmFrames_), 0.0, 1.0);
   const bool active = backingSm_ > 0 || binauralSm_ > 0 || std::any_of(gain_.begin(), gain_.end(), [](double g) { return g != 0; });
 
   const double reqBackingDb = 4.0 * backingSm_, reqBinauralDb = 3.0 * binauralSm_;
+  const bool requestDelta = mode_.load() != 2 || blend_ > 0 || adaptiveTarget_ > 0;
   double deltaDbSum = 0, deltaDbCount = 0;
+  double foregroundPower = 0, residualPower = 0, sidePower = 0;
   std::fill(spec_.begin(), spec_.end(), Cx(0, 0));
   for (int k = 1; k < bins_ - 1; ++k) {
     const size_t sk = static_cast<size_t>(k), nk = static_cast<size_t>(n - k);
@@ -151,10 +191,15 @@ void SpatialResidual::runFrame() {
     const Cx beta = csm_[sk] / (pmm + 1e-14);
     const Cx a = s - beta * m;                                         // residual of this frame
     const double paInst = std::norm(a);
+    if (maskBinaural_[sk] > .5) {
+      foregroundPower += pmm;
+      sidePower += pss;
+      residualPower += std::min(paInst, pss);
+    }
     paSlow_[sk] = aSlow_ * paSlow_[sk] + (1 - aSlow_) * paInst;
     paFast_[sk] = aFast_ * paFast_[sk] + (1 - aFast_) * paInst;
     // Request, in dB of residual boost, shaped by the band masks.
-    double req = std::min(4.0, reqBackingDb * maskBacking_[sk] + reqBinauralDb * maskBinaural_[sk]);
+    double req = requestDelta ? std::min(4.0, reqBackingDb * maskBacking_[sk] + reqBinauralDb * maskBinaural_[sk]) : 0;
     double g = 0;
     if (req > 0 && warm > 0 && pmm > 1e-14 && midPow > 1e-8) {
       const double coh = std::norm(csm_[sk]) / (pmm * pss + 1e-30);
@@ -192,6 +237,18 @@ void SpatialResidual::runFrame() {
       deltaDbCount += 1;
     }
   }
+  // Conservative local cues, not song/genre identification: sustained modest
+  // residuals may use Detailed; attacks, dominant sides and no centre use Fast.
+  const double residualShare = residualPower / (foregroundPower + sidePower + 1e-30);
+  const double eligibility = smooth01((residualShare - .015) / .04) *
+      (1 - smooth01((sidePower / (foregroundPower + 1e-30) - .25) / .25));
+  const double target = foregroundPower > 1e-8 ? eligibility * (1 - transientActivity_) : 0;
+  const double tau = target < adaptiveTarget_ ? .080 : 1.5;
+  const double a = std::exp(-static_cast<double>(hop_) / (fs_ * tau));
+  adaptiveTarget_ = a * adaptiveTarget_ + (1 - a) * target;
+  // Settle at exact endpoints so stable Auto does not run two paths forever.
+  if (target == 1 && adaptiveTarget_ > .98) adaptiveTarget_ = 1;
+  if (target == 0 && adaptiveTarget_ < .005) adaptiveTarget_ = 0;
   lastDeltaDb_ = deltaDbCount > 0 ? deltaDbSum / deltaDbCount : 0.0;
   if (!active && lastDeltaDb_ == 0) return;
   if (deltaDbCount == 0) return;

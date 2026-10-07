@@ -147,6 +147,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         Text("Signal peak · in %.1f dBFS · out %.1f dBFS".format(st.inputPeakDb, st.outputPeakDb), style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
                         Text("Output queue %.1f ms · buffer %.1f ms".format(st.queuedMs, st.bufferMs), style = MaterialTheme.typography.bodySmall)
                         Text("DSP %.1f ms · load %.1f%% · underruns %d".format(st.dspLatencyMs, st.dspPercent, st.underruns), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                        Text("Spatial blend: %.0f%% Detailed".format(st.detailedMix * 100), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                         Text("Spatial mode applied: ${if (CaptureService.epoch?.detailed == true) "Detailed" else "Fast"}", style = MaterialTheme.typography.bodySmall)
                         CaptureService.rateFacts?.let { Text(it.summary(), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
                         Text("Applied gain %.1f dB · protection %.1f dB".format(st.gainDb, st.protectionDb), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
@@ -214,7 +215,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         SpatialMode.entries.forEach { mode ->
             ChoiceRow(mode.title, mode.detail, s.spatialMode == mode, onClick = { SvanRepository.updateSettings { it.copy(spatialMode = mode) } })
         }
-        Text("Mode and rate changes apply when capture restarts. If Detailed misses an audio deadline with an underrun, or buffering cannot recover, Svan retries Fast at safe 48 kHz. Device-specific load thresholds await phone measurements.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        Text("Starting capture in Auto or Detailed allows live, smooth spatial changes. Its added delay stays fixed during switches. Capture started in Fast needs a restart to enable Auto or Detailed; rate changes also need a restart. Short load spikes grow buffering and fade spatial work toward Fast while capture keeps running. Persistent failure can still return to system effects. Phone qualification pending.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         SectionLabel("Capture rate")
         RatePolicy.Mode.entries.forEach { mode ->
             val label = when (mode) { RatePolicy.Mode.SAFE -> "Safe 48 kHz"; RatePolicy.Mode.EVIDENCE_HIGH_RATE -> "High-rate (device evidence)"; RatePolicy.Mode.EXPERIMENTAL_192K -> "Experimental 192 kHz" }

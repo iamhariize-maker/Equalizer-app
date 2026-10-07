@@ -1249,6 +1249,90 @@ void runResidual(SpatialResidual& r, Program& p, int block) {
 }
 }  // namespace
 
+TEST(spatial_live_switch_keeps_latency_and_the_centre_at_all_rates) {
+  for (double fs : {44100., 48000., 96000.}) {
+    StereoTuner live(fs, true);
+    StereoTunerParams p; p.backingVocals = .7; p.spatialDetail = .8;
+    live.setParams(p);
+    const int delay = live.latencyFrames(), count = static_cast<int>(fs * 2);
+    std::vector<double> left(count), right(count), mid(count);
+    for (int i = 0; i < count; ++i) {
+      mid[i] = .2 * std::sin(2 * kPi * 700 * i / fs);
+      const double side = .02 * std::sin(2 * kPi * 1700 * i / fs);
+      left[i] = mid[i] + side; right[i] = mid[i] - side;
+    }
+    for (int base = 0; base < count; base += 127) {
+      live.setSpatialMode((base / 4096) % 3);
+      live.setSpatialLoadLimited(base > count / 2 && base < count * 3 / 4);
+      live.process(left.data()+base, right.data()+base, std::min(127,count-base));
+      CHECK(live.latencyFrames() == delay);
+    }
+    for (int i = delay; i < count; ++i) {
+      CHECK(std::isfinite(left[i]) && std::isfinite(right[i]));
+      CHECK_NEAR(.5 * (left[i]+right[i]), mid[i-delay], 1e-12);
+    }
+  }
+}
+
+TEST(spatial_live_fast_matches_the_existing_fast_path_after_alignment) {
+  const double fs = 48000;
+  StereoTuner fast(fs), live(fs,true);
+  StereoTunerParams p; p.backingVocals=.7; p.spatialDetail=.8; p.space=.2; p.instruments=.3;
+  fast.setParams(p); live.setParams(p); live.setSpatialMode(0);
+  const int count=static_cast<int>(fs*2), delay=live.latencyFrames();
+  std::vector<double> l(count),r(count);
+  for(int i=0;i<count;++i) { l[i]=.2*std::sin(2*kPi*700*i/fs)+.03*std::sin(2*kPi*1700*i/fs); r[i]=.2*std::sin(2*kPi*700*i/fs)-.03*std::sin(2*kPi*1700*i/fs); }
+  auto fl=l,fr=r;
+  fast.process(fl.data(),fr.data(),count);
+  live.process(l.data(),r.data(),count);
+  for(int i=static_cast<int>(fs);i<count;++i) {
+    CHECK_NEAR(l[i],fl[i-delay],1e-10); CHECK_NEAR(r[i],fr[i-delay],1e-10);
+  }
+}
+
+TEST(spatial_auto_prefers_a_stable_bed_and_holds_repeated_foreground_attacks) {
+  const double fs=48000;
+  auto measure = [&](bool attacks) {
+    SpatialResidual r(fs); r.setParams(1,1); r.setMode(2);
+    std::mt19937 rng(42); std::uniform_real_distribution<double> u(-1,1);
+    double m[256],s[256];
+    for(int base=0;base<fs*8;base+=256) {
+      for(int i=0;i<256;++i) {
+        const double t=(base+i)/fs;
+        const double env=attacks ? (std::fmod(t,.3)<.025 ? 1 : .02) : 1;
+        m[i]=.2*env*u(rng);s[i]=.08*u(rng);
+      }
+      r.process(m,s,256);
+    }
+    return r.detailedMix();
+  };
+  const double bed=measure(false), attacks=measure(true);
+  std::printf("    Auto mix: stable bed %.4f, repeated foreground attacks %.4f\n",bed,attacks);
+  CHECK(bed>.8); CHECK(attacks<.4);
+}
+
+TEST(spatial_load_fade_and_recovery_preserve_a_continuous_foreground) {
+  StereoTuner st(48000,true); StereoTunerParams p; p.backingVocals=1;p.spatialDetail=1;
+  st.setParams(p);
+  double l[256],r[256];
+  double prevSide=0,maxStep=0;
+  for(int b=0;b<1000;++b) {
+    st.setSpatialLoadLimited(b>=200 && b<600);
+    for(int i=0;i<256;++i) {const double s=.04*std::sin(2*kPi*1600*(b*256+i)/48000);l[i]=.2+s;r[i]=.2-s;}
+    st.process(l,r,256);
+    for(int i=0;i<256;++i) {
+      if(b>10)CHECK_NEAR(.5*(l[i]+r[i]),.2,1e-12);
+      const double side=.5*(l[i]-r[i]);
+      if(b>10)maxStep=std::max(maxStep,std::fabs(side-prevSide));
+      prevSide=side;
+    }
+    if(b==500)CHECK(st.detailedMix()==0);
+    if(b==900)CHECK(st.detailedMix()==1);
+  }
+  std::printf("    maximum adjacent side-sample step during load switching: %.6f\n",maxStep);
+  CHECK(maxStep<.025); // bounds switching discontinuities as well as the normal sine slope
+}
+
 TEST(spatial_residual_delay_is_exact_and_rate_independent) {
   for (auto [fs, expected] : {std::pair<double, int>{44100, 1024}, {48000, 1024}, {96000, 2048}, {192000, 4096}}) {
     SpatialResidual r(fs);
@@ -1947,6 +2031,8 @@ TEST(audio_thread_paths_do_not_allocate) {
   g_allocs = 0;
   g_countAllocs = true;
   for (int i = 0; i < 200; ++i) {
+    st.setSpatialMode(i%3);st.setSpatialLoadLimited(i%7<3);
+    e.setSpatialMode(i%3);e.setSpatialLoadLimited(i%7<3);
     fill();
     sr.process(a.data(), b.data(), 480);
     bu.process(a.data(), b.data(), 480);
@@ -2026,6 +2112,8 @@ TEST(eq_parameter_spatial_bass_and_unmask_publication_is_safe_during_processing)
       e.setBassResolve(u(rng));
       e.setBassUnmask(u(rng));
       e.setDynamicEq(u(rng));
+      e.setSpatialMode(static_cast<int>(u(rng)*3));
+      e.setSpatialLoadLimited(u(rng)>.5);
     }
   });
   std::mt19937 rng(2);
