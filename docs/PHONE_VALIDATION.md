@@ -34,7 +34,8 @@ or the shared-output experiment. Keep Play Protect enabled. See [player connecti
    support for an offload/HD route from a speaker or self-tone test.
 4. While shared-output is active, verify no doubled EQ when a player announces a new session;
    per-app overrides are unavailable. Connect/disconnect an output and check the experiment
-   stops. Check stop restores per-player processing and Engine B refuses to start until it stops.
+   stops. Also select between already-connected outputs: that selection may produce no device
+   connection event, so stop and re-test manually. Check stop restores per-player processing and Engine B refuses to start until it stops.
 5. Test other sounds sharing the output and stop the option if it affects audio unexpectedly.
    Confirm the Recording mode workflow still works after returning to Engine B. Shared-output
    EQ does not create processed recording files for capture-blocked apps.

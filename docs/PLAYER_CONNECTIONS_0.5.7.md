@@ -48,9 +48,10 @@ Successful construction/control is reported only as **attached**, never proof of
 Enabling it releases Svan's per-player effects. New announced sessions are labelled SHARED_OUTPUT
 and receive no second EQ. There is no global mute. Capture admission excludes these routes, and
 Engine B startup is blocked in the activity, service and router. Turn it off before Engine B or
-Recording mode. Failure/control loss restores per-player connections; an output-device change
-stops the experiment and requires explicitly enabling it again. It never silently follows a
-new output. Use **Stop shared-output EQ** to restore the per-player path.
+Recording mode. Failure/control loss restores per-player connections; a reported device connection/removal
+stops the experiment and requires explicitly enabling it again. Selecting between already-connected
+outputs is not reliably observable through the permission-free callback; stop and re-test manually
+after that change. Use **Stop shared-output EQ** to restore the per-player path.
 
 The option may affect other sounds sharing that mix, and cannot isolate an app or identify an
 anonymous player. Per-app overrides are not enforced during shared-output use. Recording mode

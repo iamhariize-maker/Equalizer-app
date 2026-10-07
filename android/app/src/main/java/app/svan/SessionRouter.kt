@@ -352,7 +352,7 @@ object SessionRouter {
     fun outputChanged() {
         worker.execute {
             if (SharedOutput.status.value.requested) disableSharedOnWorker(
-                "Output devices changed. Shared-output EQ stopped; test the new route before enabling it.")
+                "Audio device connections changed. Shared-output EQ stopped; test the output before enabling it.")
             healthRepair.clear()
         }
     }

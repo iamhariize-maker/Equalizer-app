@@ -64,8 +64,8 @@ measure hidden-flat
   -a android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL \
   --ei android.media.extra.AUDIO_SESSION "$SID" --es android.media.extra.PACKAGE_NAME "$CAP" >/dev/null
 sleep 4
-status panel
 "${A[@]}" exec-out screencap -p > "$OUT/effect-panel.png"
+status panel
 measure panel-cut
 # An unrelated CLOSE cannot retire the panel connection.
 "${A[@]}" shell am broadcast -n app.svan/.SessionReceiver \

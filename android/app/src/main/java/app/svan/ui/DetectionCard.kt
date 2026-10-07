@@ -70,7 +70,7 @@ private fun SharedOutputCard() {
             Text(shared.message, style = MaterialTheme.typography.bodyMedium)
             Text("Can apply system EQ without a player's session announcement on supported outputs. May affect other sounds sharing that output. Player names, per-app isolation and direct/offload support are unavailable here.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            Text("Test with your music and headphones. Output changes stop this option. Use per-player connections for the audiophile engine and Recording mode.",
+            Text("Test with your music and headphones. Device connection changes stop this option; re-test after switching outputs. Use per-player connections for the audiophile engine and Recording mode.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             OutlinedButton(onClick = { app.svan.SessionRouter.setSharedOutput(!shared.requested) }) {
                 Text(if (shared.requested) "Stop shared-output EQ" else "Try shared-output EQ")
