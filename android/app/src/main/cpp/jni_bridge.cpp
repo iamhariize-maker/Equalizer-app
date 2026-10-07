@@ -301,9 +301,11 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeAnalysis(JNIEnv*
 // Svaramanas plan. features: packed SourceFeatures or null (static plan).
 // Returns [preamp, predictedDelta, bassChar, intimacy, warmth, smoothness, space, instruments,
 //          accepted, rejected, conflictWith, nNotes, notes..., nBands, (type, freq, gain, q)...].
-JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
-    JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine,
-    jboolean svaresaMode) {
+// With `withGates`, appends nGates, then (ruleIndex, skipCode) per consulted rule (skipCode 0 = admitted;
+// ruleIndex is the position in nativePolicyRulesJson()). `evidence` is null or
+// [featuresEpoch, currentEpoch, featuresAgeSeconds, featuresConfidence].
+static jdoubleArray planToArray(JNIEnv* env, jdoubleArray features, jint feel, jintArray order, jdouble strength,
+                                jboolean stereoEngine, jboolean svaresaMode, jdoubleArray evidence, bool withGates) {
   svaramanas::Request r;
   r.feel = static_cast<svaramanas::Feel>(feel < 0 || feel > 5 ? 0 : feel);
   const jsize n = order ? env->GetArrayLength(order) : 0;
@@ -316,6 +318,14 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
   r.strength = strength;
   r.stereoEngine = stereoEngine == JNI_TRUE;
   r.svaresaMode = svaresaMode == JNI_TRUE;
+  if (evidence && env->GetArrayLength(evidence) >= 4) {
+    jdouble e[4];
+    env->GetDoubleArrayRegion(evidence, 0, 4, e);
+    r.featuresEpoch = static_cast<uint64_t>(e[0] < 0 ? 0 : e[0]);
+    r.epoch = static_cast<uint64_t>(e[1] < 0 ? 0 : e[1]);
+    r.featuresAgeSeconds = e[2];
+    r.featuresConfidence = e[3];
+  }
   SourceFeatures f;
   bool have = false;
   if (features) {
@@ -338,9 +348,35 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
     out.push_back(b.gainDb);
     out.push_back(b.q);
   }
+  if (withGates) {
+    out.push_back(static_cast<double>(p.gates.size()));
+    for (const auto& g : p.gates) {
+      out.push_back(static_cast<double>(eqcore::policy::ruleIndex(g.rule)));
+      out.push_back(static_cast<double>(eqcore::policy::skipCode(g.skip)));
+    }
+  }
   jdoubleArray res = env->NewDoubleArray(static_cast<jsize>(out.size()));
   env->SetDoubleArrayRegion(res, 0, static_cast<jsize>(out.size()), out.data());
   return res;
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
+    JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine,
+    jboolean svaresaMode) {
+  return planToArray(env, features, feel, order, strength, stereoEngine, svaresaMode, nullptr, false);
+}
+
+// Same plan, with evidence identity in and the evidence-gate outcome appended (see planToArray).
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlanGated(
+    JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine,
+    jboolean svaresaMode, jdoubleArray evidence) {
+  return planToArray(env, features, feel, order, strength, stereoEngine, svaresaMode, evidence, true);
+}
+
+// Human text for a skip code returned by the gated plan ("" for 0 = admitted).
+JNIEXPORT jstring JNICALL Java_app_svan_NativeEngine_nativePolicySkipText(JNIEnv* env, jclass, jint code) {
+  const int c = code < 0 || code > static_cast<int>(eqcore::policy::Skip::AutoMasterOff) ? 0 : code;
+  return env->NewStringUTF(eqcore::policy::skipText(static_cast<eqcore::policy::Skip>(c)));
 }
 
 // Match the combined/slewed guide and context curve, not two independent trims.

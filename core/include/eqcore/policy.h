@@ -74,6 +74,8 @@ const Rule* find(const std::string& id);
 
 enum class Skip { None, MissingInput, Invalid, LowConfidence, Stale, WrongEpoch, NoNativePcm, ProxyNotAllowed, UserOff, AutoMasterOff };
 const char* skipText(Skip s);
+int skipCode(Skip s);                  // stable integer for JNI (the enum ordinal)
+int ruleIndex(const char* id);         // position in rules() / the JSON array, -1 if unknown
 
 struct Context {
   uint64_t epoch = 0;

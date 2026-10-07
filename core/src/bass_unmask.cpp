@@ -51,6 +51,7 @@ void BassUnmask::reset() {
   for (auto& ch : filter_) for (int b = 0; b < kLanes; ++b) { ch[static_cast<size_t>(b)].reset(); ch[static_cast<size_t>(b)].setCoeffs(BiquadCoeffs{}); }
   envFast_ = envSlow_ = 0; onsetBlock_ = 0; onsetActive_ = false;
   cutting_.store(false, std::memory_order_relaxed);
+  publish();
 }
 
 void BassUnmask::fft(Cx* x) const {
@@ -64,6 +65,11 @@ void BassUnmask::fft(Cx* x) const {
         x[i + k] = a + b; x[i + k + half] = a - b;
       }
   }
+}
+
+void BassUnmask::publish() {
+  for (int l = 0; l < kLanes; ++l) pubCut_[l].store(cutDb_[static_cast<size_t>(l)], std::memory_order_relaxed);
+  pubNote_.store(noteValid_ ? noteHz_ : 0.0, std::memory_order_relaxed);
 }
 
 void BassUnmask::applyGains() {
@@ -209,6 +215,7 @@ void BassUnmask::process(double* left, double* right, int frames) {
   bool strong = false;
   for (double c : cutDb_) strong = strong || c < -0.05;
   cutting_.store(strong || any, std::memory_order_relaxed);
+  publish();
 }
 
 }  // namespace eqcore

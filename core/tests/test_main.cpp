@@ -1402,6 +1402,40 @@ TEST(spatial_residual_is_finite_and_bounded_on_loud_noise) {
   CHECK(q.m[10 + 1024] == 1.0);
 }
 
+TEST(fast_mode_budget_contract_pure_side_keeps_the_static_response_centre_engages_the_budget) {
+  // Fast (biquad) path contract, pinned here because the app's fixtures depend on it:
+  //  * With NO centre (mid exactly silent) the budget has nothing to compare against, so the static
+  //    response applies and stereoResponsePower() models it.
+  //  * As soon as a centre exists, side power >= half the mid is "already wide" and gets no lift,
+  //    and any lift is capped at +4 dB. The Detailed (residual) path holds pure-side material as well.
+  const double fs = 48000, hz = 1600;
+  StereoTunerParams p;
+  p.backingVocals = 1;
+  auto tone = [&](const std::vector<double>& x) { return toDb(sineAmplitude(x, hz, fs, 48000, 96000)); };
+  const double model = 10 * std::log10(stereoResponsePower(p, hz, fs)[1]);
+  auto pureSide = ms(fs, 2, [](double) { return 0.0; }, [&](double t) { return .1 * std::sin(2 * kPi * hz * t); });
+  const double pure = tone(sideOf(runTuner(p, pureSide, fs))) - toDb(.1);
+  CHECK_NEAR(pure, model, 0.05);
+  CHECK(pure > 1.5);
+  auto hardPanned = ms(fs, 2, [&](double t) { return .1 * std::sin(2 * kPi * hz * t); }, [&](double t) { return .1 * std::sin(2 * kPi * hz * t); });
+  const double hard = tone(sideOf(runTuner(p, hardPanned, fs))) - toDb(.1);
+  CHECK_NEAR(hard, 0.0, 0.3);
+  auto weakSide = ms(fs, 2, [&](double t) { return .3 * std::sin(2 * kPi * 1000 * t); }, [&](double t) { return .02 * std::sin(2 * kPi * hz * t); });
+  const double weak = tone(sideOf(runTuner(p, weakSide, fs))) - toDb(.02);
+  CHECK(weak > 0.5 && weak < 4.3);
+  // Detailed holds the pure-side case (side only: coherent with itself, no mid to explain it).
+  Program ps;
+  for (int i = 0; i < static_cast<int>(fs * 3); ++i) { ps.m.push_back(0.0); ps.s.push_back(.1 * std::sin(2 * kPi * hz * i / fs)); }
+  const auto dry = ps;
+  SpatialResidual sr(fs);
+  sr.setParams(1, 1);
+  runResidual(sr, ps, 480);
+  double err = 0;
+  for (size_t i = static_cast<size_t>(fs * 2); i < ps.s.size(); ++i) err = std::max(err, std::fabs(ps.s[i] - dry.s[i - 1024]));
+  CHECK(err < 1e-6);
+  std::printf("    Fast: pure-side %+.2f dB (model %+.2f), hard-panned %+.2f dB, weak side %+.2f dB; Detailed pure-side error %.1e\n", pure, model, hard, weak, err);
+}
+
 TEST(stereo_tuner_detailed_mode_reports_latency_and_keeps_images_in_place) {
   const double fs = 48000;
   StereoTuner plain(fs), detailed(fs, true);
@@ -1853,6 +1887,15 @@ TEST(policy_ownership_never_lowers_or_overwrites_the_saved_manual_value) {
   CHECK(resolveOwnership(Ownership::Auto, std::nan(""), 0.6, true, true).value == 0.6);
 }
 
+TEST(policy_rule_index_and_skip_codes_are_stable_for_the_jni_boundary) {
+  using namespace policy;
+  for (size_t i = 0; i < rules().size(); ++i) CHECK(ruleIndex(rules()[i].id) == static_cast<int>(i));
+  CHECK(ruleIndex("nope") == -1);
+  CHECK(skipCode(Skip::None) == 0 && skipCode(Skip::Stale) == 4 && skipCode(Skip::WrongEpoch) == 5 && skipCode(Skip::AutoMasterOff) == 9);
+  for (int c = 0; c <= 9; ++c) CHECK(skipCode(static_cast<Skip>(c)) == c);
+  CHECK(std::string(skipText(Skip::None)).empty() && !std::string(skipText(Skip::Stale)).empty());
+}
+
 TEST(policy_headroom_ledger_scales_the_sum_once) {
   const double req[] = {3.0, 4.0, 5.0, -2.0, std::nan("")};
   const double k = policy::headroomScale(req, 5, 6.0);
@@ -1943,6 +1986,31 @@ TEST(detailed_engine_latency_is_reported_exactly) {
     for (int c = 0; c < 2; ++c) err = std::max(err, static_cast<double>(std::fabs(yb[2 * f + static_cast<size_t>(c)] - ya[2 * (f - static_cast<size_t>(extra)) + static_cast<size_t>(c)])));
   std::printf("    max aligned difference %.2e\n", err);
   CHECK(err < 2e-5);
+}
+
+TEST(eq_parameter_unmask_diagnostics_can_be_read_from_another_thread_while_processing) {
+  const double fs = 48000;
+  BassUnmask u(fs);
+  u.setAmount(1.0);
+  std::atomic<bool> stop{false};
+  std::atomic<long> reads{0};
+  double worstCut = 0, seenNote = 0;
+  std::thread ui([&] {
+    while (!stop.load()) {
+      const auto c = u.cutsDb();
+      for (double v : c) worstCut = std::min(worstCut, v);
+      seenNote = std::max(seenNote, u.noteHz());
+      u.cutting();
+      reads.fetch_add(1);
+    }
+  });
+  auto program = bassProgram(fs, 6.0, maskedNote());
+  for (size_t i = 0; i < program.size(); i += 480) u.process(program.data() + i, nullptr, static_cast<int>(std::min<size_t>(480, program.size() - i)));
+  stop = true;
+  ui.join();
+  CHECK(reads.load() > 0);
+  CHECK(worstCut < -0.3 && worstCut >= -2.0 - 1e-9);   // the reader saw the real cut, never a torn value
+  CHECK(seenNote > 50.0 && seenNote < 60.0);
 }
 
 TEST(eq_parameter_spatial_bass_and_unmask_publication_is_safe_during_processing) {
@@ -2282,6 +2350,46 @@ SourceFeatures analyse(const std::vector<float>& x, double fs = 48000) {
 }
 
 auto flatShape = [](double) { return 0.0; };
+
+TEST(analyzer_reads_the_same_picture_at_every_input_rate) {
+  // High input rates are decimated so windows keep their 48 kHz duration. Within a rate family (44.1k/88.2k/176.4k and
+  // 48k/96k/192k) the picture is the same; across families only the broad measurements are compared, because third-octave
+  // bands below ~80 Hz hold one or two bins of the 4096-point window and scatter by a few dB with bin alignment at any rate.
+  auto shape = [](double f) { return -10.0 * std::log10(f / 1000.0); };
+  const auto ref48 = analyse(multisine(48000, 8, 16000, shape), 48000);
+  const auto ref44 = analyse(multisine(44100, 8, 16000, shape), 44100);
+  CHECK(ref48.valid && ref44.valid);
+  for (double fs : {44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
+    const auto f = analyse(multisine(fs, 8, 16000, shape), fs);
+    const auto& fam = (std::lround(fs) % 44100 == 0) ? ref44 : ref48;
+    CHECK(f.valid);
+    CHECK_NEAR(f.loudnessLufs, ref48.loudnessLufs, 0.3);   // every rate
+    CHECK_NEAR(f.tiltDbPerOct, ref48.tiltDbPerOct, 0.35);
+    CHECK_NEAR(f.cutoffHz, ref48.cutoffHz, 2500.0);
+    CHECK_NEAR(f.boomDb, fam.boomDb, 0.05);                // same family: the same analysis
+    CHECK_NEAR(f.mudDb, fam.mudDb, 0.05);
+    double worst = 0;
+    for (int b = 0; b < SourceFeatures::kBands; ++b)
+      if (SourceFeatures::bandCentreHz(b) <= 12000.0) worst = std::max(worst, std::fabs(f.bandDb[static_cast<size_t>(b)] - fam.bandDb[static_cast<size_t>(b)]));
+    std::printf("    %.0f Hz: worst band difference vs its family reference %.3f dB, tilt %.2f dB/oct, cutoff %.0f Hz\n", fs, worst, f.tiltDbPerOct, f.cutoffHz);
+    CHECK(worst < 0.05);
+  }
+  // Peak and clipping stay at the full input rate: a 52 us full-scale burst reads the same at 192 kHz as at 48 kHz.
+  double peak[2];
+  for (int i = 0; i < 2; ++i) {
+    const double rate = i ? 192000.0 : 48000.0;
+    std::vector<float> x(static_cast<size_t>(rate * 6.0) * 2, 0.0f);
+    for (size_t k = 0; k < x.size() / 2; ++k) x[2 * k] = x[2 * k + 1] = static_cast<float>(0.03 * std::sin(2 * kPi * 1000.0 * static_cast<double>(k) / rate));
+    const size_t at = static_cast<size_t>(rate * 3.0);
+    for (size_t k = at; k < at + static_cast<size_t>(rate / 48000.0 * 10); ++k) x[2 * k] = x[2 * k + 1] = 1.0f;
+    SourceAnalyzer an(rate, 2);
+    an.process(x.data(), static_cast<int>(x.size() / 2));
+    peak[i] = an.snapshot().peakDbfs;
+  }
+  std::printf("    burst peak read as %.2f dBFS at 48 kHz and %.2f dBFS at 192 kHz\n", peak[0], peak[1]);
+  CHECK(peak[0] > -12.0 && peak[1] > -12.0);  // the burst was seen (the noise floor sine alone reads about -30)
+  CHECK_NEAR(peak[0], peak[1], 0.3);
+}
 
 TEST(fft_matches_direct_dft) {
   std::vector<std::complex<double>> x(64), y;
@@ -2642,6 +2750,49 @@ TEST(svaramanas_trims_what_it_hears_and_leaves_a_clean_mix_alone) {
   for (const auto& b : p.bands) cut = cut || (b.freqHz == 300 && b.gainDb < -0.5 && b.gainDb >= -sv::kMaxCorrectionDb);
   CHECK(cut);
   CHECK(std::find(p.notes.begin(), p.notes.end(), sv::kNoteMud) != p.notes.end());
+}
+
+TEST(planner_consults_the_evidence_gate_and_falls_back_when_evidence_is_not_admissible) {
+  auto bump = [](double lo, double hi, double db) { return [=](double f) { return f >= lo && f <= hi ? db : 0.0; }; };
+  auto feats = analyse(multisine(48000, 8, 20000, bump(180, 560, 6.0), -20.0, 0.5));
+  CHECK(feats.valid);
+  auto hasNote = [](const sv::Plan& p, int n) { return std::find(p.notes.begin(), p.notes.end(), n) != p.notes.end(); };
+  auto allAdmitted = [](const sv::Plan& p) { for (const auto& g : p.gates) if (g.skip != policy::Skip::None) return false; return !p.gates.empty(); };
+  auto skipOf = [](const sv::Plan& p, const char* id) { for (const auto& g : p.gates) if (std::string(g.rule) == id) return g.skip; return policy::Skip::MissingInput; };
+  for (bool svaresa : {false, true}) {
+    sv::Request r = req(sv::Feel::Balanced, {});
+    r.svaresaMode = svaresa;
+    const auto good = sv::plan(r, &feats);
+    CHECK(allAdmitted(good));                         // fresh, same-epoch evidence: every consulted rule admitted
+    CHECK(hasNote(good, sv::kNoteMud));
+    const auto fallback = sv::plan(r, nullptr);       // what the planner does with no evidence at all
+    CHECK(fallback.gates.empty() && hasNote(fallback, sv::kNoteListening));
+    struct Case { const char* what; policy::Skip skip; void (*mutate)(sv::Request&); };
+    const Case cases[] = {
+        {"stale", policy::Skip::Stale, [](sv::Request& q) { q.featuresAgeSeconds = 120.0; }},
+        {"from another epoch", policy::Skip::WrongEpoch, [](sv::Request& q) { q.epoch = 5; q.featuresEpoch = 4; }},
+        {"low confidence", policy::Skip::LowConfidence, [](sv::Request& q) { q.featuresConfidence = 0.5; }},
+    };
+    for (const auto& c : cases) {
+      sv::Request q = r;
+      c.mutate(q);
+      const auto p = sv::plan(q, &feats);
+      CHECK(skipOf(p, "SM-LOSSY-1") == c.skip);       // a protective rule cannot be admitted ...
+      CHECK(hasNote(p, sv::kNoteListening));          // ... so the plan is the static one, not a boost without protections
+      CHECK(!hasNote(p, sv::kNoteMud));
+      CHECK(p.bands.size() == fallback.bands.size());
+      for (size_t i = 0; i < p.bands.size(); ++i) CHECK(p.bands[i].gainDb == fallback.bands[i].gainDb);
+      CHECK(p.preampDb == fallback.preampDb);
+      std::printf("    %s%s evidence: %s\n", svaresa ? "Svaresa, " : "guided, ", c.what, policy::skipText(c.skip));
+    }
+    // One non-finite measurement skips only its own correction.
+    auto broken = feats;
+    broken.boomDb = std::nan("");
+    const auto partial = sv::plan(r, &broken);
+    CHECK(skipOf(partial, "SM-BOOM-1") == policy::Skip::Invalid);
+    CHECK(skipOf(partial, "SM-MUD-1") == policy::Skip::None);
+    CHECK(hasNote(partial, sv::kNoteMud) && !hasNote(partial, sv::kNoteBoom));
+  }
 }
 
 TEST(svaresa_ignores_guided_taste_and_only_corrects_measured_mix_issues) {
