@@ -871,3 +871,18 @@ runs disconnected after the two 320dp cases, so overall CI is not green. The fol
 large-font Instruments wrapping and dock/tab clipping. Its harness keeps one physical display
 size and varies density (320/360/411.43dp) to investigate the suspected resize-related emulator
 failure, preserving all assertions. New screenshots/runtime results are still required.
+
+Claude follow-up `62c43cf` merged without conflicts as `a682deb`: core 147 tests, full Android
+debug/release/lint/JVM (179 tests) and both NDK ABIs pass locally. No Codex JNI fixes. Fast pure-side
+static response is intentional and now explicit in UI; Detailed holds it. Bass diagnostic getters
+are atomic. High-rate analysis decimates to preserve time windows, but below ~80 Hz remains coarse.
+The core planner now records evidence-admission outcomes. Android's legacy planner entry point
+still defaults evidence to fresh/same-epoch; genuine snapshot age/epoch provenance and live skip
+reporting must be wired and tested before presenting a live audit. See CODEX_STATUS for details.
+
+Owner asked for a direct website upload with update notes only, leaving design and screenshot
+changes for later. `docs/index.html` now has a scoped development-preview notes section; download
+buttons and existing screenshots are unchanged. Live GitHub Pages was checked through its API:
+source `ccr-f859b567-dgrdoj:/docs`, status built. This differs from the only push branch allowed by
+AGENTS. Resolve a notes-only deployment-branch exception with the owner before publishing; do not
+merge the app branch, change the Pages source or attach a preview-signed APK as a public update.

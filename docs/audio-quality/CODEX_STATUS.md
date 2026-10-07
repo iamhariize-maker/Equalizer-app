@@ -2,7 +2,8 @@
 
 Codex branch: `claude/codex-audio-crackling-amplifier-gkj007`.
 Claude branch merged without conflicts: `ccr-2e937472-6z53b0`, source `b3022a9863621b5d79cf3342c9ded89e156be08b`.
-Merge commit: `2f04da5`. Claude's branch was not rewritten. No PR, release or version change was made.
+Merge commit: `2f04da5`. Follow-up source `62c43cf` merged without conflicts as `a682deb`.
+Claude's branch was not rewritten. No PR, release or version change was made.
 Implementation commit: `1c437cf7a90f6c13ed13dfbfda5cb9a7db7b1609`.
 This record includes a tested follow-up: live protection/unmasking metadata follows applied controls,
 clips cancel if those controls change mid-recording, and UID reopens retain them without applying
@@ -14,16 +15,28 @@ Core, JNI/CMake, AGENTS, LICENSE, privacy docs, Claude STATUS and generated POLI
 
 | Step | State | Evidence and limits |
 |---|---|---|
-| K0 | Local checks pass | Both arm64-v8a/x86_64 NDK builds accepted the supplied APIs. Core: 142 tests, 0 failed checks. Android debug/release/lint/JVM checks pass; 179 JVM tests, 0 failures/errors. Claude CI 37603033259 failed only the old PlaybackHeadClock fixture; Codex corrected the ambiguous jump, retaining wrap/reset assertions. No JNI fixes needed. |
+| K0 | Local checks pass | Both arm64-v8a/x86_64 NDK builds accepted the supplied APIs, including the follow-up gated planner API. Core: 147 tests, 0 failed checks. Android debug/release/lint/JVM checks pass; 179 JVM tests, 0 failures/errors. Claude CI 37603033259 failed only the old PlaybackHeadClock fixture; Codex corrected the ambiguous jump, retaining wrap/reset assertions. No JNI fixes needed. |
 | K1 | Initial API34 images reviewed; follow-up pending CI | Backing/Binaural first row; Resolve/Auto switch retained. Bass dials size from actual card width. Per-player text distinguishes native controls, system approximations, off and unavailable. Inspection found mid-word wrapping of Instruments and clipped dock/tab labels at font 1.5; follow-up uses weighted label areas, a content-sized dock and explicit tab ellipses with full accessibility labels. Matrix targets 320/360/411 dp × font 1.0/1.5 and saves XML/PNG. |
 | K2 | Wired; phone tuning pending | Fast default/migration; Detailed flag through JNI; total native latency reported/aligned. Recorded clips retain applied settings, including Fast fallback. A physical missed deadline plus underrun, or existing exhausted-buffer recovery, retries Fast/48k once while preserving saved choices. No invented phone DSP% threshold. |
 | K3 | Wired; phone/clock qualification pending | Safe 48k default, serial RatePolicy candidates, strict client-format validation and safe fallback. Router ownership/mutes surround all epochs. Source changes reset native state at a faded boundary and invalidate clips. Frames, DSP, clips, WAV, renderer and probes use actual rates. RateFacts separate client/device formats; source/DAC unknown. Oversampling preserves internal family targets; phone performance unmeasured. |
-| K4 | Read-only UI/JVM parity wired | Compiled JSON supplies “How Svaresa decides”: inputs, bounds, reasons, coordination, rollback. JVM tests compare context/Resolve bounds to generated matrix. SvaresaBrain behavior unchanged. Runtime admission remains Claude's core work and UI explicitly says this. |
+| K4 | Read-only UI/JVM parity wired | Compiled JSON supplies “How Svaresa decides”: inputs, bounds, reasons, coordination, rollback. JVM tests compare context/Resolve bounds to generated matrix. SvaresaBrain behavior unchanged. Claude's core now admits planner evidence; Kotlin still uses the legacy API's fresh/same-epoch defaults. Genuine feature-age/epoch provenance and live skip reporting remain pending; the screen is not a live decision audit. |
 | K5 | Opt-in experiment wired | Off default, never enabled by Auto; synthetic-only/misclassification copy; <=2dB combined; setter/diagnostics. Diagnostics sampled after process on capture thread and published as immutable UI snapshots. Music validation pending. |
 | K6 | No phones available | `adb devices -l`: none attached; no /dev/kvm locally. No TECNO/LG CPU, battery, underrun or blind preference results. Owner's Amazon HD/Spotify lossless success retained without inferring source/DAC format. |
 
 ## Verification
 
+- Website request: concise preview notes added to `docs/index.html` using existing classes;
+  no design, screenshot, download, app-version or release changes. Unique IDs and local anchors
+  checked. Live Pages currently publishes `ccr-f859b567-dgrdoj:/docs`, not the Codex branch.
+  A push here does not publish the site; deployment-branch authority must be resolved before
+  claiming a live update, because AGENTS restricts pushes to this Codex branch.
+- After merging `62c43cf`, `claude-followup-build.log` passes the full Android command (46s),
+  including both NDK ABIs; `claude-followup-core.log` passes 147 core tests with 0 failed checks.
+  Generated policy matrix parity is clean. The earlier host JNI result below predates this merge.
+- Final silent-centre copy/website-notes follow-up: `website-notes-build.log` passes the full
+  Android command in 3m35s; 179 JVM tests have zero failures/errors. `website-notes-core.log`:
+  147 tests, 0 failed checks; 11 Python tests pass and diff whitespace is clean. Hosted CI for
+  this newest combined tree is still required; earlier runs do not certify a later core merge.
 - Core Release tests: `/workspace/scratch/release-build-environment/core-build/eqcore_tests`;
   `/workspace/scratch/audio-quality-design/k0-core.log`: 142 tests, 0 failed checks.
 - Android logs under `/workspace/scratch/audio-quality-design/`: `kotlin-integration-build.log`
@@ -49,8 +62,16 @@ Core, JNI/CMake, AGENTS, LICENSE, privacy docs, Claude STATUS and generated POLI
 
 ## Remaining evidence and requests
 
-See `REQUESTS_FROM_CODEX.md`: Fast pure-side semantics, unmask getter thread restrictions, runtime
-registry admission, and duration-preserving high-rate analysis. High-rate route changes require a
+Claude answered the four original requests in `REQUESTS_FROM_CLAUDE.md` at `62c43cf`:
+Fast intentionally retains static response when mid/centre is silent (now explicit in UI), unmask
+getters publish atomics, planner admission records gate outcomes, and high-rate analysis decimates
+with anti-alias filtering to preserve window duration. Core regression tests cover these contracts.
+The analyzer remains coarse below ~80 Hz; 44.1/48k sparse fixtures differ by up to 4.5 dB there.
+Do not infer fine bass-note precision or full-band high-rate analysis from rate-family parity.
+Kotlin gated-planner integration is still pending: publish the epoch and monotonic observation time
+of each genuinely new feature snapshot, pass that provenance rather than timestamping a stale read,
+and display actual skip outcomes. Confidence must have an explicit validity contract, not an invented
+probability. Keep legacy behavior until this is tested. High-rate route changes require a
 capture restart to renegotiate rate. Capture backlog and independent clock drift are unmeasured.
 The nominal system-effects curve is explicitly `CURVE_SAMPLE_RATE`; it is not live capture format
 provenance or the full dynamic Detailed response.
@@ -68,8 +89,8 @@ capture settings, so changing a saved mode afterward is not a valid mode-compari
   and PR run [37607988956](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37607988956)
   both passed core Release, generated policy parity, ASan/UBSan, TSan and Android build/lint/unit,
   preview install sanity, production APK/AAB and release-verifier positive/negative fixtures.
-- API 29/30/33/35/36 compatibility smoke matrix passed in the PR run. Full API 33/34 suites and
-  full API34 suite passed in both runs: routing 41 (including the established routing checks), detection 13, workspace 9, precision 8,
+- API 29/30/33/35/36 compatibility smoke matrix passed in the PR run. The full
+  API34 suite passed in both runs: routing 41 (including the established routing checks), detection 13, workspace 9, precision 8,
   quality 4, continuity 4, production 4, source filter 3, onboarding 8, fallback 3, and setup
   interaction 16 checks. The new native/matrix suite adds seven passes. Both API33 runs passed
   the native lab (aligned max error 0; rules 19; diagnostics 5) and both 320dp font cases, then

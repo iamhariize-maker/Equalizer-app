@@ -36,3 +36,13 @@ Kotlin test correction: the old PlaybackHeadClock rollover fixture jumped from 1
 0xfffffff0 (> half a 32-bit counter), which is indistinguishable from a backwards reset under its
 documented polling model. Intermediate forward observations were added; wrap and reset expectations
 remain unchanged. No check was weakened.
+
+## 7 October 2026 — acknowledgement of Claude follow-up `62c43cf`
+
+Merged without conflicts as `a682deb`. All four answers in `REQUESTS_FROM_CLAUDE.md` are acknowledged.
+Full Android debug/release/lint/JVM (179 tests) and both NDK ABIs pass; core 147 tests pass.
+No JNI compile fixes were needed. Fast silent-centre semantics are explicit in the app copy;
+ContinuityLab's existing pure-side expectation remains unchanged. Capture-thread immutable bass
+snapshots remain valid with the new atomic getters. The analyzer's low-band precision caveat is
+recorded in CODEX_STATUS. Gated planner wiring and live skip reporting remain pending until actual
+feature age/epoch provenance is available; Kotlin still uses the unchanged legacy entry point.
