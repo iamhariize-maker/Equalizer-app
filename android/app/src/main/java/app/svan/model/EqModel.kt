@@ -79,6 +79,10 @@ data class BassTuner(
     val amountDb: Double = 0.0,     // -6..+12
     val focusHz: Double = 80.0,     // 40 (deep sub) .. 160 (mid-bass)
     val character: Double = 0.0,    // -1 sustain/boom .. +1 punch/tight
+    /** Bass Resolve (manual level 0..1): protects the note's own shape from the dynamic Feel control. */
+    val resolve: Double = 0.0,
+    /** Resolve owner: false = Manual/Off by `resolve`; true = Svaresa may raise it while she is driving. Saved `resolve` is never overwritten. */
+    val resolveAuto: Boolean = false,
 ) {
     val isOff: Boolean get() = amountDb == 0.0 && character == 0.0
 
@@ -93,9 +97,15 @@ data class BassTuner(
     }
 
     fun toJson(): JSONObject = JSONObject().put("amt", amountDb).put("focus", focusHz).put("char", character)
+        .put("res", resolve).put("resAuto", resolveAuto)
 
     companion object {
-        fun fromJson(o: JSONObject) = BassTuner(o.optDouble("amt", 0.0), o.optDouble("focus", 80.0), o.optDouble("char", 0.0))
+        /** Svaresa's Resolve level while she owns it (policy v1: protection, not a detector; never below the manual value). */
+        const val AUTO_RESOLVE = 0.6
+
+        // Old state has no "res"/"resAuto": it migrates to Resolve Off, Manual. Values are range-checked.
+        fun fromJson(o: JSONObject) = BassTuner(o.optDouble("amt", 0.0), o.optDouble("focus", 80.0), o.optDouble("char", 0.0),
+            o.optDouble("res", 0.0).let { if (it.isFinite()) it.coerceIn(0.0, 1.0) else 0.0 }, o.optBoolean("resAuto", false))
 
         val PRESETS = listOf(
             "Off" to BassTuner(),
@@ -178,6 +188,9 @@ data class EqState(
     val levelling: Double? get() = smart?.levelling?.let { if (activeSmart != null) it else 0.0 }
 
     /** Bass shaper amount the engines should run (0 when the EQ is off). */
+    /** Effective Bass Resolve: your level, raised to Svaresa's level only when you chose Auto and she is driving. Explicit 0 + Manual = Off. */
+    val bassResolve: Double get() = if (!enabled) 0.0 else
+        if (bass.resolveAuto && activeSmart != null) maxOf(bass.resolve, BassTuner.AUTO_RESOLVE) else bass.resolve
     val bassCharacter: Double get() = if (enabled) (bass.character + (activeSmart?.bassCharacter ?: 0.0)).coerceIn(-1.0, 1.0) else 0.0
 
     /** Your preamp plus Svaramanas's loudness-matching trim. */

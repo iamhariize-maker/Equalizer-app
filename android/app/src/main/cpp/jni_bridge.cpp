@@ -173,6 +173,10 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassCharacter(JNIEnv*
   fromHandle(h)->setBassCharacter(character, crossoverHz);
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassResolve(JNIEnv*, jclass, jlong h, jdouble resolve) {
+  fromHandle(h)->setBassResolve(resolve);
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetStereoTuner(
     JNIEnv*, jclass, jlong h, jdouble intimacy, jdouble warmth, jdouble smoothness, jdouble space, jdouble instruments, jdouble backingVocals, jdouble spatialDetail) {
   fromHandle(h)->setStereoTuner({intimacy, warmth, smoothness, space, instruments, backingVocals, spatialDetail});

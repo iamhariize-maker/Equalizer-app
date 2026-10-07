@@ -330,6 +330,21 @@ private fun BassTunerCard(b: BassTuner) {
                 }, step = 0.01, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(character = v)) } })
             }
             Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Knob("Resolve", b.resolve, 0.0, 1.0, { r ->
+                    when {
+                        r == 0.0 && b.resolveAuto -> "Auto"
+                        r == 0.0 -> "Off"
+                        else -> pct(r)
+                    }
+                }, step = 0.01, onChange = { v -> SvanRepository.update { it.copy(bass = it.bass.copy(resolve = v)) } })
+            }
+            SettingSwitchRow("Svaresa manages Resolve",
+                "Auto: while Svaresa is driving, Resolve is raised to ${pct(BassTuner.AUTO_RESOLVE)} (never below your own setting, which stays saved). Off: only your dial applies.",
+                b.resolveAuto, { on -> SvanRepository.update { it.copy(bass = it.bass.copy(resolveAuto = on)) } })
+            Text("Resolve protects each bass note's own shape: it limits how far Feel may bend an attack (to about 1.5 dB) or a sustained body (about 0.75 dB) and follows the note instead of single bass cycles, so low notes keep a defined, unhurried shape. Both channels share one gain, so bass never drifts between left and right. It does not add bass, sharpen notes or detect instruments. Native audiophile engine only.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
+            Spacer(Modifier.height(6.dp))
             Text("Depth: deep sub (40 Hz) ↔ mid-bass (160 Hz). Feel: sustain lets notes bloom; punch sharpens kicks and " +
                 "tightens tails. Turn the rim or drag sideways; tap the value for exact entry. Double-tap to reset. A native transient shaper in the audiophile engine; an approximation on system effects. Tuned on synthetic signals; results vary with music.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
@@ -367,6 +382,13 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
     SvanCard {
         Column {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                Knob("Backing vocals", i.backingVocals, 0.0, 1.0, ::pct, step = 0.01,
+                    onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(backingVocals = x)) } })
+                Knob("Binaural", i.spatialDetail, 0.0, 1.0, ::pct, step = 0.01,
+                    onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(spatialDetail = x)) } })
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 Knob("Space", i.space, -1.0, 1.0, { s ->
                     when {
                         s == 0.0 -> "Natural"
@@ -376,13 +398,6 @@ private fun InstrumentTunerCard(i: app.svan.model.InstrumentTuner) {
                 }, step = 0.01, onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(space = x)) } })
                 Knob("Instruments", i.instruments, 0.0, 1.0, ::pct, step = 0.01,
                     onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(instruments = x)) } })
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Knob("Backing vocals", i.backingVocals, 0.0, 1.0, ::pct, step = 0.01,
-                    onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(backingVocals = x)) } })
-                Knob("Binaural", i.spatialDetail, 0.0, 1.0, ::pct, step = 0.01,
-                    onChange = { x -> SvanRepository.update { it.copy(instrument = it.instrument.copy(spatialDetail = x)) } })
             }
             Spacer(Modifier.height(6.dp))
             Text("Backing vocals lifts off-centre harmonies and doubles while the lead masks them, and backs off when they are already clear. Binaural follows each band's left/right position and widens only sounds that are moving between channels, so the recording's own bounces and pans become more dramatic while fixed placements stay put. Both leave the mono sum untouched and add no reverb or delay. Centre-panned harmonies cannot be separated. Start low and compare in Lab at matched loudness.",

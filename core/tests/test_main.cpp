@@ -835,6 +835,93 @@ TEST(bass_shaper_punch_tightens_and_sustain_blooms) {
   CHECK(sustainDb < -3.0);
 }
 
+namespace {
+void runBass(BassShaper& b, std::vector<double>& y) {
+  for (size_t i = 0; i < y.size(); i += 256) b.process(0, y.data() + i, static_cast<int>(std::min<size_t>(256, y.size() - i)));
+}
+// Sustained-note harmonic distortion created by the envelope following individual cycles.
+double sustainedNoteDistortion(double resolve, double hz, double character) {
+  const double fs = 48000;
+  std::vector<double> x(static_cast<size_t>(fs * 3));
+  for (size_t i = 0; i < x.size(); ++i) x[i] = 0.4 * std::sin(2 * kPi * hz * i / fs);
+  BassShaper b(fs, 1);
+  b.setCharacter(character);
+  b.setResolve(resolve);
+  runBass(b, x);
+  const size_t from = static_cast<size_t>(fs * 2), to = x.size();
+  const double f1 = sineAmplitude(x, hz, fs, from, to);
+  return (sineAmplitude(x, 2 * hz, fs, from, to) + sineAmplitude(x, 3 * hz, fs, from, to)) / f1;
+}
+}  // namespace
+
+TEST(bass_resolve_zero_changes_nothing_and_linked_matches_single_channel) {
+  const double fs = 48000;
+  const auto x = kicks(fs, 4);
+  for (double c : {1.0, -1.0, 0.4}) {
+    BassShaper a(fs, 1), b(fs, 2);
+    a.setCharacter(c);
+    b.setCharacter(c);
+    b.setResolve(0.0);
+    auto y = x;
+    runBass(a, y);
+    auto l = x, r = x;
+    for (size_t i = 0; i < l.size(); i += 256) b.processLinked(l.data() + i, r.data() + i, static_cast<int>(std::min<size_t>(256, l.size() - i)));
+    double err = 0;
+    for (size_t i = 0; i < y.size(); ++i) err = std::max({err, std::fabs(y[i] - l[i]), std::fabs(l[i] - r[i])});
+    CHECK(err < 1e-12);
+  }
+}
+
+TEST(bass_resolve_caps_how_far_feel_may_move_the_note) {
+  const double fs = 48000;
+  const int hits = 6;
+  const auto x = kicks(fs, hits);
+  const double ref = attackToTailDb(x, fs, hits);
+  for (double c : {1.0, -1.0}) {
+    double change[2];
+    for (int i = 0; i < 2; ++i) {
+      BassShaper b(fs, 1);
+      b.setCharacter(c);
+      b.setResolve(i ? 1.0 : 0.0);
+      auto y = x;
+      runBass(b, y);
+      change[i] = attackToTailDb(y, fs, hits) - ref;
+    }
+    std::printf("    feel %+.0f: attack/tail change %+.1f dB without Resolve, %+.1f dB with\n", c, change[0], change[1]);
+    CHECK(std::fabs(change[1]) < std::fabs(change[0]) * 0.4);
+    CHECK(std::fabs(change[1]) < 3.0);
+  }
+}
+
+TEST(bass_resolve_keeps_sustained_notes_free_of_envelope_distortion) {
+  for (double hz : {30.0, 41.2, 55.0, 82.4}) {
+    for (double c : {-1.0, 1.0}) {
+      const double off = sustainedNoteDistortion(0.0, hz, c), on = sustainedNoteDistortion(1.0, hz, c);
+      std::printf("    %.1f Hz feel %+.0f: distortion %.3f%% -> %.3f%%\n", hz, c, off * 100, on * 100);
+      CHECK(on <= off + 1e-9);
+      CHECK(on < 0.01);  // under 1 %
+    }
+  }
+}
+
+TEST(bass_linked_processing_keeps_left_right_balance_of_a_bass_note) {
+  const double fs = 48000;
+  std::vector<double> l(static_cast<size_t>(fs * 2)), r(l.size());
+  for (size_t i = 0; i < l.size(); ++i) {
+    const double t = static_cast<double>(i) / fs, e = std::exp(-std::fmod(t, 0.6) / 0.15);
+    l[i] = 0.5 * e * std::sin(2 * kPi * 55 * t);
+    r[i] = 0.1 * e * std::sin(2 * kPi * 55 * t);  // 14 dB quieter on the right
+  }
+  const auto l0 = l, r0 = r;
+  BassShaper b(fs, 2);
+  b.setCharacter(-1.0);
+  for (size_t i = 0; i < l.size(); i += 256) b.processLinked(l.data() + i, r.data() + i, static_cast<int>(std::min<size_t>(256, l.size() - i)));
+  double eL = 0, eR = 0, iL = 0, iR = 0;
+  for (size_t i = 0; i < l.size(); ++i) { eL += l[i] * l[i]; eR += r[i] * r[i]; iL += l0[i] * l0[i]; iR += r0[i] * r0[i]; }
+  // Same gain for both: the pair's balance (~14 dB) changes by under 0.05 dB over the whole phrase.
+  CHECK_NEAR(10 * std::log10(eL / eR), 10 * std::log10(iL / iR), 0.05);
+}
+
 TEST(bass_shaper_leaves_treble_alone) {
   const double fs = 48000;
   const int hits = 4;

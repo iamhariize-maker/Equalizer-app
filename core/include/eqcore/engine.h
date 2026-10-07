@@ -12,6 +12,7 @@
 // sample rate so high-frequency bands keep their analog shape instead of
 // being "cramped" near Nyquist, and the output is TPDF-dithered.
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -66,6 +67,8 @@ class Engine {
   void setDynamicEq(double amount) { dynamicAmount_.store(amount); }
   std::array<double,4> dynamicReductionsDb() const {return {dynamicDb_[0].load(),dynamicDb_[1].load(),dynamicDb_[2].load(),dynamicDb_[3].load()};}
   void setBassCharacter(double character, double crossoverHz = 120.0);
+  // Bass Resolve 0..1 (see BassShaper::setResolve). Thread-safe; applied at the next block.
+  void setBassResolve(double resolve) { bassResolve_.store(std::isfinite(resolve) ? resolve : 0.0); }
   // Vocal tuner + instrument amplifier (stereo engines only; mono ignores it).
   void setStereoTuner(const StereoTunerParams& p) { stereo_.setParams(p); }
 
@@ -103,6 +106,7 @@ class Engine {
   std::atomic<bool> gainResetPending_{false};
   std::atomic<double> bassCharacter_{0.0};
   std::atomic<double> bassCrossover_{120.0};
+  std::atomic<double> bassResolve_{0.0};
   double appliedBassCrossover_ = 120.0;
   BassShaper bass_;
   TruePeakLimiter limiter_;

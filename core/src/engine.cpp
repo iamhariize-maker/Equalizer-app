@@ -128,6 +128,7 @@ void Engine::process(const float* in, float* out, int frames) {
   if (analysisOn_.load(std::memory_order_relaxed) && C <= 2) analyzer_.process(in, frames);
   const int L = cfg_.oversample;
   bass_.setCharacter(bassCharacter_.load(std::memory_order_relaxed));
+  bass_.setResolve(bassResolve_.load(std::memory_order_relaxed));
   const double xo = bassCrossover_.load(std::memory_order_relaxed);
   if (xo != appliedBassCrossover_) {
     bass_.setCrossoverHz(xo);
@@ -168,8 +169,9 @@ void Engine::process(const float* in, float* out, int frames) {
       } else {
         eq_.process(ch, y, n);
       }
-      bass_.process(ch, y, n);  // bass needs no oversampling; runs at the base rate
+      if (C != 2) bass_.process(ch, y, n);  // bass needs no oversampling; runs at the base rate
     }
+    if (C == 2) bass_.processLinked(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);  // one gain for both channels
     if (C == 2) stereo_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);
     dynamic_.process(&outBuf_[0],C==2?&outBuf_[cfg_.maxBlock]:nullptr,n,dynamicAmount_.load(std::memory_order_relaxed));
     const auto reductions=dynamic_.reductionsDb();for(int b=0;b<4;++b)dynamicDb_[b].store(reductions[b],std::memory_order_relaxed);

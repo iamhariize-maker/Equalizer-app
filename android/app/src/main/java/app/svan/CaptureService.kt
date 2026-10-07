@@ -325,6 +325,7 @@ class CaptureService : Service() {
         if (previous == null || eq.effectivePreampDb() != previous.effectivePreampDb()) engine.setPreampDb(eq.effectivePreampDb())
         if (previous == null || eq.bassCharacter != previous.bassCharacter || eq.bass.crossoverHz != previous.bass.crossoverHz)
             engine.setBassCharacter(eq.bassCharacter, eq.bass.crossoverHz)
+        if (previous == null || eq.bassResolve != previous.bassResolve) engine.setBassResolve(eq.bassResolve)
         val v = eq.activeVocal
         val i = eq.activeInstrument
         if (previous == null || v != previous.activeVocal || i != previous.activeInstrument) engine.setStereoTuner(v.intimacy, v.warmth, v.smoothness, i.space, i.instruments, i.backingVocals, i.spatialDetail)
