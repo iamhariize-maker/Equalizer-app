@@ -1,8 +1,9 @@
 # Codex brief: audio-only Recording mode (final shape)
 
 Read `AGENTS.md`, `docs/RECORDING_MODE.md` and `docs/HANDOFF.md` first. This brief supersedes the
-"screen + sound" direction in `RECORDING_MODE.md`. The owner will record the video with the LG V60's own
-screen recorder (sound off) and combine it with Svan's audio in the VN video editor.
+"screen + sound" direction in `RECORDING_MODE.md`. The owner runs Svan on a TECNO LH7n (Android 14) and films that
+phone's screen from outside with a second phone (LG V60, Android 13), then combines the LG video with Svan's
+audio files in the VN video editor.
 
 ## Prompt (paste to Codex)
 
@@ -13,9 +14,9 @@ gold-on-charcoal design with no new hues, commit trailers as in `git log`, verif
 
 ### Why
 Android screen recorders cannot hear Svan's audiophile engine (its output opts out of playback capture so it
-never re-captures itself; a second MediaProjection can also disturb the recorder). The owner needs the real
-processed output as files, to lay under a separately recorded screen video that shows Svan's settings being
-changed. "Recording mode" (Hi-Fi tab) already exists: `listening/ProofRecorder.kt`, `ProofAnalysis.kt`,
+never re-captures itself; a second MediaProjection can also disturb the recorder). So the owner films the TECNO's
+screen with the LG as a camera. The LG's microphone is NOT the audio source: the real audio is Svan's own
+processed output saved as files, laid under the LG video in VN. The hard part is syncing the two easily. "Recording mode" (Hi-Fi tab) already exists: `listening/ProofRecorder.kt`, `ProofAnalysis.kt`,
 `ProofCapture.kt`, `ScreenDemoRecorder.kt`, hooks in `CaptureService.kt` (`offerDry` before the DSP,
 `commitWet` after), card in `ui/AudiophileScreen.kt`, JVM tests in `ProofRecorderTest.kt`
 (all passing off-device). It records sample-aligned dry and processed 24-bit WAVs, measures each settled
@@ -31,16 +32,35 @@ Bluetooth or acoustic measurement.
    wiring and the Movies/MediaStore video code, unless you can show it works on the LG V60 (Android 13) and
    TECNO LH7n (Android 14) via the owner; if unproven, remove it. Less MediaProjection use also helps the
    Play policy item in `HANDOFF.md`.
-2. **Sync marker for the video editor.** Add a "Sync" button to the recording card (and to the Svaramanas
-   bubble/QS tile if cheap). Pressing it: (a) calls a new `ProofRecorder.markSync()` that stores the exact frame
-   index (`written` floats / 2, audio-thread-safe, same position semantics as `mark`) plus `System.currentTimeMillis()`;
-   (b) flashes the whole screen white for ~150 ms (a Compose overlay or window flash visible to the phone's
-   screen recorder) so the owner can find one video frame to align to. Allow several syncs; the report lists
-   all, in order. On the card show "Sync at m:ss.mmm" after each press.
-3. **Sync-aligned exports.** At stop, besides the full WAVs, write `svan-processed-from-sync.wav` and
-   `svan-dry-from-sync.wav`, each starting exactly at the *first* sync frame (copy from the finished full
-   WAVs, rewrite the 24-bit header). Without a sync press, skip them. Put `syncFrames`, `syncSeconds`,
-   `firstSignalSeconds` (first block above -90 dBFS in either stream) and `recordedAtEpochMs` into the report.
+2. **Make sync nearly effortless (the LG films the TECNO's screen, so the screen and room are the common
+   reference).** Build all three, each independent so any one is enough in VN:
+   a. **On-screen recording clock.** While recording, show a very large, high-contrast clock `m:ss.mmm` that is
+      the exact recording time of the WAVs (derive from frames written / sample rate, not wall time), plus the
+      current segment label in large text. Keep the screen awake (`FLAG_KEEP_SCREEN_ON`), fix brightness
+      readable by a phone camera (gold/white on black, no new hues beyond AGENTS rules), and avoid a layout that
+      reflows. Because every video frame then shows the clock, the owner can read the clock on any frame and
+      offset the WAV in VN.
+   b. **Sync button with a flash and a click.** Add a "Sync" button (also reachable from the countdown below).
+      Pressing it calls a new `ProofRecorder.markSync()` that stores the exact frame index (`written`/2, same
+      audio-thread-safe position semantics as `mark`) and `System.currentTimeMillis()`; shows a full-screen white
+      flash for ~150 ms; and plays a short, sharp **three-click cue** (three 2 kHz 10 ms bursts 250 ms apart,
+      peak about -6 dBFS) through the **phone speaker only** (`AudioTrack` with
+      `ALLOW_CAPTURE_BY_NONE`, `setPreferredDevice` to the built-in speaker if present, volume control not
+      touched). The cue must never enter `offerDry`/`commitWet`, the WAVs or the headphone path. The LG's
+      microphone hears the clicks, so in VN the owner can line the click waveform in the LG video's audio up with
+      the click burst in the sync WAV below (visual waveform match), then mute the LG audio.
+   c. **3-2-1 start.** An optional "Start with countdown" button: big 3, 2, 1 on screen, then recording
+      begins on 0 with an automatic sync flash+click. This gives a single clean aligned moment at time zero.
+   Allow several syncs; the report lists all, in order, with seconds. After each press show "Sync at m:ss.mmm".
+3. **Sync-aligned exports.** At stop, besides the full WAVs, write (only if a sync was pressed or the countdown
+   was used) `svan-processed-from-sync.wav` and `svan-dry-from-sync.wav`, each starting exactly at the *first*
+   sync frame (copy from the finished full WAVs, rewrite the header), and `svan-processed-sync-cue.wav`, a copy of
+   the processed-from-sync file with the same three-click cue mixed in at its start (same peak, so VN waveform
+   matching is trivial; this copy is for aligning only, not for the final video). Put `syncFrames`, `syncSeconds`,
+   `firstSignalSeconds` (first block above -90 dBFS in either stream), `clockStartEpochMs` and
+   `recordedAtEpochMs` into the report. Measure and report (do not guess) the speaker-click's output latency
+   only if you can do it with a documented method; otherwise state that the cue is accurate to a few tens of
+   milliseconds and that the on-screen clock is the precise reference.
 4. **Editor compatibility.** Also export the processed stream as `svan-processed-output.m4a`
    (AAC-LC, 48 kHz stereo, 256 kbps) using MediaCodec + MediaMuxer, in the writer/finishing path, never on the
    audio thread. Ask the owner (or note in the docs) whether VN imports 24-bit WAV on the LG V60; if not, make
@@ -56,9 +76,10 @@ Bluetooth or acoustic measurement.
 7. **UI polish for demos.** While recording, show a large elapsed timer, the current segment label, a clear
    Stop button, and the sync/mark buttons. Keep all strings plain; follow the design rules.
 8. **Docs.** Rewrite `docs/RECORDING_MODE.md` to the audio-only flow with a step-by-step "make a video in VN"
-   section: start engine → start Svan recording → start the phone's screen recorder with sound OFF → press Sync
-   (note the flash frame) → demonstrate settings → stop both → in VN place `svan-processed-from-sync.wav` on
-   the flash frame. Update `HANDOFF.md` and the AGENTS.md "Top open items".
+   section: start the engine → set up the LG to film the TECNO screen → start Svan recording with countdown (or
+   press Sync) → demonstrate settings → stop → in VN import the LG clip and `svan-processed-from-sync.wav` (and
+   `svan-processed-sync-cue.wav` for alignment) → match the click waveform / flash frame / on-screen clock →
+   delete the cue copy and mute the LG audio. Update `HANDOFF.md` and the AGENTS.md "Top open items".
 
 ### Tests (must be in `testDebugUnitTest`, and add to CI if needed)
 - Extend `ProofRecorderTest`: `markSync` frame position is exact; `from-sync` WAVs equal the tail of the full
@@ -70,11 +91,13 @@ Bluetooth or acoustic measurement.
   stop, and assert the files exist in MediaStore with non-zero length.
 
 ### Owner phone checks (write them into `docs/PHONE_VALIDATION.md`; do not claim they passed)
-LG V60, Android 13, built-in screen recorder with sound OFF:
-1. Does starting the audiophile engine stop the phone's screen recorder? Try both orders (recorder first, or
-   engine first) and report which works.
-2. Do the saved WAV/M4A play and import into VN? Is the sync flash visible in the video?
-3. With the owner's headphones, does the video-edited A/B sound like what they heard live?
+TECNO LH7n (Android 14) runs Svan; LG V60 (Android 13) films the TECNO screen:
+1. Is the on-screen clock readable in the LG video at normal distance and room light? Is the flash visible?
+2. Does the LG microphone pick up the speaker click cue clearly? How far apart (ms) are the video flash and the
+   click in VN? Does the clock reading, the flash and the click agree to within one video frame?
+3. Do the saved WAV/M4A play and import into VN? Which format does VN accept?
+4. With the owner's headphones on the TECNO, does the edited A/B sound like what they heard live?
+5. Does the click cue stay out of the saved WAVs and out of the headphones?
 
 ### Do not
 - Do not add storage, accessibility, notification-listener or SMS permissions (MediaStore needs none).
