@@ -59,6 +59,9 @@ class NativeEngine(
 
     /** Bass character: -1 sustain .. 0 off .. +1 punch (Engine B only; exact). */
     fun setBassCharacter(character: Double, crossoverHz: Double) = nativeSetBassCharacter(handle, character, crossoverHz)
+    fun setBassResolve(resolve: Double) = nativeSetBassResolve(handle, resolve)
+    /** Selective bass unmasking 0..1; default 0 (off). Not wired to any setting yet. */
+    fun setBassUnmask(amount: Double) = nativeSetBassUnmask(handle, amount)
 
     /** Vocal tuner (mid) + instrument amplifier (side). Stereo engines only. */
     fun setStereoTuner(intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double, backingVocals: Double = 0.0, spatialDetail: Double = 0.0) =
@@ -141,6 +144,8 @@ class NativeEngine(
         @JvmStatic external fun nativeGainProtectionDb(handle: Long): Double
         @JvmStatic external fun nativeParseParametric(text: String): DoubleArray
         @JvmStatic external fun nativeSetBassCharacter(handle: Long, character: Double, crossoverHz: Double)
+        @JvmStatic external fun nativeSetBassResolve(handle: Long, resolve: Double)
+        @JvmStatic external fun nativeSetBassUnmask(handle: Long, amount: Double)
         @JvmStatic external fun nativeSetStereoTuner(
             handle: Long, intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double,
             backingVocals: Double, spatialDetail: Double,

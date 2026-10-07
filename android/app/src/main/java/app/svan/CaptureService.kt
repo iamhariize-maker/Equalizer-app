@@ -170,12 +170,20 @@ class CaptureService : Service() {
             val buf = FloatArray(frames * 2)
             // Prime before play: starting on one 5 ms block underruns at the first hiccup.
             val primed = minOf(cushion, output.bufferSizeInFrames - frames) * 2
-            if (primed > 0) output.write(FloatArray(primed), 0, primed, AudioTrack.WRITE_NON_BLOCKING)
+            // Count what the track actually accepted: primed silence is queued audio too.
+            val primedWritten = if (primed > 0) output.write(FloatArray(primed), 0, primed, AudioTrack.WRITE_NON_BLOCKING) else 0
             output.play()
+            runCatching {
+                val facts = RateFacts(rate, input.sampleRate, output.sampleRate,
+                    getSystemService(AudioManager::class.java).getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)?.toIntOrNull(),
+                    output.routedDevice?.sampleRates?.toList().orEmpty())
+                EqController.log("capture: ${facts.summary()}")
+            }
             var levelPeak = 0f
             var outputPeak = 0f
             var levelFrames = 0L
-            var writtenFrames = 0L
+            var writtenFrames = maxOf(primedWritten, 0) / 2L
+            val headClock = PlaybackHeadClock()
             var dspNanos = 0L
             var processedFrames = 0L
             // Frames of exact digital silence in a row (a capture-blocked or paused source).
@@ -248,7 +256,7 @@ class CaptureService : Service() {
                         output.setBufferSizeInFrames(desired)
                         EqController.log("capture: underrun recovery buffer=${output.bufferSizeInFrames} frames")
                     }
-                    val played = output.playbackHeadPosition.toLong() and 0xffffffffL
+                    val played = headClock.unwrap(output.playbackHeadPosition)
                     val queued = (writtenFrames - played).coerceAtLeast(0)
                     stats = Stats(output.bufferSizeInFrames * 1000.0 / rate, queued * 1000.0 / rate,
                         dsp.latencyFrames * 1000.0 / rate, output.underrunCount,
@@ -325,6 +333,7 @@ class CaptureService : Service() {
         if (previous == null || eq.effectivePreampDb() != previous.effectivePreampDb()) engine.setPreampDb(eq.effectivePreampDb())
         if (previous == null || eq.bassCharacter != previous.bassCharacter || eq.bass.crossoverHz != previous.bass.crossoverHz)
             engine.setBassCharacter(eq.bassCharacter, eq.bass.crossoverHz)
+        if (previous == null || eq.bassResolve != previous.bassResolve) engine.setBassResolve(eq.bassResolve)
         val v = eq.activeVocal
         val i = eq.activeInstrument
         if (previous == null || v != previous.activeVocal || i != previous.activeInstrument) engine.setStereoTuner(v.intimacy, v.warmth, v.smoothness, i.space, i.instruments, i.backingVocals, i.spatialDetail)

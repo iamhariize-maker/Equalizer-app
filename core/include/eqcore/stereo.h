@@ -30,8 +30,10 @@
 // synthesized, delayed or reverberated.
 #include <atomic>
 #include <array>
+#include <memory>
 
 #include "eqcore/biquad.h"
+#include "eqcore/spatial.h"
 
 namespace eqcore {
 
@@ -54,7 +56,11 @@ std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double fre
 
 class StereoTuner {
  public:
-  explicit StereoTuner(double sampleRate);
+  // residual = true ("Detailed"): Backing vocals and Binaural run in the streaming spatial-residual
+  // processor (spatial.h) instead of the zero-latency biquad path. That adds a fixed delay of
+  // latencyFrames() to the whole stereo stage, so callers must report it.
+  explicit StereoTuner(double sampleRate, bool residual = false);
+  int latencyFrames() const { return residual_ ? residual_->latencyFrames() : 0; }
 
   // Any thread; live changes crossfade for 20 ms. Updates during a fade coalesce.
   void setParams(const StereoTunerParams& p);
@@ -80,7 +86,7 @@ class StereoTuner {
   struct State {
     StereoTunerParams p_;
     Bq warmBell_, warmShelf_, intimacyBell_, harshBand_;
-    Bq sideLp_[2], sideHp_[2], bodyBell_, presenceBell_, airShelf_, backingBell_, detailShelf_, shuffleBell_;
+    Bq sideHp_[2], bodyBell_, presenceBell_, airShelf_, backingBell_, detailShelf_, shuffleBell_;
     double envBand_ = 1e-9, envFull_ = 1e-9, deharshGain_ = 1.0, spaceGain_ = 1.0;
     double aBand_, rBand_, aFull_, rFull_, gSmooth_;
     // Backing-vocal de-masker: matched vocal-band filters on side and mid.
@@ -90,16 +96,19 @@ class StereoTuner {
     // Image-motion enhancer: complementary 3-band split (exact sum) of side and
     // of a 180 Hz high-passed mid used for detection only.
     static constexpr int kBands = 3;
-    Bq motionHp_, splitSide_[2], splitMid_[2];
+    Bq motionHp_[2], splitSide_[2], splitMid_[2];
     double cross_[kBands] = {}, power_[kBands] = {}, panSlow_[kBands] = {}, motionGain_[kBands] = {1, 1, 1};
     bool heard_[kBands] = {};
     double aPan_, aSlow_, aMotionUp_, aMotionDown_;
+    double budgetMm_ = 0, budgetSs_ = 0, budgetSd_ = 0, budgetDd_ = 0, budgetScale_ = 1, aBudget_ = 0, aBudgetUp_ = 0;
+    double budgetedSpatialDelta(double side, double mid, double delta);
     double backingLift(double highSide, double mid);
     double motion(double highSide, double mid);
     void redesign(const StereoTunerParams& p, double fs);
     void reset();
     double process(double& left, double& right);
   };
+  std::unique_ptr<SpatialResidual> residual_;
   double fs_;
   int fadeFrames_, fadeRemaining_ = 0, active_ = 0;
   bool initialized_ = false;

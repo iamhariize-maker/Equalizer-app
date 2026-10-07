@@ -12,6 +12,7 @@
 // sample rate so high-frequency bands keep their analog shape instead of
 // being "cramped" near Nyquist, and the output is TPDF-dithered.
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -19,6 +20,7 @@
 #include "eqcore/true_peak.h"
 #include "eqcore/dynamic_eq.h"
 #include "eqcore/bass.h"
+#include "eqcore/bass_unmask.h"
 #include "eqcore/dither.h"
 #include "eqcore/oversampler.h"
 #include "eqcore/parametric_eq.h"
@@ -45,6 +47,7 @@ struct EngineConfig {
                               // on overload lower gain; recover smoothly with 250 ms release
   bool truePeak = false;     // enabled by quality presets and Android capture
   int maxBlock = 1024;       // frames per internal chunk
+  bool spatialResidual = false; // "Detailed" Backing vocals/Binaural (streaming WOLA, adds latency; stereo only)
 
   static EngineConfig forQuality(QualityMode mode, double sampleRate, int channels, int outputBits);
 };
@@ -66,6 +69,12 @@ class Engine {
   void setDynamicEq(double amount) { dynamicAmount_.store(amount); }
   std::array<double,4> dynamicReductionsDb() const {return {dynamicDb_[0].load(),dynamicDb_[1].load(),dynamicDb_[2].load(),dynamicDb_[3].load()};}
   void setBassCharacter(double character, double crossoverHz = 120.0);
+  // Bass Resolve 0..1 (see BassShaper::setResolve). Thread-safe; applied at the next block.
+  // Selective bass unmasking 0..1 (see BassUnmask). Default 0 = off and bit-exact; stereo-linked, reduction only.
+  void setBassUnmask(double amount) { unmask_.setAmount(amount); }
+  std::array<double, 4> bassUnmaskCutsDb() const { return unmask_.cutsDb(); }
+  double bassUnmaskNoteHz() const { return unmask_.noteHz(); }  // 0 = no validated note
+  void setBassResolve(double resolve) { bassResolve_.store(std::isfinite(resolve) ? resolve : 0.0); }
   // Vocal tuner + instrument amplifier (stereo engines only; mono ignores it).
   void setStereoTuner(const StereoTunerParams& p) { stereo_.setParams(p); }
 
@@ -103,8 +112,10 @@ class Engine {
   std::atomic<bool> gainResetPending_{false};
   std::atomic<double> bassCharacter_{0.0};
   std::atomic<double> bassCrossover_{120.0};
+  std::atomic<double> bassResolve_{0.0};
   double appliedBassCrossover_ = 120.0;
   BassShaper bass_;
+  BassUnmask unmask_;
   TruePeakLimiter limiter_;
   DynamicEq dynamic_;
   std::atomic<double> dynamicAmount_{0};
