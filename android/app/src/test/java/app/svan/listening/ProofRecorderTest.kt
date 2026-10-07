@@ -87,4 +87,43 @@ class ProofRecorderTest {
         ProofRecorder.stop(); assertTrue(done.await(20, TimeUnit.SECONDS))
         assertNotNull(result); assertTrue(result!!.bands.isEmpty())
     }
+
+    @Test fun eachSettingChangeIsMeasuredInItsOwnSegment() {
+        val dir = File.createTempFile("proof", "").apply { delete() }
+        val done = CountDownLatch(1); var result: ProofRecorder.Result? = null
+        val tapped = java.util.concurrent.atomic.AtomicLong()
+        val tap = object : ProofRecorder.WetTap {
+            override fun onChunk(chunk: FloatArray, floats: Int, firstBlockNanos: Long, startFrame: Long) { tapped.addAndGet(floats / 2L) }
+            override fun onEnd() {}
+        }
+        ProofRecorder.start(dir, rate, mapOf("gain" to "flat"), { null }, tap) { result = it; done.countDown() }
+        val block = 240; var at = 0
+        // 2 s flat, then +6 dB for 2 s, then −6 dB for 2 s.
+        for ((label, gain) in listOf("flat" to 1f, "Gain: 0 → +6 dB" to 2f, "Gain: +6 → −6 dB" to 0.5f)) {
+            if (label != "flat") ProofRecorder.mark(label, mapOf("gain" to label))
+            repeat(rate * 2 / block) { i ->
+                val buf = tone(block, 1000.0, 0.25, at); at += block
+                ProofRecorder.offerDry(buf, buf.size)
+                for (k in buf.indices) buf[k] *= gain
+                ProofRecorder.commitWet(buf, buf.size)
+                if (i % 40 == 0) Thread.sleep(2)
+            }
+        }
+        ProofRecorder.stop(); assertTrue(done.await(20, TimeUnit.SECONDS))
+        val r = result!!
+        assertEquals(3, r.segments.size)
+        assertEquals(rate * 6L, tapped.get())
+        fun delta(i: Int) = r.segments[i].bands.minByOrNull { abs(it.hz - 1000.0) }!!.deltaDb
+        assertEquals(0.0, delta(0), 0.3); assertEquals(6.02, delta(1), 0.3); assertEquals(-6.02, delta(2), 0.3)
+        assertEquals(2.0, r.segments[1].startSeconds, 0.1)
+        assertEquals(3, r.report.getJSONArray("segments").length())
+    }
+
+    @Test fun settingChangesGetReadableLabels() {
+        val a = mapOf("qualityMode" to "Efficient", "preampDb" to 0.0, "eqEnabled" to true, "device" to "x")
+        val b = mapOf("qualityMode" to "Audiophile", "preampDb" to -3.5, "eqEnabled" to true, "device" to "y")
+        assertEquals("Quality: Efficient → Audiophile · Preamp dB: 0 → -3.5", SettingsDiff.describe(a, b))
+        assertEquals("EQ: on → off", SettingsDiff.describe(a, a + mapOf("eqEnabled" to false)))
+        assertEquals("Settings changed", SettingsDiff.describe(a, a + mapOf("device" to "z")))
+    }
 }

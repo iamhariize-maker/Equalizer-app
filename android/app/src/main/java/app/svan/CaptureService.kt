@@ -91,6 +91,8 @@ class CaptureService : Service() {
             override fun onStop() { running = false; stopSelf() }
         }, null)
         projection = mp
+        activeProjection = mp
+        screenUsed = false
 
         SessionRouter.init(this)
         systemPackages = SessionRouter.appPreferences().systemOnlyPackages()
@@ -331,6 +333,7 @@ class CaptureService : Service() {
         runCatching { activeRecord?.stop() }
         isRunning = false
         worker?.join(500)
+        activeProjection = null
         projection?.stop()
         if (worker == null) SessionRouter.onCaptureStopped()
         super.onDestroy()
@@ -370,6 +373,11 @@ class CaptureService : Service() {
 
         @Volatile var isRunning = false
             private set
+
+        /** The engine's consent-granted projection, for Recording mode's screen video. Android 14+ allows one VirtualDisplay per projection. */
+        @Volatile var activeProjection: MediaProjection? = null
+            private set
+        @Volatile var screenUsed = false
 
         /** [quality] null = use the saved Audiophile setting. */
         fun start(context: Context, resultCode: Int, data: Intent, quality: QualityMode? = null) {

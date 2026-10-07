@@ -129,3 +129,28 @@ class SpectrumPair(private val rate: Int, private val size: Int = 8192) {
         private const val SILENT = 1e-5   // −100 dBFS
     }
 }
+
+/** Plain-language label for what changed between two settings snapshots. */
+object SettingsDiff {
+    /** Settings worth naming in a segment label. Order is the display order. */
+    private val NAMES = linkedMapOf(
+        "qualityMode" to "Quality", "dither" to "Dither", "outputBitsIfDithered" to "Dither bits",
+        "autoHeadroom" to "Auto headroom", "gainProtection" to "Gain protection", "eqEnabled" to "EQ",
+        "preampDb" to "Preamp dB", "eqBandsApplied" to "EQ bands", "bassCharacter" to "Bass character",
+        "headphoneCorrection" to "Headphone correction",
+    )
+
+    /** "Quality: Balanced → Audiophile · Preamp dB: 0 → -3" */
+    fun describe(before: Map<String, Any?>, after: Map<String, Any?>): String {
+        val parts = NAMES.mapNotNull { (k, name) ->
+            if (before[k] == after[k]) null else "$name: ${show(before[k])} → ${show(after[k])}"
+        }
+        return parts.joinToString(" · ").ifEmpty { "Settings changed" }
+    }
+
+    private fun show(v: Any?) = when (v) {
+        null -> "off"; true -> "on"; false -> "off"
+        is Double -> if (v == Math.rint(v)) v.toInt().toString() else v.toString()
+        else -> v.toString()
+    }
+}

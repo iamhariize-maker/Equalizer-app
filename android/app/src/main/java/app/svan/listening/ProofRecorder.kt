@@ -4,6 +4,7 @@ import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONArray
@@ -31,21 +32,41 @@ object ProofRecorder {
         data class Failed(val message: String) : State()
     }
 
+    /** What one stretch of the recording measured, between two setting changes. */
+    class Segment(
+        val label: String, val settings: Map<String, Any?>, val startSeconds: Double, val seconds: Double,
+        val dry: LevelMeter, val processed: LevelMeter, val bands: List<SpectrumBand>,
+    )
+
     class Result(
         val directory: File, val dryWav: File, val processedWav: File, val reportJson: File,
         val seconds: Double, val dry: LevelMeter, val processed: LevelMeter,
         val bands: List<SpectrumBand>, val droppedFrames: Long, val report: JSONObject,
+        val segments: List<Segment> = emptyList(),
     )
+
+    /** Receives the processed stream on the writer thread, e.g. an MP4 muxer. */
+    interface WetTap {
+        /** [floats] interleaved stereo; [firstBlockNanos] is System.nanoTime() of the first committed block; [startFrame] is this chunk's first frame. */
+        fun onChunk(chunk: FloatArray, floats: Int, firstBlockNanos: Long, startFrame: Long)
+        fun onEnd()
+    }
+
+    private class Marker(val position: Long, val label: String, val settings: Map<String, Any?>)
 
     val state = MutableStateFlow<State>(State.Idle)
 
     private const val RING_FLOATS = 48000 * 2 * 4   // four seconds of stereo
     private const val MAX_SECONDS = 600             // 10 min ≈ 173 MB per WAV
+    const val MAX_SEGMENTS = 12
 
     private class Session(
         val dir: File, val rate: Int, val meta: Map<String, Any?>, val stats: () -> Map<String, Any?>?,
-        val onFinished: (Result) -> Unit, val startedAtMs: Long,
+        val onFinished: (Result) -> Unit, val startedAtMs: Long, val tap: WetTap?,
     ) {
+        val markers = ConcurrentLinkedQueue<Marker>()
+        @Volatile var markerCount = 0
+        @Volatile var firstBlockNanos = 0L
         val dryRing = FloatArray(RING_FLOATS)
         val wetRing = FloatArray(RING_FLOATS)
         @Volatile var written = 0L      // floats committed by the audio thread
@@ -64,6 +85,7 @@ object ProofRecorder {
         val n = samples - samples % 2
         if (n <= 0 || s.stop.get()) { s.pending = 0; return }
         if (RING_FLOATS - (s.written - s.consumed) < n) { s.dropped += n; s.pending = 0; return }
+        if (s.firstBlockNanos == 0L) s.firstBlockNanos = System.nanoTime()
         copyIn(input, s.dryRing, (s.written % RING_FLOATS).toInt(), n)
         s.pending = n
     }
@@ -93,17 +115,33 @@ object ProofRecorder {
      * readings even if capture stops first. [onFinished] runs on the writer thread.
      */
     @Synchronized
-    fun start(dir: File, rate: Int, meta: Map<String, Any?>, stats: () -> Map<String, Any?>?, onFinished: (Result) -> Unit) {
+    fun start(dir: File, rate: Int, meta: Map<String, Any?>, stats: () -> Map<String, Any?>?, tap: WetTap? = null, onFinished: (Result) -> Unit) {
         check(session == null) { "Already recording" }
         require(rate in 8000..192000)
         dir.mkdirs()
-        val s = Session(dir, rate, meta, stats, onFinished, System.currentTimeMillis())
+        val s = Session(dir, rate, meta, stats, onFinished, System.currentTimeMillis(), tap)
         session = s
         state.value = State.Recording(s.startedAtMs)
         Thread({ writerLoop(s) }, "svan-proof-writer").apply { priority = Thread.NORM_PRIORITY; start() }
     }
 
     fun stop() { session?.stop?.set(true) }
+
+    /**
+     * Starts a new measured segment at the current position: call after the listener has
+     * changed a setting and it has settled. Beyond [MAX_SEGMENTS] changes merge into the last segment.
+     */
+    fun mark(label: String, settings: Map<String, Any?>) {
+        val s = session ?: return
+        if (s.stop.get() || s.markerCount >= MAX_SEGMENTS - 1) return
+        s.markerCount++
+        s.markers.add(Marker(s.written, label, settings))
+    }
+
+    private class Open(val label: String, val settings: Map<String, Any?>, val startFrame: Long, rate: Int) {
+        val dry = LevelMeter(); val wet = LevelMeter(); val spectrum = SpectrumPair(rate)
+        fun close(endFrame: Long, rate: Int) = Segment(label, settings, startFrame.toDouble() / rate, (endFrame - startFrame).toDouble() / rate, dry, wet, spectrum.bands())
+    }
 
     // ---- writer thread --------------------------------------------------------------
 
@@ -115,6 +153,8 @@ object ProofRecorder {
         var frames = 0L
         var lastStats: Map<String, Any?>? = null
         var lastPoll = 0L
+        val segments = ArrayList<Segment>()
+        var open = Open("Opening settings", s.meta, 0, s.rate)
         try {
             BufferedOutputStream(FileOutputStream(dryFile), 1 shl 16).use { dryOut ->
                 BufferedOutputStream(FileOutputStream(wetFile), 1 shl 16).use { wetOut ->
@@ -124,11 +164,20 @@ object ProofRecorder {
                     while (true) {
                         val stopping = s.stop.get()
                         val available = s.written - s.consumed
+                        // A marker at or before the read position starts a new segment.
+                        while (true) {
+                            val m = s.markers.peek() ?: break
+                            if (m.position > s.consumed) break
+                            s.markers.poll()
+                            segments.add(open.close(frames, s.rate))
+                            open = Open(m.label, m.settings, frames, s.rate)
+                        }
                         if (available <= 0) {
                             if (stopping) break
                             Thread.sleep(15)
                         } else {
-                            val n = minOf(available, dryChunk.size.toLong()).toInt()
+                            var n = minOf(available, dryChunk.size.toLong()).toInt()
+                            s.markers.peek()?.let { n = minOf(n.toLong(), it.position - s.consumed).toInt() } // never straddle a marker
                             val at = (s.consumed % RING_FLOATS).toInt()
                             val first = minOf(n, RING_FLOATS - at)
                             System.arraycopy(s.dryRing, at, dryChunk, 0, first)
@@ -138,10 +187,15 @@ object ProofRecorder {
                                 System.arraycopy(s.wetRing, 0, wetChunk, first, n - first)
                             }
                             s.consumed += n
-                            for (i in 0 until n) { dryMeter.add(dryChunk[i]); wetMeter.add(wetChunk[i]) }
+                            for (i in 0 until n) {
+                                dryMeter.add(dryChunk[i]); wetMeter.add(wetChunk[i])
+                                open.dry.add(dryChunk[i]); open.wet.add(wetChunk[i])
+                            }
                             dryOut.write(bytes, 0, pcm24(dryChunk, n, bytes))
                             wetOut.write(bytes, 0, pcm24(wetChunk, n, bytes))
                             spectrum.add(dryChunk, wetChunk, 0, n)
+                            open.spectrum.add(dryChunk, wetChunk, 0, n)
+                            s.tap?.let { t -> runCatching { t.onChunk(wetChunk, n, s.firstBlockNanos, frames) } }
                             frames += n / 2
                             if (frames >= s.rate.toLong() * MAX_SECONDS) s.stop.set(true)
                         }
@@ -153,22 +207,25 @@ object ProofRecorder {
                     }
                 }
             }
+            segments.add(open.close(frames, s.rate))
             patchHeader(dryFile, s.rate, frames); patchHeader(wetFile, s.rate, frames)
             session = null
             state.value = State.Finishing
             val seconds = frames.toDouble() / s.rate
             val bands = spectrum.bands()
-            val report = buildReport(s, seconds, dryMeter, wetMeter, bands, lastStats)
+            s.tap?.let { runCatching { it.onEnd() } }
+            val report = buildReport(s, seconds, dryMeter, wetMeter, bands, lastStats, segments)
             val reportFile = File(s.dir, "svan-proof-report.json").apply { writeText(report.toString(2)) }
-            val result = Result(s.dir, dryFile, wetFile, reportFile, seconds, dryMeter, wetMeter, bands, s.dropped / 2, report)
+            val result = Result(s.dir, dryFile, wetFile, reportFile, seconds, dryMeter, wetMeter, bands, s.dropped / 2, report, segments)
             s.onFinished(result)
         } catch (e: Throwable) {
+            s.tap?.let { runCatching { it.onEnd() } }
             session = null
             state.value = State.Failed(e.message ?: e.javaClass.simpleName)
         }
     }
 
-    private fun buildReport(s: Session, seconds: Double, dry: LevelMeter, wet: LevelMeter, bands: List<SpectrumBand>, stats: Map<String, Any?>?): JSONObject {
+    private fun buildReport(s: Session, seconds: Double, dry: LevelMeter, wet: LevelMeter, bands: List<SpectrumBand>, stats: Map<String, Any?>?, segments: List<Segment>): JSONObject {
         val notes = JSONArray()
             .put("Recorded inside Svan's audiophile (capture) engine. Apps handled by system effects are not in these files.")
             .put("'Dry' is what the source app sent, tapped before any Svan processing. 'Processed' is the exact buffer Svan hands to Android's AudioTrack.")
@@ -180,13 +237,23 @@ object ProofRecorder {
         val spec = JSONArray()
         bands.forEach { spec.put(JSONObject().put("hz", round1(it.hz)).put("dryDb", round2(it.dryDb)).put("processedDb", round2(it.processedDb)).put("deltaDb", round2(it.deltaDb))) }
         fun level(m: LevelMeter) = JSONObject().put("peakDbfs", round2(m.peakDbfs)).put("rmsDbfs", round2(m.rmsDbfs))
+        val segs = JSONArray()
+        segments.forEach { g ->
+            val sp = JSONArray()
+            g.bands.forEach { sp.put(JSONObject().put("hz", round1(it.hz)).put("dryDb", round2(it.dryDb)).put("processedDb", round2(it.processedDb)).put("deltaDb", round2(it.deltaDb))) }
+            segs.put(JSONObject().put("change", g.label).put("startSeconds", round2(g.startSeconds)).put("durationSeconds", round2(g.seconds))
+                .put("settings", JSONObject(g.settings.filterValues { it != null }))
+                .put("dry", level(g.dry)).put("processed", level(g.processed)).put("rmsChangeDb", round2(g.processed.rmsDbfs - g.dry.rmsDbfs))
+                .put("measurable", g.bands.isNotEmpty()).put("spectrum", sp))
+        }
+        if (segments.size > 1) notes.put("'segments' measure each stretch between setting changes separately, so the dry-to-processed difference in each one belongs to the settings listed for it. Svaresa (auto) can also change settings; those changes start segments too.")
         return JSONObject()
             .put("recordedAtEpochMs", s.startedAtMs).put("durationSeconds", round2(seconds))
             .put("sampleRateHz", s.rate).put("format", "24-bit PCM stereo WAV, sample-aligned")
             .put("droppedFrames", s.dropped / 2)
             .put("dry", level(dry)).put("processed", level(wet).put("oversSamples", wet.overs))
             .put("rmsChangeDb", round2(wet.rmsDbfs - dry.rmsDbfs))
-            .put("spectrum", spec)
+            .put("spectrum", spec).put("segments", segs)
             .put("settings", JSONObject(s.meta.filterValues { it != null }))
             .put("engine", JSONObject((stats ?: emptyMap()).filterValues { it != null }))
             .put("notes", notes)

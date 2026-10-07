@@ -20,39 +20,86 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Android glue for [ProofRecorder]: names the session, snapshots the settings, and on
- * completion draws a share-ready chart and publishes everything to shared storage
- * (no storage permission: MediaStore on API 29+).
+ * Android glue for [ProofRecorder]: names the session, watches the listener's settings so
+ * every change starts a separately measured segment, optionally records the screen with
+ * Svan's processed audio ([ScreenDemoRecorder]), and on completion draws the charts and
+ * publishes everything to shared storage (no storage permission: MediaStore on API 29+).
  */
 object ProofCapture {
-    /** Where the last finished recording went, e.g. "Music/Svan Proof/2026-10-08_0112". */
+    /** Where the last finished recording went, e.g. "Music/Svan Proof/2026-10-08_011200". */
     @Volatile var lastLocation: String? = null; private set
+    /** Why the screen video isn't in the last recording, or null. */
+    @Volatile var lastScreenNote: String? = null; private set
 
-    fun start(context: Context) {
+    private fun snapshot(): Map<String, Any?> {
+        val s = SvanRepository.settings.value
+        val eq = SvanRepository.eq.value
+        val guarded = s.effectiveFor(eq)
+        return linkedMapOf(
+            "qualityMode" to s.quality.title, "oversampling" to s.quality.oversample,
+            "dither" to s.dither.title, "outputBitsIfDithered" to s.outputBits,
+            "autoHeadroom" to guarded.autoHeadroom, "gainProtection" to guarded.gainProtection,
+            "eqEnabled" to eq.enabled, "eqBandsApplied" to eq.effectiveBands().size,
+            "preampDb" to Math.round(eq.effectivePreampDb() * 10) / 10.0,
+            "bassCharacter" to Math.round(eq.bassCharacter * 100) / 100.0,
+            "headphoneCorrection" to eq.tuning?.takeIf { it.enabled }?.headphone,
+        )
+    }
+
+    fun start(context: Context, withScreen: Boolean) {
         check(CaptureService.isRunning) { "Start the audiophile engine first" }
         val app = context.applicationContext
         val stamp = SimpleDateFormat("yyyy-MM-dd_HHmmss", Locale.US).format(Date())
-        val dir = File(app.filesDir, "proof/$stamp")
-        val s = SvanRepository.settings.value
-        val eq = SvanRepository.eq.value
+        val dir = File(app.filesDir, "proof/$stamp").apply { mkdirs() }
         val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull()
-        val meta = linkedMapOf<String, Any?>(
+        val opening = snapshot() + mapOf(
             "svanVersion" to version,
-            "qualityMode" to s.quality.title, "oversampling" to s.quality.oversample,
-            "dither" to s.dither.title, "outputBitsIfDithered" to s.outputBits,
-            "autoHeadroom" to s.effectiveFor(eq).autoHeadroom, "gainProtection" to s.effectiveFor(eq).gainProtection,
-            "eqEnabled" to eq.enabled, "eqBandsApplied" to eq.effectiveBands().size,
-            "preampDb" to eq.effectivePreampDb(), "bassCharacter" to eq.bassCharacter,
-            "headphoneCorrection" to eq.tuning?.takeIf { it.enabled }?.headphone,
             "device" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE}",
         )
-        ProofRecorder.start(dir, EqController.SAMPLE_RATE, meta, ::engineStats) { result -> publish(app, stamp, result) }
+        var screen: ScreenDemoRecorder? = null
+        lastScreenNote = null
+        if (withScreen) {
+            val projection = CaptureService.activeProjection
+            when {
+                projection == null -> lastScreenNote = "No screen permission is active."
+                CaptureService.screenUsed -> lastScreenNote = "Android allows one screen recording per audiophile-engine start. Stop and start the engine to record the screen again."
+                else -> try {
+                    CaptureService.screenUsed = true
+                    screen = ScreenDemoRecorder(app, projection, EqController.SAMPLE_RATE, File(dir, "svan-demo.mp4"))
+                } catch (e: Exception) {
+                    lastScreenNote = "Screen recording couldn't start (${e.message}). Audio and measurements are still recorded."
+                }
+            }
+        }
+        try {
+            ProofRecorder.start(dir, EqController.SAMPLE_RATE, opening, { engineStats() }, screen) { result -> publish(app, stamp, result, screen) }
+        } catch (e: Exception) { screen?.release(); throw e }
+        watchSettings(snapshot())
     }
 
     fun stop() = ProofRecorder.stop()
 
     /** Back to the idle button after the user has read the outcome. */
     fun dismiss() { if (!ProofRecorder.isRecording) ProofRecorder.state.value = ProofRecorder.State.Idle }
+
+    /** A change that stays put for [SETTLE_MS] opens a new measured segment. Knob drags don't. */
+    private fun watchSettings(initial: Map<String, Any?>) {
+        Thread({
+            var committed = initial
+            var candidate = initial
+            var since = System.nanoTime()
+            while (ProofRecorder.isRecording) {
+                val now = snapshot()
+                if (now != candidate) { candidate = now; since = System.nanoTime() }
+                else if (candidate != committed && (System.nanoTime() - since) / 1_000_000 >= SETTLE_MS) {
+                    ProofRecorder.mark(SettingsDiff.describe(committed, candidate), candidate)
+                    committed = candidate
+                }
+                try { Thread.sleep(100) } catch (_: InterruptedException) { return@Thread }
+            }
+        }, "svan-proof-watch").apply { isDaemon = true; start() }
+    }
+    private const val SETTLE_MS = 700L
 
     private fun engineStats(): Map<String, Any?>? = CaptureService.stats?.let {
         mapOf(
@@ -62,10 +109,12 @@ object ProofCapture {
         ).filterValues { v -> v !is Double || v.isFinite() }
     }
 
-    private fun publish(context: Context, stamp: String, r: ProofRecorder.Result) {
+    private fun publish(context: Context, stamp: String, r: ProofRecorder.Result, screen: ScreenDemoRecorder?) {
         try {
             val chart = File(r.directory, "svan-proof-chart.png")
             chart.outputStream().use { ProofChart.render(r).compress(Bitmap.CompressFormat.PNG, 100, it) }
+            val settingsChart = File(r.directory, "svan-settings-effects.png")
+            if (r.segments.size > 1) settingsChart.outputStream().use { ProofChart.renderSettings(r).compress(Bitmap.CompressFormat.PNG, 100, it) }
             val resolver = context.contentResolver
             fun store(file: File, collection: android.net.Uri, folder: String, mime: String) {
                 val values = ContentValues().apply {
@@ -82,13 +131,21 @@ object ProofCapture {
             }
             val audio = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
             val downloads = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            var where = "Music/Svan Proof/$stamp (WAVs) · Download/Svan Proof/$stamp (charts, report)"
+            if (screen != null) {
+                if (screen.ok && screen.file.length() > 0) {
+                    store(screen.file, MediaStore.Video.Media.EXTERNAL_CONTENT_URI, "Movies", "video/mp4")
+                    where = "Movies/Svan Proof/$stamp (video) · $where"
+                } else lastScreenNote = "The screen video couldn't be completed (${screen.failure ?: "no frames were produced"}). Audio and measurements were saved."
+            }
             store(r.dryWav, audio, "Music", "audio/x-wav")
             store(r.processedWav, audio, "Music", "audio/x-wav")
             store(chart, downloads, "Download", "image/png")
+            if (r.segments.size > 1) store(settingsChart, downloads, "Download", "image/png")
             store(r.reportJson, downloads, "Download", "application/json")
-            lastLocation = "Music/Svan Proof/$stamp (WAVs) · Download/Svan Proof/$stamp (chart, report)"
+            lastLocation = where
             r.directory.deleteRecursively()
-            EqController.log("proof: saved ${"%.1f".format(r.seconds)} s, dropped=${r.droppedFrames} → $lastLocation")
+            EqController.log("proof: saved ${"%.1f".format(r.seconds)} s, ${r.segments.size} segment(s), dropped=${r.droppedFrames} → $where")
             ProofRecorder.state.value = ProofRecorder.State.Done(r)
         } catch (e: Exception) {
             EqController.log("proof: save failed: $e")
@@ -173,6 +230,54 @@ object ProofChart {
         val e = r.report.optJSONObject("engine")
         if (e != null && e.has("dspLatencyMs")) row("DSP delay · load · underruns", "%.1f ms · %.1f%% · %d".format(e.optDouble("dspLatencyMs"), e.optDouble("dspLoadPercent"), e.optInt("underruns")))
         label("%.0f s · %d Hz · dropped %d frames · Svan's digital output, not a DAC or acoustic measurement".format(r.seconds, r.report.optInt("sampleRateHz"), r.droppedFrames), 60f, H - 40f, 22f, muted)
+        return bmp
+    }
+
+    /** One row per setting change: what the change was, and the measured dry → processed difference while it was active. */
+    fun renderSettings(r: ProofRecorder.Result): Bitmap {
+        val segs = r.segments
+        val rowH = 190
+        val h = 230 + segs.size * rowH + 90
+        val bmp = Bitmap.createBitmap(W, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        c.drawColor(bg)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        fun label(s: String, x: Float, y: Float, size: Float, color: Int, bold: Boolean = false, align: Paint.Align = Paint.Align.LEFT) {
+            p.style = Paint.Style.FILL; p.color = color; p.textSize = size; p.textAlign = align
+            p.typeface = if (bold) Typeface.create(Typeface.SERIF, Typeface.BOLD) else Typeface.SANS_SERIF
+            c.drawText(s, x, y, p)
+        }
+        fun fit(s: String, size: Float, width: Float): String {
+            p.textSize = size; p.typeface = Typeface.SANS_SERIF
+            return if (p.measureText(s) <= width) s else p.breakText(s, true, width - p.measureText("…"), null).let { s.substring(0, it) + "…" }
+        }
+        label("What each setting did", 60f, 100f, 52f, gold, bold = true)
+        label("Same song, measured separately for each stretch · dry input vs processed output", 60f, 150f, 26f, muted)
+        val span = max(3.0, Math.ceil(segs.flatMap { it.bands }.maxOfOrNull { kotlin.math.abs(it.deltaDb) } ?: 3.0))
+        label("bars: change per third-octave band, 31 Hz → 20 kHz, scale ±%.0f dB".format(span), 60f, 190f, 24f, muted)
+        segs.forEachIndexed { n, g ->
+            val top = 230f + n * rowH
+            p.style = Paint.Style.STROKE; p.color = grid; p.strokeWidth = 1.5f; c.drawLine(60f, top, W - 60f, top, p)
+            label("%d:%02d".format((g.startSeconds / 60).toInt(), (g.startSeconds % 60).toInt()), 60f, top + 44f, 30f, gold, bold = true)
+            label(fit(g.label, 30f, W - 260f), 170f, top + 44f, 30f, text)
+            if (g.bands.isEmpty()) {
+                label(if (g.seconds < 0.5) "too short to measure" else "no signal in this stretch", 170f, top + 110f, 26f, ember)
+                return@forEachIndexed
+            }
+            val bx = 60f; val bw = W - 120f - 250f; val mid = top + 120f; val half = 50f
+            p.color = grid; c.drawLine(bx, mid, bx + bw, mid, p)
+            val slot = bw / g.bands.size
+            g.bands.forEachIndexed { i, b ->
+                val bh = (b.deltaDb / span * half).toFloat()
+                p.style = Paint.Style.FILL; p.color = if (b.deltaDb >= 0) gold else ash
+                c.drawRect(bx + i * slot + slot * 0.15f, min(mid, mid - bh), bx + (i + 1) * slot - slot * 0.15f, max(mid, mid - bh), p)
+            }
+            val dRms = g.processed.rmsDbfs - g.dry.rmsDbfs
+            label("%+.1f dB".format(dRms), W - 60f, top + 100f, 38f, if (g.processed.overs > 0) ember else text, bold = true, align = Paint.Align.RIGHT)
+            label("avg level", W - 60f, top + 134f, 22f, muted, align = Paint.Align.RIGHT)
+            label("peak %.1f dBFS".format(g.processed.peakDbfs), W - 60f, top + 166f, 22f, muted, align = Paint.Align.RIGHT)
+        }
+        label("Svan's digital output, not a DAC or acoustic measurement. Auto (Svaresa) changes also start a stretch.", 60f, h - 40f, 22f, muted)
         return bmp
     }
 }

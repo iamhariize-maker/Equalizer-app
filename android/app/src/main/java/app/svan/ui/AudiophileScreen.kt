@@ -272,14 +272,15 @@ private fun ProofRecorderCard(engineRunning: Boolean) {
     val state by ProofRecorder.state.collectAsState()
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     var error by remember { mutableStateOf("") }
+    var withScreen by remember { mutableStateOf(true) }
     LaunchedEffect(state) { while (state is ProofRecorder.State.Recording) { now = System.currentTimeMillis(); delay(500) } }
     SectionLabel("Recording mode")
     SvanCard {
         Column {
-            Text("Screen recorders can’t hear the audiophile engine, and starting it can stop them. Record inside Svan instead: it saves the song as it arrived (dry) and as it leaves Svan (processed) as two sample-aligned 24-bit WAVs, plus a chart and a measured report.",
+            Text("Other screen recorders can’t hear the audiophile engine. Record inside Svan instead: it captures your screen together with Svan’s processed sound in one MP4, so what you hear in the video is what Svan sent to your headphones. Change settings while it records; each change you pause on is logged and measured separately.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             Spacer(Modifier.height(8.dp))
-            Text("For a video: screen-record with sound off, then lay either WAV under it in a video editor. Covers apps on the audiophile engine only, and Svan’s digital output, not your DAC, Bluetooth link or headphones.",
+            Text("You also get dry and processed WAVs, a chart of the whole recording, a “what each setting did” chart, and a JSON report. Choose Entire screen when Android asks for screen access. Covers apps on the audiophile engine and Svan’s digital output, not your DAC, Bluetooth link or headphones.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
             Spacer(Modifier.height(12.dp))
             when (val st = state) {
@@ -300,6 +301,8 @@ private fun ProofRecorderCard(engineRunning: Boolean) {
                         style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     if (r.processed.overs > 0) Text("${r.processed.overs} processed samples reached full scale.", style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     if (r.droppedFrames > 0) Text("${r.droppedFrames} frames dropped because storage fell behind.", style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+                    if (r.segments.size > 1) Text("${r.segments.size} stretches measured, one per setting change.", style = MaterialTheme.typography.bodySmall)
+                    ProofCapture.lastScreenNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.Ember) }
                     ProofCapture.lastLocation?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(onClick = { ProofCapture.dismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Done") }
@@ -310,9 +313,14 @@ private fun ProofRecorderCard(engineRunning: Boolean) {
                     OutlinedButton(onClick = { ProofCapture.dismiss() }, modifier = Modifier.fillMaxWidth()) { Text("OK") }
                 }
                 is ProofRecorder.State.Idle -> {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Pill("Screen + sound", withScreen, { withScreen = true })
+                        Pill("Sound only", !withScreen, { withScreen = false })
+                    }
+                    Spacer(Modifier.height(8.dp))
                     if (error.isNotBlank()) Text(error, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     Button(
-                        onClick = { error = ""; runCatching { ProofCapture.start(context) }.onFailure { error = it.message ?: "Couldn’t start recording" } },
+                        onClick = { error = ""; runCatching { ProofCapture.start(context, withScreen) }.onFailure { error = it.message ?: "Couldn’t start recording" } },
                         enabled = engineRunning, modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Svan.Gold, contentColor = Svan.OnGold),
                     ) { Text(if (engineRunning) "Start recording" else "Start the audiophile engine first") }

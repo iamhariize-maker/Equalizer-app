@@ -16,10 +16,25 @@ Saved without any storage permission (MediaStore, API 29+):
 | `svan-proof-chart.png` (dry vs processed spectrum, change per third-octave, levels) | `Download/Svan Proof/<stamp>/` |
 | `svan-proof-report.json` (levels, spectrum rows, settings, engine stats, notes) | `Download/Svan Proof/<stamp>/` |
 
-**Making the video.** Screen-record with sound off; lay either WAV under it in a video editor (the
-chart is a ready-made overlay). Alternating the two WAVs gives the audible before/after.
+**Showing what settings do (screen + sound).** Pick *Screen + sound* and start recording. Svan records the
+screen from the engine's existing MediaProjection and muxes it with its own processed output into one
+`svan-demo.mp4` (`Movies/Svan Proof/<stamp>/`), so the video's audio is what Svan really sent out, live,
+as you change settings. Choose *Entire screen* in Android's dialog, or the video shows only that one app.
+Android 14+ allows one screen recording per audiophile-engine start (one VirtualDisplay per projection);
+stop/start the engine to record the screen again. *Sound only* skips the video.
+
+**What each setting did.** A setting change that stays put for 0.7 s starts a new segment (up to 12; knob
+drags don't split). Each segment is measured separately (levels and third-octave dry→processed change) and
+labelled with what changed, e.g. `Quality: Efficient → Audiophile`. `svan-settings-effects.png` draws one row
+per segment; the same data is in `svan-proof-report.json` under `segments`. Svaresa's automatic changes also
+start segments. Segments shorter than ~0.5 s are listed as too short to measure.
+
+**Video/sound alignment.** Audio is timed from its first committed block, video from the first encoder frame:
+expect about ±100 ms at the start, plus any Bluetooth/DAC delay the listener would have (not removed).
+The WAV pair can still be used in an editor instead.
 
 **Limits (also written into every report).**
+- Screen video size is about 720p on the short side, fixed at start (rotating mid-recording distorts it).
 - Only apps on the audiophile engine are recorded; system-effects apps are not.
 - It is Svan's digital output. It excludes Android's mixer, the DAC/USB path, Bluetooth encoding and
   the headphones, and is not an acoustic measurement.
@@ -27,6 +42,8 @@ chart is a ready-made overlay). Alternating the two WAVs gives the audible befor
 - The spectrum is a Welch-averaged third-octave estimate of L+R; only dry→processed differences mean anything.
 - Maximum 10 minutes per recording. If storage falls behind, blocks are dropped from both files equally and reported.
 
-**Verified:** `ProofRecorderTest` (JVM): a known +6.02 dB gain reads +6.02 dB at 1 kHz, WAV headers/samples
-decode, overs are clamped not wrapped, silence yields no spectrum. **Not yet verified:** the on-phone UI,
-MediaStore publishing and chart rendering (need CI/real-phone check on TECNO/LG).
+**Verified:** `ProofRecorderTest` (JVM): a known +6.02 dB gain reads +6.02 dB at 1 kHz, flat/+6/−6 dB segments
+measure 0/+6.02/−6.02 dB, WAV headers/samples decode, overs are clamped not wrapped, silence yields no
+spectrum, setting labels read correctly. **Not yet verified (no Android SDK where this was written):**
+the on-phone UI, screen+audio MP4 muxing and A/V sync, MediaStore publishing and chart rendering.
+Check on TECNO LH7n (Android 14) and LG V60 (Android 13) before relying on it.
