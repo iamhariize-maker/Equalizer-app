@@ -3,6 +3,7 @@
 set -euo pipefail
 S=${1:-emulator-5554}; OUT=${2:?output directory required}; A=(adb -s "$S")
 CAP=app.svan.testsource.capturable
+BLOCKED=app.svan.testsource.blocked
 mkdir -p "$OUT"
 trap '"${A[@]}" logcat -d > "$OUT/logcat.txt" 2>&1 || true; "${A[@]}" shell pm grant app.svan android.permission.DUMP >/dev/null 2>&1 || true' EXIT
 eq() { "${A[@]}" shell am start -W -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
@@ -12,15 +13,20 @@ status() {
   "${A[@]}" shell run-as app.svan cat files/basic-status.json > "$OUT/$1.json"
 }
 measure() {
-  "${A[@]}" logcat -c; eq measure_mix --ef seconds 3
-  for ((i=0;i<30;i++)); do
-    line=$("${A[@]}" logcat -d -s EqSpike:I | sed -n 's/.*MIX median=\([-0-9.]*\) .*/\1/p' | tail -1)
-    if [[ -n "$line" ]]; then printf '%s\n' "$line" > "$OUT/$1.db"; return; fi
-    sleep 1
-  done
-  return 1
+  # Visualizer(0) is before global insert effects. Read the actual emulator host
+  # output after those effects; silent/unavailable output fails this test.
+  local result=0
+  timeout --signal=INT 4s parec --device=svan_e2e.monitor --format=float32le \
+    --rate=48000 --channels=2 > "$OUT/$1.float32le" || result=$?
+  [[ "$result" == 124 || "$result" == 0 ]]
+  python3 "$(dirname "$0")/host_audio_level.py" "$OUT/$1.float32le" > "$OUT/$1.db"
 }
 eq stop_capture; sleep 3; eq shared_output --ez on false
+# Retire previous suites' sources and router state before testing fresh announcements.
+tone --ez stop true
+"${A[@]}" shell am start -W -n "$BLOCKED"/app.svan.testsource.ToneActivity --ez stop true >/dev/null
+sleep 3
+eq stop_system; sleep 2
 eq reset_sound; eq svaramanas --ez on false; eq mix_fallback --ez on false; eq engine_mode --ez system_only true; eq start_system
 "${A[@]}" shell 'for p in $(pidof shizuku_server); do kill "$p"; done'
 "${A[@]}" shell pm revoke app.svan android.permission.DUMP
@@ -126,7 +132,7 @@ checks=[('all basic-detection checks run with DUMP revoked',all(not d(n)['dump']
  ('new announced sessions never stack EQ on the shared output',d('shared-known')['attached']==[0] and len(d('shared-known')['routes'])==1 and d('shared-known')['routes'][0]['owner']=='SHARED_OUTPUT' and near(v('shared-known-cut'),v('shared-cut'))),
  ('output-change handler retires the shared effect',not d('output-changed')['sharedRequested'] and 0 not in d('output-changed')['attached']),
  ('shared-output processing blocks Engine B and restores the original level on stop',not d('capture-blocked')['capture'] and d('capture-blocked')['sharedRequested'] and not d('shared-stopped')['attached'] and near(v('shared-restored'),v('shared-flat')))]
-for n in ['per-player-flat','per-player-cut','resumed-cut','recovered-cut','hidden-flat','panel-cut','shared-flat','shared-cut','shared-known-cut','shared-restored']: print(f'INFO {n}: {v(n):.1f} dBFS (output-mix meter)')
+for n in ['per-player-flat','per-player-cut','resumed-cut','recovered-cut','hidden-flat','panel-cut','shared-flat','shared-cut','shared-known-cut','shared-restored']: print(f'INFO {n}: {v(n):.4f} dBFS (emulator host output after effects)')
 for name,ok in checks:print(('PASS ' if ok else 'FAIL ')+name)
 assert all(ok for _,ok in checks)
 PY

@@ -146,11 +146,16 @@ jobs:
           mkdir -p e2e-out
           curl -fL --retry 3 https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk -o shizuku.apk
           echo '6e273ab0e991c4e79bc8b1bbb9b9dd739ccac1a8712a541a214078886b7b790f  shizuku.apk' | sha256sum -c -
+      - name: Verify and prepare emulator host audio measurement
+        run: |
+          python3 -m unittest discover -s android/scripts -p test_host_audio_level.py
+          bash android/scripts/prepare_host_audio.sh
       - name: Run e2e on emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
           SHIZUKU_APK: ${{ github.workspace }}/shizuku.apk
           SVAN_ONBOARDING_OUT: ${{ github.workspace }}/e2e-out/onboarding
+          QEMU_AUDIO_DRV: pa
         with:
           api-level: ${{ matrix.api }}
           target: default
@@ -213,6 +218,62 @@ jobs:
           name: e2e-results-api${{ matrix.api }}
           if-no-files-found: warn
           path: e2e-out/
+
+  # Fast feedback for the new connection path; the full e2e job still requires these same checks.
+  basic-detection:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [33, 34]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build test players
+        working-directory: android
+        run: ./gradlew --no-daemon :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-debug
+          path: tested-debug
+      - name: Verify and prepare emulator host audio measurement
+        run: |
+          python3 -m unittest discover -s android/scripts -p test_host_audio_level.py
+          bash android/scripts/prepare_host_audio.sh
+          mkdir -p basic-out
+      - name: Exercise DUMP-free connections and measure processed host output
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          QEMU_AUDIO_DRV: pa
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
+          working-directory: android
+          script: adb -s emulator-5554 install -r "$GITHUB_WORKSPACE/tested-debug/app-debug.apk" ; adb -s emulator-5554 install -r testsource/build/outputs/apk/capturable/debug/testsource-capturable-debug.apk ; adb -s emulator-5554 install -r testsource/build/outputs/apk/blocked/debug/testsource-blocked-debug.apk ; adb -s emulator-5554 shell wm size 320x640 ; adb -s emulator-5554 shell wm density 160 ; bash scripts/basic_detection.sh emulator-5554 "$GITHUB_WORKSPACE/basic-out"
+      - name: Results
+        if: always()
+        run: |
+          cat basic-out/results.txt
+          test "$(grep -c '^PASS' basic-out/results.txt)" -eq 12
+          ! grep -q '^FAIL' basic-out/results.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: basic-detection-api${{ matrix.api }}
+          path: basic-out/
 
   # Install + launch the release APK on several Android versions (the user's phones run 10-15 and
   # vendor skins on top). Emulators cannot reproduce OEM skins; this catches OS-version breakage.
