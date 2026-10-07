@@ -42,7 +42,7 @@ object DetectionSetup {
             PlaybackSessions.hasDumpPermission(context) -> State(Stage.READY, "Enhanced detection is available through your existing audio-report permission.")
             ShizukuAudioReports.ready -> State(Stage.READY, "Enhanced detection is on while Shizuku is running. No app permission grant was needed.")
             shell.stage == ShizukuAudioReports.Stage.CONNECTING -> State(Stage.WORKING, "Checking music detection…")
-            shell.stage == ShizukuAudioReports.Stage.ERROR && !clearError -> State(Stage.ERROR, detectionOemAdvice(Build.MANUFACTURER))
+            shell.stage == ShizukuAudioReports.Stage.ERROR && !clearError -> State(Stage.ERROR, detectionOemAdvice(Build.MANUFACTURER, shell.detail))
             !clearError && state.value.stage == Stage.ERROR -> return
             runCatching { Shizuku.pingBinder() }.getOrDefault(false) -> State(Stage.AUTHORIZE)
             runCatching { context.packageManager.getApplicationInfo(SHIZUKU_PACKAGE, 0) }.isSuccess -> State(Stage.START)

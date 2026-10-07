@@ -120,9 +120,11 @@ data class CompatibilityEntry(val player: String, val withoutSetup: String, val 
 }
 
 /** Plain setup guidance; labels differ by ROM. No setting is changed by Svan. */
-fun detectionOemAdvice(manufacturer: String): String {
+fun detectionOemAdvice(manufacturer: String, detail: String = ""): String {
     val maker = manufacturer.lowercase()
     val tip = when {
+        listOf("tecno", "infinix", "itel", "transsion").any { it in maker } ->
+            "On HiOS/XOS, keep Wi-Fi connected while Shizuku starts, set Shizuku's and Svan's battery use to No restrictions (switch off Pause app activity if unused), and in Developer options turn on any USB debugging security or permission-monitoring option you can find."
         listOf("oneplus", "oppo", "realme").any { it in maker } ->
             "In Developer options, look for Disable permission monitoring and turn it on if available. Some builds also need USB debugging or Disable adb authorization timeout."
         listOf("xiaomi", "redmi", "poco").any { it in maker } ->
@@ -132,5 +134,6 @@ fun detectionOemAdvice(manufacturer: String): String {
         else -> "Check Shizuku's limited-access instructions for your phone. Developer option names vary by manufacturer."
     }
     return "Your phone could not start enhanced detection. Basic detection still works with players that announce their audio connection. " +
-        tip + " Then restart Shizuku and retry here; pair wireless debugging again if needed."
+        tip + " Then restart Shizuku and retry here; pair wireless debugging again if needed." +
+        (if (detail.isBlank()) "" else " What failed: $detail.")
 }

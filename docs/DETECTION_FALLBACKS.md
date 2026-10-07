@@ -1,6 +1,31 @@
 > **Removed 7 October 2026:** optional player recognition (notification access) is gone. Play Protect
 > flagged it as a financial-fraud risk in sideloaded builds. Svan declares no notification listener.
 
+## Direct Shizuku route when the helper process is blocked (7 October 2026)
+
+Owner evidence: on the TECNO LH7n (HiOS, Android 14) Shizuku runs under wireless debugging and lists Svan
+as authorized, yet the setup screen reports that enhanced detection could not start; an earlier report
+showed the helper timing out. Setup steps 1-4 pass, so the failure is in Svan's helper (the process
+Shizuku spawns as shell to dump the two reports), which some ROMs block or never let answer.
+
+If the helper does not bind, answers late, drops or cannot read a report, Svan now reads the same two
+reports (`audio`, `media.audio_flinger`) through Shizuku's own shell-identity server: it fetches the
+service binder and sends the DUMP transaction through `ShizukuBinderWrapper.transact`, with the write end
+of a pipe, from a short-lived thread. The wrapper's own `dump()` would run in Svan's process and be
+refused, so the transaction is sent explicitly. Same two fixed services, same read limits, no app DUMP
+grant, no arbitrary commands. After direct works once, later reconnects skip the helper wait. The
+state records the route (HELPER or DIRECT). If both fail, the setup screen now shows what failed
+(for example "helper: Shell helper did not respond within 10 seconds; direct route: ..."), which is
+also in the diagnostic report, so the next owner report names the real cause. TECNO/Infinix/itel get
+HiOS-specific guidance (Wi-Fi connected while starting Shizuku, battery use "No restrictions" for
+Shizuku and Svan, Pause app activity if unused off, USB debugging security options).
+
+Verification: CI forces the direct route on the emulator's real Shizuku (`shell_route --ez direct true`,
+preview builds only) and requires a hidden (non-broadcast) player to be discovered from those reports
+and processed at the exact expected level. Whether HiOS allows the direct route is NOT established until
+the owner tests it; if it does not, the "What failed" line is the evidence to act on.
+
+
 ## Whole-phone EQ for hidden players (replaces player recognition, 7 October 2026)
 
 The problem player recognition aimed at: with Shizuku blocked by the OEM and a player that never

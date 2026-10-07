@@ -816,3 +816,5 @@ diagnostics, tests); `check_manifest_permissions.py` now forbids notification li
 broadcast path (3 checks). Shizuku shell reports and session broadcasts remain the detection paths.
 Follow-up the same day: the problem recognition targeted (hidden players get no EQ when Shizuku is
 blocked) is now handled by the whole-phone output-mix fallback; see DETECTION_FALLBACKS.md.
+TECNO enhanced detection: steps 1-4 pass but the helper (UserService) fails; added a direct Shizuku route
+and a visible failure reason. See DETECTION_FALLBACKS.md. Unverified on HiOS until the owner tests it.

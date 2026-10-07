@@ -248,5 +248,20 @@ eq eq_band --ef frequency 63 --ef gain -6; sleep 3
 LOWCUT=$(level)
 check_delta 'system EQ produces a 6 dB bass cut at 63 Hz' "$LOWCUT" "$LOWBASE" -6
 eq reset_sound
+
+# Some ROMs (HiOS) never let Shizuku's helper process answer. Skip it and read the same
+# reports through Shizuku's own shell process: a hidden (non-broadcast) player must still be
+# discovered from those reports and processed by the same curve.
+tone --ez stop true; sleep 3
+eq preset; sleep 3
+$A logcat -c
+eq shell_route --ez direct true
+if wait_log 'detection setup: shell audio reports ready \(direct Shizuku route'; then
+  tone --ef freq 1000 --ef amp 0.25 --ez broadcast false
+  wait_log "route: $CAP .*Engine A"; sleep 3
+  DIRECT=$(level)
+  check_delta 'hidden player is processed through the direct Shizuku route' "$DIRECT" "$BASE" -6.3
+else FAILED=1; diagnose 'direct Shizuku route'; fi
+eq reset_sound
 tone --ez stop true
 $A uninstall app.svan >/dev/null

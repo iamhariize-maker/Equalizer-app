@@ -185,6 +185,7 @@ class MainActivity : ComponentActivity() {
                 it.copy(engineMode = if (intent.getBooleanExtra("system_only", false)) app.svan.model.EngineMode.SYSTEM_ONLY else app.svan.model.EngineMode.AUTO)
             }
             "mix_fallback" -> SvanRepository.updateSettings { it.copy(wholeMixFallback = intent.getBooleanExtra("on", true)) }
+            "shell_route" -> ShizukuAudioReports.connect(this, retry = true, forceDirect = intent.getBooleanExtra("direct", false))
             "start_system" -> SystemEqService.start(this)
             "stop_system" -> SystemEqService.stop(this)
             "test_drop_system_effects" -> {

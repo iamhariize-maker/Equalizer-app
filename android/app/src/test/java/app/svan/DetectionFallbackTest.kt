@@ -23,4 +23,15 @@ class DetectionFallbackTest {
         assertTrue(detectionOemAdvice("POCO").contains("USB debugging (Security settings)"))
         assertTrue(detectionOemAdvice("vivo").contains("Funtouch"))
     }
+
+    @Test fun hiOsPhonesGetBatteryAndPermissionGuidanceAndSeeTheRealFailure() {
+        for (maker in listOf("TECNO", "Infinix", "itel")) {
+            val advice = detectionOemAdvice(maker, "helper: Shell helper did not respond within 10 seconds; direct route: SecurityException")
+            assertTrue(advice.contains("HiOS/XOS"))
+            assertTrue(advice.contains("Pause app activity if unused"))
+            assertTrue(advice.contains("What failed: helper: Shell helper did not respond within 10 seconds; direct route: SecurityException."))
+            assertTrue(advice.contains("Basic detection still works"))
+        }
+        assertFalse(detectionOemAdvice("TECNO").contains("What failed"))
+    }
 }
