@@ -58,8 +58,7 @@ object OnboardingAndroid {
         // The public count is anonymous, not an app count. Never invent an identity from it.
         val publicOther = (if (fresh) st.publicActive else DetectionMonitor.publicActiveCount(context))
             ?.let { (it - if (CaptureService.isRunning) 1 else 0).coerceAtLeast(0) }
-        return WorkingState.derive(publicOther, mergeRecognizedPlayers(players,
-            if (PlayerRecognition.enabled(context)) PlayerRecognition.players.value else emptyList()) { label(context, it) }, PlaybackSessions.hasReportAccess(context))
+        return WorkingState.derive(publicOther, players, PlaybackSessions.hasReportAccess(context))
     }
 
     private fun label(context: Context, key: String): String = if (key.startsWith("uid:") || key.startsWith("pid:")) "A player" else DetectionStatus.appLabel(key) { pkg ->

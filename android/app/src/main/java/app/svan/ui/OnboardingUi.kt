@@ -87,7 +87,6 @@ private fun DetectionWizard(fixture: String?) {
     if (fixture == null) {
         Spacer(Modifier.height(8.dp))
         if (error) Text(grant.message, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-        PlayerRecognitionOption()
         TextButton(onClick = { OnboardingUi.panel.value = HelpPanel.NONE }) { Text("Continue with basic detection") }
     }
     Spacer(Modifier.height(10.dp))
@@ -173,30 +172,6 @@ private fun DetectionWizard(fixture: String?) {
     }
     if (!snapshot.dumpGranted) Text("Pairing cannot be verified separately from a running Shizuku binder. Its running tick is the observed result of startup, not a claim about a stored pairing.",
         style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
-}
-
-@Composable
-private fun PlayerRecognitionOption() {
-    val context = LocalContext.current
-    val connected by PlayerRecognition.connected.collectAsState()
-    var enabled by remember { mutableStateOf(PlayerRecognition.enabled(context)) }
-    var error by remember { mutableStateOf<String?>(null) }
-    ObserveWhileVisible { enabled = PlayerRecognition.enabled(context) }
-    SvanCard {
-        Column {
-            Text("Player recognition · optional", style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
-            Text("Shows which music app is playing without Shizuku. Android asks for notification access; Svan only checks the app name and play/pause state. It never reads notification text or messages, or saves or shares this information.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            Text("EQ still needs the player's audio connection. Your sound and quality settings stay as you chose them.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            if (enabled) Text(if (connected) "Player recognition is on." else "Access is allowed; waiting for Android to connect. Try switching access off and on if it stays here.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
-            OutlinedButton(onClick = {
-                error = openSettings(context, Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-            }, modifier = Modifier.fillMaxWidth()) { Text(if (enabled) "Manage player recognition" else "Use player recognition") }
-            error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.Ember) }
-        }
-    }
 }
 
 @Composable

@@ -24,10 +24,13 @@ instance per session; never attach both).
 
 Owner follow-up (6 October 2026): implement OEM-safe detection fallbacks. Normal setup
 reads fixed audio reports via a Shizuku shell UserService instead of granting app DUMP.
-Optional NotificationListenerService recognition is authorized for package/playback state
-only; never read notification text or use recognition as proof of an audio-session ID,
-processing, or capture compatibility. Keep the independent session-broadcast path,
-existing/manual grants, Play Protect, and all DSP/routing quality safeguards.
+Keep the independent session-broadcast path, existing/manual grants, Play Protect, and all
+DSP/routing quality safeguards.
+
+Owner decision (7 October 2026, final): no notification listener, SMS or accessibility capability,
+for any purpose. Play Protect's enhanced fraud protection flagged the sideloaded 0.5.6 build as a
+financial-fraud risk because it declared a NotificationListenerService (optional player recognition).
+That feature is removed and `check_manifest_permissions.py` rejects any such declaration.
 
 ## Repo map
 | Path | What |

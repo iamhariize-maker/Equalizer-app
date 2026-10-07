@@ -1,3 +1,6 @@
+> **Removed 7 October 2026:** optional player recognition (notification access) is gone. Play Protect
+> flagged it as a financial-fraud risk in sideloaded builds. Svan declares no notification listener.
+
 # Optional music detection, 0.5.6 follow-up
 
 Svan keeps its selected EQ, quality, headroom and capture settings across every detection fallback.

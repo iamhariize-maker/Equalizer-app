@@ -71,7 +71,6 @@ object DetectionSetup {
         appendLine("Shell reports: ${ShizukuAudioReports.state.value}")
         appendLine("Shizuku running: ${runCatching { Shizuku.pingBinder() }.getOrDefault(false)}")
         appendLine("Shizuku authorization: ${runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false)}")
-        appendLine("Player recognition: ${PlayerRecognition.connected.value}; players=${PlayerRecognition.players.value.size}")
     }
     private const val REQUEST = 369
 }

@@ -233,7 +233,7 @@ data class DetectionStatus(
                     "Android reports $other player(s) playing, but Svan cannot see which",
                     "Basic detection is active. Keep music playing; if no audio connection appears, restart the song or try the optional Music detection options below. Sound controls cannot fix a missing audio session.")
                 else Triple(Health.NO_PERMISSION, "Basic music detection is active",
-                    "Play a song. Players that announce their audio connection can work now. Enhanced detection and player recognition below are optional.")
+                    "Play a song. Players that announce their audio connection can work now. Enhanced detection below is optional.")
             }
             if (!playersOk && !serverOk) return Triple(Health.BLIND, "Android would not share the audio report",
                 "Both audio reports failed this scan. Svan retries automatically; if this stays, share the diagnostic report.")

@@ -1,3 +1,6 @@
+> **Removed 7 October 2026:** optional player recognition (notification access) is gone. Play Protect
+> flagged it as a financial-fraud risk in sideloaded builds. Svan declares no notification listener.
+
 # Svan permissions after 0.5.2
 
 Notification-listener access, SMS access, accessibility services, device-admin

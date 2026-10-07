@@ -92,7 +92,7 @@ object FirstRunPolicy {
 
 fun detectionGrantFailureMessage(pending: Boolean): String = if (pending)
     "Android is still answering the request. Keep Shizuku running, wait a moment, then retry."
-else "Enhanced music detection is unavailable. Basic detection stays active. Open Shizuku, allow Svan, then retry, or use optional player recognition."
+else "Enhanced music detection is unavailable. Basic detection stays active. Open Shizuku, allow Svan, then retry."
 
 fun batteryAdvice(manufacturer: String): String {
     val maker = manufacturer.lowercase()
@@ -132,5 +132,5 @@ fun detectionOemAdvice(manufacturer: String): String {
         else -> "Check Shizuku's limited-access instructions for your phone. Developer option names vary by manufacturer."
     }
     return "Your phone could not start enhanced detection. Basic detection still works with players that announce their audio connection. " +
-        tip + " Then restart Shizuku and retry here; pair wireless debugging again if needed. You can also use optional player recognition below."
+        tip + " Then restart Shizuku and retry here; pair wireless debugging again if needed."
 }

@@ -193,7 +193,7 @@ jobs:
           test "$(grep -c '^PASS' e2e-out/onboarding/results.txt)" -eq 8
           ! grep -q '^FAIL' e2e-out/onboarding/results.txt
           cat e2e-out/onboarding/fallbacks/results.txt
-          test "$(grep -c '^PASS' e2e-out/onboarding/fallbacks/results.txt)" -eq 4
+          test "$(grep -c '^PASS' e2e-out/onboarding/fallbacks/results.txt)" -eq 3
           ! grep -q '^FAIL' e2e-out/onboarding/fallbacks/results.txt
           cat e2e-out/detection/onboarding.txt
           test "$(grep -c '^PASS' e2e-out/detection/onboarding.txt)" -eq 6

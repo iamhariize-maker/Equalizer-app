@@ -806,3 +806,11 @@ in CONTINUITY_0.5.6.md):
   locally. Emulator CI on this branch and owner-phone listening are still required; the owner's
   crackle has not been reproduced on a device.
 
+## Play Protect fraud warning — 2026-10-07
+
+The owner's sideloaded 0.5.6 preview triggered Play Protect's "financial fraud" alarm. Cause: the
+optional player-recognition NotificationListenerService (BIND_NOTIFICATION_LISTENER_SERVICE), which
+enhanced fraud protection treats like OTP-stealing malware. Removed entirely (service, UI option,
+diagnostics, tests); `check_manifest_permissions.py` now forbids notification listeners, and
+`detection_fallbacks.sh` asserts the installed package declares none, then checks the no-Shizuku
+broadcast path (3 checks). Shizuku shell reports and session broadcasts remain the detection paths.
