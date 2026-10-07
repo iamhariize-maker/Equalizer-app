@@ -1,3 +1,49 @@
+## Combined 0.5.7 feature checks — pending, not run on phones
+
+Install the original-key 0.5.7/code 14 update over the supplied spatial-test APK, without uninstalling.
+Confirm saved presets/manual curves/settings remain, and Fast/Detailed/Auto, Backing/Binaural,
+Bass Resolve, experimental unmask, rate choices/provenance, rule view, protection, calibration,
+blind listening, Svaresa and all fine controls are still present. Test Recording mode at the safe
+48 kHz setting and, if the route supports it, a higher capture-client rate. WAV/clock/report must
+agree on actual rate/duration; the M4A convenience export remains 48 kHz.
+
+Amazon is the owner's larger problem: it is sometimes observed but never becomes a usable music
+source. Capture a local diagnostic report while a song plays, separately on IM4 and Realme Air 8;
+check whether the report gives a real nonzero session, usage/content exclusion, effect bypass,
+or an unresolved player. Try the retained automatic whole-phone fallback and, separately, the
+manual shared-output experiment with enhanced access unavailable. Report actual audible EQ change
+and route, without inferring per-app capture or full native processing from an attached mix effect.
+Apple: repeat play/pause/resume, stop/restart and several track changes, then the same route checks.
+Neither result is claimed fixed on TECNO or LG by the synthetic tests below.
+
+# 0.5.7 player-connection checks — pending
+
+Use the new original-key owner-signed 0.5.7/code 14 APK. It updates the earlier owner beta;
+preview-signed builds use a different certificate. No new permission is needed for connections
+or the shared-output experiment. Keep Play Protect enabled. See [player connections](PLAYER_CONNECTIONS_0.5.7.md).
+
+1. With shared-output off, test Spotify, YouTube Music, Apple Music and Amazon Music HD on each
+   actual output. Record app versions, phone, route, whether the local report says DUMP granted,
+   and actual connection/effect behavior. Repeat pause/resume, stop/restart, track changes,
+   app switching and screen-off. Save a local report after failure; historical names are not proof.
+2. If a player exposes its EQ-panel command, select Svan and check its EQ opens, changes are
+   audible and Done returns to the player. Check later restart behavior separately.
+3. For a missing session, explicitly try shared-output EQ. Compare Flat against a clear EQ cut
+   at fixed volume on that same music. Record whether it changes the sound on speaker, wired,
+   USB and Bluetooth independently. Attached/control is not processing proof. Do not infer
+   support for an offload/HD route from a speaker or self-tone test.
+4. While shared-output is active, verify no doubled EQ when a player announces a new session;
+   per-app overrides are unavailable. Connect/disconnect an output and check the experiment
+   stops. Check stop restores per-player processing and Engine B refuses to start until it stops.
+5. Test other sounds sharing the output and stop the option if it affects audio unexpectedly.
+   Confirm the Recording mode workflow still works after returning to Engine B. Shared-output
+   EQ does not create processed recording files for capture-blocked apps.
+
+None of these commercial-player/physical-route checks has passed yet. Owner observations of
+earlier versions remain history. CI's source app and route-handler simulation cannot replace them.
+
+---
+
 # Recording-mode owner checks — pending
 
 Use the new recording-mode build identified in [HANDOFF.md](HANDOFF.md), not the older

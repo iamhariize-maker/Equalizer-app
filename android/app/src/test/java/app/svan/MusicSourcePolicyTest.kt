@@ -34,4 +34,14 @@ class MusicSourcePolicyTest {
             assertEquals(expected,s.contentType)
         }
     }
+    @Test fun amazonAndAppleMusicAdmitMediaOrUnknownUsageWithoutInventingCapturePermission() {
+        for (pkg in listOf("com.amazon.mp3", "com.apple.android.music")) {
+            for (usage in listOf("USAGE_MEDIA", "USAGE_UNKNOWN")) {
+                val source = music.copy(packageName = pkg, usage = usage, flags = PlaybackSession.FLAG_NO_MEDIA_PROJECTION)
+                assertTrue(MusicSourceGate().admit(source, 0, false))
+                assertTrue(source.flagsBlockCapture)
+            }
+            assertFalse(MusicSourceGate().admit(music.copy(packageName = pkg, usage = "USAGE_NOTIFICATION"), 0, false))
+        }
+    }
 }

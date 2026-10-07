@@ -206,8 +206,8 @@ fun WorkingStatusCard(state: WorkingState, fixture: Boolean = false, stats: Capt
             Text(when (state.kind) {
                 WorkingKind.IDLE -> "Nothing playing"
                 WorkingKind.UNKNOWN -> "Can't tell whether playback is active"
-                WorkingKind.UNREACHABLE -> "Player found, but not connected"
-                WorkingKind.ROUTED -> "Player found and routed"
+                WorkingKind.UNREACHABLE -> if (fixture) "Player found, but not connected" else "Music playing · session unavailable"
+                WorkingKind.ROUTED -> if (fixture) "Player found and routed" else if (state.players.any { it.engine == UiEngine.SHARED_OUTPUT }) "Shared-output effect attached" else "Player connected"
             }, style = MaterialTheme.typography.bodyMedium)
             state.players.forEach { player ->
                 Text("${player.name} · ${player.engine?.title ?: player.reason ?: "No attachable session"}",

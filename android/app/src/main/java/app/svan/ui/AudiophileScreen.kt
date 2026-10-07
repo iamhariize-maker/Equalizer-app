@@ -180,6 +180,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                     Text(pkg, style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
                     val status = when {
                         appRoutes.any { it.owner == SessionRouter.Owner.PROBING } -> "Checking capture…"
+                        appRoutes.any { it.owner == SessionRouter.Owner.SHARED_OUTPUT } -> "Shared-output EQ · music path unverified"
                         appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_B_MUTED } -> "Audiophile engine · full DSP"
                         appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_A && it.sessionId in EqController.globalEq.attachedSessions } -> "System effects · gain per band"
                         appRoutes.isNotEmpty() -> "Unprocessed · system effect unavailable"

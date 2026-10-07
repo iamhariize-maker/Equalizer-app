@@ -93,6 +93,19 @@
 
         <!-- Runtime receiver in SystemEqService also receives general player
              broadcasts, which Android 8+ drops for a manifest-only receiver. -->
+        <receiver android:name=".SessionReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.action.OPEN_AUDIO_EFFECT_CONTROL_SESSION" />
+                <action android:name="android.media.action.CLOSE_AUDIO_EFFECT_CONTROL_SESSION" />
+            </intent-filter>
+        </receiver>
+        <activity android:name=".EffectControlActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.CATEGORY_AUDIO_EFFECT_CONTROL_PANEL" />
+            </intent-filter>
+        </activity>
         <provider
             android:name="rikka.shizuku.ShizukuProvider"
             android:authorities="${applicationId}.shizuku"

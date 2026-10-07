@@ -46,7 +46,7 @@ data class WizardSnapshot(
     }
 }
 
-enum class UiEngine(val title: String) { SYSTEM_EFFECTS("System effects"), AUDIOPHILE("Audiophile engine") }
+enum class UiEngine(val title: String) { SYSTEM_EFFECTS("System effects"), AUDIOPHILE("Audiophile engine"), SHARED_OUTPUT("Shared-output effect · music path unverified") }
 enum class WorkingKind { IDLE, UNREACHABLE, ROUTED, UNKNOWN }
 data class WorkingPlayer(
     val key: String, val name: String, val active: Boolean?, val attachable: Boolean,

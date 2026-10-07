@@ -32,10 +32,12 @@ object ProofCapture {
     @Volatile var lastExportNote: String? = null; private set
 
     private fun snapshot(): Map<String, Any?> {
-        val s = SvanRepository.settings.value
+        val s = CaptureService.epoch?.appliedSettings ?: SvanRepository.settings.value
         val eq = SvanRepository.eq.value
         val guarded = s.effectiveFor(eq)
         return linkedMapOf(
+            "spatialMode" to s.spatialMode.title, "captureRateHz" to CaptureService.epoch?.sampleRate,
+            "experimentalBassUnmask" to s.experimentalBassUnmask,
             "qualityMode" to s.quality.title, "oversampling" to s.quality.oversample,
             "dither" to s.dither.title, "outputBitsIfDithered" to s.outputBits,
             "autoHeadroom" to guarded.autoHeadroom, "gainProtection" to guarded.gainProtection,
@@ -52,6 +54,7 @@ object ProofCapture {
 
     fun start(context: Context, wavBits: Int = 16, matchLevel: Boolean = false, automaticSync: Boolean = false) {
         check(CaptureService.isRunning) { "Start the audiophile engine first" }
+        val capture = checkNotNull(CaptureService.epoch) { "Wait for the audiophile engine to finish starting" }
         val app = context.applicationContext
         val stamp = SimpleDateFormat("yyyy-MM-dd_HHmmss_SSS", Locale.US).format(Date())
         val dir = File(app.filesDir, "proof/$stamp").apply { mkdirs() }
@@ -62,8 +65,12 @@ object ProofCapture {
         )
         lastExportNote = null
         cueNote.value = null
-        ProofRecorder.start(dir, EqController.SAMPLE_RATE, opening, { engineStats() },
+        ProofRecorder.start(dir, capture.sampleRate, opening, { engineStats() },
             ProofRecorder.Options(wavBits, matchLevel, automaticSync)) { result -> publish(app, stamp, result) }
+        check(CaptureService.epoch?.sampleRate == capture.sampleRate) {
+            ProofRecorder.stop()
+            "Capture format changed; start a new recording"
+        }
         if (automaticSync) flashAndCue(app)
         watchSettings(snapshot())
     }

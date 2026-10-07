@@ -136,3 +136,16 @@ Local numerical tests and CI/emulator evidence are recorded in
 [RECORDING_MODE_VERIFICATION.md](RECORDING_MODE_VERIFICATION.md) and [HANDOFF.md](HANDOFF.md).
 Physical clock readability, acoustic click latency/routing, live headphone equivalence and VN
 import remain **unverified** until the owner completes [PHONE_VALIDATION.md](PHONE_VALIDATION.md).
+
+## Spatial-test integration and sample rates
+
+The combined 0.5.7 build preserves the owner-uploaded spatial-test feature set. Recording uses
+the current engine's actual capture-client sample rate for WAV headers, the frame clock, sync
+indices and segment analysis. WAVs keep that rate. A capture-format reopen finishes the current
+recording so one file never mixes different rates. Spatial mode and experimental unmask changes
+are included in settled setting segments. The processed tap includes the final source-change fade.
+
+M4A remains requested AAC-LC, 48 kHz stereo, 256 kbps. Non-48-kHz recordings are converted only
+after finishing, with a centered windowed-sinc low-pass and 16-bit TPDF PCM for the encoder. This
+convenience file does not change live DSP or the full/aligned WAVs. WAV/clock remains the precise
+sync reference; AAC encoder delay remains a format limit.

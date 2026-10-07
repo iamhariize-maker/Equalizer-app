@@ -65,7 +65,7 @@ class CaptureService : Service() {
         }
         // Must be in the foreground (type mediaProjection) *before* getMediaProjection on Android 14+.
         startForeground(NOTIF_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasReportAccess(this), SessionRouter.snapshot, Process.myUid())
+        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasReportAccess(this), SessionRouter.snapshot, Process.myUid(), SharedOutput.status.value.requested)
         if (blocker != null) {
             startupMessage.value = blocker
             EqController.log("capture: start blocked — $blocker")
@@ -133,6 +133,8 @@ class CaptureService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun audioEpoch(mp: MediaProjection, safeFallback: Boolean): Boolean {
+        epoch = null
+        app.svan.listening.ProofRecorder.stop() // finish the old file before any format renegotiation
         var record: AudioRecord? = null
         var track: AudioTrack? = null
         var engine: NativeEngine? = null

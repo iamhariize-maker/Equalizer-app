@@ -49,6 +49,7 @@ object DiagnosticReport {
             val s = it.session
             appendLine("- ${s.packageName} uid=${s.uid} pid=${it.pid} session=${s.sessionId} ${s.state} ${s.usage} flags=0x${s.flags.toString(16)} " +
                 "source=${it.source} path=${it.pathLabel.ifEmpty { "?" }} devices=${it.devices.ifEmpty { "?" }} type=${s.playerType.ifEmpty { "?" }} " +
+                "content=${s.contentType} excluded=${MusicSourcePolicy.exclusion(s) ?: "no"} " +
                 "verify=${st.verification[s.sessionId] ?: "n/a"}")
         }
         if (st.unresolved.isNotEmpty()) {
@@ -59,6 +60,8 @@ object DiagnosticReport {
         appendLine("== Svan routes ==")
         SessionRouter.snapshot.forEach { appendLine("- ${it.pkg} session=${it.sessionId} ${it.owner} playing=${it.playing}") }
         appendLine("Capture verdicts: ${SessionRouter.compat().all()}")
+        appendLine("Shared output: ${SharedOutput.status.value}")
+        appendLine("Recently closed connections (not current/capture authority): ${SessionRouter.recentConnections}")
         appendLine()
         appendLine("== Output devices (public API) ==")
         runCatching {

@@ -1,3 +1,45 @@
+## Combined owner APK baseline — 2026-10-07
+
+Owner explicitly requires every feature from their uploaded `Svan-0.5.6-spatial-test.apk`, plus
+Recording mode and the detection work. The uploaded SHA-256 is
+`d3d77a576bbfb6bf1e0d76204eed1c0e1f6f8bb5989ffa7711549ca2344a20cf`.
+All 73 ZIP payload entries match the production fixture in CI 37655986331 at `6300e82`.
+That exact source branch was merged into this branch; no private signing material was imported.
+Fast/Detailed/experimental Auto, live spatial blending/recovery, Backing/Binaural, Bass Resolve,
+experimental unmasking, rate negotiation/provenance, rule registry, mastering protection,
+calibration/blind listening, presets, manual/Svaresa curves, all controls and detection setup remain.
+The spatial baseline's automatic whole-output fallback is preserved and cannot overlap the new
+manual shared-output experiment. New detection changes do not increase Engine A DSP capability
+or bypass another app's capture policy. Amazon and Apple physical-phone checks are still pending.
+
+Recording now follows actual capture-client rate, includes applied spatial/unmask settings in
+segments, and finishes before a capture-format reopen. Its wet tap follows the baseline's final
+output fade. WAVs keep the captured rate; only the convenience AAC export is resampled offline
+to 48 kHz. The native core is unchanged from the uploaded spatial source; 151 host tests pass.
+Combined Android/CI verification and original-key final delivery follow.
+
+## Player connections and shared-output experiment — 2026-10-07
+
+Owner authorized implementation of the Astra design and delivery signed with the original
+private backup. Work stays on `ccr-c220a1e1-hikg7s`; no PR/other-branch push. Version 0.5.7/code 14
+retains the exact uploaded spatial baseline and recording features and adds no permissions. Backup certificate matches release-cert.sha256;
+key/recovery data stays outside Git/CI. Delivery must use the verified production payload.
+
+See [PLAYER_CONNECTIONS_0.5.7.md](PLAYER_CONNECTIONS_0.5.7.md). Standard manifest announcements and
+an EQ-panel activity supplement the existing callbacks. Known effects recover through bounded
+control/enable callbacks; unrelated CLOSE cannot remove a different package's connection. Closed
+history is bounded metadata only. Missing new IDs cannot be guessed. Shared-output EQ is explicit,
+experimental and off by default, exclusive with per-session EQ/Engine B, stopped by output changes
+and never a global mute. Attached is not commercial-player/route verification. Apple/Amazon,
+TECNO/LG and USB/Bluetooth/offload behavior remain pending in PHONE_VALIDATION.md.
+
+Combined JVM tests: 211 pass, including seven new lifecycle/policy tests, 17 recorder tests,
+two offline conversion tests and explicit Apple/Amazon source-policy coverage. Native 151 tests
+and 11 Python UI/control assertions pass. Final combined debug/release assembly, lint and all 211 JVM tests pass (3m37s final rerun).
+Both test-source flavors build. Compiled permission policy and four-library 16 KB alignment pass.
+CI adds a separate 12-check DUMP-free integration/measurement suite, preserving every old gate.
+Final builds/CI logs, measured responses, screenshots and signed-delivery hash are pending.
+
 ## Audio-only Recording mode — 2026-10-07
 
 Work is on `ccr-c220a1e1-hikg7s`, with no PR or other-branch push. The TECNO runs Svan;

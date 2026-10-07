@@ -28,6 +28,8 @@ class TonePlayerService : Service() {
     @Volatile private var playing = false
     private var thread: Thread? = null
     private var explicitBroadcast = true
+    private var componentBroadcast = false
+    @Volatile private var paused = false
     private lateinit var mediaSession: MediaSession
 
     override fun onCreate() {
@@ -57,6 +59,11 @@ class TonePlayerService : Service() {
     }
 
     private fun handle(intent: Intent) {
+        if (intent.hasExtra("pause")) {
+            paused = intent.getBooleanExtra("pause", false)
+            mediaState(if (paused) PlaybackState.STATE_PAUSED else PlaybackState.STATE_PLAYING)
+            return
+        }
         stopTone()
         if (intent.getBooleanExtra("stop", false)) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -67,6 +74,8 @@ class TonePlayerService : Service() {
         val amp = intent.getFloatExtra("amp", 0.25f)
         val broadcast = intent.getBooleanExtra("broadcast", true)
         explicitBroadcast = intent.getBooleanExtra("explicit", true)
+        componentBroadcast = intent.getBooleanExtra("component", false)
+        paused = false
         // Simulates a stream that opts out of playback capture mid-session (DRM'd track, ad, ...).
         val noCapture = intent.getBooleanExtra("nocapture", false)
         playing = true
@@ -99,6 +108,8 @@ class TonePlayerService : Service() {
         mediaState(PlaybackState.STATE_PLAYING)
         try {
             while (playing) {
+                if (paused) { if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.pause(); Thread.sleep(20); continue }
+                if (track.playState != AudioTrack.PLAYSTATE_PLAYING) track.play()
                 for (i in 0 until n) {
                     val v = (amp * sin(phase)).toFloat()
                     buf[2 * i] = v; buf[2 * i + 1] = v
@@ -121,7 +132,8 @@ class TonePlayerService : Service() {
                 .putExtra(AudioEffect.EXTRA_AUDIO_SESSION, session)
                 .putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
                 .putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-                .apply { if (explicitBroadcast) setPackage(EQ_PACKAGE) },
+                .apply { if (explicitBroadcast) setPackage(EQ_PACKAGE) }
+                .apply { if (componentBroadcast) component = android.content.ComponentName(EQ_PACKAGE, "app.svan.SessionReceiver") },
         )
     }
 

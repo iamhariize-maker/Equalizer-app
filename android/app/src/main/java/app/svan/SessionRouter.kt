@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
  */
 object SessionRouter {
 
-    enum class Owner { ENGINE_A, ENGINE_B_MUTED, PROBING, UNPROCESSED }
+    enum class Owner { ENGINE_A, ENGINE_B_MUTED, PROBING, UNPROCESSED, SHARED_OUTPUT }
 
     data class Route(val sessionId: Int, val pkg: String, val uid: Int, val owner: Owner, val playing: Boolean? = null)
 
@@ -33,6 +33,10 @@ object SessionRouter {
     private val musicGate = MusicSourceGate()
     private val attachmentRetry = AttachmentRetry()
     private val missingRepair = MissingEffectRepair()
+    private val healthRepair = MissingEffectRepair(firstDelayMs = 1_000)
+    private val history = SessionConnectionHistory()
+    @Volatile var recentConnections: List<String> = emptyList()
+        private set
     private val streamCaptureBlocked = mutableSetOf<Int>()
     private var lastSyncSummary = ""
     private lateinit var appContext: Context
@@ -100,6 +104,15 @@ object SessionRouter {
             appContext = context.applicationContext
             compatStore = CaptureCompat(appContext)
             appEngines = AppEnginePreferences(appContext)
+            EqController.globalEq.onEffectChanged = { sid, effect ->
+                worker.execute {
+                    if (enabled && EqController.globalEq.isCurrentEffect(sid, effect) && !EqController.globalEq.isHealthy(sid)) {
+                        EqController.log("system effects: control/enable changed for session $sid; checking recovery")
+                        if (sid == 0) disableSharedOnWorker("Shared-output control was lost. Per-player connections restored; retry explicitly.")
+                        else repairOnWorker(sid)
+                    }
+                }
+            }
         }
     }
 
@@ -122,6 +135,10 @@ object SessionRouter {
             musicGate.clear()
             attachmentRetry.clear()
             missingRepair.clear()
+            healthRepair.clear()
+            history.clear()
+            recentConnections = emptyList()
+            SharedOutput.publish(false, false, "Off. Per-player connections are used.")
             streamCaptureBlocked.clear()
             publishCaptureUids()
         }
@@ -157,6 +174,11 @@ object SessionRouter {
         worker.execute {
             routingBatch = true
             try {
+                if (SharedOutput.status.value.requested) {
+                    projection = null
+                    EqController.log("capture: shared-output EQ must be stopped first")
+                    return@execute
+                }
                 routes.values.toList().forEach { reroute(it.sessionId, it.pkg, it.uid, it.playing) }
             } finally {
                 routingBatch = false
@@ -209,17 +231,28 @@ object SessionRouter {
         }
     }
 
+    private fun refreshRecentConnections() {
+        recentConnections = history.recent(SystemClock.elapsedRealtime()).map { "${it.pkg}#${it.sessionId}:closed generation=${it.generation}" }
+    }
+
     private fun openOnWorker(sessionId: Int, pkg: String, uid: Int, playing: Boolean?) {
         if (!enabled) return
         absence.forget(sessionId)
         val existing = routes[sessionId]
+        if (existing != null && existing.uid >= 0 && uid >= 0 && existing.uid != uid) {
+            // Retire the old owner's history before recording the replacement generation.
+            closeOnWorker(sessionId)
+            history.opened(sessionId, pkg, uid, SystemClock.elapsedRealtime())
+            refreshRecentConnections()
+            reroute(sessionId, pkg, uid, playing)
+            return
+        }
+        val identityPkg = if (existing != null && pkg.startsWith("uid:") && !existing.pkg.startsWith("uid:")) existing.pkg else pkg
+        val previousGeneration = history.active(sessionId)?.generation
+        val nextGeneration = history.opened(sessionId, identityPkg, uid, SystemClock.elapsedRealtime())
+        refreshRecentConnections()
+        if (previousGeneration != nextGeneration) healthRepair.forget(sessionId)
         if (existing != null) {
-            if (existing.uid >= 0 && uid >= 0 && existing.uid != uid) {
-                // Android can reuse numeric session IDs after a player restarts.
-                closeOnWorker(sessionId)
-                reroute(sessionId, pkg, uid, playing)
-                return
-            }
             // Re-route a session that was parked on Engine A only because it
             // wasn't playing yet (can't run the capture check on silence).
             val parked = existing.owner == Owner.ENGINE_A && existing.playing == false &&
@@ -228,28 +261,36 @@ object SessionRouter {
                 uid = if (uid >= 0) uid else existing.uid, playing = playing ?: existing.playing)
             routes[sessionId] = next
             val lostEffect = existing.owner == Owner.ENGINE_A && !EqController.globalEq.isHealthy(sessionId)
-            val retry = (existing.owner == Owner.UNPROCESSED || lostEffect) &&
-                attachmentRetry.ready(sessionId, SystemClock.elapsedRealtime())
+            val now = SystemClock.elapsedRealtime()
+            val retry = (existing.owner == Owner.UNPROCESSED && attachmentRetry.ready(sessionId, now)) ||
+                (lostEffect && healthRepair.shouldRepair(sessionId, Verification.MISSING, now))
             if (parked || retry) reroute(sessionId, next.pkg, next.uid, next.playing)
             return
         }
         reroute(sessionId, pkg, uid, playing)
     }
 
-    fun sessionClosed(sessionId: Int) {
-        worker.execute { closeOnWorker(sessionId, forgetEvidence = true) }
+    fun sessionClosed(sessionId: Int, pkg: String) {
+        worker.execute {
+            val ownerPkg = routes[sessionId]?.pkg ?: evidence[sessionId]?.session?.packageName
+            if (ownerPkg != pkg) {
+                EqController.log("CLOSE ignored: package does not own session $sessionId")
+                return@execute
+            }
+            closeOnWorker(sessionId, forgetEvidence = true)
+        }
     }
 
     /** Broadcast-discovered sessions still recover even without enhanced detection. */
     fun repairKnownSessions() {
         worker.execute {
             if (!enabled) return@execute
+            refreshRecentConnections()
+            if (SharedOutput.status.value.requested && !EqController.globalEq.isHealthy(0) && SharedOutput.status.value.attached) {
+                disableSharedOnWorker("Shared-output effect was lost. Per-player connections restored; retry explicitly.")
+            }
             routes.values.toList().forEach { r ->
-                if ((r.owner == Owner.UNPROCESSED ||
-                        (r.owner == Owner.ENGINE_A && !EqController.globalEq.isHealthy(r.sessionId))) &&
-                    attachmentRetry.ready(r.sessionId, SystemClock.elapsedRealtime())) {
-                    reroute(r.sessionId, r.pkg, r.uid, r.playing)
-                }
+                repairOnWorker(r.sessionId)
             }
         }
     }
@@ -262,16 +303,67 @@ object SessionRouter {
             evidence = evidence - sessionId
             verification = verification - sessionId
         }
-        routes.remove(sessionId)
+        val prior = routes.remove(sessionId)
+        prior?.let { history.closed(sessionId, history.active(sessionId)?.pkg ?: it.pkg, SystemClock.elapsedRealtime()) }
+        refreshRecentConnections()
         seenBy.remove(sessionId)
         absence.forget(sessionId)
         musicGate.forget(sessionId)
         attachmentRetry.forget(sessionId)
         missingRepair.forget(sessionId)
+        healthRepair.forget(sessionId)
         streamCaptureBlocked.remove(sessionId)
         publishCaptureUids()
         muter.unmute(sessionId)
         EqController.globalEq.detach(sessionId)
+    }
+
+    private fun repairOnWorker(sid: Int) {
+        val r = routes[sid] ?: return
+        val now = SystemClock.elapsedRealtime()
+        val retry = when (r.owner) {
+            Owner.UNPROCESSED -> attachmentRetry.ready(sid, now)
+            Owner.ENGINE_A -> !EqController.globalEq.isHealthy(sid) &&
+                healthRepair.shouldRepair(sid, Verification.MISSING, now)
+            else -> false
+        }
+        if (retry) reroute(sid, r.pkg, r.uid, r.playing)
+    }
+
+    fun setSharedOutput(on: Boolean) {
+        worker.execute {
+            if (!on) { disableSharedOnWorker("Off. Per-player connections are used."); return@execute }
+            if (!SharedOutputPolicy.allowed(true, enabled, projection != null || CaptureService.isRunning)) {
+                SharedOutput.publish(false, false, "Stop the audiophile engine and start the system equalizer first.")
+                return@execute
+            }
+            // No source is muted here. Only one Svan processing path may own the output.
+            muter.releaseAll()
+            EqController.globalEq.releaseAll()
+            val ok = EqController.globalEq.attachOutputMix()
+            SharedOutput.publish(ok, ok, if (ok)
+                "Shared-output EQ attached. Player identity and this music's path are unverified."
+                else "Android refused shared-output EQ. Per-player connections restored.")
+            routes.values.toList().forEach { toEngineA(it.sessionId, it.pkg, it.uid, it.playing) }
+            EqController.log("shared output: attached=$ok")
+        }
+    }
+
+    fun outputChanged() {
+        worker.execute {
+            if (SharedOutput.status.value.requested) disableSharedOnWorker(
+                "Output devices changed. Shared-output EQ stopped; test the new route before enabling it.")
+            healthRepair.clear()
+        }
+    }
+
+    private fun disableSharedOnWorker(message: String) {
+        val wasShared = SharedOutput.status.value.requested || 0 in EqController.globalEq.attachedSessions
+        SharedOutput.publish(false, false, message)
+        if (!wasShared) return
+        EqController.globalEq.detach(0)
+        routes.values.toList().forEach { reroute(it.sessionId, it.pkg, it.uid, it.playing) }
+        EqController.log("shared output: stopped")
     }
 
     /** Reconciles with a full session list from the dump. */
@@ -293,6 +385,9 @@ object SessionRouter {
         val snapshot = active.toList()
         worker.execute {
             if (!enabled) return@execute
+            if (SharedOutput.status.value.attached && !EqController.globalEq.isHealthy(0)) {
+                disableSharedOnWorker("Shared-output effect was lost. Per-player connections restored; retry explicitly.")
+            }
             routingBatch = true
             try {
                 this.evidence = evidence
@@ -312,7 +407,7 @@ object SessionRouter {
                         else -> playersOk || serverOk
                     }
                 }.toSet()
-                absence.observe(judged, seen.keys, SystemClock.elapsedRealtime()).forEach(::closeOnWorker)
+                absence.observe(judged, seen.keys, SystemClock.elapsedRealtime()).forEach { closeOnWorker(it) }
                 routes.keys.filter { it !in seen && it in judged }.forEach { sid ->
                     routes[sid]?.let { routes[sid] = it.copy(playing = null) }
                 }
@@ -407,6 +502,12 @@ object SessionRouter {
     private fun toEngineA(sid: Int, pkg: String, uid: Int, playing: Boolean?) {
         muter.unmute(sid)
         if (!enabled) { routes.remove(sid); publishCaptureUids(); return }
+        if (SharedOutput.status.value.attached && EqController.globalEq.isHealthy(0)) {
+            EqController.globalEq.detach(sid)
+            routes[sid] = Route(sid, pkg, uid, Owner.SHARED_OUTPUT, playing)
+            publishCaptureUids()
+            return
+        }
         val attached = EqController.globalEq.attach(sid)
         if (attached) attachmentRetry.forget(sid) else attachmentRetry.failed(sid, SystemClock.elapsedRealtime())
         routes[sid] = Route(sid, pkg, uid, if (attached) Owner.ENGINE_A else Owner.UNPROCESSED, playing)

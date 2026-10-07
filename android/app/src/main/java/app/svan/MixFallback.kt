@@ -48,7 +48,7 @@ object MixFallback {
     @Synchronized
     fun evaluate(context: Context) {
         val eq = SvanRepository.eq.value
-        val allowed = SvanRepository.settings.value.wholeMixFallback && eq.enabled && SystemEqService.isRunning && !CaptureService.isRunning
+        val allowed = SvanRepository.settings.value.wholeMixFallback && eq.enabled && SystemEqService.isRunning && !CaptureService.isRunning && !SharedOutput.status.value.requested
         val audio = context.getSystemService(AudioManager::class.java)
         val routedPlaying = SessionRouter.snapshot.count {
             (it.owner == SessionRouter.Owner.ENGINE_A || it.owner == SessionRouter.Owner.ENGINE_B_MUTED) && it.playing != false

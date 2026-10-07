@@ -38,7 +38,7 @@ That feature is removed and `check_manifest_permissions.py` rejects any such dec
 ## Repo map
 | Path | What |
 |---|---|
-| `core/` | Portable C++17 DSP library `eqcore` (CMake). 98 unit tests in `core/tests/test_main.cpp` (no framework). |
+| `core/` | Portable C++17 DSP library `eqcore` (CMake). 151 unit tests in `core/tests/test_main.cpp` (no framework). |
 | `android/app/src/main/cpp/` | JNI bridge → `eqcore` |
 | `android/app/src/main/java/app/svan/` | Kotlin: engines, routing, repository, UI (Compose); `svaramanas/` = controller, dialog, bubble, QS tile |
 | `android/app/src/main/java/app/svan/ui/` | Screens (Sound, EQ, Presets, Hi-Fi, Lab), `Theme.kt` (gold palette), `Brand.kt` (boot animation, brand line, "EQ exten9ed"), `Knob.kt`, `ResponseGraph.kt` |
@@ -82,6 +82,7 @@ Owner's engine follow-up: give Svaresa broader authority only where it improves 
 changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
+0. Verify 0.5.7 player-connection CI/logs/images and signed original-key APK delivery. Twelve new DUMP-free checks supplement every existing PASS set. Shared-output EQ is experimental; no Apple/Amazon or physical-route guarantee. See `docs/PLAYER_CONNECTIONS_0.5.7.md` and phone checks.
 1. Recording implementation `bbbb790` passed all nine jobs in CI 37678599236; API 33/34 logs and recording/boot/EQ/splash screenshots were reviewed. Keep this evidence and all required PASS sets intact for future changes; see `docs/RECORDING_MODE_VERIFICATION.md`. Physical camera readability, flash/click timing and OEM routes remain open.
 2. **Real-phone validation** (TECNO LH7n/Android 14 and LG V60/Android 13, no PC): the owner reports earlier listening success; new DSP, player/device coverage and LG Quad DAC behavior still need phone checks.
 3. Recording owner checks remain open: TECNO screen readability in LG video, measured flash/click timing, speaker-only routing with headphones and VN 16/24-bit WAV/M4A import. See `docs/PHONE_VALIDATION.md`.

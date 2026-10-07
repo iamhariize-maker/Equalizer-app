@@ -22,8 +22,8 @@ android {
         // 29: AudioPlaybackCapture (capture engine). DynamicsProcessing needs 28.
         minSdk = 29
         targetSdk = 36
-        versionCode = 13
-        versionName = if (productionBuild) "0.5.6" else "0.5.6-continuity-preview"
+        versionCode = 14
+        versionName = if (productionBuild) "0.5.7" else "0.5.7-combined-preview"
         buildConfigField("boolean", "PHONE_PREVIEW", (!productionBuild).toString())
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild {

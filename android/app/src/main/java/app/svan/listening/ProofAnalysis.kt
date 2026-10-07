@@ -134,7 +134,8 @@ class SpectrumPair(private val rate: Int, private val size: Int = 8192) {
 object SettingsDiff {
     /** Settings worth naming in a segment label. Order is the display order. */
     private val NAMES = linkedMapOf(
-        "qualityMode" to "Quality", "dither" to "Dither", "outputBitsIfDithered" to "Dither bits",
+        "spatialMode" to "Spatial mode", "captureRateHz" to "Capture rate Hz",
+        "experimentalBassUnmask" to "Experimental bass unmask", "qualityMode" to "Quality", "dither" to "Dither", "outputBitsIfDithered" to "Dither bits",
         "autoHeadroom" to "Auto headroom", "gainProtection" to "Gain protection", "eqEnabled" to "EQ",
         "preampDb" to "Preamp dB", "eqBandsApplied" to "EQ bands", "bassCharacter" to "Bass character",
         "headphoneCorrection" to "Headphone correction", "eqCurve" to "EQ curve",

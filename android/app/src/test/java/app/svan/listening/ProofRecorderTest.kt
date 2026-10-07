@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -283,5 +284,32 @@ class ProofRecorderTest {
         assertEquals("EQ curve changed", SettingsDiff.describe(mapOf("eqCurve" to "a"), mapOf("eqCurve" to "b")))
         assertEquals("EQ: on → off", SettingsDiff.describe(a, a + mapOf("eqEnabled" to false)))
         assertEquals("Settings changed", SettingsDiff.describe(a, a + mapOf("device" to "z")))
+    }
+    @Test fun highRateFrameClockSyncTailAndHeaderKeepTheActualCaptureRate() {
+        val hz = 96000
+        val dir = File.createTempFile("proof-high-rate", "").apply { delete() }
+        val done = CountDownLatch(1); var result: ProofRecorder.Result? = null
+        ProofRecorder.start(dir, hz, emptyMap(), { null }, ProofRecorder.Options(wavBits = 16)) {
+            result = it; ProofRecorder.state.value = ProofRecorder.State.Done(it); done.countDown()
+        }
+        try {
+            repeat(400) { i ->
+                val b = FloatArray(480) { n -> (0.2 * sin(2 * PI * 1000 * (i * 240 + n / 2) / hz)).toFloat() }
+                ProofRecorder.offerDry(b,b.size); ProofRecorder.commitWet(b,b.size)
+                if (i == 199) {
+                    assertEquals(48000L,ProofRecorder.markSync()!!.frame)
+                    assertEquals("0:00.500",ProofRecorder.clockText())
+                }
+                if (i % 40 == 0) Thread.sleep(50)
+            }
+        } finally { ProofRecorder.stop() }
+        assertTrue(done.await(20,TimeUnit.SECONDS))
+        val r = result!!
+        assertEquals(1.0,r.seconds,1e-12)
+        assertEquals(hz,ProofWav.header(r.processedWav).rate)
+        assertEquals(48000L,ProofWav.header(r.processedFromSyncWav!!).frames)
+        assertEquals(0.5,r.report.getJSONArray("syncSeconds").getDouble(0),1e-12)
+        assertArrayEquals(r.processedWav.readBytes().copyOfRange(44 + 48000 * 4, r.processedWav.length().toInt()),
+            r.processedFromSyncWav!!.readBytes().drop(44).toByteArray())
     }
 }

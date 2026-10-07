@@ -87,6 +87,21 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("quality")?.let { pendingQuality = QualityMode.valueOf(it) }
         EqController.log("CMD $cmd")
         when (cmd) {
+            "shared_output" -> if (BuildConfig.DEBUG) SessionRouter.setSharedOutput(intent.getBooleanExtra("on", false))
+            "test_output_change" -> if (BuildConfig.DEBUG) SessionRouter.outputChanged()
+            "basic_status" -> if (BuildConfig.DEBUG) {
+                val d = org.json.JSONObject().put("dump", PlaybackSessions.hasDumpPermission(this))
+                    .put("reportAccess", PlaybackSessions.hasReportAccess(this))
+                    .put("sharedRequested", SharedOutput.status.value.requested).put("sharedAttached", EqController.globalEq.isHealthy(0))
+                    .put("capture", CaptureService.isRunning)
+                    .put("attached", org.json.JSONArray(EqController.globalEq.attachedSessions.toList()))
+                    .put("recent", org.json.JSONArray(SessionRouter.recentConnections))
+                    .put("routes", org.json.JSONArray(SessionRouter.snapshot.map {
+                        org.json.JSONObject().put("sid", it.sessionId).put("pkg", it.pkg).put("owner", it.owner.name)
+                    }))
+                java.io.File(filesDir, "basic-status.json").writeText(d.toString())
+                EqController.log("BASIC_STATUS_READY")
+            }
             "onboarding_state" -> {
                 val state = OnboardingAndroid.working(this)
                 val snapshot = OnboardingAndroid.wizard(this)
@@ -336,7 +351,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         SystemEqService.start(this)
-        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasReportAccess(this), SessionRouter.snapshot, android.os.Process.myUid())
+        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasReportAccess(this), SessionRouter.snapshot, android.os.Process.myUid(), SharedOutput.status.value.requested)
         if (blocker != null) {
             CaptureService.startupMessage.value = blocker
             DetectionSetup.refresh()

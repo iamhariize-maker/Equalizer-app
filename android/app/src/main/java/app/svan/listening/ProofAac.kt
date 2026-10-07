@@ -11,6 +11,13 @@ import java.util.Random
 /** Finished-file conversion only; never used by offerDry/commitWet. */
 internal object ProofAac {
     fun encode(source: File, target: File) {
+        if (ProofWav.header(source).rate == 48000) { encode48k(source, target); return }
+        val converted = File.createTempFile("svan-aac-input-", ".wav", target.parentFile)
+        try { ProofResample.to48k(source, converted); encode48k(converted, target) }
+        finally { converted.delete() }
+    }
+
+    private fun encode48k(source: File, target: File) {
         val h = ProofWav.header(source)
         require(h.rate == 48000 && h.frames > 0) { "AAC export needs nonempty 48 kHz audio" }
         val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)

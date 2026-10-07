@@ -31,6 +31,8 @@ class GlobalEqEngine(bandCount: Int = 128) {
     private data class DynamicsState(val character: Double, val crossover: Double, val smoothness: Double, val levelling: Double?)
     private val lastDynamics = ConcurrentHashMap<DynamicsProcessing, DynamicsState>()
     private val lastProtection = ConcurrentHashMap<DynamicsProcessing, Boolean>()
+    /** Delivered on Android's effect callback thread; the router checks handle identity on its worker. */
+    @Volatile var onEffectChanged: ((Int, DynamicsProcessing) -> Unit)? = null
     @Volatile private var centersHz: DoubleArray = logSpaced(bandCount, 20.0, 20000.0)
     @Volatile private var gainsDb: DoubleArray = DoubleArray(bandCount)
     @Volatile private var protection = true
@@ -63,6 +65,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
 
     @Synchronized
     fun setMixFallback(on: Boolean): Boolean {
+        if (on && effects.containsKey(0)) return false
         val current = mix
         if (on && current != null && runCatching { current.hasControl() && current.enabled }.getOrDefault(false)) return true
         if (current != null) {
@@ -106,7 +109,20 @@ class GlobalEqEngine(bandCount: Int = 128) {
 
     @Synchronized
     fun attach(sessionId: Int): Boolean {
-        if (sessionId <= 0) return false
+        if (sessionId <= 0 || effects.containsKey(0)) return false
+        return attachInternal(sessionId)
+    }
+
+    @Synchronized
+    internal fun attachOutputMix(): Boolean {
+        if (effects.keys.any { it > 0 }) return false
+        return attachInternal(0)
+    }
+
+    @Synchronized
+    fun isCurrentEffect(sid: Int, effect: DynamicsProcessing): Boolean = effects[sid] === effect
+
+    private fun attachInternal(sessionId: Int): Boolean {
         if (isHealthy(sessionId)) return true
         // An output reconnect can invalidate an effect while its old session
         // remains in our map. Re-create it instead of reporting false success.
@@ -135,15 +151,22 @@ class GlobalEqEngine(bandCount: Int = 128) {
             // ownership (off, on), then stop for longer than AudioFlinger's disable
             // wait and start again, while the curve is still flat. Measured in CI
             // before this: +32.5 dB (API 34) / +36.6 dB (API 33) after a restart.
-            dp.enabled = false
-            dp.enabled = true
-            SystemClock.sleep(VOLUME_REARM_MS)
-            dp.enabled = false
-            SystemClock.sleep(VOLUME_REARM_MS)
-            dp.enabled = true
-            applyTo(dp)
+            if (sessionId > 0) {
+                dp.enabled = false
+                dp.enabled = true
+                SystemClock.sleep(VOLUME_REARM_MS)
+                dp.enabled = false
+                SystemClock.sleep(VOLUME_REARM_MS)
+                dp.enabled = true
+                applyTo(dp)
+            } else {
+                dp.enabled = true
+                fadeMix(dp, 0.0, 1.0)
+            }
             check(dp.hasControl() && dp.enabled) { "Android did not enable the session effect" }
             effects[sessionId] = dp
+            dp.setControlStatusListener { fx, _ -> onEffectChanged?.invoke(sessionId, fx as DynamicsProcessing) }
+            dp.setEnableStatusListener { fx, _ -> onEffectChanged?.invoke(sessionId, fx as DynamicsProcessing) }
             attachedAt[sessionId] = startedMs
             Log.i(TAG, "attached to session $sessionId ($bandCount bands)")
             true
@@ -160,7 +183,8 @@ class GlobalEqEngine(bandCount: Int = 128) {
      * Diagnostic only: can this phone create an effect on the global output mix (session 0)? Svan never
      * relies on it, because such an effect normally reaches a single output, not Bluetooth/USB.
      */
-    fun probeGlobalMix(): String = try {
+    fun probeGlobalMix(): String { return try {
+        if (effects.containsKey(0) || mix != null) return "Output-mix effect already attached; this does not verify a player's signal path."
         val cfg = DynamicsProcessing.Config.Builder(DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, CHANNELS, false, 0, false, 0, false, 0, false).build()
         val dp = DynamicsProcessing(0, 0, cfg)
         val control = runCatching { dp.hasControl() }.getOrDefault(false)
@@ -168,12 +192,14 @@ class GlobalEqEngine(bandCount: Int = 128) {
         "created (control=$control). Output-mix effects usually reach only one output, so Svan does not rely on them."
     } catch (e: Throwable) {
         "refused (${e.javaClass.simpleName}); per-session effects are the supported route."
-    }
+    } }
 
     @Synchronized
     fun detach(sessionId: Int) {
         attachedAt.remove(sessionId)
         effects.remove(sessionId)?.let {
+            if (sessionId == 0) runCatching { fadeMix(it, 1.0, 0.0) }
+            runCatching { it.setControlStatusListener(null); it.setEnableStatusListener(null) }
             lastSent.remove(it)
             lastDynamics.remove(it)
             lastProtection.remove(it)
@@ -195,7 +221,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
         frameDurationMs = frameMs
         centersHz = logSpaced(bands, 20.0, 20000.0)
         gainsDb = DoubleArray(bands)
-        sessions.forEach { attach(it) }
+        sessions.forEach { if (it == 0) attachOutputMix() else attach(it) }
         if (mix != null) { setMixFallback(false); setMixFallback(true) }
     }
 
