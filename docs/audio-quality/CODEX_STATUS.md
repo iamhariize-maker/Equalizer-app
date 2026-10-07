@@ -14,8 +14,10 @@ Local verification on this follow-up:
   verification after the settled-path optimization passes in 5m33s; the initial clean build
   took 16m25s. Both arm64-v8a/x86_64 JNI libraries compile.
 - ThreadSanitizer: four parameter/publication tests pass, including concurrent spatial mode
-  and load-limit setters. ASan/UBSan full-suite and final focused checks are recorded below
-  when complete; do not infer their success from this entry.
+  and load-limit setters. The full local ASan/UBSan suite passes 151 tests; after the final
+  settled-path optimization, 13 spatial/publication and one allocation check pass again.
+  Hosted source `fdce86a355ce8417d8775003e1c39198c740e0c1` also passes all 151 Release,
+  151 ASan/UBSan and four ThreadSanitizer tests in run `37650746940`.
 - Actual compiled Kotlin NativeEngine with host JNI: 44.1/48/96k mode/load calls keep latency
   fixed, preserve the center and reach exactly zero Detailed mix under load. This is host
   execution, not Android playback or proof of player compatibility.
@@ -28,6 +30,15 @@ No phone is attached and local KVM is unavailable. Hosted API33/API34 checks, sc
 inspection and phone listening remain separate verification. No owner key was accessed,
 no public release/site update or version bump was made. A preview uses the existing preview
 signer and cannot update an owner-signed public installation in place.
+
+The follow-up status label reads the applied mode rather than the fixed-delay capability:
+it correctly reports Auto and temporary/live Fast in a Detailed-capable session. The actual
+Detailed blend percentage remains independently visible. The exact CI preview from run
+`37650746940`, artifact `11496940170`, has APK SHA-256
+`ae80da079013ea8231dd1ca325a7fe01fce5b73a290fe5db206ebbb645a51ba6`; its signature,
+forbidden-capability policy and four native libraries' 16 KB page alignment are verified.
+That artifact predates this status-label correction; final hosted UI checks use the next source.
+The correction passes the full local Android command in 3m06s and the 151-test Release core suite.
 
 Codex branch: `claude/codex-audio-crackling-amplifier-gkj007`.
 Claude branch merged without conflicts: `ccr-2e937472-6z53b0`, source `b3022a9863621b5d79cf3342c9ded89e156be08b`.

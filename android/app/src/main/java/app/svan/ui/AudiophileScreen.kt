@@ -148,7 +148,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         Text("Output queue %.1f ms · buffer %.1f ms".format(st.queuedMs, st.bufferMs), style = MaterialTheme.typography.bodySmall)
                         Text("DSP %.1f ms · load %.1f%% · underruns %d".format(st.dspLatencyMs, st.dspPercent, st.underruns), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                         Text("Spatial blend: %.0f%% Detailed".format(st.detailedMix * 100), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                        Text("Spatial mode applied: ${if (CaptureService.epoch?.detailed == true) "Detailed" else "Fast"}", style = MaterialTheme.typography.bodySmall)
+                        Text("Spatial mode applied: ${CaptureService.epoch?.appliedSettings?.spatialMode?.title ?: "—"}", style = MaterialTheme.typography.bodySmall)
                         CaptureService.rateFacts?.let { Text(it.summary(), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
                         Text("Applied gain %.1f dB · protection %.1f dB".format(st.gainDb, st.protectionDb), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     }
