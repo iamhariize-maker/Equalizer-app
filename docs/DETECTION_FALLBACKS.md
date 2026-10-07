@@ -18,7 +18,13 @@ off immediately. Trade-offs shown in Hi-Fi → Music detection: notification sou
 it is active, and some phones allow output-mix effects only on the primary output (speaker). A
 refusal is retried after a minute. No new permission. The output-mix chain carries only master
 volume (unity on phones), so the stream-volume trap of per-session effects does not apply.
-CI verifies it structurally (active session-0 DynamicsProcessing in the audio-server report while a
+Quality safeguards: the curve fades in from flat and back out to flat over about 0.3 s (12 steps),
+so enabling, releasing or handing over never jumps tonally or clicks from a sudden EQ change; the
+effect is released (faded) before any per-player effect is attached and cannot return within 10 s
+of an attach, so a routed player is never equalised twice; pauses and gaps between songs keep it on
+for 30 s instead of toggling per track. Same 64-bit-designed curve, headroom and limiter as system
+effects. AudioFlinger itself switches effects without a crossfade, which is why the fade happens
+while the effect is still enabled. CI verifies it structurally (active session-0 DynamicsProcessing in the audio-server report while a
 hidden player plays; off after the player is routed) because the test meter sits first in that chain.
 
 # Optional music detection, 0.5.6 follow-up

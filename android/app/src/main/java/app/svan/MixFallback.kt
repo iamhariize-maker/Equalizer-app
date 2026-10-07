@@ -13,15 +13,32 @@ import android.os.SystemClock
  * playing; otherwise the routed player would be equalised twice. A short hold keeps the normal
  * moment before a player is routed from switching the mix effect on and off.
  */
-class MixFallbackPolicy(private val holdMs: Long = 3_000L) {
+class MixFallbackPolicy(private val holdMs: Long = 3_000L, private val pauseGraceMs: Long = 30_000L) {
     private var unroutedSinceMs = -1L
+    private var on = false
+    private var quietSinceMs = -1L
 
+    /**
+     * Off at once for a routed player, capture, EQ or setting changes (never equalise twice). Pauses
+     * and gaps between songs keep it on for [pauseGraceMs], so each track does not switch the mix
+     * effect off and on again.
+     */
     fun next(nowMs: Long, allowed: Boolean, musicActive: Boolean, anonymousPlaying: Int?, routedPlaying: Int): Boolean {
-        val unrouted = allowed && musicActive && routedPlaying == 0 && (anonymousPlaying ?: 0) > 0
-        if (!unrouted) { unroutedSinceMs = -1L; return false }
+        if (!allowed || routedPlaying > 0) { reset(); return false }
+        val playing = musicActive && (anonymousPlaying ?: 0) > 0
+        if (on) {
+            if (playing) { quietSinceMs = -1L; return true }
+            if (quietSinceMs < 0) quietSinceMs = nowMs
+            if (nowMs - quietSinceMs < pauseGraceMs) return true
+            reset(); return false
+        }
+        if (!playing) { unroutedSinceMs = -1L; return false }
         if (unroutedSinceMs < 0) unroutedSinceMs = nowMs
-        return nowMs - unroutedSinceMs >= holdMs
+        on = nowMs - unroutedSinceMs >= holdMs
+        return on
     }
+
+    private fun reset() { on = false; unroutedSinceMs = -1L; quietSinceMs = -1L }
 }
 
 object MixFallback {

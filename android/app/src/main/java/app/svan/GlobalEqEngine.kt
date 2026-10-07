@@ -54,24 +54,35 @@ class GlobalEqEngine(bandCount: Int = 128) {
      * chain receives only master volume (unity on phones), so the per-session stream-volume handling
      * in [attach] does not apply. A refusal (some OEMs block session 0) is retried after a minute.
      */
+    private fun fadeMix(dp: DynamicsProcessing, from: Double, to: Double) {
+        for (step in 1..MIX_FADE_STEPS) {
+            applyTo(dp, from + (to - from) * step / MIX_FADE_STEPS)
+            if (step < MIX_FADE_STEPS) SystemClock.sleep(MIX_FADE_STEP_MS)
+        }
+    }
+
     @Synchronized
     fun setMixFallback(on: Boolean): Boolean {
         val current = mix
         if (on && current != null && runCatching { current.hasControl() && current.enabled }.getOrDefault(false)) return true
         if (current != null) {
             mix = null
+            runCatching { fadeMix(current, 1.0, 0.0) } // reach flat before bypassing: no tonal jump or click
             lastSent.remove(current); lastDynamics.remove(current); lastProtection.remove(current)
             runCatching { current.enabled = false }
             runCatching { current.release() }
             if (!on) EqController.log("whole-mix fallback: off")
         }
         if (!on || SystemClock.elapsedRealtime() - mixRefusedAtMs < MIX_RETRY_MS && mixRefusedAtMs != 0L) return false
+        // A player attached moments ago may not be in the router's snapshot yet: never stack on it.
+        val now = SystemClock.elapsedRealtime()
+        if (attachedAt.values.any { now - it < HANDOVER_GUARD_MS }) return false
         var candidate: DynamicsProcessing? = null
         return try {
             val dp = DynamicsProcessing(PRIORITY, 0, buildConfig())
             candidate = dp
-            dp.enabled = true
-            applyTo(dp)
+            dp.enabled = true // flat: the curve fades in below rather than jumping
+            fadeMix(dp, 0.0, 1.0)
             check(dp.hasControl() && dp.enabled) { "Android did not enable the output-mix effect" }
             mix = dp
             mixRefusedAtMs = 0L
@@ -100,6 +111,9 @@ class GlobalEqEngine(bandCount: Int = 128) {
         // An output reconnect can invalidate an effect while its old session
         // remains in our map. Re-create it instead of reporting false success.
         detach(sessionId)
+        // A routed player must never be equalised twice: fade out and release the whole-mix
+        // fallback before this session's own effect exists. MixFallback re-evaluates after scans.
+        if (mix != null) setMixFallback(false)
         var candidate: DynamicsProcessing? = null
         val startedMs = SystemClock.elapsedRealtime()
         return try {
@@ -279,9 +293,10 @@ class GlobalEqEngine(bandCount: Int = 128) {
      * band, ~250 ms for all 128). Only push bands whose gain actually changed,
      * so dragging one control costs a handful of calls, not the whole curve.
      */
-    private fun applyTo(dp: DynamicsProcessing) {
+    /** [scale] morphs the curve from flat (0) to full (1) in dB, for click-free fades. */
+    private fun applyTo(dp: DynamicsProcessing, scale: Double = 1.0) {
         val centers = centersHz
-        val gains = gainsDb
+        val gains = if (scale == 1.0) gainsDb else DoubleArray(gainsDb.size) { gainsDb[it] * scale }
         val sent = lastSent.getOrPut(dp) { FloatArray(centers.size) { Float.NaN } }
         // Apply attenuation first, so a partial binder update cannot stack old boosts
         // with new boosts before their compensating cuts have reached the session.
@@ -318,6 +333,10 @@ class GlobalEqEngine(bandCount: Int = 128) {
         private const val VOLUME_REARM_MS = 150L
         private const val RETRY_CREATE_MS = 250L
         private const val MIX_RETRY_MS = 60_000L
+        private const val HANDOVER_GUARD_MS = 10_000L
+        /** About 0.3 s from flat to full curve; each step changes bands by a small fraction of their gain. */
+        private const val MIX_FADE_STEPS = 12
+        private const val MIX_FADE_STEP_MS = 25L
 
         fun logSpaced(n: Int, lo: Double, hi: Double): DoubleArray =
             DoubleArray(n) { exp(ln(lo) + (ln(hi) - ln(lo)) * it / max(1, n - 1)) }

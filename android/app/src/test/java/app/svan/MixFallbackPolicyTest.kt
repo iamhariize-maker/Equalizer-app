@@ -25,6 +25,23 @@ class MixFallbackPolicyTest {
         assertFalse(p.next(0, true, true, 0, 0))
     }
 
+    @Test fun gapsBetweenSongsKeepItOnButALongStopReleasesIt() {
+        val p = MixFallbackPolicy(holdMs = 0, pauseGraceMs = 30_000)
+        assertTrue(p.next(0, true, true, 1, 0))
+        assertTrue(p.next(5_000, true, false, 1, 0))   // pause between tracks
+        assertTrue(p.next(20_000, true, true, 1, 0))   // next song
+        assertTrue(p.next(30_000, true, false, 0, 0))
+        assertFalse(p.next(60_001, true, false, 0, 0))
+    }
+
+    @Test fun routingOrDisablingIgnoresTheGrace() {
+        val p = MixFallbackPolicy(holdMs = 0, pauseGraceMs = 30_000)
+        assertTrue(p.next(0, true, true, 1, 0))
+        assertFalse(p.next(1, true, false, 1, 1))
+        assertTrue(p.next(2, true, true, 1, 0))
+        assertFalse(p.next(3, false, false, 0, 0))
+    }
+
     @Test fun anInterruptionRestartsTheHold() {
         val p = MixFallbackPolicy(holdMs = 3_000)
         p.next(0, true, true, 1, 0)
