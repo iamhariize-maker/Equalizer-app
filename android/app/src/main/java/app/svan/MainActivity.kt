@@ -97,6 +97,7 @@ class MainActivity : ComponentActivity() {
                     .put("connectedPlayers", state.players.count { it.engine != null })
                     .put("usb", snapshot.debugging.usb.name).put("wireless", snapshot.debugging.wireless.name)
                     .put("system", SystemEqService.isRunning).put("capture", CaptureService.isRunning)
+                    .put("mixFallback", EqController.globalEq.mixFallbackOn)
                     .put("engineMode", SvanRepository.settings.value.engineMode.name)
                     .put("preset", SvanRepository.eq.value.presetName).put("preamp", SvanRepository.eq.value.preampDb)
                     .put("smart", app.svan.svaramanas.Svaramanas.request.value.enabled)
@@ -183,6 +184,7 @@ class MainActivity : ComponentActivity() {
             "engine_mode" -> SvanRepository.updateSettings {
                 it.copy(engineMode = if (intent.getBooleanExtra("system_only", false)) app.svan.model.EngineMode.SYSTEM_ONLY else app.svan.model.EngineMode.AUTO)
             }
+            "mix_fallback" -> SvanRepository.updateSettings { it.copy(wholeMixFallback = intent.getBooleanExtra("on", true)) }
             "start_system" -> SystemEqService.start(this)
             "stop_system" -> SystemEqService.stop(this)
             "test_drop_system_effects" -> {

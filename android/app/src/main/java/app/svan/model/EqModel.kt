@@ -386,6 +386,8 @@ data class AudioSettings(
     val gainProtection: Boolean = true,
     val systemBands: Int = 128,
     val systemFrameMs: Int = 80,
+    /** EQ the whole output mix while a playing app hides its audio session (see MixFallback). */
+    val wholeMixFallback: Boolean = true,
 ) {
     /** Auto master may add protection, but never rewrites the listener's saved choices. */
     fun effectiveFor(eq: EqState): AudioSettings = if (eq.smartProtection)
@@ -396,7 +398,7 @@ data class AudioSettings(
 
     fun toJson(): JSONObject = JSONObject()
         .put("engine", engineMode.name).put("quality", quality.name).put("bits", outputBits)
-        .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs)
+        .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs).put("mixFallback", wholeMixFallback)
 
     companion object {
         fun fromJson(o: JSONObject) = AudioSettings(
@@ -408,6 +410,7 @@ data class AudioSettings(
             gainProtection = o.optBoolean("agp", true),
             systemFrameMs = o.optInt("sysFrameMs", 80).takeIf { it in listOf(10, 40, 80) } ?: 80,
             systemBands = o.optInt("sysBands", 128).takeIf { it in listOf(64, 128, 256) } ?: 128,
+            wholeMixFallback = o.optBoolean("mixFallback", true),
         )
     }
 }

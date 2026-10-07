@@ -43,6 +43,47 @@ class GlobalEqEngine(bandCount: Int = 128) {
     // Keep a neutral MBC allocated: toggling a tuner must never destroy a live effect.
 
     val attachedSessions: Set<Int> get() = effects.keys
+
+    /** Whole-output-mix effect (session 0) used only by [MixFallback]; null when off. */
+    @Volatile private var mix: DynamicsProcessing? = null
+    @Volatile private var mixRefusedAtMs = 0L
+    val mixFallbackOn: Boolean get() = mix != null
+
+    /**
+     * Applies the same curve to the output mix while a playing app hides its session. The output-mix
+     * chain receives only master volume (unity on phones), so the per-session stream-volume handling
+     * in [attach] does not apply. A refusal (some OEMs block session 0) is retried after a minute.
+     */
+    @Synchronized
+    fun setMixFallback(on: Boolean): Boolean {
+        val current = mix
+        if (on && current != null && runCatching { current.hasControl() && current.enabled }.getOrDefault(false)) return true
+        if (current != null) {
+            mix = null
+            lastSent.remove(current); lastDynamics.remove(current); lastProtection.remove(current)
+            runCatching { current.enabled = false }
+            runCatching { current.release() }
+            if (!on) EqController.log("whole-mix fallback: off")
+        }
+        if (!on || SystemClock.elapsedRealtime() - mixRefusedAtMs < MIX_RETRY_MS && mixRefusedAtMs != 0L) return false
+        var candidate: DynamicsProcessing? = null
+        return try {
+            val dp = DynamicsProcessing(PRIORITY, 0, buildConfig())
+            candidate = dp
+            dp.enabled = true
+            applyTo(dp)
+            check(dp.hasControl() && dp.enabled) { "Android did not enable the output-mix effect" }
+            mix = dp
+            mixRefusedAtMs = 0L
+            EqController.log("whole-mix fallback: on (an unannounced player is playing)")
+            true
+        } catch (e: RuntimeException) {
+            candidate?.let { lastSent.remove(it); lastDynamics.remove(it); lastProtection.remove(it); runCatching { it.release() } }
+            mixRefusedAtMs = SystemClock.elapsedRealtime()
+            EqController.log("whole-mix fallback: unavailable on this phone ($e)")
+            false
+        }
+    }
     /** elapsedRealtime when each session's current effect started being created (for audio-server verification). */
     private val attachedAt = ConcurrentHashMap<Int, Long>()
     fun attachedAtMs(sessionId: Int): Long? = attachedAt[sessionId]
@@ -128,7 +169,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
     }
 
     @Synchronized
-    fun releaseAll() = effects.keys.toList().forEach(::detach)
+    fun releaseAll() { setMixFallback(false); effects.keys.toList().forEach(::detach) }
 
     /** Changes the band count; attached sessions are re-created with the new layout. */
     @Synchronized
@@ -141,6 +182,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
         centersHz = logSpaced(bands, 20.0, 20000.0)
         gainsDb = DoubleArray(bands)
         sessions.forEach { attach(it) }
+        if (mix != null) { setMixFallback(false); setMixFallback(true) }
     }
 
     /** Samples [engine]'s parametric curve into the band gains and pushes it to every session. */
@@ -157,6 +199,12 @@ class GlobalEqEngine(bandCount: Int = 128) {
     }
 
     private fun forEachEffect(apply: (DynamicsProcessing) -> Unit) {
+        mix?.let { dp ->
+            try { apply(dp) } catch (e: RuntimeException) {
+                EqController.log("whole-mix fallback: update failed: $e")
+                setMixFallback(false)
+            }
+        }
         effects.entries.toList().forEach { (sid, dp) ->
             try { apply(dp) } catch (e: RuntimeException) {
                 // Players can close a session while binder updates are in flight.
@@ -269,6 +317,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
         /** Longer than AudioFlinger's disable wait (about 50 ms plus a mix period on slow outputs). */
         private const val VOLUME_REARM_MS = 150L
         private const val RETRY_CREATE_MS = 250L
+        private const val MIX_RETRY_MS = 60_000L
 
         fun logSpaced(n: Int, lo: Double, hi: Double): DoubleArray =
             DoubleArray(n) { exp(ln(lo) + (ln(hi) - ln(lo)) * it / max(1, n - 1)) }

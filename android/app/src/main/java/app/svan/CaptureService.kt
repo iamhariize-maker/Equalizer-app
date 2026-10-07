@@ -98,6 +98,8 @@ class CaptureService : Service() {
 
         running = true
         isRunning = true
+        // Capture replays processed audio through the mix: never also EQ the whole mix.
+        Thread { EqController.globalEq.setMixFallback(false) }.start()
         worker = Thread({ audioLoop(mp) }, "eq-capture").apply {
             priority = Thread.MAX_PRIORITY
             start()

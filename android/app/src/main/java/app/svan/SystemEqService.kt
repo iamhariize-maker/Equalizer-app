@@ -128,6 +128,7 @@ class SystemEqService : Service() {
                                     outcome.ledger.sessions.associateBy { it.session.sessionId }, st.verification,
                                 )
                             } else SessionRouter.repairKnownSessions()
+                            MixFallback.evaluate(this)
                         }
                     }
                 } catch (e: Exception) {
@@ -162,6 +163,7 @@ class SystemEqService : Service() {
         callback?.let { runCatching { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(it) } }
         runCatching { getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(deviceCallback) }
         executor.shutdownNow()
+        Thread { EqController.globalEq.setMixFallback(false) }.start()
         stopService(Intent(this, CaptureService::class.java))
         SessionRouter.shutdown()
         EqController.log("system service: stopped")

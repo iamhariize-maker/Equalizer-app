@@ -1,6 +1,26 @@
 > **Removed 7 October 2026:** optional player recognition (notification access) is gone. Play Protect
 > flagged it as a financial-fraud risk in sideloaded builds. Svan declares no notification listener.
 
+## Whole-phone EQ for hidden players (replaces player recognition, 7 October 2026)
+
+The problem player recognition aimed at: with Shizuku blocked by the OEM and a player that never
+announces its audio session (YouTube Music is a common case), Svan sees only Android's anonymised
+playback count, so the player gets no EQ. Recognition could only name it; it never processed it, and
+its notification listener triggered Play Protect's fraud alarm. Android gives normal apps no package
+or session for other apps' playback (AudioPlaybackConfiguration is anonymised), so naming is not
+possible without a privileged permission.
+
+`MixFallback` instead applies the user's curve to the output mix (session 0, Wavelet's "legacy" idea)
+while all of these hold for 3 s: the setting is on (default), the EQ is on, capture is not running,
+Android reports music active and an anonymous player, and no Engine A/B route is playing. It switches
+off at once when any player is routed, so no source is equalised twice; capture start also turns it
+off immediately. Trade-offs shown in Hi-Fi → Music detection: notification sounds share the EQ while
+it is active, and some phones allow output-mix effects only on the primary output (speaker). A
+refusal is retried after a minute. No new permission. The output-mix chain carries only master
+volume (unity on phones), so the stream-volume trap of per-session effects does not apply.
+CI verifies it structurally (active session-0 DynamicsProcessing in the audio-server report while a
+hidden player plays; off after the player is routed) because the test meter sits first in that chain.
+
 # Optional music detection, 0.5.6 follow-up
 
 Svan keeps its selected EQ, quality, headroom and capture settings across every detection fallback.

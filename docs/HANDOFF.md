@@ -814,3 +814,5 @@ enhanced fraud protection treats like OTP-stealing malware. Removed entirely (se
 diagnostics, tests); `check_manifest_permissions.py` now forbids notification listeners, and
 `detection_fallbacks.sh` asserts the installed package declares none, then checks the no-Shizuku
 broadcast path (3 checks). Shizuku shell reports and session broadcasts remain the detection paths.
+Follow-up the same day: the problem recognition targeted (hidden players get no EQ when Shizuku is
+blocked) is now handled by the whole-phone output-mix fallback; see DETECTION_FALLBACKS.md.
