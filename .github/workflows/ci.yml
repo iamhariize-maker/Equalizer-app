@@ -35,9 +35,9 @@ jobs:
       - name: Assemble debug APK, lint, unit tests
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug testDebugUnitTest
-      - name: Test screenshot assertions
+      - name: Test screenshot and control assertions
         working-directory: android
-        run: python3 -m unittest discover -s scripts -p test_setup_screen_assertions.py
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Prepare phone preview
         run: |
           mkdir -p android/build-kit

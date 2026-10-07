@@ -25,19 +25,24 @@ wait_log() {
   return 1
 }
 tap() {
-  $A shell uiautomator dump /sdcard/svan-setup.xml >/dev/null 2>&1 || return 1
+  timeout 15s $A shell uiautomator dump /sdcard/svan-setup.xml >/dev/null 2>&1 || return 1
   $A shell cat /sdcard/svan-setup.xml > "$OUT/ui.xml"
   local point
-  point=$(python3 - "$OUT/ui.xml" "$1" <<'PY'
-import sys,re,xml.etree.ElementTree as E
-for n in E.parse(sys.argv[1]).iter('node'):
-    if n.get('text') == sys.argv[2]:
-        a=list(map(int,re.findall(r'\d+',n.get('bounds',''))))
-        if len(a)==4: print((a[0]+a[2])//2,(a[1]+a[3])//2);sys.exit(0)
-sys.exit(1)
-PY
-  ) || return 1
+  point=$(python3 scripts/ui_control.py "$OUT/ui.xml" "$1" 2>/dev/null) || return 1
   $A shell input tap $point
+}
+scroll_to_detection() {
+  # The capture-status screenshot scrolls Hi-Fi down. Selecting its already
+  # selected tab preserves that offset; return to the top before seeking Keep.
+  for ((scroll=0;scroll<12;scroll++)); do
+    if timeout 15s $A shell uiautomator dump /sdcard/svan-setup.xml >/dev/null 2>&1; then
+      $A shell cat /sdcard/svan-setup.xml > "$OUT/pre-keep-ui.xml"
+      if grep -q 'text="MUSIC DETECTION"' "$OUT/pre-keep-ui.xml"; then return 0; fi
+    fi
+    $A shell input swipe $((W / 2)) $((H / 4)) $((W / 2)) $((H * 3 / 4)) 500
+    sleep 1
+  done
+  return 1
 }
 level() {
   $A logcat -c; eq measure_mix --ef seconds 3
@@ -271,17 +276,25 @@ eq preset; sleep 3
 tap 'Hi-Fi'; sleep 2
 $A logcat -c
 kept=0
+if ! scroll_to_detection; then
+  echo 'FAIL could not return to the music-detection controls' | tee -a "$OUT/detection.txt"
+  FAILED=1; diagnose 'keep controls navigation'
+fi
+$A exec-out screencap -p > "$OUT/before-keep-enhanced.png"
 for ((attempt=0;attempt<10;attempt++)); do
   if tap 'Keep enhanced detection without Shizuku'; then kept=1; break; fi
   $A shell input swipe $((W / 2)) $((H * 3 / 4)) $((W / 2)) $((H / 4)) 500; sleep 1
 done
-if [ "$kept" == 1 ] && wait_log 'dump grant: granted'; then
+if [ "$kept" != 1 ]; then
+  echo 'FAIL keep-enhanced button was not visible and enabled' | tee -a "$OUT/detection.txt"
+  FAILED=1; diagnose 'keep button unavailable'
+elif wait_log 'dump grant: granted'; then
   $A shell dumpsys package app.svan > "$OUT/package-after-keep.txt"
   if grep -q 'android.permission.DUMP: granted=true' "$OUT/package-after-keep.txt"; then
     echo 'PASS one tap keeps enhanced detection inside Svan' | tee -a "$OUT/detection.txt"
   else echo 'FAIL keep button reported success but app DUMP is not granted' | tee -a "$OUT/detection.txt"; FAILED=1; fi
 else
-  echo 'FAIL keep-enhanced button missing or its grant failed' | tee -a "$OUT/detection.txt"
+  echo 'FAIL keep-enhanced tap did not grant app DUMP' | tee -a "$OUT/detection.txt"
   FAILED=1; diagnose 'keep enhanced without Shizuku'
 fi
 sleep 2; $A exec-out screencap -p > "$OUT/keep-enhanced.png"

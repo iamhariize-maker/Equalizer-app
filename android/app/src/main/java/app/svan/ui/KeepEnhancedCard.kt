@@ -41,8 +41,9 @@ fun KeepEnhancedCard() {
             Column {
                 Text("Enhanced detection is built into Svan ✓", style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
                 Text("Svan no longer needs Shizuku. You can uninstall Shizuku and turn off Developer options, " +
-                    "and your banking and payment apps will work again. Enhanced detection stays on, also after a restart, " +
-                    "until you uninstall Svan.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                    "then check your banking and payment apps separately. Their compatibility depends on the phone and app. " +
+                    "The DUMP grant normally stays after a restart, until Svan is uninstalled or Android revokes it.",
+                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                 if (shizukuInstalled) Button(onClick = {
                     open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${DetectionSetup.SHIZUKU_PACKAGE}")))
                 }, modifier = Modifier.fillMaxWidth()) { Text("1. Uninstall Shizuku") }
@@ -55,16 +56,17 @@ fun KeepEnhancedCard() {
         !hasDump && shizukuReady -> SvanCard {
             Column {
                 Text("Want to remove Shizuku?", style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
-                Text("Tap once and Svan keeps enhanced detection by itself. After that you can uninstall Shizuku and turn off " +
-                    "Developer options, for example so payment apps work, and players that hide their audio are still found and get your full sound settings.",
+                Text("Tap once to let Svan read Android's audio reports without Shizuku. If the grant succeeds, you can uninstall " +
+                    "Shizuku and turn off Developer options. Reports can reveal players that hide their audio session; " +
+                    "processing still depends on the phone and player.",
                     style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                 val working = grant.stage == DumpGrant.Stage.WORKING
                 Button(onClick = { DumpGrant.grant(context) }, enabled = !working, modifier = Modifier.fillMaxWidth()) {
                     Text(if (working) "Setting up…" else "Keep enhanced detection without Shizuku")
                 }
                 if (grant.stage == DumpGrant.Stage.FAILED) Text(grant.message, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-                Text("This gives Svan Android's system-report permission (DUMP). Svan uses it only to see which apps are playing audio; " +
-                    "nothing else on your phone changes. Uninstalling Svan removes it.", style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
+                Text("This gives Svan Android's system-report permission (DUMP). Svan uses it only for audio detection. " +
+                    "Uninstalling Svan removes the grant.", style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
             }
         }
     }

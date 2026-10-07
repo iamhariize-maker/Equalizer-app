@@ -1,43 +1,44 @@
-# Release readiness
+# Svan 0.5.6 public-beta release readiness
 
-**Historical checklist:** the preview/debug-key, API 35 and no-export descriptions below predate
-0.5.5 and are retained as history, not current release instructions. Current production mode uses
-version 0.5.5/code 12, target API 36 and owner signing; previews use the fixed shared preview key.
-Settings export/restore now exists. Use [RELEASING.md](RELEASING.md),
-[RELEASE_SIGNING.md](RELEASE_SIGNING.md) and the [Play drafts](play/LISTING.md).
-The owner chose **All rights reserved** for original code; see [LICENSE](../LICENSE).
+The release target is an owner-signed **GitHub prerelease**: package `app.svan`,
+versionName `0.5.6`, versionCode `13`, minimum API 29, target API 36.
+`0.5.6-continuity-preview` uses the shared preview signer and enables preview automation.
+Re-signing that preview cannot turn it into the tested production-mode APK.
 
-The current APK is a debug-key-signed, R8-minified preview. Do not submit it to a
-store as a production release. The owner must retain a signing keystore and its
-passwords securely; neither keys nor passwords belong in this repository.
+Original Svan code is **All rights reserved**; third-party notices remain applicable.
+See [the release prompt](CODEX_RELEASE_PROMPT.md), [private signing](RELEASE_SIGNING.md)
+and [the investigation](RELEASE_INVESTIGATION_0.5.6.md).
 
-Build a production-signed package with JDK 17 and the SDK/NDK in AGENTS.md:
+## Required before publication
 
-```
-SVAN_KEYSTORE=/secure/path/svan.jks \
-SVAN_STORE_PASSWORD=<secret> SVAN_KEY_ALIAS=<alias> SVAN_KEY_PASSWORD=<secret> \
-./gradlew -PsvanProduction=true :app:assembleRelease :app:bundleRelease
-```
+- All CI jobs on the release source pass, including API 33/34 emulator jobs, the five
+  compatibility jobs and 13 detection checks per full emulator. Read logs and screenshots.
+- Use the exact `Svan-production-test-build` APK exercised by the green run.
+  Production mode rejects preview automation commands. Do not rebuild the delivery payload.
+- Recover the original owner key privately and match [release-cert.sha256](release-cert.sha256).
+  Never generate a replacement, put owner credentials in Git/CI or publish a CI test signer.
+- Verify one signer, package/version, compiled permissions, forbidden-capability policy,
+  16 KB ELF/ZIP alignment and unchanged application payload. Record hash and provenance.
+- Publish as a prerelease, require `release-verify` to pass, and withdraw or return to draft
+  if verification fails. The owner merges PR #6; release work does not merge it.
 
-The production flag refuses to build if required signing inputs are missing.
-Without that flag, assembleRelease remains a clearly labelled preview signed
-with the environment's debug key. Store uploads and signing-key creation have
-not been performed. Production key ownership and app licence are owner decisions.
+## Phone evidence and limits
 
-Before release:
+The owner's photo shows enhanced detection already enabled, Spotify routed through the
+Audiophile engine and live capture peaks. That supports that phone/playback session.
+The owner also confirms payment apps are working on that phone with the current preview.
+It does not replace the fresh grant, no-Shizuku routing or measured-response checks.
+The supplied preview did not match six inspected recent CI preview artifacts.
 
-- Retest arm64 on the TECNO LH7n, especially YouTube Music over Bluetooth and
-  30-minute screen-off playback; follow PHONE_VALIDATION.md.
-- Check app detection without ADB. DUMP is an optional development enhancement;
-  users with non-broadcasting players may have no processable sessions.
-- Confirm targetSdk 35 foreground-service declarations with Play policy: Engine A
-  keeps system audio effects active under mediaPlayback; Engine B uses
-  mediaProjection and a fresh user grant. Record the permission/stop flow and
-  justify each use in Play Console. Eligibility is not guaranteed by emulator CI.
-- Publish an owner-approved privacy-policy URL/contact, then complete Data Safety
-  and foreground-service declarations from the actual implementation.
-- Decide the licence for original code. Third-party MIT/OFL attributions remain.
-- Review dependency upgrades as a separate compatibility change with full CI;
-  no bulk upgrade is included in the routing/audio correctness fix.
-- Confirm backup behavior across OEMs. Manifest allowBackup=false is intentional;
-  saved app settings are not a promised backup/export mechanism.
+Broader player/OEM/output compatibility, update/grant retention, Bluetooth, other payment-app
+and phone combinations, final signed-beta behavior, and listening preference need separate tests.
+Export settings before updating. An owner-signed 0.5.5 to 0.5.6 update should work;
+verify it on a phone before promising it. Preview-to-owner signer migration requires
+export/uninstall/install/restore. Never turn off Play Protect to install.
+
+## Separate Play submission work
+
+This beta is not a Play submission. Play signing-identity selection, public privacy
+contact/policy completion, an in-app privacy entry, Data Safety answers and foreground-service
+demos remain open in [the Play drafts](play/LISTING.md). Emulator checks do not establish
+Play approval, real-phone compatibility or malware certification.
