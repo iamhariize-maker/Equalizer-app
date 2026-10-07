@@ -9,6 +9,10 @@ Original Svan code is **All rights reserved**; third-party notices remain applic
 See [the release prompt](CODEX_RELEASE_PROMPT.md), [private signing](RELEASE_SIGNING.md)
 and [the investigation](RELEASE_INVESTIGATION_0.5.6.md).
 
+Current status: [source 64b5ae0 passes every required CI job](CI_VERIFICATION_0.5.6.md).
+The tested production APK is retained. Owner signing/publication await the original
+signing backup's Drive location; no replacement key or 0.5.6 release has been created.
+
 ## Required before publication
 
 - All CI jobs on the release source pass, including API 33/34 emulator jobs, the five

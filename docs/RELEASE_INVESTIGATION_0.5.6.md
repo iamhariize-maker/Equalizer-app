@@ -3,6 +3,18 @@
 The owner authorized investigation and fixes after supplying a working-phone photograph
 and preview APK. Work remains on PR #6's branch.
 
+## Supplied phone APK
+
+`Svan-preview.apk` is package `app.svan`, versionName `0.5.6-continuity-preview`,
+versionCode 13, with the shared preview signer. Its SHA-256 is
+`c1ade065d5a3846383dd35c62ec26ea6d7c26b9fd3c9406d98f77bb4d24e4d14`.
+The compiled capability policy and four-library 16 KB ELF/ZIP checks pass.
+Its bytes and ZIP payload differ from six inspected recent CI preview artifacts, so
+its exact source/run is not established. This does not negate the owner's successful
+phone observations; it is why release signing must use the separately tested production
+artifact rather than this preview. The final release's source, hash and signer require
+their own provenance record.
+
 ## CI evidence
 
 At `10ff806a374e7939d9fc61b9abb020a78cd2f62a`, core, Android and compatibility passed.
@@ -68,3 +80,12 @@ The next complete green run is still required; nothing has been owner-signed or 
 Public documentation was also corrected: the privacy notice/static copy and README no
 longer describe the removed notification-recognition feature, older fallback notes are
 marked historical, and migration/phone evidence describes 0.5.6 and BHIM/GPay accurately.
+
+## Final corrected source: 64b5ae0
+
+Both full runs are green: source push 37573374711 and PR 37573378002, nine jobs each.
+Final artifacts and live screenshots confirm all suites, including 13 detection and
+41 routing checks per API, real DUMP grants, -6.3 dB after Shizuku removal and visible
+capture peaks. [The final CI record](CI_VERIFICATION_0.5.6.md) identifies the exact production
+artifact and payload retained for signing. No key was found through connected Drive metadata
+searches; owner signing/publication remain blocked on the original backup's location.
