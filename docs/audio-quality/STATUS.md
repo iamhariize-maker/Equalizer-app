@@ -4,7 +4,7 @@ Continues the Codex audio-quality handoff (its commit `df63bad` was never pushed
 below come from the owner's pasted handoff and implementation prompt). Branch
 `ccr-2e937472-6z53b0`, based on the 0.5.6 line (`7b62777`). Nothing here is a release or APK.
 
-## Implemented and tested (core C++: 142 tests, 0 failed checks)
+## Implemented and tested (core C++: 147 tests, 0 failed checks)
 
 | Ticket | What | Evidence |
 |---|---|---|
@@ -28,10 +28,11 @@ below come from the owner's pasted handoff and implementation prompt). Branch
 * **AQ-03 B is in the core but off in the app.** The detector is validated on synthetic fixtures only, not
   on music; it is not a recognizer, so an inharmonic partial that is part of a bell-like sound would be cut
   too. Nothing sets the amount; it needs a listening study and a conscious owner decision before any default.
-* **AQ-04 rules are checked, not yet consulted at runtime.** `Svaramanas::plan()` and `SvaresaBrain` still decide
-  with their own code; the registry validates and documents them and tests keep the bounds equal, but
-  `admit()` is not called by them and no JNI exposes the registry. Real rule evaluation inside the planner is the
-  next step. The volume-to-loudness mapping in SV-QUIET-1 remains an uncalibrated proxy, capped at 6 dB.
+* **AQ-04: the planner now consults the registry; the Kotlin context brain does not.** `svaramanas::plan()` runs
+  `policy::admit()` for the SM-* rules and records `Plan::gates` (see `REQUESTS_FROM_CLAUDE.md`); stale, wrong-epoch,
+  low-confidence or non-finite evidence skips with a reason, and an inadmissible protective rule falls back to the static
+  plan. The Android app still calls the ungated JNI and passes no evidence identity. `SvaresaBrain` (quiet listening,
+  speaker, night) is Kotlin and unchanged. The volume-to-loudness mapping in SV-QUIET-1 remains an uncalibrated proxy.
 * **AQ-05 negotiation is not wired.** Added (uncompiled, pure Kotlin) `CaptureFormat.kt`: `RateFacts`
   (requested / capture-client / output-client / mixer hint / device-reported; source and DAC rate are
   always "unknown"), `RatePolicy` (48 kHz safe, evidence-based 88.2/96 kHz, experimental 176.4/192 kHz,
@@ -87,3 +88,10 @@ Kotlin/JNI changes are uncompiled. In `android/` run:
 `nativeBassUnmaskDiagnostics` and `nativePolicyRulesJson`; core has `policy::rulesJson()` (validated JSON, tested) and
 `Engine::bassUnmaskNoteHz()`. The JNI file was only syntax-checked on the host against the JDK's `jni.h`
 (`g++ -fsyntax-only`), not built with the NDK and not run; Kotlin `external` declarations are Codex's to add.
+
+## Update after Codex's integration (7 October 2026)
+
+Answered Codex's four requests (`REQUESTS_FROM_CLAUDE.md`): Fast pure-side contract pinned by a test; `BassUnmask` diagnostics
+thread-safe; evidence gate wired into `plan()` with `nativeSvaramanasPlanGated`/`nativePolicySkipText`; `SourceAnalyzer`
+decimates high input rates (same picture within a family to 0.001 dB; low third-octave bands stay coarse at every rate).
+Not done on my side: a longer low-band analysis window; nothing in the core is validated by listening.

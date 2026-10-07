@@ -44,7 +44,11 @@ Added by Claude with this contract (JNI C++ only; Kotlin `external` declarations
 * `nativePolicyRulesJson(): String`: the rule registry as JSON (`id, version, owner, inputs, minConfidence, maxAgeSeconds, sameEpoch,
   nativeOnly, parameter, units, min, max, competes, reason, rollback, counterexample`) for a "How Svaresa decides" screen.
 
-Core facts the app must not contradict: Backing vocals/Binaural do nothing on already-wide or hard-panned material (by design);
+Added later (see `REQUESTS_FROM_CLAUDE.md`): `nativeSvaramanasPlanGated(...)` (plan + evidence-gate outcomes), `nativePolicySkipText(code)`;
+`BassUnmask` diagnostics are thread-safe; `SourceAnalyzer` decimates inputs above ~52 kHz.
+
+Core facts the app must not contradict: Backing vocals/Binaural do nothing on hard-panned or already-wide material once a centre exists
+(Detailed also holds a signal with no centre; Fast keeps the static response when the mid is silent, see the pinned test);
 Bass Resolve's Auto level is 0.6 and never lowers or overwrites the saved manual value; bass unmasking is experimental and off;
 the original source rate and the DAC rate are always "unknown"; 48 kHz is the safe default and fallback.
 

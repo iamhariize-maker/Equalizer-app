@@ -143,6 +143,12 @@ const char* skipText(Skip s) {
   return "";
 }
 
+int skipCode(Skip s) { return static_cast<int>(s); }
+int ruleIndex(const char* id) {
+  for (size_t i = 0; i < kRules.size(); ++i) if (std::strcmp(kRules[i].id, id) == 0) return static_cast<int>(i);
+  return -1;
+}
+
 Decision admit(const Rule& r, const Measurement* m, int count, const Context& c) {
   if (c.userOff) return {false, Skip::UserOff};
   if (r.nativePcmOnly && !c.nativePcm) return {false, Skip::NoNativePcm};

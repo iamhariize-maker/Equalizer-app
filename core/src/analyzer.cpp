@@ -94,10 +94,18 @@ void fftInPlace(std::complex<double>* x, int n) {
 
 SourceAnalyzer::SourceAnalyzer(double sampleRate, int channels, double averageSeconds)
     : fs_(sampleRate), channels_(std::clamp(channels, 1, 2)) {
+  inputFs_ = sampleRate;
+  decim_ = sampleRate > 52000.0 ? std::max(1, static_cast<int>(std::lround(sampleRate / 48000.0))) : 1;
+  fs_ = sampleRate / decim_;
+  if (decim_ > 1) {
+    const double q[4] = {0.5097955791, 0.6013448869, 0.8999762231, 2.5629154477};  // 8th-order Butterworth
+    for (int ch = 0; ch < 2; ++ch)
+      for (int i = 0; i < 4; ++i) aa_[ch][i].setCoeffs(designBiquad({FilterType::LowPass, 0.46 * fs_, 0.0, q[i], true}, sampleRate));
+  }
   avgSeconds_ = std::max(0.5, averageSeconds);
   alpha_ = std::clamp((kFft / fs_) / avgSeconds_, 1e-4, 1.0);
   blockLen_ = std::max(1, static_cast<int>(0.4 * fs_));
-  peakRelease_ = std::exp(std::log(0.1) / (10.0 * fs_));  // -20 dB in 10 s
+  peakRelease_ = std::exp(std::log(0.1) / (10.0 * inputFs_));  // -20 dB in 10 s
   // BS.1770 K-weighting, re-derived for any sample rate.
   {
     const double f0 = 1681.974450955533, g = 3.999843853973347, q = 0.7071752369554196;
@@ -124,6 +132,8 @@ SourceAnalyzer::SourceAnalyzer(double sampleRate, int channels, double averageSe
 }
 
 void SourceAnalyzer::reset() {
+  for (auto& ch : aa_) for (auto& f : ch) f.reset();
+  phase_ = 0;
   std::fill(&kz_[0][0][0], &kz_[0][0][0] + 16, 0.0);
   blockPos_ = 0;
   blockEnergy_ = gatedEnergy_ = gatedWeight_ = 0.0;
@@ -161,13 +171,20 @@ double SourceAnalyzer::kWeighted(int ch, double x) {
 void SourceAnalyzer::process(const float* in, int frames) {
   const int C = channels_;
   for (int i = 0; i < frames; ++i) {
-    const double l = in[static_cast<size_t>(i) * C];
-    const double r = C == 2 ? static_cast<double>(in[static_cast<size_t>(i) * C + 1]) : l;
-    // Peak (slow release) and clipping: two consecutive near-full-scale samples.
-    const double a = std::max(std::fabs(l), std::fabs(r));
+    const double l0 = in[static_cast<size_t>(i) * C];
+    const double r0 = C == 2 ? static_cast<double>(in[static_cast<size_t>(i) * C + 1]) : l0;
+    // Peak (slow release) and clipping at the full input rate: two consecutive near-full-scale samples.
+    const double a = std::max(std::fabs(l0), std::fabs(r0));
     peak_ = std::max(a, peak_ * peakRelease_);
     if (a >= 0.9995 && lastAbs_ >= 0.9995) clipCount_ += 1.0;
     lastAbs_ = a;
+    double l = l0, r = r0;
+    if (decim_ > 1) {  // analysis runs at input rate / decim_ (same window seconds as at 48 kHz)
+      for (auto& f : aa_[0]) l = f.process(l);
+      for (auto& f : aa_[1]) r = f.process(r);
+      if (++phase_ < decim_) continue;
+      phase_ = 0;
+    }
     // Loudness.
     const double kl = kWeighted(0, l);
     const double kr = C == 2 ? kWeighted(1, r) : 0.0;

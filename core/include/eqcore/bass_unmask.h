@@ -42,9 +42,13 @@ class BassUnmask {
   void process(double* left, double* right, int frames);
   void reset();
 
-  std::array<double, kLanes> cutsDb() const { return cutDb_; }       // <= 0
+  // Diagnostics are published atomically at the end of every process() call, so any thread may read them.
+  std::array<double, kLanes> cutsDb() const {                         // <= 0
+    return {pubCut_[0].load(std::memory_order_relaxed), pubCut_[1].load(std::memory_order_relaxed),
+            pubCut_[2].load(std::memory_order_relaxed), pubCut_[3].load(std::memory_order_relaxed)};
+  }
   bool cutting() const { return cutting_.load(std::memory_order_relaxed); }  // any lane cut > 0.05 dB
-  double noteHz() const { return noteValid_ ? noteHz_ : 0.0; }       // 0 when unknown
+  double noteHz() const { return pubNote_.load(std::memory_order_relaxed); }  // 0 when unknown
   static constexpr std::array<double, kLanes> laneHz() { return {70, 110, 180, 280}; }
 
  private:
@@ -76,6 +80,9 @@ class BassUnmask {
   int onsetBlock_ = 0, onsetBlockFrames_, sampleCounter_ = 0;
   bool onsetActive_ = false;
   std::atomic<bool> cutting_{false};
+  std::atomic<double> pubCut_[kLanes] = {{0}, {0}, {0}, {0}};
+  std::atomic<double> pubNote_{0};
+  void publish();
 };
 
 }  // namespace eqcore

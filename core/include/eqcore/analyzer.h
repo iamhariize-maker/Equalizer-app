@@ -16,6 +16,8 @@
 #include <mutex>
 #include <vector>
 
+#include "eqcore/biquad.h"
+
 namespace eqcore {
 
 struct SourceFeatures {
@@ -81,6 +83,13 @@ class SourceAnalyzer {
   double blockEnergy_ = 0.0;
   double gatedEnergy_ = 0.0;   // EMA of block energies that passed the gates
   double gatedWeight_ = 0.0;
+
+  // High input rates are decimated (8th-order anti-alias low-pass at 0.46 of the analysis rate) so every
+  // window, band and loudness block spans the same seconds as at 48 kHz. Peak and clipping stay at the
+  // full input rate. fs_ is the analysis rate (input rate / decim_); decim_ == 1 below ~52 kHz (no filter).
+  int decim_ = 1, phase_ = 0;
+  double inputFs_ = 48000.0;
+  Biquad aa_[2][4];
 
   double peak_ = 0.0, peakRelease_;
   double clipEma_ = 0.0, clipCount_ = 0.0, lastAbs_ = 0.0;
