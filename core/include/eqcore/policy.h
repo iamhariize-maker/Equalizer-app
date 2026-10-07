@@ -103,6 +103,9 @@ struct Effective {
 // evidence is admitted; otherwise the saved manual value stands (never overwritten, never lowered).
 Effective resolveOwnership(Ownership chosen, double manual, double autoValue, bool autoMasterOn, bool evidenceAdmitted);
 
+// The registry as JSON (for a read-only "How Svaresa decides" screen). Strings are escaped; numbers are finite.
+std::string rulesJson();
+
 // One headroom authority: scale factor (<= 1) so the positive requests (dB) sum to at most ceilingDb.
 double headroomScale(const double* positiveRequestsDb, int n, double ceilingDb);
 

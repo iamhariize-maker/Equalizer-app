@@ -9,6 +9,7 @@
 #include "eqcore/comparison.h"
 #include "eqcore/engine.h"
 #include "eqcore/graphic_eq.h"
+#include "eqcore/policy.h"
 #include "eqcore/svaramanas.h"
 #include "eqcore/tuning.h"
 
@@ -146,6 +147,40 @@ JNIEXPORT jlong JNICALL Java_app_svan_NativeEngine_nativeCreateCustom(
   c.autoHeadroom = autoHeadroom;
   c.gainProtection = gainProtection;
   return reinterpret_cast<jlong>(new Engine(c));
+}
+
+// Same as nativeCreateCustom plus the Detailed (streaming spatial-residual) mode: Backing vocals and Binaural run
+// in the WOLA processor and the engine's latency grows by exactly N frames (see nativeLatency). Stereo only.
+JNIEXPORT jlong JNICALL Java_app_svan_NativeEngine_nativeCreateDetailed(
+    JNIEnv*, jclass, jint sampleRate, jint channels, jint oversample, jdouble stopbandDb, jint ditherBits,
+    jint ditherMode, jboolean autoHeadroom, jboolean gainProtection, jboolean spatialResidual) {
+  EngineConfig c;
+  c.truePeak = true;
+  c.sampleRate = sampleRate;
+  c.channels = channels;
+  c.oversample = oversample;
+  c.stopbandDb = stopbandDb;
+  c.ditherBits = ditherBits;
+  c.ditherMode = static_cast<DitherMode>(ditherMode < 0 || ditherMode > 2 ? 1 : ditherMode);
+  c.autoHeadroom = autoHeadroom;
+  c.gainProtection = gainProtection;
+  c.spatialResidual = spatialResidual == JNI_TRUE;
+  return reinterpret_cast<jlong>(new Engine(c));
+}
+
+// Returns [cut70, cut110, cut180, cut280 (dB, <= 0), noteHz (0 = no validated note)].
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeBassUnmaskDiagnostics(JNIEnv* env, jclass, jlong h) {
+  const Engine* e = fromHandle(h);
+  const auto cuts = e->bassUnmaskCutsDb();
+  const jdouble out[5] = {cuts[0], cuts[1], cuts[2], cuts[3], e->bassUnmaskNoteHz()};
+  jdoubleArray result = env->NewDoubleArray(5);
+  env->SetDoubleArrayRegion(result, 0, 5, out);
+  return result;
+}
+
+// The Svaresa/Svaramanas rule registry as JSON (read-only, for the "How Svaresa decides" screen).
+JNIEXPORT jstring JNICALL Java_app_svan_NativeEngine_nativePolicyRulesJson(JNIEnv* env, jclass) {
+  return env->NewStringUTF(eqcore::policy::rulesJson().c_str());
 }
 
 // Returns [preampDb, type0, freq0, gain0, q0, enabled0, type1, ...]; types use the

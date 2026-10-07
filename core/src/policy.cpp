@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <set>
 
@@ -197,6 +198,58 @@ std::string validateRegistry() {
     if (r.owner != Owner::Context && r.inputCount > 0 && !r.sameEpoch) return bad("PCM-driven rules must require the same epoch");
   }
   return "";
+}
+
+namespace {
+void jsonString(std::string& out, const char* s) {
+  out += '"';
+  for (; *s; ++s) {
+    const unsigned char ch = static_cast<unsigned char>(*s);
+    if (ch == '"' || ch == '\\') { out += '\\'; out += static_cast<char>(ch); }
+    else if (ch < 0x20) { char b[8]; std::snprintf(b, sizeof b, "\\u%04x", ch); out += b; }
+    else out += static_cast<char>(ch);
+  }
+  out += '"';
+}
+void jsonNumber(std::string& out, double v) {
+  char b[40];
+  std::snprintf(b, sizeof b, "%.6g", std::isfinite(v) ? v : 0.0);
+  out += b;
+}
+}  // namespace
+
+std::string rulesJson() {
+  std::string out = "[";
+  bool first = true;
+  for (const auto& r : kRules) {
+    if (!first) out += ",";
+    first = false;
+    out += "{\"id\":"; jsonString(out, r.id);
+    out += ",\"version\":" + std::to_string(r.version);
+    out += ",\"owner\":"; jsonString(out, r.owner == Owner::Fast ? "fast" : r.owner == Owner::Slow ? "slow" : "context");
+    out += ",\"inputs\":[";
+    for (int i = 0; i < r.inputCount; ++i) {
+      const auto& s = spec(r.inputs[static_cast<size_t>(i)]);
+      if (i) out += ",";
+      out += "{\"name\":"; jsonString(out, s.name);
+      out += ",\"units\":"; jsonString(out, s.units);
+      out += std::string(",\"proxy\":") + (s.proxy ? "true" : "false") + ",\"pcm\":" + (s.pcm ? "true" : "false") + "}";
+    }
+    out += "],\"minConfidence\":"; jsonNumber(out, r.minConfidence);
+    out += ",\"maxAgeSeconds\":"; jsonNumber(out, r.inputCount ? r.maxAgeSeconds : 0.0);
+    out += std::string(",\"sameEpoch\":") + (r.sameEpoch ? "true" : "false") + ",\"nativeOnly\":" + (r.nativePcmOnly ? "true" : "false");
+    out += ",\"needsAutoMaster\":"; out += r.needsAutoMaster ? "true" : "false";
+    out += ",\"parameter\":"; jsonString(out, r.parameter);
+    out += ",\"units\":"; jsonString(out, r.units);
+    out += ",\"min\":"; jsonNumber(out, r.minAction);
+    out += ",\"max\":"; jsonNumber(out, r.maxAction);
+    out += ",\"competes\":"; jsonString(out, r.competes);
+    out += ",\"reason\":"; jsonString(out, r.reason);
+    out += ",\"rollback\":"; jsonString(out, r.rollback);
+    out += ",\"counterexample\":"; jsonString(out, r.counterexample);
+    out += "}";
+  }
+  return out + "]";
 }
 
 Effective resolveOwnership(Ownership chosen, double manual, double autoValue, bool autoMasterOn, bool evidenceAdmitted) {

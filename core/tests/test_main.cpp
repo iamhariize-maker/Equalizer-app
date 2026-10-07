@@ -1772,6 +1772,61 @@ TEST(policy_evidence_gate_skips_on_every_kind_of_bad_evidence_for_every_rule) {
   CHECK(admit(sneaky, m.data(), static_cast<int>(m.size()), c).skip == Skip::ProxyNotAllowed);
 }
 
+namespace {
+// Strict-enough JSON validator for the registry export (objects, arrays, strings with escapes, numbers, booleans).
+struct JsonCheck {
+  const std::string& s;
+  size_t i = 0;
+  bool ok = true;
+  explicit JsonCheck(const std::string& text) : s(text) {}
+  void ws() { while (i < s.size() && (s[i] == ' ' || s[i] == '\n')) ++i; }
+  bool lit(const char* w) { const size_t n = std::strlen(w); if (s.compare(i, n, w) == 0) { i += n; return true; } return false; }
+  void str() {
+    if (i >= s.size() || s[i] != '"') { ok = false; return; }
+    for (++i; i < s.size() && s[i] != '"'; ++i) {
+      if (static_cast<unsigned char>(s[i]) < 0x20) { ok = false; return; }
+      if (s[i] == '\\') { ++i; if (i >= s.size() || !std::strchr("\"\\/bfnrtu", s[i])) { ok = false; return; } }
+    }
+    if (i >= s.size()) { ok = false; return; }
+    ++i;
+  }
+  void value() {
+    ws();
+    if (i >= s.size()) { ok = false; return; }
+    if (s[i] == '{') {
+      ++i; ws();
+      if (s[i] == '}') { ++i; return; }
+      for (;;) { ws(); str(); if (!ok) return; ws(); if (s[i] != ':') { ok = false; return; } ++i; value(); if (!ok) return; ws();
+        if (s[i] == ',') { ++i; continue; } if (s[i] == '}') { ++i; return; } ok = false; return; }
+    } else if (s[i] == '[') {
+      ++i; ws();
+      if (s[i] == ']') { ++i; return; }
+      for (;;) { value(); if (!ok) return; ws(); if (s[i] == ',') { ++i; continue; } if (s[i] == ']') { ++i; return; } ok = false; return; }
+    } else if (s[i] == '"') str();
+    else if (lit("true") || lit("false")) return;
+    else {
+      const size_t start = i;
+      while (i < s.size() && std::strchr("+-0123456789.eE", s[i])) ++i;
+      if (i == start) ok = false;
+    }
+  }
+};
+}  // namespace
+
+TEST(policy_rules_json_is_valid_complete_and_escaped) {
+  const std::string json = policy::rulesJson();
+  JsonCheck c(json);
+  c.value();
+  c.ws();
+  CHECK(c.ok && c.i == json.size());
+  size_t count = 0;
+  for (size_t p = json.find("{\"id\":"); p != std::string::npos; p = json.find("{\"id\":", p + 1)) ++count;
+  CHECK(count == policy::rules().size());
+  for (const auto& r : policy::rules()) CHECK(json.find(std::string("\"id\":\"") + r.id + "\"") != std::string::npos);
+  for (const char* bad : {":nan", ":inf", ":-inf", ":-nan", ",nan", ",inf"}) CHECK(json.find(bad) == std::string::npos);  // numbers are finite
+  CHECK(json.find("not SPL") != std::string::npos && json.find("not a codec label") != std::string::npos);
+}
+
 TEST(policy_rule_bounds_match_the_constants_the_planner_enforces) {
   using namespace policy;
   CHECK(find("SM-TILT-1")->maxAction == svaramanas::kSvaresaMaxTiltDb);

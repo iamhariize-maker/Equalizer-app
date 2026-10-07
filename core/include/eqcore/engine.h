@@ -73,6 +73,7 @@ class Engine {
   // Selective bass unmasking 0..1 (see BassUnmask). Default 0 = off and bit-exact; stereo-linked, reduction only.
   void setBassUnmask(double amount) { unmask_.setAmount(amount); }
   std::array<double, 4> bassUnmaskCutsDb() const { return unmask_.cutsDb(); }
+  double bassUnmaskNoteHz() const { return unmask_.noteHz(); }  // 0 = no validated note
   void setBassResolve(double resolve) { bassResolve_.store(std::isfinite(resolve) ? resolve : 0.0); }
   // Vocal tuner + instrument amplifier (stereo engines only; mono ignores it).
   void setStereoTuner(const StereoTunerParams& p) { stereo_.setParams(p); }

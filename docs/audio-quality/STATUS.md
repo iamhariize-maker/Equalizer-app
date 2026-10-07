@@ -4,7 +4,7 @@ Continues the Codex audio-quality handoff (its commit `df63bad` was never pushed
 below come from the owner's pasted handoff and implementation prompt). Branch
 `ccr-2e937472-6z53b0`, based on the 0.5.6 line (`7b62777`). Nothing here is a release or APK.
 
-## Implemented and tested (core C++: 141 tests, 0 failed checks)
+## Implemented and tested (core C++: 142 tests, 0 failed checks)
 
 | Ticket | What | Evidence |
 |---|---|---|
@@ -80,3 +80,10 @@ Kotlin/JNI changes are uncompiled. In `android/` run:
 9. Run the whole qualification on devices: emulator e2e (API 33 and 34, all detection checks), screenshots with large
    fonts, phone CPU/battery/timing for Detailed, blind loudness- and delay-matched listening with the live implementation.
    Nothing on this branch has been listened to.
+
+## Interface Claude added for Codex (see COORDINATION.md)
+
+`android/app/src/main/cpp/jni_bridge.cpp` now has `nativeCreateDetailed` (Detailed spatial mode flag),
+`nativeBassUnmaskDiagnostics` and `nativePolicyRulesJson`; core has `policy::rulesJson()` (validated JSON, tested) and
+`Engine::bassUnmaskNoteHz()`. The JNI file was only syntax-checked on the host against the JDK's `jni.h`
+(`g++ -fsyntax-only`), not built with the NDK and not run; Kotlin `external` declarations are Codex's to add.
