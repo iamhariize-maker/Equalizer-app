@@ -1030,6 +1030,77 @@ TEST(stereo_tuner_off_is_bit_exact) {
   CHECK(out.l == in.l && out.r == in.r);
 }
 
+// AQ-01: a hard-panned source must stay on its side whatever the side controls do.
+// The old LR4 side crossover rotated S relative to M, swapping channels near 180 Hz
+// while the mono sum stayed exact, so mono-sum tests could not see it.
+namespace {
+double settledRms(const std::vector<double>& x) {
+  double e = 0;
+  const size_t from = x.size() / 2;
+  for (size_t i = from; i < x.size(); ++i) e += x[i] * x[i];
+  return std::sqrt(e / static_cast<double>(x.size() - from));
+}
+double hardPanLeakDb(const StereoTunerParams& p, double hz, double fs, bool leftOnly) {
+  const double sgn = leftOnly ? 1.0 : -1.0;
+  auto in = ms(fs, 0.6, [&](double t) { return 0.25 * std::sin(2 * kPi * hz * t); },
+               [&](double t) { return sgn * 0.25 * std::sin(2 * kPi * hz * t); });
+  const auto out = runTuner(p, in, fs);
+  const double keep = settledRms(leftOnly ? out.l : out.r), leak = settledRms(leftOnly ? out.r : out.l);
+  return 20 * std::log10((leak + 1e-30) / (keep + 1e-30));
+}
+}  // namespace
+
+TEST(side_controls_keep_hard_panned_sources_on_their_side) {
+  for (double fs : {44100.0, 48000.0, 96000.0}) {
+    for (double hz : {60.0, 120.0, 180.0, 250.0, 500.0, 1200.0, 4000.0, 9000.0}) {
+      for (int which = 0; which < 4; ++which) {
+        for (double amount : {1e-6, 0.01, 0.5}) {
+          StereoTunerParams p;
+          if (which == 0) p.backingVocals = amount;
+          else if (which == 1) p.spatialDetail = amount;
+          else if (which == 2) p.instruments = amount;
+          else p.space = amount;
+          // Added side delta is bounded by the control, so the opposite channel stays well below the source.
+          CHECK(hardPanLeakDb(p, hz, fs, true) < -9.0);
+          CHECK(hardPanLeakDb(p, hz, fs, false) < -9.0);
+          if (amount <= 0.01) CHECK(hardPanLeakDb(p, hz, fs, true) < -30.0);
+        }
+      }
+    }
+  }
+}
+
+TEST(side_controls_are_continuous_at_tiny_amounts) {
+  const double fs = 48000;
+  for (int which = 0; which < 3; ++which) {
+    const auto in = ms(fs, 0.5, [](double t) { return 0.2 * std::sin(2 * kPi * 180 * t) + 0.1 * std::sin(2 * kPi * 1500 * t); },
+                       [](double t) { return 0.15 * std::sin(2 * kPi * 180 * t + 0.4) + 0.1 * std::sin(2 * kPi * 900 * t); });
+    StereoTunerParams p;
+    (which == 0 ? p.backingVocals : which == 1 ? p.spatialDetail : p.instruments) = 1e-6;
+    const auto out = runTuner(p, in, fs);
+    double err = 0;
+    for (size_t i = 1500; i < in.l.size(); ++i)  // past the 20 ms parameter crossfade
+      err = std::max({err, std::fabs(out.l[i] - in.l[i]), std::fabs(out.r[i] - in.r[i])});
+    CHECK(err < 1e-3);
+  }
+}
+
+TEST(side_controls_leave_the_mid_signal_untouched) {
+  const double fs = 48000;
+  const auto in = ms(fs, 0.5, [](double t) { return 0.3 * std::sin(2 * kPi * 180 * t) + 0.1 * std::sin(2 * kPi * 3000 * t); },
+                     [](double t) { return 0.2 * std::sin(2 * kPi * 700 * t); });
+  const auto mIn = midOf(in);
+  StereoTunerParams p;
+  p.backingVocals = 1;
+  p.spatialDetail = 1;
+  p.instruments = 1;
+  p.space = 0.7;
+  const auto mOut = midOf(runTuner(p, in, fs));
+  double err = 0;
+  for (size_t i = 0; i < mIn.size(); ++i) err = std::max(err, std::fabs(mIn[i] - mOut[i]));
+  CHECK(err < 1e-9);
+}
+
 TEST(instrument_amp_never_touches_a_centred_voice) {
   const double fs = 48000;
   // Pure centre content (L == R): voice fundamentals, formants and sibilance.
@@ -1056,7 +1127,10 @@ TEST(space_widens_or_narrows_the_sides_but_not_side_bass) {
     const double gHi = toDb(sineAmplitude(sideOf(hi), 2000, fs, 24000, 48000) / 0.2);
     const double gLo = toDb(sineAmplitude(sideOf(lo), 60, fs, 24000, 48000) / 0.2);
     std::printf("    space %+.0f: sides at 2 kHz %+.2f dB, side bass at 60 Hz %+.2f dB\n", space, gHi, gLo);
-    CHECK_NEAR(gHi, 6.0 * space, 0.3);
+    // Dry-plus-delta: the added high band sits ~15 degrees off the dry side at 2 kHz (zero-latency
+    // IIR crossover), so the realised gain is within ~0.6 dB of the nominal +-6 dB and matches the model.
+    CHECK_NEAR(gHi, 6.0 * space, 0.6);
+    CHECK_NEAR(gHi, 10 * std::log10(stereoResponsePower(p, 2000, fs)[1]), 0.15);
     CHECK_NEAR(gLo, 0.0, 0.3);
   }
 }

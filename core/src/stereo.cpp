@@ -25,7 +25,9 @@ std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double f, 
     return (b.b0 + b.b1 * z + b.b2 * z * z) / (1.0 + b.a1 * z + b.a2 * z * z); };
   const auto mid = h(0) * h(1) * h(2);
   const auto side = p.space == 0 && p.instruments == 0 && p.backingVocals == 0 && p.spatialDetail == 0 ? std::complex<double>(1, 0) :
-      h(3) * h(3) + std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0) * h(4) * h(4) * h(5) * h(6) * h(7) * h(8) * h(9) * h(10);
+      // Dry side plus a bounded delta on the LR4 high band: 1 + HP^2 * (gain * shaping - 1).
+      // Equals 1 exactly at zero control, whatever the crossover phase does.
+      1.0 + h(4) * h(4) * (std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0) * h(5) * h(6) * h(7) * h(8) * h(9) * h(10) - 1.0);
   return {std::norm(mid), std::norm(side)};
 }
 
@@ -53,7 +55,6 @@ void StereoTuner::State::redesign(const StereoTunerParams& p, double fs_) {
   const auto c = staticFilters(p, fs_);
   warmBell_.c = c[0]; warmShelf_.c = c[1]; intimacyBell_.c = c[2];
   set(harshBand_, FilterType::BandPass, 3800.0, 0.0, 0.9);
-  for (auto& lp : sideLp_) lp.c = c[3];
   for (auto& hp : sideHp_) hp.c = c[4];
   bodyBell_.c = c[5]; presenceBell_.c = c[6]; airShelf_.c = c[7];
   backingBell_.c=c[8];detailShelf_.c=c[9];shuffleBell_.c=c[10];
@@ -62,7 +63,7 @@ void StereoTuner::State::redesign(const StereoTunerParams& p, double fs_) {
   vocalMid_.c = vocalSide_.c;
   aVocal_=coeff(10,fs_);rVocal_=coeff(120,fs_);aLift_=coeff(40,fs_);rLift_=coeff(250,fs_);
   // Motion: detection ignores the bass below the side crossover.
-  set(motionHp_, FilterType::HighPass, 180.0, 0.0, .7071067811865476);
+  for (auto& hp : motionHp_) hp.c = c[4];  // same LR4 high-pass as the side path
   set(splitSide_[0], FilterType::LowPass, 1000.0, 0.0, .7071067811865476);
   set(splitSide_[1], FilterType::LowPass, 4000.0, 0.0, .7071067811865476);
   splitMid_[0].c=splitSide_[0].c;splitMid_[1].c=splitSide_[1].c;
@@ -71,9 +72,9 @@ void StereoTuner::State::redesign(const StereoTunerParams& p, double fs_) {
 }
 
 void StereoTuner::State::reset() {
-  for (Bq* b : {&warmBell_, &warmShelf_, &intimacyBell_, &harshBand_, &sideLp_[0], &sideLp_[1], &sideHp_[0], &sideHp_[1], &bodyBell_,
+  for (Bq* b : {&warmBell_, &warmShelf_, &intimacyBell_, &harshBand_, &sideHp_[0], &sideHp_[1], &bodyBell_,
                 &presenceBell_, &airShelf_, &backingBell_, &detailShelf_, &shuffleBell_, &vocalSide_, &vocalMid_,
-                &motionHp_, &splitSide_[0], &splitSide_[1], &splitMid_[0], &splitMid_[1]})
+                &motionHp_[0], &motionHp_[1], &splitSide_[0], &splitSide_[1], &splitMid_[0], &splitMid_[1]})
     b->z1 = b->z2 = 0;
   envVocalSide_ = envVocalMid_ = backingLiftDb_ = 0;
   for (int b = 0; b < kBands; ++b) { cross_[b] = power_[b] = panSlow_[b] = 0; motionGain_[b] = 1; heard_[b] = false; }
@@ -111,15 +112,16 @@ double StereoTuner::State::process(double& left, double& right) {
     }
   }
   if (side) {
-    // Linkwitz-Riley crossover at 180 Hz: low + high sum to a flat allpass,
-    // so side bass keeps its level while only the upper band is shaped.
-    const double low = sideLp_[1].run(sideLp_[0].run(s));
-    double high = sideHp_[1].run(sideHp_[0].run(s));
-    high = detailShelf_.run(backingBell_.run(airShelf_.run(presenceBell_.run(bodyBell_.run(high)))));
+    // Dry side plus a bounded delta. The side signal itself is never filtered through
+    // the 180 Hz crossover (its all-pass phase rotated S against M and swapped hard-panned
+    // bass between channels); only the *difference* between the shaped and plain high
+    // band is added, so every control is continuous at zero and cannot move an image.
+    const double plain = sideHp_[1].run(sideHp_[0].run(s));
+    double high = detailShelf_.run(backingBell_.run(airShelf_.run(presenceBell_.run(bodyBell_.run(plain)))));
     if (p_.spatialDetail > 0) high = shuffleBell_.run(high);
     if (p_.backingVocals > 0) high = backingLift(high, m);
     if (p_.spatialDetail > 0) high = motion(high, m);
-    s = low + spaceGain_ * high;
+    s += spaceGain_ * high - plain;
   }
   left = m + s;
   right = m - s;
@@ -151,7 +153,7 @@ double StereoTuner::State::backingLift(double high, double m) {
 // moving bands get extra side level, so static images keep their placement.
 // The three bands are a complementary split and sum back exactly.
 double StereoTuner::State::motion(double high, double m) {
-  const double md = motionHp_.run(m);
+  const double md = motionHp_[1].run(motionHp_[0].run(m));
   const double s0 = splitSide_[0].run(high), m0 = splitMid_[0].run(md);
   const double sr = high - s0, mr = md - m0;
   const double s1 = splitSide_[1].run(sr), m1 = splitMid_[1].run(mr);
