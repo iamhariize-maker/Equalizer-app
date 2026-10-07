@@ -27,6 +27,7 @@
 #include "eqcore/bass.h"
 #include "eqcore/tuning.h"
 #include "eqcore/stereo.h"
+#include "eqcore/spatial.h"
 #include <fstream>
 #include <sstream>
 
@@ -1200,6 +1201,257 @@ TEST(side_controls_leave_the_mid_signal_untouched) {
   CHECK(err < 1e-9);
 }
 
+// ------------------------------------------------ streaming spatial residual (AQ-02)
+
+namespace {
+struct Program {
+  std::vector<double> m, s;
+};
+// A centred lead (white, rms `lead`) over per-channel independent ambience (rms `amb` in L and R).
+Program ambienceProgram(double fs, double secs, double lead, double amb, unsigned seed) {
+  std::mt19937 rng(seed);
+  std::normal_distribution<double> g(0.0, 1.0);
+  Program p;
+  const int n = static_cast<int>(fs * secs);
+  for (int i = 0; i < n; ++i) {
+    const double x = lead * g(rng), l = x + amb * g(rng), r = x + amb * g(rng);
+    p.m.push_back(.5 * (l + r));
+    p.s.push_back(.5 * (l - r));
+  }
+  return p;
+}
+double rmsFrom(const std::vector<double>& x, size_t from) {
+  double e = 0;
+  for (size_t i = from; i < x.size(); ++i) e += x[i] * x[i];
+  return std::sqrt(e / static_cast<double>(x.size() - from));
+}
+void runResidual(SpatialResidual& r, Program& p, int block) {
+  for (size_t i = 0; i < p.m.size(); i += static_cast<size_t>(block)) {
+    const int n = static_cast<int>(std::min<size_t>(static_cast<size_t>(block), p.m.size() - i));
+    r.process(p.m.data() + i, p.s.data() + i, n);
+  }
+}
+}  // namespace
+
+TEST(spatial_residual_delay_is_exact_and_rate_independent) {
+  for (auto [fs, expected] : {std::pair<double, int>{44100, 1024}, {48000, 1024}, {96000, 2048}, {192000, 4096}}) {
+    SpatialResidual r(fs);
+    CHECK(r.latencyFrames() == expected);
+    Program p;
+    p.m.assign(static_cast<size_t>(expected * 3), 0.0);
+    p.s = p.m;
+    p.m[100] = 1.0;
+    p.s[50] = -0.5;
+    r.setParams(1, 1);
+    runResidual(r, p, 333);
+    bool exact = true;
+    for (size_t i = 0; i < p.m.size(); ++i) {
+      exact = exact && p.m[i] == (i == static_cast<size_t>(100 + expected) ? 1.0 : 0.0);
+      exact = exact && p.s[i] == (i == static_cast<size_t>(50 + expected) ? -0.5 : 0.0);
+    }
+    CHECK(exact);  // an isolated click is not enhanced: warm-up, then no stored statistics to act on
+  }
+}
+
+TEST(spatial_residual_zero_amounts_are_a_bit_exact_delay) {
+  const double fs = 48000;
+  auto in = ambienceProgram(fs, 1.0, 0.2, 0.05, 11);
+  auto out = in;
+  SpatialResidual r(fs);
+  runResidual(r, out, 256);
+  bool same = true;
+  for (size_t i = static_cast<size_t>(r.latencyFrames()); i < out.m.size(); ++i)
+    same = same && out.m[i] == in.m[i - static_cast<size_t>(r.latencyFrames())] && out.s[i] == in.s[i - static_cast<size_t>(r.latencyFrames())];
+  CHECK(same);
+}
+
+TEST(spatial_residual_is_independent_of_block_size) {
+  const double fs = 48000;
+  const auto in = ambienceProgram(fs, 1.5, 0.2, 0.04, 5);
+  Program ref = in;
+  {
+    SpatialResidual r(fs);
+    r.setParams(0.8, 0.7);
+    runResidual(r, ref, 1024);
+  }
+  for (int block : {1, 7, 256, 4096}) {
+    Program out = in;
+    SpatialResidual r(fs);
+    r.setParams(0.8, 0.7);
+    runResidual(r, out, block);
+    double diff = 0;
+    for (size_t i = 0; i < out.s.size(); ++i) diff = std::max({diff, std::fabs(out.s[i] - ref.s[i]), std::fabs(out.m[i] - ref.m[i])});
+    CHECK(diff == 0.0);
+  }
+}
+
+TEST(spatial_residual_lifts_decorrelated_ambience_within_budget_and_keeps_the_lead) {
+  for (double fs : {44100.0, 48000.0, 96000.0}) {
+    for (int mode = 0; mode < 3; ++mode) {
+      const auto in = ambienceProgram(fs, 3.0, 0.2, 0.03, 21);  // side power ~ 1 % of mid
+      Program out = in;
+      SpatialResidual r(fs);
+      r.setParams(mode != 1 ? 1.0 : 0.0, mode != 0 ? 1.0 : 0.0);
+      runResidual(r, out, 480);
+      const size_t lat = static_cast<size_t>(r.latencyFrames()), from = static_cast<size_t>(fs * 2);
+      std::vector<double> dryS(out.s.size()), dryM(out.s.size());
+      double midErr = 0, monoErr = 0;
+      for (size_t i = lat; i < out.s.size(); ++i) {
+        dryS[i] = in.s[i - lat];
+        midErr = std::max(midErr, std::fabs(out.m[i] - in.m[i - lat]));
+        monoErr = std::max(monoErr, std::fabs((out.m[i] + out.s[i]) + (out.m[i] - out.s[i]) - 2 * in.m[i - lat]));
+      }
+      const double liftDb = 20 * std::log10(rmsFrom(out.s, from) / rmsFrom(dryS, from));
+      std::printf("    %.0f Hz mode %d: side %+.2f dB, mid error %.1e\n", fs, mode, liftDb, midErr);
+      CHECK(midErr == 0.0);          // the lead is exactly the delayed input
+      CHECK(monoErr < 1e-12);        // the mono sum is untouched
+      CHECK(liftDb > 0.3);           // it does something audible...
+      CHECK(liftDb < 4.3);           // ...inside the shared 4 dB budget
+    }
+  }
+}
+
+TEST(spatial_residual_leaves_coherent_and_already_wide_material_alone) {
+  const double fs = 48000;
+  const size_t lat = 1024, from = static_cast<size_t>(fs);
+  // Hard-panned and partly panned sources: S and M fully coherent, so there is no residual.
+  for (double rightGain : {0.0, 0.5, -1.0}) {
+    std::mt19937 rng(3);
+    std::normal_distribution<double> g(0, 0.2);
+    Program in;
+    for (int i = 0; i < static_cast<int>(fs * 2); ++i) {
+      const double x = g(rng), l = x, r = rightGain * x;
+      in.m.push_back(.5 * (l + r));
+      in.s.push_back(.5 * (l - r));
+    }
+    Program out = in;
+    SpatialResidual sr(fs);
+    sr.setParams(1, 1);
+    runResidual(sr, out, 512);
+    double err = 0;
+    for (size_t i = from; i < out.s.size(); ++i) err = std::max(err, std::fabs(out.s[i] - in.s[i - lat]));
+    CHECK(err < 1e-3 * 0.2);
+  }
+  // Independent ambience only: side power equals mid power, already at the budget limit.
+  const auto wide = ambienceProgram(fs, 3.0, 0.0, 0.1, 8);
+  Program out = wide;
+  SpatialResidual sr(fs);
+  sr.setParams(1, 1);
+  runResidual(sr, out, 512);
+  std::vector<double> dry(out.s.size());
+  for (size_t i = lat; i < out.s.size(); ++i) dry[i] = wide.s[i - lat];
+  CHECK_NEAR(20 * std::log10(rmsFrom(out.s, static_cast<size_t>(fs * 2)) / rmsFrom(dry, static_cast<size_t>(fs * 2))), 0.0, 0.25);
+}
+
+TEST(spatial_residual_holds_back_on_a_sudden_onset) {
+  const double fs = 48000;
+  // 2 s of quiet lead + ambience, then the whole program jumps 20 dB.
+  auto a = ambienceProgram(fs, 2.0, 0.02, 0.003, 4), b = ambienceProgram(fs, 2.0, 0.2, 0.03, 5);
+  Program in = a;
+  in.m.insert(in.m.end(), b.m.begin(), b.m.end());
+  in.s.insert(in.s.end(), b.s.begin(), b.s.end());
+  Program out = in;
+  SpatialResidual r(fs);
+  r.setParams(1, 1);
+  runResidual(r, out, 480);
+  const size_t lat = 1024, step = static_cast<size_t>(fs * 2) + lat;
+  auto deltaRms = [&](size_t from, size_t to) {
+    double e = 0;
+    for (size_t i = from; i < to; ++i) { const double d = out.s[i] - in.s[i - lat]; e += d * d; }
+    return std::sqrt(e / static_cast<double>(to - from));
+  };
+  const double early = deltaRms(step, step + static_cast<size_t>(fs * 0.02)), late = deltaRms(step + static_cast<size_t>(fs * 1.0), step + static_cast<size_t>(fs * 1.5));
+  std::printf("    delta rms: first 20 ms after onset %.5f, steady %.5f\n", early, late);
+  CHECK(early < 0.6 * late);
+}
+
+TEST(spatial_residual_is_finite_and_bounded_on_loud_noise) {
+  const double fs = 48000;
+  std::mt19937 rng(77);
+  std::uniform_real_distribution<double> u(-1, 1);
+  Program p;
+  for (int i = 0; i < static_cast<int>(fs * 3); ++i) { p.m.push_back(u(rng)); p.s.push_back(u(rng)); }
+  SpatialResidual r(fs);
+  r.setParams(1, 1);
+  runResidual(r, p, 300);
+  bool ok = true;
+  for (size_t i = 0; i < p.m.size(); ++i) ok = ok && std::isfinite(p.s[i]) && std::fabs(p.s[i]) < 3.0;
+  CHECK(ok);
+  r.reset();  // reset gives the same fixed delay and clean state
+  Program q;
+  q.m.assign(4096, 0.0);
+  q.s = q.m;
+  q.m[10] = 1.0;
+  runResidual(r, q, 100);
+  CHECK(q.m[10 + 1024] == 1.0);
+}
+
+TEST(stereo_tuner_detailed_mode_reports_latency_and_keeps_images_in_place) {
+  const double fs = 48000;
+  StereoTuner plain(fs), detailed(fs, true);
+  CHECK(plain.latencyFrames() == 0 && detailed.latencyFrames() == 1024);
+  StereoTunerParams p;
+  p.backingVocals = 1;
+  p.spatialDetail = 1;
+  for (double hz : {80.0, 180.0, 1200.0, 6000.0}) {
+    for (bool left : {true, false}) {
+      const double sgn = left ? 1 : -1;
+      auto in = ms(fs, 1.5, [&](double t) { return .25 * std::sin(2 * kPi * hz * t); }, [&](double t) { return sgn * .25 * std::sin(2 * kPi * hz * t); });
+      StereoTuner t(fs, true);
+      t.setParams(p);
+      for (size_t i = 0; i < in.l.size(); i += 256) {
+        const int n = static_cast<int>(std::min<size_t>(256, in.l.size() - i));
+        t.process(in.l.data() + i, in.r.data() + i, n);
+      }
+      const double keep = settledRms(left ? in.l : in.r), leak = settledRms(left ? in.r : in.l);
+      CHECK(20 * std::log10((leak + 1e-30) / keep) < -40.0);
+    }
+  }
+  EngineConfig cfg;
+  cfg.sampleRate = fs;
+  const int base = Engine(cfg).latencyFrames();
+  cfg.spatialResidual = true;
+  CHECK(Engine(cfg).latencyFrames() == base + 1024);
+}
+
+// ------------------------------------------------ sample-rate correctness (AQ-05)
+
+TEST(engine_curve_matches_its_analytic_response_at_every_rate_family) {
+  for (double fs : {44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
+    for (int oversample : {1, 4}) {
+      EngineConfig cfg;
+      cfg.sampleRate = fs;
+      cfg.oversample = oversample;
+      cfg.autoHeadroom = false;
+      Engine e(cfg);
+      e.setBandsAllChannels({{FilterType::Peak, 1000, 6.0, 1.0, true}, {FilterType::LowShelf, 100, 4.0, 0.71, true}, {FilterType::HighShelf, 8000, -3.0, 0.71, true}});
+      for (double hz : {60.0, 250.0, 1000.0, 4000.0, 12000.0}) {
+        std::vector<float> x(static_cast<size_t>(fs * 0.6) * 2);
+        for (size_t t = 0; t < x.size() / 2; ++t) x[2 * t] = x[2 * t + 1] = static_cast<float>(0.1 * std::sin(2 * kPi * hz * static_cast<double>(t) / fs));
+        for (size_t i = 0; i < x.size(); i += 2 * 480) e.process(x.data() + i, x.data() + i, static_cast<int>(std::min<size_t>(480, (x.size() - i) / 2)));
+        std::vector<double> l;
+        for (size_t t = x.size() / 4; t < x.size() / 2; ++t) l.push_back(x[2 * t]);
+        const double measured = toDb(sineAmplitude(l, hz, fs, 0, l.size()) / 0.1);
+        CHECK_NEAR(measured, e.responseDb(0, hz), 0.12);
+      }
+    }
+  }
+}
+
+TEST(engine_latency_in_milliseconds_does_not_depend_on_the_rate) {
+  double first = 0;
+  for (double fs : {44100.0, 48000.0, 96000.0, 192000.0}) {
+    EngineConfig cfg;
+    cfg.sampleRate = fs;
+    cfg.truePeak = true;
+    const double ms = Engine(cfg).latencyFrames() * 1000.0 / fs;
+    std::printf("    %.0f Hz: DSP latency %.3f ms\n", fs, ms);
+    CHECK(ms > 2.9 && ms < 4.6);   // 3 ms lookahead + 64 detector frames, never a fixed frame count
+    if (first == 0) first = ms;
+    CHECK_NEAR(ms, first, 1.2);
+  }
+}
+
 TEST(instrument_amp_never_touches_a_centred_voice) {
   const double fs = 48000;
   // Pure centre content (L == R): voice fundamentals, formants and sibilance.
@@ -1535,6 +1787,18 @@ TEST(analyzer_loudness_matches_bs1770_reference) {
   CHECK_NEAR(f.loudnessLufs, -23.0, 0.2);
   CHECK_NEAR(f.peakDbfs, -23.0, 0.1);
   CHECK(f.clipsPerSecond == 0.0);
+}
+
+TEST(loudness_and_peak_measurements_are_rate_independent) {
+  const double a = std::pow(10.0, -23.0 / 20.0);
+  for (double fs : {44100.0, 48000.0, 88200.0, 96000.0, 192000.0}) {
+    std::vector<float> x(static_cast<size_t>(fs * 6) * 2);
+    for (size_t t = 0; t < x.size() / 2; ++t) x[2 * t] = x[2 * t + 1] = float(a * std::sin(2 * kPi * 1000.0 * static_cast<double>(t) / fs));
+    const auto f = analyse(x, fs);
+    CHECK(f.valid);
+    CHECK_NEAR(f.loudnessLufs, -23.0, 0.25);
+    CHECK_NEAR(f.peakDbfs, -23.0, 0.1);
+  }
 }
 
 TEST(analyzer_finds_the_lossy_codec_ceiling) {

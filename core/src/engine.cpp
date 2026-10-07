@@ -52,7 +52,7 @@ Engine::Engine(const EngineConfig& cfg)
       bass_(cfg.sampleRate, std::max(1, cfg.channels)),
       limiter_(cfg.sampleRate,std::max(1,cfg.channels)),
       dynamic_(cfg.sampleRate),
-      stereo_(cfg.sampleRate),
+      stereo_(cfg.sampleRate, cfg.spatialResidual && cfg.channels == 2),
       analyzer_(cfg.sampleRate, std::clamp(cfg.channels, 1, 2)) {
   cfg_.channels = std::max(1, cfg_.channels);
   cfg_.oversample = sanitizeFactor(cfg_.oversample);
@@ -108,7 +108,7 @@ double Engine::responseDb(int channel, double freqHz) const {
   return eq_.responseDb(channel, freqHz) + gainDb_.load();
 }
 
-int Engine::latencyFrames() const { return (os_.empty() ? 0 : os_[0]->latencySamples()) + (cfg_.truePeak?limiter_.latencyFrames():0); }
+int Engine::latencyFrames() const { return (os_.empty() ? 0 : os_[0]->latencySamples()) + (cfg_.truePeak?limiter_.latencyFrames():0) + stereo_.latencyFrames(); }
 
 void Engine::reset() {
   gainInitialized_=false;gainRampRemaining_=0;

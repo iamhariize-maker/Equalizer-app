@@ -31,7 +31,8 @@ std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double f, 
   return {std::norm(mid), std::norm(side)};
 }
 
-StereoTuner::StereoTuner(double sampleRate) : fs_(sampleRate), fadeFrames_(std::max(1,static_cast<int>(sampleRate*.020))) {
+StereoTuner::StereoTuner(double sampleRate, bool residual)
+    : residual_(residual ? std::make_unique<SpatialResidual>(sampleRate) : nullptr), fs_(sampleRate), fadeFrames_(std::max(1,static_cast<int>(sampleRate*.020))) {
   for(auto& state:states_)state.redesign({},fs_);
 }
 
@@ -43,6 +44,7 @@ void StereoTuner::setParams(const StereoTunerParams& p) {
   pending_ = {unit(p.intimacy),unit(p.warmth),unit(p.smoothness),
       std::isfinite(p.space)?std::clamp(p.space,-1.,1.):0.,unit(p.instruments),unit(p.backingVocals),unit(p.spatialDetail)};
   pendingLock_.store(false, std::memory_order_release);
+  if (residual_) residual_->setParams(pending_.backingVocals, pending_.spatialDetail);
   version_.fetch_add(1, std::memory_order_release);
 }
 
@@ -214,6 +216,7 @@ double StereoTuner::State::motion(double high, double m) {
 void StereoTuner::reset() {
   if(fadeRemaining_>0)active_=1-active_;
   fadeRemaining_=0;initialized_=false;lastDeharshDb_=0;
+  if(residual_)residual_->reset();
   for(auto& state:states_)state.reset();
 }
 
@@ -223,9 +226,13 @@ void StereoTuner::process(double* L,double* R,int frames) {
   if(fadeRemaining_==0 && v!=appliedVersion_ && !pendingLock_.exchange(true,std::memory_order_acquire)) {
     const auto next=pending_;
     pendingLock_.store(false,std::memory_order_release);
-    if(!(next==states_[active_].p_)) {
+    auto cmp=next;
+    if(residual_){cmp.backingVocals=0;cmp.spatialDetail=0;}
+    if(!(cmp==states_[active_].p_)) {
       states_[1-active_]=states_[active_]; // retain histories; fixed-size, no allocation
-      states_[1-active_].redesign(next,fs_);
+      auto designed=next;
+      if(residual_){designed.backingVocals=0;designed.spatialDetail=0;}  // those two run in the residual stage
+      states_[1-active_].redesign(designed,fs_);
       if(!initialized_)active_=1-active_;else fadeRemaining_=fadeFrames_;
     }
     appliedVersion_=v;
@@ -243,6 +250,16 @@ void StereoTuner::process(double* L,double* R,int frames) {
     } else minGain=std::min(minGain,states_[active_].process(L[i],R[i]));
   }
   lastDeharshDb_=20*std::log10(minGain);
+  if(residual_) {
+    // Dry mid/side delayed by latencyFrames(), plus the bounded side delta. 256-frame stack chunks.
+    double m[256],s[256];
+    for(int base=0;base<frames;base+=256) {
+      const int n=std::min(256,frames-base);
+      for(int i=0;i<n;++i){m[i]=.5*(L[base+i]+R[base+i]);s[i]=.5*(L[base+i]-R[base+i]);}
+      residual_->process(m,s,n);
+      for(int i=0;i<n;++i){L[base+i]=m[i]+s[i];R[base+i]=m[i]-s[i];}
+    }
+  }
 }
 
 }  // namespace eqcore

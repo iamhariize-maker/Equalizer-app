@@ -30,8 +30,10 @@
 // synthesized, delayed or reverberated.
 #include <atomic>
 #include <array>
+#include <memory>
 
 #include "eqcore/biquad.h"
+#include "eqcore/spatial.h"
 
 namespace eqcore {
 
@@ -54,7 +56,11 @@ std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double fre
 
 class StereoTuner {
  public:
-  explicit StereoTuner(double sampleRate);
+  // residual = true ("Detailed"): Backing vocals and Binaural run in the streaming spatial-residual
+  // processor (spatial.h) instead of the zero-latency biquad path. That adds a fixed delay of
+  // latencyFrames() to the whole stereo stage, so callers must report it.
+  explicit StereoTuner(double sampleRate, bool residual = false);
+  int latencyFrames() const { return residual_ ? residual_->latencyFrames() : 0; }
 
   // Any thread; live changes crossfade for 20 ms. Updates during a fade coalesce.
   void setParams(const StereoTunerParams& p);
@@ -102,6 +108,7 @@ class StereoTuner {
     void reset();
     double process(double& left, double& right);
   };
+  std::unique_ptr<SpatialResidual> residual_;
   double fs_;
   int fadeFrames_, fadeRemaining_ = 0, active_ = 0;
   bool initialized_ = false;

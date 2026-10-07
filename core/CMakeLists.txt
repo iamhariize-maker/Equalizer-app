@@ -30,6 +30,7 @@ add_library(eqcore STATIC
   src/calibration.cpp
   src/comparison.cpp
   src/stereo.cpp
+  src/spatial.cpp
   src/dither.cpp
   src/autoeq.cpp
   src/true_peak.cpp

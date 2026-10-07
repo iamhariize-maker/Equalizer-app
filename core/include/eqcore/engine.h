@@ -46,6 +46,7 @@ struct EngineConfig {
                               // on overload lower gain; recover smoothly with 250 ms release
   bool truePeak = false;     // enabled by quality presets and Android capture
   int maxBlock = 1024;       // frames per internal chunk
+  bool spatialResidual = false; // "Detailed" Backing vocals/Binaural (streaming WOLA, adds latency; stereo only)
 
   static EngineConfig forQuality(QualityMode mode, double sampleRate, int channels, int outputBits);
 };
