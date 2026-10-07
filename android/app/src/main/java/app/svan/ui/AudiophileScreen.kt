@@ -44,6 +44,8 @@ import app.svan.SvanRepository
 import app.svan.model.DitherChoice
 import app.svan.model.EngineMode
 import app.svan.model.QualityMode
+import app.svan.listening.ProofCapture
+import app.svan.listening.ProofRecorder
 import kotlinx.coroutines.delay
 
 /** Svan processing controls and observed routing status. */
@@ -144,6 +146,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                 }
             }
         }
+        ProofRecorderCard(running)
         EngineMode.entries.forEach { m ->
             ChoiceRow(m.title, m.detail, s.engineMode == m, onClick = { SvanRepository.updateSettings { it.copy(engineMode = m) } },
                 badge = if (m == EngineMode.SYSTEM_ONLY) "Recommended" else null)
@@ -259,5 +262,62 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             )
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** Recording mode: saves what the audiophile engine received and what it sent out, plus a measured report. */
+@Composable
+private fun ProofRecorderCard(engineRunning: Boolean) {
+    val context = LocalContext.current
+    val state by ProofRecorder.state.collectAsState()
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    var error by remember { mutableStateOf("") }
+    LaunchedEffect(state) { while (state is ProofRecorder.State.Recording) { now = System.currentTimeMillis(); delay(500) } }
+    SectionLabel("Recording mode")
+    SvanCard {
+        Column {
+            Text("Screen recorders can’t hear the audiophile engine, and starting it can stop them. Record inside Svan instead: it saves the song as it arrived (dry) and as it leaves Svan (processed) as two sample-aligned 24-bit WAVs, plus a chart and a measured report.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            Spacer(Modifier.height(8.dp))
+            Text("For a video: screen-record with sound off, then lay either WAV under it in a video editor. Covers apps on the audiophile engine only, and Svan’s digital output, not your DAC, Bluetooth link or headphones.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
+            Spacer(Modifier.height(12.dp))
+            when (val st = state) {
+                is ProofRecorder.State.Recording -> {
+                    val secs = ((now - st.startedAtMs) / 1000).coerceAtLeast(0)
+                    Text("Recording · %d:%02d".format(secs / 60, secs % 60), style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = { ProofCapture.stop() }, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Svan.Gold, contentColor = Svan.OnGold)) { Text("Stop and save") }
+                }
+                is ProofRecorder.State.Finishing -> Text("Analysing and saving…", style = MaterialTheme.typography.bodyMedium, color = Svan.Gold)
+                is ProofRecorder.State.Done -> {
+                    val r = st.result
+                    Text("Saved · %.0f s".format(r.seconds), style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
+                    Text("Peak %.1f → %.1f dBFS · average %.1f → %.1f dBFS".format(r.dry.peakDbfs, r.processed.peakDbfs, r.dry.rmsDbfs, r.processed.rmsDbfs),
+                        style = MaterialTheme.typography.bodySmall)
+                    if (r.bands.isEmpty()) Text("No signal was captured. Play a song through the audiophile engine, then record again.",
+                        style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+                    if (r.processed.overs > 0) Text("${r.processed.overs} processed samples reached full scale.", style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+                    if (r.droppedFrames > 0) Text("${r.droppedFrames} frames dropped because storage fell behind.", style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+                    ProofCapture.lastLocation?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = { ProofCapture.dismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Done") }
+                }
+                is ProofRecorder.State.Failed -> {
+                    Text(st.message, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(onClick = { ProofCapture.dismiss() }, modifier = Modifier.fillMaxWidth()) { Text("OK") }
+                }
+                is ProofRecorder.State.Idle -> {
+                    if (error.isNotBlank()) Text(error, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+                    Button(
+                        onClick = { error = ""; runCatching { ProofCapture.start(context) }.onFailure { error = it.message ?: "Couldn’t start recording" } },
+                        enabled = engineRunning, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Svan.Gold, contentColor = Svan.OnGold),
+                    ) { Text(if (engineRunning) "Start recording" else "Start the audiophile engine first") }
+                }
+            }
+        }
     }
 }

@@ -203,6 +203,7 @@ class CaptureService : Service() {
                 if (n < 0) { if (running) EqController.log("capture: read failed ($n)"); break }
                 if (n == 0) continue
                 app.svan.listening.ClipRecorder.offer(buf,n)
+                app.svan.listening.ProofRecorder.offerDry(buf, n) // dry tap, before the DSP edits buf in place
                 var blockPeak = 0f
                 for (i in 0 until n) blockPeak = maxOf(blockPeak, kotlin.math.abs(buf[i]))
                 levelPeak = maxOf(levelPeak, blockPeak)
@@ -229,6 +230,7 @@ class CaptureService : Service() {
                     // tails masquerade as music. Processing resumes with the next non-zero block.
                     java.util.Arrays.fill(buf, 0, n, 0f)
                 }
+                app.svan.listening.ProofRecorder.commitWet(buf, n) // exactly what the AudioTrack receives
                 for (i in 0 until n) outputPeak = maxOf(outputPeak, kotlin.math.abs(buf[i]))
                 processedFrames += n / 2
                 var written = 0
@@ -256,6 +258,7 @@ class CaptureService : Service() {
             EqController.log("capture: audio loop failed: $e")
         } finally {
             running = false
+            app.svan.listening.ProofRecorder.stop()
             runCatching { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(playbackCallback) }
             activeRecord = null
             record?.let { runCatching { it.stop() }; it.release() }

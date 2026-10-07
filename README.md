@@ -38,6 +38,8 @@ The Audiophile engine captures the playback, runs it through the 64-bit C++ chai
 
 A fresh install starts on System effects with a flat curve and 0 dB preamp. More detail in [ARCHITECTURE.md](docs/ARCHITECTURE.md) and [AUDIOPHILE.md](docs/AUDIOPHILE.md).
 
+To show what the Audiophile engine does to a song, use Recording mode in Hi-Fi ([RECORDING_MODE.md](docs/RECORDING_MODE.md)); screen recorders can't capture that engine.
+
 ## Getting started
 
 1. Download the APK and `SHA256SUMS` from the [release page](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1) and check the hash with `sha256sum -c SHA256SUMS`. Keep Play Protect on. If Android blocks the install, stop and [send me the exact message](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml).
