@@ -13,6 +13,8 @@ jobs:
           cmake -S core -B build/core
           cmake --build build/core -j
           ./build/core/eqcore_tests
+      - name: Policy rule matrix is generated from the registry
+        run: ./build/core/eqcore_policy_doc | diff -u docs/audio-quality/POLICY_RULES.md -
       - name: Test with ASan + UBSan
         run: |
           cmake -S core -B build/asan -DEQCORE_SANITIZE=address,undefined -DCMAKE_BUILD_TYPE=Debug

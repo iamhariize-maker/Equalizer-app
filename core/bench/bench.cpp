@@ -45,6 +45,31 @@ int main() {
                 1000.0 * e.latencyFrames() / fs);
   }
 
+  std::printf("\nDetailed chain (Audiophile 4x + Bass Resolve/unmask + spatial residual + dynamic EQ), %d s of audio\n", seconds);
+  for (double rate : {44100.0, 48000.0, 96000.0}) {
+    EngineConfig cfg = EngineConfig::forQuality(QualityMode::Audiophile, rate, 2, 24);
+    cfg.spatialResidual = true;
+    Engine e(cfg);
+    e.setBandsAllChannels(bands);
+    e.setBassCharacter(0.6, 120.0);
+    e.setBassResolve(1.0);
+    e.setBassUnmask(1.0);
+    e.setDynamicEq(1.0);
+    e.setStereoTuner({0.4, 0.3, 0.5, 0.3, 0.6, 1.0, 1.0});
+    const long frames = static_cast<long>(rate) * seconds;
+    double worst = 0;
+    const auto t0 = std::chrono::steady_clock::now();
+    for (long done = 0; done < frames; done += block) {
+      for (auto& v : buf) v = u(rng);
+      const auto b0 = std::chrono::steady_clock::now();
+      e.process(buf.data(), buf.data(), block);
+      worst = std::max(worst, std::chrono::duration<double>(std::chrono::steady_clock::now() - b0).count());
+    }
+    const double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+    std::printf("  %6.0f Hz  %6.1fx realtime  %5.2f%% of one core  worst block %.2f ms of %.2f ms  latency %d frames (%.2f ms)\n", rate,
+                seconds / secs, 100.0 * secs / seconds, worst * 1000, 1000.0 * block / rate, e.latencyFrames(), 1000.0 * e.latencyFrames() / rate);
+  }
+
   std::printf("\nResampler, stereo, %d s of input per setting\n", seconds);
   const struct { int in, out; } pairs[] = {{44100, 48000}, {44100, 96000}, {48000, 192000}};
   for (const auto& p : pairs) {

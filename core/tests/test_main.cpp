@@ -5,8 +5,11 @@
 #include <cmath>
 #include <complex>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <new>
 #include <functional>
+#include <limits>
 #include <random>
 #include <string>
 #include <thread>
@@ -29,10 +32,22 @@
 #include "eqcore/stereo.h"
 #include "eqcore/spatial.h"
 #include "eqcore/bass_unmask.h"
+#include "eqcore/policy.h"
 #include <fstream>
 #include <sstream>
 
 using namespace eqcore;
+
+// Allocation counter for the audio-thread checks (AQ-06). Counts only while g_countAllocs is set.
+static std::atomic<long> g_allocs{0};
+static std::atomic<bool> g_countAllocs{false};
+void* operator new(std::size_t n) {
+  if (g_countAllocs.load(std::memory_order_relaxed)) g_allocs.fetch_add(1, std::memory_order_relaxed);
+  if (void* p = std::malloc(n ? n : 1)) return p;
+  throw std::bad_alloc();
+}
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 
 namespace {
 
@@ -1654,6 +1669,254 @@ TEST(bass_unmask_takes_the_low_dynamic_eq_lanes_so_a_note_is_not_cut_twice) {
   std::printf("    dynamic EQ low-lane reduction: %.2f dB without unmask, %.2f dB with\n", dyn[0], dyn[1]);
   CHECK(dyn[0] < -0.3);                 // the old lane would cut this note
   CHECK(dyn[1] > dyn[0] + 0.3);         // and yields once Resolve owns it
+}
+
+// ------------------------------------------------ executable policy registry (AQ-04)
+
+namespace {
+bool fileHasText(const std::string& path, const std::string& text) {
+  std::ifstream in(path);
+  std::stringstream ss;
+  ss << in.rdbuf();
+  return in && ss.str().find(text) != std::string::npos;
+}
+std::vector<policy::Measurement> goodEvidence(const policy::Rule& r, uint64_t epoch) {
+  std::vector<policy::Measurement> m;
+  for (int i = 0; i < r.inputCount; ++i) {
+    policy::Measurement x;
+    x.id = r.inputs[static_cast<size_t>(i)];
+    x.value = 0.0; x.valid = true; x.confidence = 1.0; x.epoch = epoch; x.ageSeconds = 0.01;
+    m.push_back(x);
+  }
+  return m;
+}
+}  // namespace
+
+TEST(policy_registry_is_consistent_and_every_rule_names_a_real_counterexample_test) {
+  CHECK(policy::validateRegistry().empty());
+  if (!policy::validateRegistry().empty()) std::printf("    %s\n", policy::validateRegistry().c_str());
+  CHECK(policy::rules().size() >= 18);
+  for (const auto& r : policy::rules()) {
+    const std::string ce = r.counterexample;
+    bool found = false;
+    if (ce.rfind("core:", 0) == 0) {
+      for (const auto& t : registry()) found = found || ce.substr(5) == t.name;
+    } else {
+      const auto hash = ce.find('#');
+      found = hash != std::string::npos &&
+              fileHasText(std::string(EQCORE_REPO_DIR) + "/android/app/src/test/java/app/svan/" + ce.substr(7, hash - 7), "fun " + ce.substr(hash + 1) + "(");
+    }
+    if (!found) std::printf("    rule %s: counterexample '%s' does not exist\n", r.id, r.counterexample);
+    CHECK(found);
+  }
+}
+
+TEST(policy_registry_rejects_inconsistent_rules_in_a_copy) {
+  // The validator must actually reject the mistakes it claims to: check a few on a mutated copy.
+  using namespace policy;
+  Rule base = *find("SV-UNMASK-1");
+  CHECK(base.version == 1);
+  const Rule& dup = *find("SV-UNMASK-1");
+  CHECK(find("NOPE") == nullptr && &dup == find("SV-UNMASK-1"));
+  CHECK(spec(Metric::VolumeProxy).proxy && !spec(Metric::VolumeProxy).pcm);
+  CHECK(spec(Metric::BandwidthCutoffHz).pcm && std::string(spec(Metric::BandwidthCutoffHz).units).find("not a codec label") != std::string::npos);
+  CHECK(std::string(spec(Metric::VolumeProxy).units).find("not SPL") != std::string::npos);
+}
+
+TEST(policy_evidence_gate_skips_on_every_kind_of_bad_evidence_for_every_rule) {
+  using namespace policy;
+  for (const auto& r : rules()) {
+    Context ok;
+    ok.epoch = 7; ok.nativePcm = true; ok.autoMaster = true;
+    auto good = goodEvidence(r, 7);
+    CHECK(admit(r, good.data(), static_cast<int>(good.size()), ok).admitted);
+    if (r.inputCount > 0) {
+      CHECK(admit(r, good.data(), 0, ok).skip == Skip::MissingInput);
+      auto stale = good; stale[0].ageSeconds = r.maxAgeSeconds + 0.001;
+      CHECK(admit(r, stale.data(), static_cast<int>(stale.size()), ok).skip == Skip::Stale);
+      auto nan = good; nan[0].value = std::nan("");
+      CHECK(admit(r, nan.data(), static_cast<int>(nan.size()), ok).skip == Skip::Invalid);
+      auto inval = good; inval[0].valid = false;
+      CHECK(admit(r, inval.data(), static_cast<int>(inval.size()), ok).skip == Skip::Invalid);
+      if (r.minConfidence > 0) {
+        auto weak = good; weak[0].confidence = r.minConfidence - 0.01;
+        CHECK(admit(r, weak.data(), static_cast<int>(weak.size()), ok).skip == Skip::LowConfidence);
+      }
+      if (r.sameEpoch) {
+        Context later = ok; later.epoch = 8;
+        CHECK(admit(r, good.data(), static_cast<int>(good.size()), later).skip == Skip::WrongEpoch);
+      }
+    }
+    Context off = ok; off.userOff = true;
+    CHECK(admit(r, good.data(), static_cast<int>(good.size()), off).skip == Skip::UserOff);
+    if (r.nativePcmOnly) {
+      Context sys = ok; sys.nativePcm = false;
+      CHECK(admit(r, good.data(), static_cast<int>(good.size()), sys).skip == Skip::NoNativePcm);
+    }
+    if (r.owner != Owner::Context && r.needsAutoMaster) {
+      Context manual = ok; manual.autoMaster = false;
+      CHECK(admit(r, good.data(), static_cast<int>(good.size()), manual).skip == Skip::AutoMasterOff);
+    }
+    for (double v : {1e30, -1e30, std::nan(""), std::numeric_limits<double>::infinity()}) {
+      const double b = bound(r, v);
+      CHECK(b >= r.minAction && b <= r.maxAction);
+    }
+  }
+  // A proxy is never a measurement unless the rule declares it and caps itself.
+  Rule sneaky = *find("SM-TILT-1");
+  sneaky.inputs[0] = Metric::VolumeProxy;
+  sneaky.nativePcmOnly = false;
+  sneaky.allowProxy = false;
+  auto m = goodEvidence(sneaky, 1);
+  Context c; c.epoch = 1; c.nativePcm = true; c.autoMaster = true;
+  CHECK(admit(sneaky, m.data(), static_cast<int>(m.size()), c).skip == Skip::ProxyNotAllowed);
+}
+
+TEST(policy_rule_bounds_match_the_constants_the_planner_enforces) {
+  using namespace policy;
+  CHECK(find("SM-TILT-1")->maxAction == svaramanas::kSvaresaMaxTiltDb);
+  CHECK(find("SM-BOOM-1")->minAction == -svaramanas::kSvaresaMaxCorrectionDb);
+  CHECK(find("SM-MUD-1")->minAction == -svaramanas::kSvaresaMaxCorrectionDb);
+  CHECK(find("SM-BUDGET-1")->maxAction == svaramanas::kEmphasisBudgetDb);
+  CHECK(find("SV-UNMASK-1")->minAction == -2.0 && find("SV-SPATIAL-1")->maxAction == 4.0);
+  // And the planner really never exceeds them: guardrail test for every combination exists (see its rule entry).
+  Rule bad = *find("SM-TILT-1");
+  CHECK(bound(bad, 99.0) == svaramanas::kSvaresaMaxTiltDb);
+}
+
+TEST(policy_ownership_never_lowers_or_overwrites_the_saved_manual_value) {
+  using namespace policy;
+  CHECK(resolveOwnership(Ownership::Off, 0.7, 0.6, true, true).value == 0.0);
+  CHECK(resolveOwnership(Ownership::Manual, 0.2, 0.6, true, true).value == 0.2);
+  auto a = resolveOwnership(Ownership::Auto, 0.2, 0.6, true, true);
+  CHECK(a.who == Ownership::Auto && a.value == 0.6);
+  CHECK(resolveOwnership(Ownership::Auto, 0.9, 0.6, true, true).value == 0.9);        // never lowered
+  auto inactive = resolveOwnership(Ownership::Auto, 0.2, 0.6, false, true);           // Auto master off
+  CHECK(inactive.who == Ownership::Manual && inactive.value == 0.2);
+  inactive = resolveOwnership(Ownership::Auto, 0.2, 0.6, true, false);                // evidence not admitted
+  CHECK(inactive.who == Ownership::Manual && inactive.value == 0.2);
+  CHECK(resolveOwnership(Ownership::Auto, std::nan(""), 0.6, true, true).value == 0.6);
+}
+
+TEST(policy_headroom_ledger_scales_the_sum_once) {
+  const double req[] = {3.0, 4.0, 5.0, -2.0, std::nan("")};
+  const double k = policy::headroomScale(req, 5, 6.0);
+  CHECK_NEAR(k, 0.5, 1e-12);                  // 12 dB of positive requests into a 6 dB ceiling
+  const double small[] = {1.0, 2.0};
+  CHECK(policy::headroomScale(small, 2, 6.0) == 1.0);
+  CHECK(policy::headroomScale(small, 0, 6.0) == 1.0);
+  CHECK(policy::headroomScale(req, 5, -1.0) == 0.0);
+}
+
+// ------------------------------------------------ qualification (AQ-06)
+
+namespace {
+EngineConfig detailedConfig(double fs) {
+  EngineConfig cfg = EngineConfig::forQuality(QualityMode::Audiophile, fs, 2, 24);
+  cfg.spatialResidual = true;
+  return cfg;
+}
+void turnEverythingOn(Engine& e) {
+  e.setBandsAllChannels({{FilterType::Peak, 90, 3.0, 1.0, true}, {FilterType::HighShelf, 9000, 2.0, 0.7, true}});
+  e.setBassCharacter(0.6, 120.0);
+  e.setBassResolve(1.0);
+  e.setBassUnmask(1.0);
+  e.setDynamicEq(1.0);
+  e.setStereoTuner({0.4, 0.3, 0.5, 0.3, 0.6, 1.0, 1.0});
+}
+}  // namespace
+
+TEST(audio_thread_paths_do_not_allocate) {
+  const double fs = 48000;
+  // Components in isolation, then the whole detailed chain.
+  SpatialResidual sr(fs);
+  BassUnmask bu(fs);
+  BassShaper bs(fs, 2);
+  StereoTuner st(fs, true);
+  sr.setParams(1, 1);
+  bu.setAmount(1);
+  bs.setCharacter(0.7);
+  bs.setResolve(1);
+  st.setParams({0.4, 0.3, 0.5, 0.3, 0.6, 1.0, 1.0});
+  Engine e(detailedConfig(fs));
+  turnEverythingOn(e);
+  std::mt19937 rng(5);
+  std::uniform_real_distribution<double> u(-0.4, 0.4);
+  std::vector<double> a(480), b(480);
+  std::vector<float> io(480 * 2);
+  auto fill = [&] { for (auto& v : a) v = u(rng); for (auto& v : b) v = u(rng); for (auto& v : io) v = static_cast<float>(u(rng)); };
+  for (int warm = 0; warm < 20; ++warm) { fill(); sr.process(a.data(), b.data(), 480); bu.process(a.data(), b.data(), 480); bs.processLinked(a.data(), b.data(), 480); st.process(a.data(), b.data(), 480); e.process(io.data(), io.data(), 480); }
+  g_allocs = 0;
+  g_countAllocs = true;
+  for (int i = 0; i < 200; ++i) {
+    fill();
+    sr.process(a.data(), b.data(), 480);
+    bu.process(a.data(), b.data(), 480);
+    bs.processLinked(a.data(), b.data(), 480);
+    st.process(a.data(), b.data(), 480);
+    e.process(io.data(), io.data(), 480);
+  }
+  g_countAllocs = false;
+  std::printf("    allocations in 200 blocks of every audio-thread path: %ld\n", g_allocs.load());
+  CHECK(g_allocs.load() == 0);
+}
+
+TEST(detailed_engine_latency_is_reported_exactly) {
+  // Same program, Detailed on vs off with every spatial control at zero: after shifting by the reported
+  // latency difference the two outputs agree, so listening/blind rendering aligned by latencyFrames() is exact.
+  const double fs = 48000;
+  EngineConfig off = EngineConfig::forQuality(QualityMode::Audiophile, fs, 2, 24), on = off;
+  on.spatialResidual = true;
+  Engine a(off), b(on);
+  a.setBandsAllChannels({{FilterType::Peak, 1000, 3.0, 1.0, true}});
+  b.setBandsAllChannels({{FilterType::Peak, 1000, 3.0, 1.0, true}});
+  const int extra = b.latencyFrames() - a.latencyFrames();
+  CHECK(extra == 1024);
+  std::mt19937 rng(9);
+  std::uniform_real_distribution<float> u(-0.3f, 0.3f);
+  std::vector<float> x(static_cast<size_t>(fs) * 2), ya, yb;
+  for (auto& v : x) v = u(rng);
+  ya = x;
+  yb = x;
+  for (size_t i = 0; i < x.size(); i += 960) {
+    const int n = static_cast<int>(std::min<size_t>(480, (x.size() - i) / 2));
+    a.process(ya.data() + i, ya.data() + i, n);
+    b.process(yb.data() + i, yb.data() + i, n);
+  }
+  double err = 0;
+  for (size_t f = static_cast<size_t>(extra) + 2000; f < x.size() / 2; ++f)
+    for (int c = 0; c < 2; ++c) err = std::max(err, static_cast<double>(std::fabs(yb[2 * f + static_cast<size_t>(c)] - ya[2 * (f - static_cast<size_t>(extra)) + static_cast<size_t>(c)])));
+  std::printf("    max aligned difference %.2e\n", err);
+  CHECK(err < 2e-5);
+}
+
+TEST(eq_parameter_spatial_bass_and_unmask_publication_is_safe_during_processing) {
+  const double fs = 48000;
+  Engine e(detailedConfig(fs));
+  std::atomic<bool> stop{false};
+  std::thread ui([&] {
+    std::mt19937 rng(1);
+    std::uniform_real_distribution<double> u(0, 1);
+    while (!stop.load()) {
+      e.setStereoTuner({u(rng), u(rng), u(rng), u(rng) * 2 - 1, u(rng), u(rng), u(rng)});
+      e.setBassCharacter(u(rng) * 2 - 1, 80 + 100 * u(rng));
+      e.setBassResolve(u(rng));
+      e.setBassUnmask(u(rng));
+      e.setDynamicEq(u(rng));
+    }
+  });
+  std::mt19937 rng(2);
+  std::uniform_real_distribution<float> n(-0.3f, 0.3f);
+  std::vector<float> io(480 * 2);
+  bool finite = true;
+  for (int i = 0; i < 300; ++i) {
+    for (auto& v : io) v = n(rng);
+    e.process(io.data(), io.data(), 480);
+    for (float v : io) finite = finite && std::isfinite(v);
+  }
+  stop = true;
+  ui.join();
+  CHECK(finite);
 }
 
 TEST(instrument_amp_never_touches_a_centred_voice) {

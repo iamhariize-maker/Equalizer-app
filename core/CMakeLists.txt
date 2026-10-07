@@ -32,6 +32,7 @@ add_library(eqcore STATIC
   src/stereo.cpp
   src/spatial.cpp
   src/bass_unmask.cpp
+  src/policy.cpp
   src/dither.cpp
   src/autoeq.cpp
   src/true_peak.cpp
@@ -57,8 +58,11 @@ if(EQCORE_BUILD_TESTS)
   enable_testing()
   add_executable(eqcore_tests tests/test_main.cpp)
   target_link_libraries(eqcore_tests PRIVATE eqcore)
-  target_compile_definitions(eqcore_tests PRIVATE EQCORE_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
+  target_compile_definitions(eqcore_tests PRIVATE EQCORE_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/data" EQCORE_REPO_DIR="${CMAKE_CURRENT_SOURCE_DIR}/..")
   add_test(NAME eqcore_tests COMMAND eqcore_tests)
+
+  add_executable(eqcore_policy_doc tools/policy_doc.cpp)
+  target_link_libraries(eqcore_policy_doc PRIVATE eqcore)
 
   add_executable(eqcore_bench bench/bench.cpp)
   target_link_libraries(eqcore_bench PRIVATE eqcore)
