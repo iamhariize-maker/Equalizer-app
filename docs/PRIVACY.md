@@ -1,3 +1,6 @@
+> **Removed 7 October 2026:** optional player recognition (notification access) is gone. Play Protect
+> flagged it as a financial-fraud risk in sideloaded builds. Svan declares no notification listener.
+
 # Svan Privacy Policy (beta)
 
 Svan processes audio locally on your Android device. The app does not upload,
@@ -20,28 +23,29 @@ measured levels. The app does not automatically send these logs. Share logs or
 screenshots only if you choose to do so. There is no advertising or analytics SDK
 in the current dependency list. Uninstalling the app removes its local data.
 
-Optional enhanced detection uses the Shizuku API after explicit user approval.
-It sends one fixed `grant` request to Android's package service through the
-authorized Shizuku binder to grant only Svan the Android DUMP permission, for the
-app's Android user. It accepts no arbitrary shell commands, targets or permissions,
-and starts no separate privileged helper process. A temporary private file holds
-only the grant's result/error text and is deleted after the request returns.
-This lets Svan read Android's
-local audio-session report to find playing apps; the report is not uploaded.
-Shizuku and wireless debugging can be stopped after the grant. Setup links open
-Shizuku's official website in the user's browser. The Shizuku API is MIT licensed;
-its notice is included in the APK's assets/licenses directory.
+Optional enhanced detection uses the Shizuku API after user approval. A read-only
+UserService runs as Android shell and reads only the fixed `audio` and
+`media.audio_flinger` reports. It accepts no arbitrary shell commands, paths,
+target packages or permission grants. Reads have byte/time limits; audio reports
+stay local. Only if the user taps "Keep enhanced detection without Shizuku" does Svan,
+while Shizuku is connected, run the one package-manager command `grant app.svan
+android.permission.DUMP` (the same as `adb shell pm grant`), for itself and that one
+permission only, so Shizuku can be uninstalled. Svan still reads only the two fixed
+audio reports. Uninstalling Svan removes the grant. Existing/manual DUMP grants remain
+supported. Shell detection needs Shizuku running and may need
+restarting after a phone reboot. Stopping Shizuku leaves basic player-session
+broadcast detection active. Setup links open Shizuku's official website in the
+user's browser. The Shizuku API is MIT licensed; its notice is included in assets.
 
-This describes the current preview implementation. A store release still needs
+Notification-access player recognition has been removed. This build declares no
+notification listener and requests no access to other apps' notifications, SMS or
+accessibility services. POST_NOTIFICATIONS allows Svan to show its own notifications.
+Session broadcasts and the fixed audio reports described above provide detection.
+Recognition does not prove that an output path accepts effects or playback capture.
+
+This describes the 0.5.6 implementation. A store release still needs
 an owner-approved policy URL/contact and Play Console disclosures matching the
 final package, including its foreground-service and MediaProjection uses.
-
-Svan 0.5.2 removes player recognition and notification-listener access entirely.
-There is no notification-listener service, settings link or notification-reading
-permission. POST_NOTIFICATIONS is retained only to show Svan's own foreground
-service/status notifications; it does not allow reading other apps' notifications.
-Music discovery uses Android audio reports, playback callbacks and player
-session broadcasts. The working Shizuku detection grant remains available.
 
 ## Optional blind listening and calibration
 
@@ -50,8 +54,7 @@ blocked. Captured/WAV excerpts stay in memory and are discarded when the dialog 
 not uploaded or saved as recordings. Only local votes, measured level match, timestamp, headphone
 name and a frozen-configuration hash are saved; Clear results deletes them. Imported calibration
 curves and their hashes are stored privately for re-tuning. Published AutoEq data are fetched using
-the existing network path; listening recordings and preferences are never sent. No new permission
-or notification access is introduced.
+the existing network path; listening recordings and preferences are never sent. The listening/calibration feature adds no permissions.
 
 Settings export writes EQ, presets, Svaresa/audio preferences and active calibration curves only
 to a file you choose. The file may identify your headphone. It contains no recordings, listening

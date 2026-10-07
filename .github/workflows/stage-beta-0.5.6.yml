@@ -1,0 +1,180 @@
+name: Stage verified 0.5.6 beta assets
+
+on:
+  push:
+    branches: [claude/codex-audio-crackling-amplifier-gkj007]
+    paths:
+      - .github/workflows/stage-beta-0.5.6.yml
+      - docs/releases/v0.5.6-beta-payload.json
+
+permissions: {}
+concurrency:
+  group: stage-owner-beta-0.5.6
+  cancel-in-progress: false
+
+jobs:
+  ci-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      source_run: ${{ steps.ci.outputs.source_run }}
+    steps:
+      - name: Wait for both complete CI runs on this commit
+        id: ci
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == iamhariize-maker/Equalizer-app ]]
+          [[ "$GITHUB_REF_NAME" == claude/codex-audio-crackling-amplifier-gkj007 ]]
+          for ((attempt=0;attempt<140;attempt++)); do
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&per_page=20" > runs.json
+            jq --arg sha "$GITHUB_SHA" '[.workflow_runs[] | select(.head_sha == $sha and (.event == "push" or .event == "pull_request"))]' runs.json > matching.json
+            if jq -e 'any(.[]; .status == "completed" and .conclusion != "success")' matching.json >/dev/null; then
+              jq '[.[] | {event, status, conclusion, html_url}]' matching.json
+              echo 'CI failed; no beta assets will be attached.'
+              exit 1
+            fi
+            if jq -e 'any(.[]; .event == "push") and any(.[]; .event == "pull_request") and all(.[]; .status == "completed" and .conclusion == "success")' matching.json >/dev/null; then
+              run=$(jq -r '[.[] | select(.event == "push")][0].id' matching.json)
+              [[ "$run" =~ ^[0-9]+$ ]]
+              printf 'source_run=%s\n' "$run" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo 'Waiting for the complete source and PR CI runs.'
+            sleep 30
+          done
+          echo 'CI did not finish within the staging deadline.'
+          exit 1
+
+  verify:
+    needs: ci-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: 'build-tools;36.0.0'
+          log-accepted-android-sdk-licenses: false
+      - name: Retrieve the signed public APK and fresh tested fixture
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN: ${{ needs.ci-gate.outputs.source_run }}
+        run: |
+          set -euo pipefail
+          record=docs/releases/v0.5.6-beta-payload.json
+          jq -e '.release_id == 405434911 and .release_tag == "v0.5.6-beta.1" and .source_commit == "64b5ae05181bab2d52535525e5d613cad2fbb78e" and .apk_sha256 == "e246bdecab364dad7eb342ed21a1079c8a860a6d75102129526d23a6d0b60ea4"' "$record" >/dev/null
+          # Only documentation and this upload workflow may differ from the tested source.
+          git diff --name-only 64b5ae05181bab2d52535525e5d613cad2fbb78e "$GITHUB_SHA" > changed.txt
+          while IFS= read -r path; do
+            case "$path" in docs/*|.github/workflows/stage-beta-0.5.6.yml) ;; *) echo "Unexpected source change: $path"; exit 1 ;; esac
+          done < changed.txt
+          blob=$(jq -r '.github_apk_blob_sha' "$record")
+          name=$(jq -r '.apk_filename' "$record")
+          [[ "$blob" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$name" == Svan-0.5.6-owner-signed-64b5ae0.apk ]]
+          mkdir -p candidate tested
+          gh api "repos/$GITHUB_REPOSITORY/git/blobs/$blob" --jq .content | base64 --decode > "candidate/$name"
+          [[ $(wc -c < "candidate/$name") -eq $(jq -r '.apk_size' "$record") ]]
+          [[ $(sha256sum "candidate/$name" | awk '{print $1}') == $(jq -r '.apk_sha256' "$record") ]]
+          gh run download "$CI_RUN" --repo "$GITHUB_REPOSITORY" --name Svan-production-test-build --dir tested
+          cp "$record" candidate/asset.json
+      - name: Verify owner identity and unchanged payload against fresh green CI
+        env:
+          CI_RUN: ${{ needs.ci-gate.outputs.source_run }}
+        run: |
+          set -euo pipefail
+          sdkmanager 'build-tools;36.0.0' >/dev/null
+          export SVAN_BUILD_TOOLS_DIR="$ANDROID_HOME/build-tools/36.0.0"
+          name=$(jq -r '.apk_filename' candidate/asset.json)
+          bash android/scripts/verify_release.sh "candidate/$name"
+          bash android/scripts/test_verify_release.sh "candidate/$name"
+          "$SVAN_BUILD_TOOLS_DIR/aapt2" dump xmltree "candidate/$name" --file AndroidManifest.xml > candidate/manifest.txt
+          python3 android/scripts/check_manifest_permissions.py candidate/manifest.txt
+          python3 - <<'PY'
+          import hashlib, json, os, zipfile
+          from pathlib import Path
+          record_path = Path('candidate/asset.json')
+          record = json.loads(record_path.read_text())
+          def entries(path):
+              with zipfile.ZipFile(path) as z:
+                  names = z.namelist()
+                  assert len(names) == len(set(names)), 'Duplicate ZIP entries'
+                  return {n: hashlib.sha256(z.read(n)).hexdigest() for n in sorted(names)}
+          tested = entries('tested/Svan-production-test.apk')
+          signed = entries(Path('candidate') / record['apk_filename'])
+          assert tested == signed, 'Signed APK differs from the fresh tested production payload'
+          assert len(signed) == record['zip_entries'] == 73
+          digest = hashlib.sha256(json.dumps(signed, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+          assert digest == record['payload_sha256']
+          assert {n: h for n, h in signed.items() if n.endswith('.so')} == record['native_library_sha256']
+          record['staging_validation_ci_run'] = int(os.environ['CI_RUN'])
+          record_path.write_text(json.dumps(record, indent=2) + '\n')
+          print('PASS all 73 payload entries match fresh green CI; all four native libraries identical')
+          PY
+          (cd candidate && sha256sum -- "$name" > SHA256SUMS)
+          cmp candidate/SHA256SUMS docs/releases/SHA256SUMS-v0.5.6-beta.1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verified-owner-beta-0.5.6-assets
+          path: |
+            candidate/*.apk
+            candidate/SHA256SUMS
+            candidate/asset.json
+          if-no-files-found: error
+          retention-days: 7
+
+  attach-to-draft:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: verified-owner-beta-0.5.6-assets
+          path: verified
+      - name: Attach verified public assets without publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == iamhariize-maker/Equalizer-app ]]
+          tag=$(jq -r '.release_tag' verified/asset.json)
+          name=$(jq -r '.apk_filename' verified/asset.json)
+          release_id=$(jq -r '.release_id' verified/asset.json)
+          [[ "$tag" == v0.5.6-beta.1 && "$release_id" == 405434911 ]]
+          [[ "$name" == Svan-0.5.6-owner-signed-64b5ae0.apk ]]
+          [[ $(wc -l < verified/SHA256SUMS) -eq 1 ]]
+          [[ $(awk '{print $2}' verified/SHA256SUMS) == "$name" ]]
+          [[ $(awk '{print $1}' verified/SHA256SUMS) == $(jq -r '.apk_sha256' verified/asset.json) ]]
+          [[ $(wc -c < "verified/$name") -eq $(jq -r '.apk_size' verified/asset.json) ]]
+          (cd verified && sha256sum -c SHA256SUMS)
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > draft.json
+          jq -e --arg tag "$tag" --arg name "$name" --arg digest "sha256:$(jq -r '.apk_sha256' verified/asset.json)" '
+            .draft == true and .prerelease == true and .tag_name == $tag and
+            all(.assets[] | select(.name | endswith(".apk")); .name == $name and .digest == $digest)
+          ' draft.json >/dev/null
+          # This job executes no checked-out verifier/APK and receives no signing inputs.
+          gh release upload "$tag" "verified/$name" verified/SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
+          gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" > uploaded.json
+          jq -e --arg name "$name" --arg digest "sha256:$(jq -r '.apk_sha256' verified/asset.json)" '
+            ([.assets[] | select(.name | endswith(".apk"))] | length) == 1 and
+            any(.assets[]; .name == $name and .digest == $digest) and
+            any(.assets[]; .name == "SHA256SUMS") and .draft == true
+          ' uploaded.json >/dev/null

@@ -2,14 +2,14 @@ package app.svan
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import rikka.shizuku.Shizuku
-import kotlin.concurrent.thread
 
-/** Phone-only setup; normal playback needs neither Shizuku nor wireless debugging afterwards. */
+/** Optional shell reports; basic detection remains usable without setup. */
 object DetectionSetup {
     const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
     enum class Stage { INSTALL, START, AUTHORIZE, WORKING, READY, ERROR }
@@ -19,35 +19,31 @@ object DetectionSetup {
     private lateinit var context: Context
     private val main = Handler(Looper.getMainLooper())
     private var initialized = false
-    private var busy = false
-    @Volatile private var grantPending = false
-    private val grantLog = ArrayDeque<String>()
-    private var generation = 0
 
     fun init(ctx: Context) {
         if (initialized) return
         context = ctx.applicationContext
         initialized = true
-        Shizuku.addBinderReceivedListenerSticky { main.post { refresh() } }
-        Shizuku.addBinderDeadListener { main.post {
-            if (busy) finish("Shizuku stopped. Open it, start it, then try again.") else refresh()
-        } }
+        Shizuku.addBinderReceivedListenerSticky { main.post { ShizukuAudioReports.connect(context, retry = true); refresh() } }
+        Shizuku.addBinderDeadListener { main.post { ShizukuAudioReports.disconnect(); refresh(); SystemEqService.refreshDetection(context) } }
         Shizuku.addRequestPermissionResultListener { code, result -> main.post {
             if (code == REQUEST) {
-                if (result == PackageManager.PERMISSION_GRANTED) grant()
-                else mutableState.value = State(Stage.ERROR, "Detection permission was declined. You can allow Svan in Shizuku's Authorized applications, then retry.")
+                if (result == PackageManager.PERMISSION_GRANTED) { ShizukuAudioReports.connect(context, retry = true); refresh() }
+                else mutableState.value = State(Stage.ERROR, "Svan was not approved in Shizuku. You can continue with basic detection, or allow Svan in Shizuku's Authorized applications and retry.")
             }
         } }
         refresh()
     }
 
     fun refresh(clearError: Boolean = false) {
-        if (!initialized || busy) return
-        val ready = PlaybackSessions.hasDumpPermission(context)
-        // A visible failure must survive live polling until Retry (or a real late grant).
-        if (!ready && !clearError && mutableState.value.stage == Stage.ERROR) return
+        if (!initialized) return
+        val shell = ShizukuAudioReports.state.value
         mutableState.value = when {
-            ready -> State(Stage.READY, "Enhanced app detection is enabled.")
+            PlaybackSessions.hasDumpPermission(context) -> State(Stage.READY, "Enhanced detection is built into Svan; Shizuku is not needed.")
+            ShizukuAudioReports.ready -> State(Stage.READY, "Enhanced detection is on while Shizuku is running. No app permission grant was needed.")
+            shell.stage == ShizukuAudioReports.Stage.CONNECTING -> State(Stage.WORKING, "Checking music detection…")
+            shell.stage == ShizukuAudioReports.Stage.ERROR && !clearError -> State(Stage.ERROR, detectionOemAdvice(Build.MANUFACTURER, shell.detail))
+            !clearError && state.value.stage == Stage.ERROR -> return
             runCatching { Shizuku.pingBinder() }.getOrDefault(false) -> State(Stage.AUTHORIZE)
             runCatching { context.packageManager.getApplicationInfo(SHIZUKU_PACKAGE, 0) }.isSuccess -> State(Stage.START)
             else -> State(Stage.INSTALL)
@@ -55,85 +51,26 @@ object DetectionSetup {
     }
 
     fun enable() {
-        if (busy) return
+        if (!initialized || state.value.stage == Stage.WORKING) return
         refresh(clearError = true)
-        if (mutableState.value.stage == Stage.READY) {
-            SystemEqService.refreshDetection(context)
-            return
-        }
-        if (mutableState.value.stage != Stage.AUTHORIZE) return
+        if (state.value.stage == Stage.READY) { SystemEqService.refreshDetection(context); return }
+        if (state.value.stage != Stage.AUTHORIZE) return
         try {
-            if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) grant()
-            else if (Shizuku.shouldShowRequestPermissionRationale()) {
-                mutableState.value = State(Stage.ERROR, "Open Shizuku → Authorized applications and allow Svan, then retry.")
-            } else Shizuku.requestPermission(REQUEST)
+            if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) { ShizukuAudioReports.connect(context, retry = true); refresh() }
+            else if (Shizuku.shouldShowRequestPermissionRationale()) mutableState.value = State(Stage.ERROR, "Open Shizuku → Authorized applications and allow Svan, then retry. Basic detection stays available.")
+            else Shizuku.requestPermission(REQUEST)
         } catch (e: RuntimeException) {
-            record("permission request failed: ${e.javaClass.simpleName}: ${e.message}")
-            mutableState.value = State(Stage.ERROR, "Could not ask Shizuku for access. Open Shizuku and retry.")
+            EqController.log("detection setup: permission request failed: ${e.javaClass.simpleName}")
+            mutableState.value = State(Stage.ERROR, "Could not connect to Shizuku. Basic detection stays available. Open Shizuku and retry.")
         }
-    }
-
-    private fun record(message: String) {
-        val line = "${System.currentTimeMillis()}: $message"
-        synchronized(grantLog) {
-            grantLog.addLast(line)
-            while (grantLog.size > 12) grantLog.removeFirst()
-        }
-        EqController.log("detection setup: $message")
     }
 
     fun diagnostics(): String = buildString {
         appendLine("Setup stage: ${state.value.stage} · ${state.value.message}")
-        appendLine("Grant in flight: $grantPending")
+        if (initialized) appendLine("App DUMP granted: ${PlaybackSessions.hasDumpPermission(context)}")
+        appendLine("Shell reports: ${ShizukuAudioReports.state.value}")
         appendLine("Shizuku running: ${runCatching { Shizuku.pingBinder() }.getOrDefault(false)}")
-        appendLine("Shizuku API version: ${runCatching { Shizuku.getVersion() }.getOrNull() ?: "unavailable"}")
-        appendLine("Shizuku authorization granted: ${runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false)}")
-        synchronized(grantLog) { grantLog.forEach { appendLine(it) } }
+        appendLine("Shizuku authorization: ${runCatching { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false)}")
     }
-
-    private fun grant() {
-        if (busy) return
-        if (grantPending) {
-            mutableState.value = State(Stage.ERROR, "The previous grant request is still waiting for Android. No second request was started. Share report if it stays blocked.")
-            return
-        }
-        busy = true
-        grantPending = true
-        val attempt = ++generation
-        mutableState.value = State(Stage.WORKING, "Granting Svan's audio-session access through Shizuku…")
-        record("requesting fixed DUMP grant through direct package binder")
-        // No UserService/app_process launch: it timed out on the owner's HiOS device despite Shizuku running.
-        thread(name = "svan-detection-grant") {
-            val result = runCatching { ShizukuDetectionGrant.enable(context) }
-                .getOrElse { "Detection grant failed: ${it.javaClass.simpleName}: ${it.message}" }
-            main.post {
-                grantPending = false
-                if (busy && attempt == generation) finish(if (result == "OK") null else result)
-                else {
-                    record("late grant response: $result")
-                    // A late successful grant is real access, even after the UI deadline expired.
-                    if (PlaybackSessions.hasDumpPermission(context)) { refresh(); SystemEqService.refreshDetection(context) }
-                }
-            }
-        }
-        main.postDelayed({
-            if (busy && attempt == generation) finish("Shizuku is authorized, but Android did not answer the audio-session permission request. Detection is still disabled. Share report for the setup details.")
-        }, 15_000)
-    }
-
-    private fun finish(error: String?) {
-        busy = false
-        generation++
-        if (PlaybackSessions.hasDumpPermission(context)) {
-            mutableState.value = State(Stage.READY, "Enhanced app detection is enabled. Play music and check its route below.")
-            record("granted via Shizuku (direct package binder)")
-            SystemEqService.refreshDetection(context)
-        } else {
-            val reason = error ?: "Android did not grant detection access. Please retry."
-            record(reason)
-            mutableState.value = State(Stage.ERROR, detectionGrantFailureMessage(grantPending))
-        }
-    }
-
     private const val REQUEST = 369
 }

@@ -21,11 +21,30 @@ import kotlinx.coroutines.withContext
 fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
     val context = LocalContext.current
     val report by PlaybackSessions.report.collectAsState()
+    val shell by app.svan.ShizukuAudioReports.state.collectAsState()
     var showDetails by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(app.svan.OnboardingAndroid.working(context)) }
-    ObserveWhileVisible { working = app.svan.OnboardingAndroid.working(context) }
+    var wholeMix by remember { mutableStateOf(app.svan.EqController.globalEq.mixFallbackOn) }
+    val settings by app.svan.SvanRepository.settings.collectAsState()
+    ObserveWhileVisible {
+        working = app.svan.OnboardingAndroid.working(context)
+        wholeMix = app.svan.EqController.globalEq.mixFallbackOn
+    }
     SectionLabel("Music detection")
+    Text(when {
+        shell.stage == app.svan.ShizukuAudioReports.Stage.READY && app.svan.ShizukuAudioReports.ready -> "Enhanced detection · Shizuku is connected"
+        PlaybackSessions.hasDumpPermission(context) -> "Enhanced detection · built into Svan (Shizuku not needed)"
+        else -> "Basic detection · no extra setup needed for supported players"
+    }, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+    KeepEnhancedCard()
     WorkingStatusCard(working, stats = captureStats)
+    if (wholeMix) Text("A player is hiding its audio connection, so your EQ is on the whole phone output for now " +
+        "(notification sounds included). It switches back as soon as a player connects.",
+        style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+    SettingSwitchRow("Whole-phone EQ for hidden players",
+        "When a playing app doesn't announce its audio and none is connected, apply your EQ to the whole output mix. " +
+            "No extra permission. Some phones allow it only on the speaker.",
+        settings.wholeMixFallback, { on -> app.svan.SvanRepository.updateSettings { it.copy(wholeMixFallback = on) }; SystemEqService.refreshDetection(context) })
     SvanCard {
         Column {
             SetupHelpLinks()

@@ -11,8 +11,8 @@ import kotlin.math.*
 
 /** Offline release regression probe. Never plays test tones or changes the listener's settings. */
 object QualityLab {
-    fun verify(context: Context) {
-        val fs=48000;val tone=FloatArray(fs*2)
+    fun verify(context: Context, fs: Int = app.svan.CaptureService.epoch?.sampleRate ?: app.svan.RatePolicy.SAFE_HZ) {
+        val tone=FloatArray(fs*2)
         repeat(fs){tone[it*2]=(1.35*sin(PI*.5*it+PI*.25)).toFloat();tone[it*2+1]=tone[it*2]}
         val before=NativeEngine.nativeReconstructedPeak(tone,fs)
         NativeEngine(fs,2,NativeEngine.Quality.EFFICIENT).use {it.process(tone,tone,fs)}
@@ -33,6 +33,7 @@ object QualityLab {
         val data=JSONObject().put("truePeakBefore",before).put("truePeakAfter",after).put("dynamicDb",dynamic[1])
             .put("calibrationRmsDb",calibration.fit.rmsErrorDb).put("matchDb",abs(r.levels[2]-r.levels[3]))
             .put("trimOriginalDb",r.levels[4]).put("trimProcessedDb",r.levels[5]).put("levelOriginal",r.levels[2]).put("levelProcessed",r.levels[3])
+        AudioQualityLab.verify()
         File(context.filesDir,"quality-lab.json").writeText(data.toString());EqController.log("QUALITY_LAB_READY $data")
     }
 }

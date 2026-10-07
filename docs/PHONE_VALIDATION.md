@@ -38,6 +38,22 @@ observations with date, source player and output route; emulator tests cannot es
 ---
 
 # Current onboarding validation (after a603146)
+# 0.5.6 owner evidence and remaining phone checks
+
+On 7 October 2026 the owner reports working playback on the current TECNO LH7n preview.
+Their photo shows Spotify routed through Audiophile with live capture peaks. BHIM and GPay
+work after Shizuku is uninstalled while Developer options remain enabled; the owner did not
+need to disable Developer options. This is owner-reported evidence for that phone/preview,
+not a result for the final owner-signed beta or every payment app.
+
+For the final beta, verify installation/update, retained settings/grant, a fresh explicit
+keep-enhanced grant, reboot, screen-off playback and output changes. Record the actual player,
+engine and output path. Test LG V60, Bluetooth and other phone/payment combinations separately.
+Keep Play Protect enabled. See [release readiness](RELEASE_READINESS.md) and
+[preview migration](MOVING_FROM_PREVIEW.md). No need to repeat a successful payment test merely
+because Developer options remain enabled; record their actual state with each result.
+
+# Earlier onboarding validation (after a603146)
 
 Use `Svan-0.5.5-owner-signed-fbc2ff6.apk` and the hash in the
 [beta release notes](releases/v0.5.5-beta.md). The original owner-signed a603146 APK

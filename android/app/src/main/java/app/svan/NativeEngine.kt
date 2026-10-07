@@ -35,12 +35,16 @@ class NativeEngine(
         ditherMode: Int,
         autoHeadroom: Boolean,
         gainProtection: Boolean,
+        spatialResidual: Boolean = false,
     ) : this(sampleRate, channels, Quality.EFFICIENT) {
         nativeDestroy(handle)
-        handle = nativeCreateCustom(sampleRate, channels, oversample, stopbandDb, ditherBits, ditherMode, autoHeadroom, gainProtection)
+        handle = nativeCreateDetailed(sampleRate, channels, oversample, stopbandDb, ditherBits, ditherMode, autoHeadroom, gainProtection, spatialResidual && channels == 2)
     }
 
     val latencyFrames: Int get() = nativeLatency(handle)
+    fun setSpatialMode(mode: app.svan.model.SpatialMode) = nativeSetSpatialMode(handle, mode.nativeMode)
+    fun setSpatialLoadLimited(on: Boolean) = nativeSetSpatialLoadLimited(handle, on)
+    val detailedMix: Double get() = nativeDetailedMix(handle)
 
     /** [channel] = -1 applies to every channel. */
     fun setBands(bands: List<Band>, channel: Int = -1) {
@@ -59,10 +63,14 @@ class NativeEngine(
 
     /** Bass character: -1 sustain .. 0 off .. +1 punch (Engine B only; exact). */
     fun setBassCharacter(character: Double, crossoverHz: Double) = nativeSetBassCharacter(handle, character, crossoverHz)
+    fun setBassResolve(resolve: Double) = nativeSetBassResolve(handle, resolve)
+    /** Selective bass unmasking 0..1; default 0 (off). Not wired to any setting yet. */
+    fun setBassUnmask(amount: Double) = nativeSetBassUnmask(handle, amount)
+    fun bassUnmaskDiagnostics(): DoubleArray = nativeBassUnmaskDiagnostics(handle)
 
     /** Vocal tuner (mid) + instrument amplifier (side). Stereo engines only. */
-    fun setStereoTuner(intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double) =
-        nativeSetStereoTuner(handle, intimacy, warmth, smoothness, space, instruments)
+    fun setStereoTuner(intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double, backingVocals: Double = 0.0, spatialDetail: Double = 0.0) =
+        nativeSetStereoTuner(handle, intimacy, warmth, smoothness, space, instruments, backingVocals, spatialDetail)
 
     /** Preamp minus auto headroom currently applied, in dB. */
     val appliedGainDb: Double get() = nativeAppliedGainDb(handle)
@@ -136,13 +144,22 @@ class NativeEngine(
             sampleRate: Int, channels: Int, oversample: Int, stopbandDb: Double, ditherBits: Int, ditherMode: Int,
             autoHeadroom: Boolean, gainProtection: Boolean,
         ): Long
+        @JvmStatic external fun nativeCreateDetailed(
+            sampleRate: Int, channels: Int, oversample: Int, stopbandDb: Double, ditherBits: Int, ditherMode: Int,
+            autoHeadroom: Boolean, gainProtection: Boolean, spatialResidual: Boolean,
+        ): Long
+        @JvmStatic external fun nativeBassUnmaskDiagnostics(handle: Long): DoubleArray
+        @JvmStatic external fun nativePolicyRulesJson(): String
         @JvmStatic external fun nativeCurveDb(handle: Long, channel: Int, freqs: DoubleArray): DoubleArray
         @JvmStatic external fun nativeAppliedGainDb(handle: Long): Double
         @JvmStatic external fun nativeGainProtectionDb(handle: Long): Double
         @JvmStatic external fun nativeParseParametric(text: String): DoubleArray
         @JvmStatic external fun nativeSetBassCharacter(handle: Long, character: Double, crossoverHz: Double)
+        @JvmStatic external fun nativeSetBassResolve(handle: Long, resolve: Double)
+        @JvmStatic external fun nativeSetBassUnmask(handle: Long, amount: Double)
         @JvmStatic external fun nativeSetStereoTuner(
             handle: Long, intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double,
+            backingVocals: Double, spatialDetail: Double,
         )
         @JvmStatic external fun nativeComputeTuning(measurement: String, target: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray
         @JvmStatic external fun nativeFitCorrection(text: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray
@@ -170,6 +187,9 @@ class NativeEngine(
         @JvmStatic external fun nativeProcess(handle: Long, input: FloatArray, output: FloatArray, frames: Int)
         @JvmStatic external fun nativeResponseDb(handle: Long, channel: Int, freqs: DoubleArray): DoubleArray
         @JvmStatic external fun nativeLatency(handle: Long): Int
+        @JvmStatic external fun nativeSetSpatialMode(handle: Long, mode: Int)
+        @JvmStatic external fun nativeSetSpatialLoadLimited(handle: Long, on: Boolean)
+        @JvmStatic external fun nativeDetailedMix(handle: Long): Double
         @JvmStatic external fun nativeSetAnalysis(handle: Long, on: Boolean)
         @JvmStatic external fun nativeAnalysis(handle: Long): DoubleArray
         fun fitGraphic(bands: List<app.svan.model.Band>, count: Int): Fit {

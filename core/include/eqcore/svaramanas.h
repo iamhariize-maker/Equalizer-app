@@ -18,6 +18,7 @@
 
 #include "eqcore/analyzer.h"
 #include "eqcore/biquad.h"
+#include "eqcore/policy.h"
 #include "eqcore/stereo.h"
 
 namespace eqcore::svaramanas {
@@ -72,6 +73,12 @@ struct Request {
   // authority: wider correction limits, a tonal-balance (tilt) correction and
   // a harshness-driven smoothing suggestion that guided mode does not have.
   bool svaresaMode = false;
+  // Identity of the evidence in `features` (see policy.h). The defaults describe fresh, same-epoch,
+  // fully confident evidence, which is what callers that do not track identity have always assumed.
+  uint64_t epoch = 0;                // the capture/route/format/parameter epoch the plan is for
+  uint64_t featuresEpoch = 0;        // the epoch the features were measured in
+  double featuresAgeSeconds = 0.0;   // how old the analysed window is
+  double featuresConfidence = 1.0;   // 0..1
 };
 
 struct CategoryCheck {
@@ -92,6 +99,12 @@ struct Plan {
   StereoTunerParams stereo{};     // suggestion (Engine B only)
   CategoryCheck categories;
   std::vector<int> notes;
+  // Evidence gate outcome for every registry rule that was consulted while planning from `features`.
+  struct Gate {
+    const char* rule;
+    policy::Skip skip;  // Skip::None = admitted
+  };
+  std::vector<Gate> gates;
 };
 
 // Guardrail constants (also asserted by tests).

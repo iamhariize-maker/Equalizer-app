@@ -1,9 +1,8 @@
 # Start listening, then fix detection only if needed
 
-This guide describes the onboarding included in `Svan-0.5.5-owner-signed-fbc2ff6.apk`.
-Use the [GitHub beta](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1)
-and verify its hash against the [release notes](releases/v0.5.5-beta.md). The original
-`Svan-0.5.5-owner-signed-a603146.apk` does **not** contain this flow.
+This guide describes 0.5.6. Use the owner-signed APK from its published GitHub beta
+and verify the hash and signer against that release's notes. Preview and owner signing
+identities differ; follow [preview migration](MOVING_FROM_PREVIEW.md) before uninstalling.
 
 1. Open Svan and play music. A fresh install starts System effects, Flat, 0 dB preamp,
    and Audiophile off. The welcome card can be dismissed; no Shizuku setup blocks first run.
@@ -17,19 +16,24 @@ and verify its hash against the [release notes](releases/v0.5.5-beta.md). The or
    data uses “A player”; its dismissal is remembered for anonymous playback, not an
    invented app identity. Named-player dismissal is per package.
 4. The optional wizard shows live installation, debugging, running binder, authorization
-   and DUMP statuses. Install official Shizuku with Play Protect enabled. Android 11+
+   and audio-report access statuses. Install official Shizuku with Play Protect enabled. Android 11+
    phone-only setup needs Wi-Fi: enable Developer options/Wireless debugging, pair and
    start Shizuku, then return and allow Svan. Pairing is not independently observable;
    the running tick proves a live binder. Settings shortcuts fall back to instructions.
    Android 10 lacks that phone-only wireless route; broadcasting players still work without it.
-5. After **Music detection enabled**, switch USB and wireless debugging off in Developer
-   options. Return to Svan to re-check. Missing or denied settings reads say **Can't tell**;
-   they never become a false “off” tick. Success keeps Svan's gold palette. Debugging off
-   does not establish banking/UPI-app compatibility. You may also turn Developer options off.
-   Open Shizuku's menu and Stop it if desired; Svan does not stop it automatically.
-6. Use **Finish** to return to Svan. Finishing does not pretend debugging has been switched
-   off; a warning remains whenever it is on or unknown. The fixed grant is normally
-   retained through same-key updates, but uninstall/revocation/OEM behavior can remove it.
+5. Shell-report mode reads the two fixed audio reports through Shizuku without granting
+   Svan DUMP. Keep Shizuku running for that mode. A direct route can substitute when the
+   helper process cannot answer; an error includes the failed route rather than claiming success.
+6. To remove Shizuku, explicitly tap **Keep enhanced detection without Shizuku** while
+   Shizuku is connected. Confirm that enhanced detection is built into Svan before
+   uninstalling Shizuku. This grants only Svan its own DUMP permission. Developer options
+   can be turned off, but doing so is not required for Svan's retained grant. The owner
+   reports BHIM and GPay working after Shizuku removal with Developer options still on;
+   other phone/app combinations need their own checks.
+7. Use **Finish** to return to Svan. Missing or denied debugging-setting reads say
+   **Can't tell**; they never become a false “off” tick. Finishing does not switch settings
+   or stop Shizuku automatically. Android can revoke the app grant and uninstalling Svan
+   removes it. Same-key update and reboot retention still need final-beta phone validation.
 
 **Copy diagnostic summary** copies only versions, detection state, scan/counts, engine routes and generic
 output type locally. It has no media titles, account data, raw audio report or output address
@@ -74,5 +78,7 @@ Labelled layout fixtures: [debugging off](images/setup/debugging-off-fixture.png
 These are deliberately simulated UI states, not proof that ADB was switched off during CI.
 
 Real-device pairing, Settings.Global access and shortcuts, grants retained after update,
-Bluetooth behavior, payment apps and Android 11–15 OEM background restrictions remain
-unverified. Emulator fixtures do not verify TECNO, LG or commercial players.
+Bluetooth behavior, other payment-app/phone combinations and OEM background restrictions
+need separate checks. The owner's current-preview playback/BHIM/GPay evidence is recorded
+in [phone validation](PHONE_VALIDATION.md). Emulator fixtures do not verify TECNO, LG or
+commercial players, and the historical images above do not show the current shell-mode flow.

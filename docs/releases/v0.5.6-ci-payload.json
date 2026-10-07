@@ -1,0 +1,21 @@
+{
+  "source_commit": "64b5ae05181bab2d52535525e5d613cad2fbb78e",
+  "ci_run": 37573374711,
+  "ci_artifact_id": 11461863363,
+  "ci_apk_size": 5352903,
+  "ci_apk_sha256": "aef85684525b055c28427c11a1c2f983d0fd5e6fad3182e20755e498a2cd7ab0",
+  "ci_test_certificate_sha256": "9f4b577e689073d96dc213b7629b03a4f7bb4b1dd636a9fd3cd5b4b06cdcbcdb",
+  "zip_entries": 73,
+  "payload_sha256": "e826c5e1be8eb598c337f2e77dfbb87cdcbdbe2d358993cc54582a7da6dd03cb",
+  "native_library_sha256": {
+    "lib/arm64-v8a/libc++_shared.so": "92ee8da641b969254cc8723f64aa115d36c8ffa87115e38bc9cb89e3eefee839",
+    "lib/arm64-v8a/libeqjni.so": "3db68ca56fa88b4d33ff8c1deefd9ce1f0dac6a89ef5ed2a91f7aa693fb73a7f",
+    "lib/x86_64/libc++_shared.so": "128bb6e63a08bbd21fba7128223fb6e1016afd76dab9cbc09d9aaf4b0400f4e2",
+    "lib/x86_64/libeqjni.so": "eb876c4f534bc4fb284f6ff4b4fd0d782e93bd86acbc637336b4de0238f5a85d"
+  },
+  "ci_artifact_name": "Svan-production-test-build",
+  "ci_artifact_zip_sha256": "51695e6a1bd129b28090f2696503c9a490f75baf245b009970768478d433e945",
+  "apk_filename": "Svan-production-test.apk",
+  "release_status": "owner_signing_pending; disposable CI fixture is not a public release asset",
+  "payload_digest_algorithm": "SHA-256 of UTF-8 compact JSON mapping sorted ZIP entry names to their uncompressed SHA-256 values; keys sorted, separators comma and colon."
+}

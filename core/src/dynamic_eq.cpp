@@ -51,7 +51,7 @@ void DynamicEq::process(double* left,double* right,int frames,double amount) {
    double excess=10*std::log10((l.power[1]+1e-20)/(std::max(l.power[0],l.power[2])+1e-20));
    bool evidence=supported_[b]&&activityPower_>3.16e-6&&activityPower_>l.power[1]*.1&&l.power[1]>3.16e-6 && excess>6; // > -55 dBFS; strong local prominence
    l.sustained=evidence?std::min(hold_,l.sustained+1):0;
-   wanted[b]=amount*(l.sustained>=hold_?std::clamp((excess-6)*.5,0.,1.5):0.);
+   wanted[b]=amount*(l.sustained>=hold_&&!(yieldLow_&&b<2)?std::clamp((excess-6)*.5,0.,1.5):0.);
    sum+=wanted[b];
   }
   double actualBudget=0;

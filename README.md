@@ -8,7 +8,7 @@ A system-wide equalizer for Android.
 ![Android 10+](https://img.shields.io/badge/Android-10%2B-green.svg)
 [![CI](https://github.com/iamhariize-maker/Equalizer-app/actions/workflows/ci.yml/badge.svg)](https://github.com/iamhariize-maker/Equalizer-app/actions/workflows/ci.yml)
 
-[Download the beta](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1) ·
+[Download the beta](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.6-beta.1) ·
 [Report your device](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml) ·
 [Compatibility](docs/COMPATIBILITY.md) ·
 [Setup guide](docs/SETUP.md)
@@ -42,7 +42,7 @@ To show what the Audiophile engine does to a song, use Recording mode in Hi-Fi (
 
 ## Getting started
 
-1. Download the APK and `SHA256SUMS` from the [release page](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.5-beta.1) and check the hash with `sha256sum -c SHA256SUMS`. Keep Play Protect on. If Android blocks the install, stop and [send me the exact message](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml).
+1. Export settings before updating. Download the APK and `SHA256SUMS` from the [release page](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.6-beta.1) and check the hash with `sha256sum -c SHA256SUMS`. Keep Play Protect on. If Android blocks the install, stop and [send me the exact message](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=bug_report.yml).
 2. Open Svan and play some music. You don't have to set anything up first.
 3. Go to Hi-Fi and look at "Is it working?" to see whether your player and output are listed.
 4. If your player isn't reachable, the optional Fix music detection wizard uses Shizuku to sort it out. [docs/SETUP.md](docs/SETUP.md) walks through it.
@@ -86,8 +86,13 @@ adb shell pm grant app.svan android.permission.DUMP
 Then follow [docs/SPIKE.md](docs/SPIKE.md).
 
 For phone-only setup on Android 11+, use Hi-Fi → Music detection and its Shizuku
-guide. Once the user-authorized setup grants detection access, Shizuku and wireless
-debugging can be stopped. See [phone validation](docs/PHONE_VALIDATION.md).
+guide. Setup reads fixed audio reports as shell without granting DUMP to Svan. Keep
+Shizuku running for this mode; restart it after reboot. Alternatively, explicitly tap
+**Keep enhanced detection without Shizuku** to grant Svan its own DUMP permission,
+confirm success, then uninstall Shizuku. Basic audio-session announcements work without
+Shizuku. Notification-access player recognition has been removed. Detection cannot
+override a player's capture policy or an output path that bypasses effects.
+See [phone validation](docs/PHONE_VALIDATION.md).
 
 The optional [Shizuku API](https://github.com/RikkaApps/Shizuku-API) is MIT licensed,
 Copyright (c) 2021 RikkaW. Its full notice ships in `assets/licenses/Shizuku-API-MIT.txt`.

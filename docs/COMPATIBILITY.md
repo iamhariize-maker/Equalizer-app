@@ -5,6 +5,13 @@ Rows record observations, not a promise that a player works on every phone or ro
 Synthetic AudioTrack fixtures are not commercial players. New onboarding, Android 11–15 OEM
 behavior and commercial-player/output combinations remain real-phone checks.
 
+New owner evidence (7 October 2026): the current TECNO LH7n preview is reported working;
+the photo shows Spotify routed through Audiophile with live capture peaks. BHIM and GPay
+also work after Shizuku removal while Developer options remain enabled. This supports that
+phone/preview, whose supplied APK is identified in RELEASE_INVESTIGATION_0.5.6.md. It does
+not verify the final owner-signed beta or establish a complete player/output matrix.
+The bundled rows and table below retain their separate beta-verification limits.
+
 | Player | Works without setup | Music detection | How verified | Limits |
 | --- | --- | --- | --- | --- |
 | CI capturable tone (session broadcast) | Yes (synthetic) | Not needed (synthetic) | CI fake player | AudioTrack fixture; API 33/34 CI. No commercial-player claim. |
@@ -16,8 +23,8 @@ behavior and commercial-player/output combinations remain real-phone checks.
 | Amazon Music | Unverified | Unverified | Unverified | No real-device/player validation for this beta. |
 | Neutron | Unverified | Unverified | Owner phone | Earlier TECNO report: no session detected. Direct/output modes and this beta unverified. |
 
-Synthetic evidence: [39 routing checks](../android/scripts/e2e.sh),
-[real grant and 10 audio detection checks](../android/scripts/detection_release.sh).
+Synthetic evidence: [41 routing checks](../android/scripts/e2e.sh),
+[13 detection checks, including a real grant and Shizuku uninstall](../android/scripts/detection_release.sh).
 Phone observations: [PHONE_VALIDATION.md](PHONE_VALIDATION.md).
 Update the bundled file and this table together; include the build, phone, route and evidence
 before promoting an unverified entry. An app package in the manifest is not validation.
