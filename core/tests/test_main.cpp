@@ -28,6 +28,7 @@
 #include "eqcore/tuning.h"
 #include "eqcore/stereo.h"
 #include "eqcore/spatial.h"
+#include "eqcore/bass_unmask.h"
 #include <fstream>
 #include <sstream>
 
@@ -1450,6 +1451,209 @@ TEST(engine_latency_in_milliseconds_does_not_depend_on_the_rate) {
     if (first == 0) first = ms;
     CHECK_NEAR(ms, first, 1.2);
   }
+}
+
+// ------------------------------------------------ selective bass unmasking (AQ-03 B)
+
+namespace {
+struct Partial { double hz, amp, tau; };  // tau <= 0: steady
+std::vector<double> bassProgram(double fs, double secs, const std::vector<Partial>& parts) {
+  std::vector<double> x(static_cast<size_t>(fs * secs));
+  for (size_t i = 0; i < x.size(); ++i) {
+    const double t = static_cast<double>(i) / fs;
+    for (const auto& p : parts) x[i] += p.amp * (p.tau > 0 ? std::exp(-t / p.tau) : 1.0) * std::sin(2 * kPi * p.hz * t);
+  }
+  return x;
+}
+std::vector<Partial> noteWithPartials(double f0, double amp, double tau = 0) {
+  return {{f0, amp, tau}, {2 * f0, 0.7 * amp, tau}, {3 * f0, 0.5 * amp, tau}, {4 * f0, 0.3 * amp, tau}};
+}
+// Runs mono through BassUnmask in blocks; returns the output and the worst combined cut seen.
+std::vector<double> runUnmask(BassUnmask& u, std::vector<double> x, double* worstCutDb = nullptr, int block = 480) {
+  double worst = 0;
+  for (size_t i = 0; i < x.size(); i += static_cast<size_t>(block)) {
+    u.process(x.data() + i, nullptr, static_cast<int>(std::min<size_t>(static_cast<size_t>(block), x.size() - i)));
+    double sum = 0;
+    for (double c : u.cutsDb()) sum += c;
+    worst = std::min(worst, sum);
+  }
+  if (worstCutDb) *worstCutDb = worst;
+  return x;
+}
+double maxDiff(const std::vector<double>& a, const std::vector<double>& b) {
+  double d = 0;
+  for (size_t i = 0; i < a.size(); ++i) d = std::max(d, std::fabs(a[i] - b[i]));
+  return d;
+}
+double toneChangeDb(const std::vector<double>& in, const std::vector<double>& out, double hz, double fs, double from, double to) {
+  const size_t a = static_cast<size_t>(from * fs), b = static_cast<size_t>(to * fs);
+  return toDb(sineAmplitude(out, hz, fs, a, b) / sineAmplitude(in, hz, fs, a, b));
+}
+std::vector<Partial> maskedNote(double maskerHz = 130.0) {
+  auto parts = noteWithPartials(55.0, 0.1);
+  parts.push_back({maskerHz, 0.32, 0});  // sustained, not in 55 Hz's harmonic series, +10 dB over the note
+  return parts;
+}
+}  // namespace
+
+TEST(bass_unmask_off_is_a_bit_exact_bypass) {
+  BassUnmask u(48000);
+  const auto in = bassProgram(48000, 2.0, maskedNote());
+  CHECK(maxDiff(runUnmask(u, in), in) == 0.0);
+  u.setAmount(std::nan(""));
+  CHECK(maxDiff(runUnmask(u, in), in) == 0.0);
+}
+
+TEST(bass_unmask_leaves_notes_tones_and_kicks_alone) {
+  const double fs = 48000;
+  std::vector<std::pair<const char*, std::vector<double>>> fixtures;
+  for (double hz : {30.0, 40.0, 60.0, 100.0}) fixtures.push_back({"clean sine", bassProgram(fs, 4, {{hz, 0.3, 0}})});
+  for (double f0 : {41.2, 55.0, 82.4}) {
+    fixtures.push_back({"steady harmonic note", bassProgram(fs, 4, noteWithPartials(f0, 0.2))});
+    fixtures.push_back({"decaying harmonic note", bassProgram(fs, 4, noteWithPartials(f0, 0.3, 1.0))});
+  }
+  fixtures.push_back({"resonant synth (strong 3rd partial)", bassProgram(fs, 4, {{82.4, 0.15, 0}, {164.8, 0.12, 0}, {247.2, 0.21, 0}, {329.6, 0.08, 0}})});
+  fixtures.push_back({"kicks", [&] { std::vector<double> k; for (double v : kicks(fs, 7)) k.push_back(v); return k; }()});
+  {  // kick over a bass note
+    auto k = kicks(fs, 7);
+    auto n = bassProgram(fs, 4.2, noteWithPartials(55.0, 0.15));
+    for (size_t i = 0; i < k.size(); ++i) k[i] += n[i % n.size()];
+    fixtures.push_back({"kick over bass note", k});
+  }
+  fixtures.push_back({"quiet tail with masker (-75 dBFS)", bassProgram(fs, 4, [] { auto m = maskedNote(); for (auto& p : m) p.amp *= 1.8e-4; return m; }())});
+  for (auto& [name, in] : fixtures) {
+    BassUnmask u(fs);
+    u.setAmount(1.0);
+    double worst = 0;
+    const auto out = runUnmask(u, in, &worst);
+    std::printf("    %-36s worst cut %.3f dB, max diff %.2e\n", name, worst, maxDiff(out, in));
+    CHECK(worst > -0.02);
+    CHECK(maxDiff(out, in) < 1e-6);
+  }
+}
+
+TEST(bass_unmask_cuts_an_inharmonic_masker_but_not_the_note) {
+  for (double fs : {44100.0, 48000.0, 96000.0, 192000.0}) {
+    const auto in = bassProgram(fs, 5.0, maskedNote());
+    BassUnmask u(fs);
+    u.setAmount(1.0);
+    double worst = 0;
+    const auto out = runUnmask(u, in, &worst);
+    const double masker = toneChangeDb(in, out, 130.0, fs, 4.0, 5.0), fundamental = toneChangeDb(in, out, 55.0, fs, 4.0, 5.0);
+    std::printf("    %.0f Hz: masker %+.2f dB, fundamental %+.2f dB, worst combined cut %.2f dB, note %.1f Hz\n", fs, masker, fundamental, worst, u.noteHz());
+    CHECK(masker < -0.4 && masker > -2.0);
+    CHECK(fundamental > -0.4);      // the note itself is not what gets cut (lane skirt only)
+    CHECK(worst >= -2.0 - 1e-9);    // combined limit
+    CHECK_NEAR(u.noteHz(), 55.0, 3.0);
+  }
+}
+
+TEST(bass_unmask_protects_a_loud_partial_of_the_note_itself) {
+  const double fs = 48000;
+  auto parts = noteWithPartials(55.0, 0.1);
+  parts.push_back({165.0, 0.32, 0});  // 3rd harmonic of 55 Hz, +10 dB: part of the note, not a masker
+  const auto in = bassProgram(fs, 5.0, parts);
+  BassUnmask u(fs);
+  u.setAmount(1.0);
+  double worst = 0;
+  const auto out = runUnmask(u, in, &worst);
+  CHECK(worst > -0.02 && maxDiff(out, in) < 1e-6);
+}
+
+TEST(bass_unmask_amount_scales_the_cut_and_releases_to_an_exact_bypass) {
+  const double fs = 48000;
+  const auto in = bassProgram(fs, 5.0, maskedNote());
+  double cut[2];
+  for (int i = 0; i < 2; ++i) {
+    BassUnmask u(fs);
+    u.setAmount(i ? 1.0 : 0.4);
+    cut[i] = toneChangeDb(in, runUnmask(u, in), 130.0, fs, 4.0, 5.0);
+  }
+  CHECK(cut[1] < cut[0] - 0.2 && cut[0] < -0.1);  // more amount, deeper cut
+  BassUnmask u(fs);
+  u.setAmount(1.0);
+  runUnmask(u, in);
+  CHECK(u.cutting());
+  u.setAmount(0.0);
+  const auto rest = bassProgram(fs, 4.0, maskedNote());
+  const auto out = runUnmask(u, rest);
+  bool finite = true;
+  for (double v : out) finite = finite && std::isfinite(v);
+  CHECK(finite && !u.cutting());
+  const auto again = runUnmask(u, rest);
+  CHECK(maxDiff(again, rest) == 0.0);  // exact bypass again
+}
+
+TEST(bass_unmask_releases_quickly_when_a_new_note_arrives_during_a_cut) {
+  const double fs = 48000;
+  auto in = bassProgram(fs, 6.0, maskedNote());
+  const size_t t0 = static_cast<size_t>(fs * 4.5);
+  for (size_t i = t0; i < in.size(); ++i) {  // a new, loud 41.2 Hz note with partials
+    const double t = static_cast<double>(i - t0) / fs;
+    in[i] += 0.5 * std::sin(2 * kPi * 41.2 * t) + 0.3 * std::sin(2 * kPi * 82.4 * t);
+  }
+  BassUnmask u(fs);
+  u.setAmount(1.0);
+  std::vector<double> out = in, cutAtOnset;
+  double before = 0, after100ms = 0;
+  for (size_t i = 0; i < out.size(); i += 48) {
+    u.process(out.data() + i, nullptr, 48);
+    double sum = 0;
+    for (double c : u.cutsDb()) sum += c;
+    if (i + 48 == t0 + (48 - t0 % 48) % 48 + 0 || (i <= t0 && t0 < i + 48)) before = sum;
+    if (i <= t0 + static_cast<size_t>(fs * 0.1) && t0 + static_cast<size_t>(fs * 0.1) < i + 48) after100ms = sum;
+  }
+  std::printf("    cut at onset %.2f dB, 100 ms later %.2f dB\n", before, after100ms);
+  CHECK(before < -0.3);                // a cut was active when the note arrived
+  CHECK(after100ms > before + 0.25 && after100ms > -0.6);  // and it relaxed quickly
+  // Residual alteration of the onset itself is bounded by the combined limit.
+  double worstDrop = 0;
+  for (size_t i = t0; i < t0 + static_cast<size_t>(fs * 0.01); ++i) {
+    const double a = std::fabs(in[i] - (i > 0 ? in[i - 1] * 0 : 0)), b = std::fabs(out[i]);
+    if (a > 0.3) worstDrop = std::min(worstDrop, toDb(b / a));
+  }
+  CHECK(worstDrop > -2.1);
+}
+
+TEST(bass_unmask_is_stereo_linked_and_keeps_balance) {
+  const double fs = 48000;
+  const auto base = bassProgram(fs, 5.0, maskedNote());
+  std::vector<double> l = base, r = base;
+  for (double& v : r) v *= 0.3;
+  const auto l0 = l, r0 = r;
+  BassUnmask u(fs);
+  u.setAmount(1.0);
+  for (size_t i = 0; i < l.size(); i += 480) u.process(l.data() + i, r.data() + i, static_cast<int>(std::min<size_t>(480, l.size() - i)));
+  const double cl = toneChangeDb(l0, l, 130.0, fs, 4.0, 5.0), cr = toneChangeDb(r0, r, 130.0, fs, 4.0, 5.0);
+  CHECK(cl < -0.4);
+  CHECK_NEAR(cl, cr, 0.01);
+}
+
+TEST(bass_unmask_takes_the_low_dynamic_eq_lanes_so_a_note_is_not_cut_twice) {
+  const double fs = 48000;
+  auto program = bassProgram(fs, 6.0, maskedNote(120.0));  // 120 Hz: the old dynamic lane's centre
+  double dyn[2];
+  for (int i = 0; i < 2; ++i) {
+    EngineConfig cfg;
+    cfg.sampleRate = fs;
+    cfg.autoHeadroom = false;
+    cfg.gainProtection = false;
+    Engine e(cfg);
+    e.setDynamicEq(1.0);
+    e.setBassUnmask(i ? 1.0 : 0.0);
+    std::vector<float> x(program.size() * 2);
+    for (size_t k = 0; k < program.size(); ++k) x[2 * k] = x[2 * k + 1] = static_cast<float>(program[k]);
+    double worst = 0;
+    for (size_t k = 0; k < x.size(); k += 960) {
+      e.process(x.data() + k, x.data() + k, static_cast<int>(std::min<size_t>(480, (x.size() - k) / 2)));
+      if (k > x.size() / 6 * 5) worst = std::min({worst, e.dynamicReductionsDb()[0], e.dynamicReductionsDb()[1]});  // last second
+    }
+    dyn[i] = worst;
+    if (i) CHECK(e.bassUnmaskCutsDb()[1] < -0.3);
+  }
+  std::printf("    dynamic EQ low-lane reduction: %.2f dB without unmask, %.2f dB with\n", dyn[0], dyn[1]);
+  CHECK(dyn[0] < -0.3);                 // the old lane would cut this note
+  CHECK(dyn[1] > dyn[0] + 0.3);         // and yields once Resolve owns it
 }
 
 TEST(instrument_amp_never_touches_a_centred_voice) {

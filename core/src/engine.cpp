@@ -50,6 +50,7 @@ Engine::Engine(const EngineConfig& cfg)
       gainProtection_(cfg.gainProtection),
       eq_(std::max(1, cfg.channels), cfg.sampleRate * sanitizeFactor(cfg.oversample)),
       bass_(cfg.sampleRate, std::max(1, cfg.channels)),
+      unmask_(cfg.sampleRate),
       limiter_(cfg.sampleRate,std::max(1,cfg.channels)),
       dynamic_(cfg.sampleRate),
       stereo_(cfg.sampleRate, cfg.spatialResidual && cfg.channels == 2),
@@ -113,7 +114,7 @@ int Engine::latencyFrames() const { return (os_.empty() ? 0 : os_[0]->latencySam
 void Engine::reset() {
   gainInitialized_=false;gainRampRemaining_=0;
   eq_.reset();
-  bass_.reset();
+  bass_.reset();unmask_.reset();
   limiter_.reset();dynamic_.reset();
   stereo_.reset();
   analyzer_.reset();
@@ -172,6 +173,9 @@ void Engine::process(const float* in, float* out, int frames) {
       if (C != 2) bass_.process(ch, y, n);  // bass needs no oversampling; runs at the base rate
     }
     if (C == 2) bass_.processLinked(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);  // one gain for both channels
+    if (C == 2) unmask_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);
+    else if (C == 1) unmask_.process(&outBuf_[0], nullptr, n);
+    dynamic_.yieldLowLanes(unmask_.cutting());
     if (C == 2) stereo_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);
     dynamic_.process(&outBuf_[0],C==2?&outBuf_[cfg_.maxBlock]:nullptr,n,dynamicAmount_.load(std::memory_order_relaxed));
     const auto reductions=dynamic_.reductionsDb();for(int b=0;b<4;++b)dynamicDb_[b].store(reductions[b],std::memory_order_relaxed);

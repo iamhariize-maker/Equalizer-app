@@ -177,6 +177,11 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassResolve(JNIEnv*, 
   fromHandle(h)->setBassResolve(resolve);
 }
 
+// Selective bass unmasking: 0 = off (default, bit-exact). Not exposed in the UI until validated on music.
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassUnmask(JNIEnv*, jclass, jlong h, jdouble amount) {
+  fromHandle(h)->setBassUnmask(amount);
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetStereoTuner(
     JNIEnv*, jclass, jlong h, jdouble intimacy, jdouble warmth, jdouble smoothness, jdouble space, jdouble instruments, jdouble backingVocals, jdouble spatialDetail) {
   fromHandle(h)->setStereoTuner({intimacy, warmth, smoothness, space, instruments, backingVocals, spatialDetail});

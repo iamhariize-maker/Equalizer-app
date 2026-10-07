@@ -31,6 +31,7 @@ add_library(eqcore STATIC
   src/comparison.cpp
   src/stereo.cpp
   src/spatial.cpp
+  src/bass_unmask.cpp
   src/dither.cpp
   src/autoeq.cpp
   src/true_peak.cpp
