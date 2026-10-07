@@ -101,3 +101,18 @@ Funtouch, TECNO or LG compatibility is established by synthetic tests. On those 
 start an already-playing streaming app; finish or skip optional setup; switch songs/players/outputs;
 stop Shizuku; revoke recognition; reboot; and confirm the visible engine, unduplicated audio and
 unchanged sound settings. A player that withholds its session may still be recognized but unprocessed.
+
+## Keeping enhanced detection without Shizuku (owner decision, 7 October 2026)
+
+The owner cannot keep Shizuku installed because payment apps refuse to run beside it. Without a
+report source, a player that hides its session gets only the gain-only whole-phone EQ, never its own
+session effect or Engine B, so basic and enhanced detection differ audibly. While Shizuku is
+connected, the detection screen and setup wizard show **Keep enhanced detection without Shizuku**.
+One tap sends `grant app.svan android.permission.DUMP` to the package service through Shizuku's
+shell-identity server (`DumpGrant`, Binder shell-command transaction; no other command, package or
+permission is accepted) and then waits up to 3 s for Android to report the permission. The card then
+tells the user they can uninstall Shizuku and turn Developer options off, with buttons for both. A
+refusal (some Xiaomi and OnePlus builds) shows the phone-specific tip and the exact error; Shizuku
+mode keeps working. `detection_release.sh` taps the real button, requires `DUMP: granted=true`,
+uninstalls Shizuku, and requires a hidden player to be routed and processed at the expected level.
+Unverified on HiOS until the owner tries it.

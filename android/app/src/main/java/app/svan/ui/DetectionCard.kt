@@ -33,9 +33,10 @@ fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
     SectionLabel("Music detection")
     Text(when {
         shell.stage == app.svan.ShizukuAudioReports.Stage.READY && app.svan.ShizukuAudioReports.ready -> "Enhanced detection · Shizuku is connected"
-        PlaybackSessions.hasDumpPermission(context) -> "Enhanced detection · existing audio access"
+        PlaybackSessions.hasDumpPermission(context) -> "Enhanced detection · built into Svan (Shizuku not needed)"
         else -> "Basic detection · no extra setup needed for supported players"
     }, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+    KeepEnhancedCard()
     WorkingStatusCard(working, stats = captureStats)
     if (wholeMix) Text("A player is hiding its audio connection, so your EQ is on the whole phone output for now " +
         "(notification sounds included). It switches back as soon as a player connects.",

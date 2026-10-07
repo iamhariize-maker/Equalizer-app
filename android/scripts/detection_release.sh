@@ -263,5 +263,38 @@ if wait_log 'detection setup: shell audio reports ready \(direct Shizuku route';
   check_delta 'hidden player is processed through the direct Shizuku route' "$DIRECT" "$BASE" -6.3
 else FAILED=1; diagnose 'direct Shizuku route'; fi
 eq reset_sound
+
+# Payment apps refuse to run beside Shizuku. One tap on the real button must move enhanced
+# detection into Svan, and a hidden player must still be processed after Shizuku is uninstalled.
+tone --ez stop true; sleep 3
+eq preset; sleep 3
+tap 'Hi-Fi'; sleep 2
+$A logcat -c
+kept=0
+for ((attempt=0;attempt<10;attempt++)); do
+  if tap 'Keep enhanced detection without Shizuku'; then kept=1; break; fi
+  $A shell input swipe $((W / 2)) $((H * 3 / 4)) $((W / 2)) $((H / 4)) 500; sleep 1
+done
+if [ "$kept" == 1 ] && wait_log 'dump grant: granted'; then
+  $A shell dumpsys package app.svan > "$OUT/package-after-keep.txt"
+  if grep -q 'android.permission.DUMP: granted=true' "$OUT/package-after-keep.txt"; then
+    echo 'PASS one tap keeps enhanced detection inside Svan' | tee -a "$OUT/detection.txt"
+  else echo 'FAIL keep button reported success but app DUMP is not granted' | tee -a "$OUT/detection.txt"; FAILED=1; fi
+else
+  echo 'FAIL keep-enhanced button missing or its grant failed' | tee -a "$OUT/detection.txt"
+  FAILED=1; diagnose 'keep enhanced without Shizuku'
+fi
+sleep 2; $A exec-out screencap -p > "$OUT/keep-enhanced.png"
+$A shell 'for p in $(pidof shizuku_server); do kill "$p"; done'
+$A uninstall moe.shizuku.privileged.api >/dev/null
+sleep 3
+$A logcat -c
+tone --ef freq 1000 --ef amp 0.25 --ez broadcast false
+if wait_log "route: $CAP .*Engine A"; then
+  sleep 3
+  KEPT=$(level)
+  check_delta 'hidden player is processed after Shizuku is uninstalled' "$KEPT" "$BASE" -6.3
+else diagnose 'hidden player after Shizuku uninstall'; fi
+eq reset_sound
 tone --ez stop true
 $A uninstall app.svan >/dev/null

@@ -188,7 +188,7 @@ jobs:
           ! grep -q '^FAIL' e2e-out/production/results.txt
           cat e2e-out/detection/detection.txt
           if grep -q '^FAIL' e2e-out/detection/detection.txt; then echo 'release detection results contain a failure'; exit 1; fi
-          test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 11
+          test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 13
           cat e2e-out/onboarding/results.txt
           test "$(grep -c '^PASS' e2e-out/onboarding/results.txt)" -eq 8
           ! grep -q '^FAIL' e2e-out/onboarding/results.txt

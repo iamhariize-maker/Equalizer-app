@@ -39,7 +39,7 @@ object DetectionSetup {
         if (!initialized) return
         val shell = ShizukuAudioReports.state.value
         mutableState.value = when {
-            PlaybackSessions.hasDumpPermission(context) -> State(Stage.READY, "Enhanced detection is available through your existing audio-report permission.")
+            PlaybackSessions.hasDumpPermission(context) -> State(Stage.READY, "Enhanced detection is built into Svan; Shizuku is not needed.")
             ShizukuAudioReports.ready -> State(Stage.READY, "Enhanced detection is on while Shizuku is running. No app permission grant was needed.")
             shell.stage == ShizukuAudioReports.Stage.CONNECTING -> State(Stage.WORKING, "Checking music detection…")
             shell.stage == ShizukuAudioReports.Stage.ERROR && !clearError -> State(Stage.ERROR, detectionOemAdvice(Build.MANUFACTURER, shell.detail))

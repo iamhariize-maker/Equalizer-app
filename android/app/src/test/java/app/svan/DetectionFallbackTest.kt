@@ -34,4 +34,17 @@ class DetectionFallbackTest {
         }
         assertFalse(detectionOemAdvice("TECNO").contains("What failed"))
     }
+
+    @Test fun refusedOneTapGrantKeepsShizukuAndBasicDetectionAndNamesTheCause() {
+        for (maker in listOf("TECNO", "Xiaomi", "OnePlus", "unknown")) {
+            val advice = grantFailureAdvice(maker, "java.lang.SecurityException: grant denied")
+            assertTrue(advice.contains("still works while Shizuku is running"))
+            assertTrue(advice.contains("basic detection works without it"))
+            assertTrue(advice.contains("tap the button again"))
+            assertTrue(advice.endsWith("What failed: java.lang.SecurityException: grant denied."))
+        }
+        assertTrue(grantFailureAdvice("Redmi").contains("USB debugging (Security settings)"))
+        assertTrue(grantFailureAdvice("OnePlus").contains("Disable permission monitoring"))
+        assertFalse(grantFailureAdvice("TECNO").contains("What failed"))
+    }
 }

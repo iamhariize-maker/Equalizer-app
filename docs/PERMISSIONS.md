@@ -12,7 +12,7 @@ manifest is checked in CI, not just the source manifest.
 | --- | --- |
 | MODIFY_AUDIO_SETTINGS | Attach Android effects to real audio sessions. |
 | DUMP | Optional Shizuku-authorized enhanced discovery. Android grants broad report access; Svan's calls read only audio and media.audio_flinger. It is retained because the user reports working music detection. |
-| Shizuku API/provider | One fixed DUMP grant to Svan after explicit authorization. No arbitrary command or privileged helper launch. The provider is protected by Android's INTERACT_ACROSS_USERS_FULL permission. |
+| Shizuku API/provider | Fixed audio-report reads after explicit authorization; one fixed DUMP grant to Svan only when the user taps "Keep enhanced detection without Shizuku". No arbitrary command or privileged helper launch. The provider is protected by Android's INTERACT_ACROSS_USERS_FULL permission. |
 | RECORD_AUDIO / MediaProjection | Playback capture and measurement probes, with Android consent. RECORD_AUDIO is broad; the implementation uses playback capture rather than microphone input. |
 | Foreground-service permissions | Keep playback/system effects or authorized capture running visibly. |
 | POST_NOTIFICATIONS | Display Svan's own service notifications. Does not permit reading other apps' notifications. |

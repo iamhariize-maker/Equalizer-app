@@ -88,6 +88,7 @@ private fun DetectionWizard(fixture: String?) {
         Spacer(Modifier.height(8.dp))
         if (error) Text(grant.message, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
         TextButton(onClick = { OnboardingUi.panel.value = HelpPanel.NONE }) { Text("Continue with basic detection") }
+        KeepEnhancedCard()
     }
     Spacer(Modifier.height(10.dp))
     WizardStep.entries.forEachIndexed { index, step ->
@@ -147,7 +148,7 @@ private fun DetectionWizard(fixture: String?) {
                 WizardStep.FINISH -> {
                     OutlinedButton(onClick = { open(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }, enabled = fixture == null,
                         modifier = Modifier.fillMaxWidth()) { Text("Open Developer options") }
-                    Text(if (fixture == null && !PlaybackSessions.hasDumpPermission(context)) "Keep Shizuku running for enhanced detection. Restart it after a phone reboot. You can try turning USB and wireless debugging off; some phones then stop Shizuku, and Svan returns to basic detection." else "Your existing audio-report permission stays after Shizuku stops. You can turn USB and wireless debugging off.",
+                    Text(if (fixture == null && !PlaybackSessions.hasDumpPermission(context)) "Enhanced detection works while Shizuku runs; restart it after a phone reboot. To remove Shizuku, tap Keep enhanced detection without Shizuku above first." else "Enhanced detection is built into Svan. You can uninstall Shizuku and turn Developer options off.",
                         style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     Button(onClick = { OnboardingUi.panel.value = HelpPanel.NONE }, enabled = fixture == null,
                         modifier = Modifier.fillMaxWidth()) { Text("Finish") }
@@ -167,7 +168,7 @@ private fun DetectionWizard(fixture: String?) {
         TextButton(onClick = { linkError = openSettings(context, Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }) { Text("Open Developer options") }
         var advanced by remember { mutableStateOf(false) }
         TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Hide computer option" else "Other option: use a computer") }
-        if (advanced) Text("If you have a computer with adb, an optional existing-permission route is: adb shell pm grant app.svan android.permission.DUMP. This may still be blocked by your phone. Svan never runs this grant itself.",
+        if (advanced) Text("If you have a computer with adb, an optional existing-permission route is: adb shell pm grant app.svan android.permission.DUMP. This may still be blocked by your phone. Svan runs this same grant only when you tap Keep enhanced detection without Shizuku.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
     }
     if (!snapshot.dumpGranted) Text("Pairing cannot be verified separately from a running Shizuku binder. Its running tick is the observed result of startup, not a claim about a stored pairing.",

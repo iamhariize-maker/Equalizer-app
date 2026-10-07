@@ -27,8 +27,12 @@ Optional enhanced detection uses the Shizuku API after user approval. A read-onl
 UserService runs as Android shell and reads only the fixed `audio` and
 `media.audio_flinger` reports. It accepts no arbitrary shell commands, paths,
 target packages or permission grants. Reads have byte/time limits; audio reports
-stay local. Svan does not grant DUMP to itself. Existing/manual DUMP grants remain
-supported for compatibility. Shell detection needs Shizuku running and may need
+stay local. Only if the user taps "Keep enhanced detection without Shizuku" does Svan,
+while Shizuku is connected, run the one package-manager command `grant app.svan
+android.permission.DUMP` (the same as `adb shell pm grant`), for itself and that one
+permission only, so Shizuku can be uninstalled. Svan still reads only the two fixed
+audio reports. Uninstalling Svan removes the grant. Existing/manual DUMP grants remain
+supported. Shell detection needs Shizuku running and may need
 restarting after a phone reboot. Stopping Shizuku leaves basic player-session
 broadcast detection active. Setup links open Shizuku's official website in the
 user's browser. The Shizuku API is MIT licensed; its notice is included in assets.

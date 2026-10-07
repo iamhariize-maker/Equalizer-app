@@ -818,3 +818,6 @@ Follow-up the same day: the problem recognition targeted (hidden players get no 
 blocked) is now handled by the whole-phone output-mix fallback; see DETECTION_FALLBACKS.md.
 TECNO enhanced detection: steps 1-4 pass but the helper (UserService) fails; added a direct Shizuku route
 and a visible failure reason. See DETECTION_FALLBACKS.md. Unverified on HiOS until the owner tests it.
+Keep enhanced detection without Shizuku (owner request; payment apps block Shizuku): a one-tap,
+user-initiated DUMP self-grant through Shizuku (`DumpGrant`, `KeepEnhancedCard`). CI taps it, then
+uninstalls Shizuku and measures a hidden player. See DETECTION_FALLBACKS.md.

@@ -24,6 +24,9 @@ instance per session; never attach both).
 
 Owner follow-up (6 October 2026): implement OEM-safe detection fallbacks. Normal setup
 reads fixed audio reports via a Shizuku shell UserService instead of granting app DUMP.
+Owner decision (7 October 2026): payment apps refuse to run beside Shizuku, so a user-tapped
+"Keep enhanced detection without Shizuku" button (`DumpGrant`) grants Svan its own DUMP once
+through Shizuku. Never grant it without that tap, and never grant anything else.
 Keep the independent session-broadcast path, existing/manual grants, Play Protect, and all
 DSP/routing quality safeguards.
 
