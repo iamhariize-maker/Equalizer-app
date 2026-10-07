@@ -4,6 +4,9 @@ Use the new recording-mode build identified in [HANDOFF.md](HANDOFF.md), not the
 owner-signed beta named below. **None of these physical-phone checks has passed yet.**
 TECNO LH7n / Android 14 runs Svan; LG V60 / Android 13 films the TECNO screen from outside.
 Follow [RECORDING_MODE.md](RECORDING_MODE.md) and keep Play Protect enabled.
+CI's preview-signed APK cannot update the original-key owner beta. Prepare the new phone
+build with the same original private owner signing key outside Git/CI; see
+[RELEASE_SIGNING.md](RELEASE_SIGNING.md). This task has not signed or published that update.
 
 1. At normal filming distance and room light, is the `m:ss.mmm` clock readable in the LG
    video? Are the current segment and Sync/Mark now/Stop controls readable? Does the white

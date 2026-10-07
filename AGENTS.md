@@ -74,7 +74,7 @@ Owner's engine follow-up: give Svaresa broader authority only where it improves 
 changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
-1. Verify recording-mode CI logs/screenshots (API 33/34): committed-frame clock, fixed labels/buttons across tabs, countdown, MediaStore WAV/AAC and exact sync tails. Verify on the next CI screenshots: boot name fits on one line with margins; the flipped **d** reads as a 9 (not "q"); the स्व icon on the Android 12+ splash.
+1. Recording implementation `bbbb790` passed all nine jobs in CI 37678599236; API 33/34 logs and recording/boot/EQ/splash screenshots were reviewed. Keep this evidence and all required PASS sets intact for future changes; see `docs/RECORDING_MODE_VERIFICATION.md`. Physical camera readability, flash/click timing and OEM routes remain open.
 2. **Real-phone validation** (TECNO LH7n/Android 14 and LG V60/Android 13, no PC): the owner reports earlier listening success; new DSP, player/device coverage and LG Quad DAC behavior still need phone checks.
 3. Recording owner checks remain open: TECNO screen readability in LG video, measured flash/click timing, speaker-only routing with headphones and VN 16/24-bit WAV/M4A import. See `docs/PHONE_VALIDATION.md`.
 4. Product gaps: per-app engine UI, foreground-service robustness, release signing, Play Store policy (MediaProjection/foreground service).

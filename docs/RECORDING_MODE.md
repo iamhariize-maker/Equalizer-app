@@ -132,6 +132,7 @@ No storage permission or upload is added. MediaStore publishes audio and Downloa
 The last successful session also stays in app-private storage for diagnostics; older successfully
 published private sessions are removed on subsequent success. Failed sessions remain private.
 
-Local numerical tests and CI/emulator evidence are recorded in [HANDOFF.md](HANDOFF.md).
+Local numerical tests and CI/emulator evidence are recorded in
+[RECORDING_MODE_VERIFICATION.md](RECORDING_MODE_VERIFICATION.md) and [HANDOFF.md](HANDOFF.md).
 Physical clock readability, acoustic click latency/routing, live headphone equivalence and VN
 import remain **unverified** until the owner completes [PHONE_VALIDATION.md](PHONE_VALIDATION.md).

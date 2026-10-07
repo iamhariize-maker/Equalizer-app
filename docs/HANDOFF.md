@@ -36,8 +36,20 @@ Verification: native baseline 98 tests passed. Local debug/release assembly, lin
 The unchanged e2e PASS sets remain required. A separate recording_mode.sh CI check uses real
 Engine B testsource audio, UI Sync/Mark/Stop, byte-identical MediaStore payloads, AAC packets,
 exact tails, cue isolation and countdown frame zero, and captures recording/mark/countdown/EQ
-screenshots on API 33/34. Final CI run links, measured results and screenshot review are pending.
-No owner-phone or VN checks are claimed passed; see the new PHONE_VALIDATION.md checklist.
+screenshots on API 33/34. Implementation `bbbb790ddb8add968d31e6ee51779d1bb86ea500` passed all
+nine jobs in [CI 37678599236](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37678599236).
+Downloaded logs/artifacts confirm all 39 existing audio checks and six new recording checks
+on each API, with zero FAIL lines. The other required suites also pass. Recording/mark/EQ,
+countdown and chart screenshots were viewed at phone resolution; the clock/buttons fit and
+stay visible across tabs. API 34 captured the white flash; API 33's screenshot missed that
+transient, so it is not visual flash evidence. Boot title, EQ's 9 and system splash were also
+reviewed. Exact counts, file checks and measured cue isolation are in
+[RECORDING_MODE_VERIFICATION.md](RECORDING_MODE_VERIFICATION.md).
+
+No owner-phone or VN checks are claimed passed; see PHONE_VALIDATION.md. CI's Svan-preview.apk
+uses the preview signer and cannot update the owner's existing original-key installation.
+Phone validation requires a new build signed with that same original private owner key,
+outside Git/CI, as described in RELEASE_SIGNING.md. No new signing or release is performed here.
 
 ## Owner-authorized GitHub beta candidate — 2026-10-06
 
