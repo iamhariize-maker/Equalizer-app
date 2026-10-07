@@ -37,18 +37,13 @@ restarting after a phone reboot. Stopping Shizuku leaves basic player-session
 broadcast detection active. Setup links open Shizuku's official website in the
 user's browser. The Shizuku API is MIT licensed; its notice is included in assets.
 
-Player recognition is a separate optional fallback, enabled only through Android's
-notification-access settings. Android's grant can expose notifications; Svan's
-listener does not read notification contents. It only queries MediaSessionManager
-for music app package names and playback state, without song titles, messages,
-notification text or track history. These values stay in memory, are cleared when
-the listener disconnects, and are neither saved nor uploaded. Revoke access through
-Hi-Fi → Music detection → Manage player recognition. Recognizing an app does not
-supply an audio-session ID or prove that effects/capture can process it.
-POST_NOTIFICATIONS allows Svan to show its own notifications and is separate from
-this optional notification-access grant. No SMS or accessibility access is used.
+Notification-access player recognition has been removed. This build declares no
+notification listener and requests no access to other apps' notifications, SMS or
+accessibility services. POST_NOTIFICATIONS allows Svan to show its own notifications.
+Session broadcasts and the fixed audio reports described above provide detection.
+Recognition does not prove that an output path accepts effects or playback capture.
 
-This describes the current preview implementation. A store release still needs
+This describes the 0.5.6 implementation. A store release still needs
 an owner-approved policy URL/contact and Play Console disclosures matching the
 final package, including its foreground-service and MediaProjection uses.
 

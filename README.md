@@ -85,10 +85,12 @@ Then follow [docs/SPIKE.md](docs/SPIKE.md).
 
 For phone-only setup on Android 11+, use Hi-Fi → Music detection and its Shizuku
 guide. Setup reads fixed audio reports as shell without granting DUMP to Svan. Keep
-Shizuku running for this mode; restart it after reboot. Basic audio-session
-announcements work without Shizuku. Optional player recognition uses Android
-notification access for app names and play/pause state only; it cannot unlock
-an audio connection or change audio quality. See [phone validation](docs/PHONE_VALIDATION.md).
+Shizuku running for this mode; restart it after reboot. Alternatively, explicitly tap
+**Keep enhanced detection without Shizuku** to grant Svan its own DUMP permission,
+confirm success, then uninstall Shizuku. Basic audio-session announcements work without
+Shizuku. Notification-access player recognition has been removed. Detection cannot
+override a player's capture policy or an output path that bypasses effects.
+See [phone validation](docs/PHONE_VALIDATION.md).
 
 The optional [Shizuku API](https://github.com/RikkaApps/Shizuku-API) is MIT licensed,
 Copyright (c) 2021 RikkaW. Its full notice ships in `assets/licenses/Shizuku-API-MIT.txt`.

@@ -52,7 +52,12 @@ effects. AudioFlinger itself switches effects without a crossfade, which is why 
 while the effect is still enabled. CI verifies it structurally (active session-0 DynamicsProcessing in the audio-server report while a
 hidden player plays; off after the player is routed) because the test meter sits first in that chain.
 
-# Optional music detection, 0.5.6 follow-up
+# Historical optional-recognition implementation (superseded)
+
+The implementation and validation below predate notification-listener removal.
+They are retained as history, not descriptions of the current package. Current detection
+uses session broadcasts and fixed audio reports, with the direct route and user-tapped
+own-package DUMP grant described above and below. There is no player-recognition option.
 
 Svan keeps its selected EQ, quality, headroom and capture settings across every detection fallback.
 Discovery does not change the DSP or prove that Android can apply effects to a player.
@@ -115,4 +120,7 @@ tells the user they can uninstall Shizuku and turn Developer options off, with b
 refusal (some Xiaomi and OnePlus builds) shows the phone-specific tip and the exact error; Shizuku
 mode keeps working. `detection_release.sh` taps the real button, requires `DUMP: granted=true`,
 uninstalls Shizuku, and requires a hidden player to be routed and processed at the expected level.
-Unverified on HiOS until the owner tries it.
+The owner now reports enhanced detection and Spotify playback working on their TECNO LH7n
+preview, and BHIM/GPay working after Shizuku removal with Developer options still enabled.
+That does not establish every HiOS device, a fresh grant on the final signed beta, or
+update/reboot retention. See RELEASE_INVESTIGATION_0.5.6.md for the current CI gate.

@@ -35,7 +35,9 @@ No permission is pre-granted, and no DSP, routing threshold, permission, signing
 or versionCode change is needed for this initial correction.
 
 The help card removes the unverified payment-app guarantee and explains grant revocation.
-The owner confirms both working playback and working payment apps on the current phone/preview.
+The owner confirms working playback and successful BHIM/GPay use on the current phone/preview
+after uninstalling Shizuku, with Developer options still enabled. The owner did not need
+to disable Developer options for those two payment apps.
 That does not establish all payment-app/phone combinations or the final signed beta.
 
 Local validation: all 105 core tests, 158 JVM tests and nine Python tests pass.
@@ -45,3 +47,24 @@ passes the compiled forbidden-capability policy and passes all four native ELF a
 
 CI for the corrected source is pending when this investigation record is first committed.
 Do not sign until both emulator suites and every other required CI job pass.
+
+## First corrected CI run: 915dbf4
+
+[Source run 37569860623](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37569860623)
+passed core, Android and all five compatibility jobs. Both full emulator artifacts prove
+13/13 detection checks: the real keep-enhanced button granted app DUMP, Shizuku was
+uninstalled, and the hidden player measured exactly -6.3 dB on APIs 33 and 34.
+Routing, workspace, control, continuity, quality and production-mode checks also pass.
+
+Both full jobs still fail one onboarding assertion: capture peaks were below the fold.
+The longer, corrected grant explanation pushes the routed-status card down; the first
+hierarchy contains the routed player but clips its readings. Each immediately subsequent
+`connected-audiophile.png` shows the real peaks after a single scroll (-12.0 dBFS input,
+-24.0 dBFS output). Continuous logs also retain live capture measurements. This establishes
+a viewport error in the assertion, not missing telemetry. The driver now scrolls while
+seeking the actual peaks label, keeps the assertion and saves its hierarchy/screenshot.
+The next complete green run is still required; nothing has been owner-signed or published.
+
+Public documentation was also corrected: the privacy notice/static copy and README no
+longer describe the removed notification-recognition feature, older fallback notes are
+marked historical, and migration/phone evidence describes 0.5.6 and BHIM/GPay accurately.

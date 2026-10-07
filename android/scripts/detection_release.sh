@@ -220,6 +220,9 @@ for ((attempt=0;attempt<10;attempt++)); do
   timeout 15s $A shell uiautomator dump /sdcard/svan-peaks.xml >/dev/null 2>&1 || continue
   $A shell cat /sdcard/svan-peaks.xml > "$OUT/status-audiophile-live.xml"
   if grep -Fq 'Capture peaks' "$OUT/status-audiophile-live.xml"; then peaks_visible=1; break; fi
+  # The grant explanation can put the routed-status card below the fold.
+  # Bring its real readings into view rather than assuming fixed text heights.
+  $A shell input swipe $((W / 2)) $((H * 3 / 4)) $((W / 2)) $((H / 4)) 500
   sleep 1
 done
 if [ "$peaks_visible" == 1 ]; then

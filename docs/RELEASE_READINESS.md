@@ -26,7 +26,9 @@ and [the investigation](RELEASE_INVESTIGATION_0.5.6.md).
 
 The owner's photo shows enhanced detection already enabled, Spotify routed through the
 Audiophile engine and live capture peaks. That supports that phone/playback session.
-The owner also confirms payment apps are working on that phone with the current preview.
+The owner confirms BHIM and GPay work on that phone with the current preview after
+uninstalling Shizuku, while Developer options remain enabled. Turning Developer options
+off was not needed for those two apps in that test.
 It does not replace the fresh grant, no-Shizuku routing or measured-response checks.
 The supplied preview did not match six inspected recent CI preview artifacts.
 
