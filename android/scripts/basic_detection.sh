@@ -16,7 +16,9 @@ measure() {
   # Visualizer(0) is before global insert effects. Read the actual emulator host
   # output after those effects; silent/unavailable output fails this test.
   local result=0
-  timeout --signal=INT 4s parec --device=svan_e2e.monitor --format=float32le \
+  pactl list sink-inputs > "$OUT/$1.pulse-outputs.txt"
+  timeout --signal=INT --kill-after=2s 4s parec --device=svan_e2e.monitor --format=float32le \
+    --latency-msec=20 --process-time-msec=20 \
     --rate=48000 --channels=2 > "$OUT/$1.float32le" || result=$?
   [[ "$result" == 124 || "$result" == 0 ]]
   python3 "$(dirname "$0")/host_audio_level.py" "$OUT/$1.float32le" > "$OUT/$1.db"
