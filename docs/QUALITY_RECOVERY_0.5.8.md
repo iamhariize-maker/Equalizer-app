@@ -108,3 +108,12 @@ this does not establish Android/DAC or acoustic transparency. Audio processing s
 the zero-allocation regression.
 Owner listening, Amazon session/route support and physical recording checks remain open in
 [PHONE_VALIDATION.md](PHONE_VALIDATION.md).
+
+Initial CI 37743497503 passed build/native/sanitizer and all five compatibility jobs. Its
+focused basic suites preserved all twelve earlier assertions and passed the new truthful-route
+assertion, but failed the new handoff setup: capture was requested before the real source
+route attached, and the production guard correctly blocked startup. The fixture now awaits
+the announced route, grants only the existing capture notification permission, and requires
+a confirmed Engine B route before handoff. The capture guard and fourteen assertions remain.
+Source-filter runs also retain each poll and pre-clear player logs so a future failure can
+be diagnosed. Final CI and signing provenance will supersede this initial candidate.

@@ -5,6 +5,8 @@ S=${1:-emulator-5554}; OUT=${2:-/tmp/svan-source-filter}; A=(adb -s "$S")
 CAP=app.svan.testsource.capturable
 mkdir -p "$OUT"
 : > "$OUT/results.txt"
+: > "$OUT/source-events.txt"
+: > "$OUT/attempt-states.txt"
 trap '"${A[@]}" shell am start -n "$CAP/app.svan.testsource.ToneActivity" --ez stop true >/dev/null; "${A[@]}" logcat -d > "$OUT/logcat.txt"' EXIT
 "${A[@]}" shell am start -n app.svan/.MainActivity --es cmd stop_capture >/dev/null
 for spec in '5 4 notification' '1 4 media-labelled-interface' '1 2 music'; do
@@ -13,9 +15,13 @@ for spec in '5 4 notification' '1 4 media-labelled-interface' '1 2 music'; do
   success=0
   for ((attempt=0;attempt<20;attempt++)); do
     sleep 1
+    # Preserve player announcements and discovery before clearing the query log.
+    # A failed final count alone cannot establish whether the source ever arrived.
+    "${A[@]}" logcat -d -s EqSpike:I EqTestSource:I AudioTrack:D >> "$OUT/source-events.txt"
     "${A[@]}" logcat -c
     "${A[@]}" shell am start -W -n app.svan/.MainActivity --es cmd source_policy_state --es pkg "$CAP" >/dev/null
     state=$("${A[@]}" logcat -d -s EqSpike:I | sed -n 's/^.*SOURCE_POLICY_STATE //p' | tail -1)
+    printf '%s attempt=%s state=%s\n' "$label" "$attempt" "$state" >> "$OUT/attempt-states.txt"
     if [[ -n "$state" ]] && python3 - "$label" "$state" <<'PY'
 import json,sys
 label=sys.argv[1];d=json.loads(sys.argv[2])

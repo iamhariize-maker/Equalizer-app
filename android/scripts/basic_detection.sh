@@ -117,12 +117,24 @@ status output-changed
 tone --ez stop true; sleep 2
 tone --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez component true
 eq engine_mode --ez system_only false
+# Announcements and effect attachment are asynchronous. The production startup
+# guard must stay closed until the real new source route exists.
+connected=false
+for ((i=0;i<20;i++)); do
+  sleep 1; status handoff-source
+  if python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(not any(r["owner"]=="ENGINE_A" and r["sid"] in d["attached"] for r in d["routes"]))' "$OUT/handoff-source.json"; then connected=true; break; fi
+done
+$connected
+# Existing capture permissions only; enhanced reports remain unavailable.
+"${A[@]}" shell pm grant app.svan android.permission.POST_NOTIFICATIONS
 "${A[@]}" shell appops set app.svan PROJECT_MEDIA allow
 eq start_capture --es quality EFFICIENT
+captured=false
 for ((i=0;i<30;i++)); do
   sleep 1; status handoff-before
-  if python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(not(d["capture"] and any(r["owner"]=="ENGINE_B_MUTED" for r in d["routes"])))' "$OUT/handoff-before.json"; then break; fi
+  if python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(not(d["capture"] and any(r["owner"]=="ENGINE_B_MUTED" for r in d["routes"])))' "$OUT/handoff-before.json"; then captured=true; break; fi
 done
+$captured
 eq switch_shared_output
 sleep 4
 status handoff-after
@@ -133,7 +145,7 @@ import json,pathlib,sys
 p=pathlib.Path(sys.argv[1]);d=lambda n:json.loads((p/(n+'.json')).read_text());v=lambda n:float((p/(n+'.db')).read_text())
 def a(n):return any(r['owner']=='ENGINE_A' and r['sid'] in d(n)['attached'] for r in d(n)['routes'])
 def near(x,y):return abs(x-y)<=.75
-names=['component','paused','resumed','recovered','hidden','panel','unrelated-close','shared','shared-known','capture-blocked','shared-stopped','output-changed','handoff-before','handoff-after']+[f'cycle-{i}' for i in range(4)]
+names=['component','paused','resumed','recovered','hidden','panel','unrelated-close','shared','shared-known','capture-blocked','shared-stopped','output-changed','handoff-source','handoff-before','handoff-after']+[f'cycle-{i}' for i in range(4)]
 checks=[('all basic-detection checks run with DUMP revoked',all(not d(n)['dump'] and not d(n)['reportAccess'] for n in names)),
  ('manifest session announcements apply measured per-player EQ',a('component') and near(v('per-player-cut')-v('per-player-flat'),-6)),
  ('pause/resume retains the same connection and measured response',a('paused') and d('paused')['routes']==d('resumed')['routes'] and near(v('resumed-cut'),v('per-player-cut'))),
