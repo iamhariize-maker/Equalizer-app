@@ -17,8 +17,11 @@ object BlindRenderer {
             val heard=NativeEngine(clip.rate,2,NativeEngine.Quality.EFFICIENT).use {engine->
                 engine.setAnalysis(true);val scratch=clip.samples.copyOf();engine.process(scratch,scratch,scratch.size/2);engine.analysis()
             }
-            val plan=SmartPlan.compute(request,heard,true)
-            val ctx=if(request.mode==SmartMode.SVARESA)SvaresaBrain.layer(SvaresaSensors.read(context,request)) else null
+            val sensors=if(request.mode==SmartMode.SVARESA)SvaresaSensors.read(context,request) else null
+            // Same route gate and learned taste as the live plan, so the blind test judges the real sound.
+            val plan=SmartPlan.compute(request,heard,true,sensors!=null&&sensors.routeAware&&sensors.route==RouteKind.SPEAKER,
+                if(request.mode==SmartMode.SVARESA)Svaramanas.currentTaste() else null)
+            val ctx=sensors?.let(SvaresaBrain::layer)
             var layer=plan.toLayer(ctx).copy(protectEngine=request.mode==SmartMode.SVARESA,
                 dynamicEq=if(request.mode==SmartMode.SVARESA&&request.selectiveEq)request.strength.coerceIn(0.0,1.0) else 0.0)
             if(eq.smartEqControl&&eq.smartEqMode==EqMode.GRAPHIC)layer=layer.copy(bands=NativeEngine.fitGraphic(layer.bands,eq.smartGraphicCount).bands.map {Band(it.type,it.freqHz,it.gainDb,it.q)})
@@ -38,6 +41,7 @@ object BlindRenderer {
             val v=state.activeVocal;val i=state.activeInstrument;it.setStereoTuner(v.intimacy,v.warmth,v.smoothness,i.space,i.instruments,i.backingVocals,i.spatialDetail)
             it.setDynamicEq(state.dynamicEq)
             it.setBassUnmask(if(settings.experimentalBassUnmask && state === snapshot && state.enabled) 1.0 else 0.0)
+            val sm=state.activeSmart;it.setGrounding(sm?.groundingRestraint?:0.0,sm?.groundingBody?:0.0)
         }
         fun process(state: EqState): FloatArray =engine(state).use {e->
             val warm=clip.samples.copyOfRange(0,minOf(clip.samples.size,clip.rate*2));e.process(warm,warm,warm.size/2)

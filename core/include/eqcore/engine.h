@@ -5,6 +5,7 @@
 //   float in -> 64-bit -> preamp (+ auto headroom) -> [oversample up]
 //            -> parametric EQ at the high rate -> [oversample down]
 //            -> bass character (punch/sustain) -> vocal tuner / instrument amp (M/S)
+//            -> grounding (HF transient restraint + low-mid body)
 //            -> gain protection
 //            -> dither to the output word length -> float out
 //
@@ -19,6 +20,7 @@
 #include "eqcore/analyzer.h"
 #include "eqcore/true_peak.h"
 #include "eqcore/dynamic_eq.h"
+#include "eqcore/grounding.h"
 #include "eqcore/bass.h"
 #include "eqcore/bass_unmask.h"
 #include "eqcore/dither.h"
@@ -80,6 +82,9 @@ class Engine {
   void setSpatialMode(int mode) { stereo_.setSpatialMode(mode); }
   void setSpatialLoadLimited(bool on) { stereo_.setSpatialLoadLimited(on); }
   double detailedMix() const { return stereo_.detailedMix(); }
+  // Grounding: HF transient restraint + low-mid harmonic body (mono and stereo).
+  void setGrounding(const GroundingParams& p) { grounding_.setParams(p); }
+  double groundingRestraintDb() const { return grounding_.restraintDb(); }
 
   // Interleaved float I/O. In-place (in == out) is allowed. Allocation-free.
   void process(const float* in, float* out, int frames);
@@ -124,6 +129,7 @@ class Engine {
   std::atomic<double> dynamicAmount_{0};
   std::atomic<double> dynamicDb_[4]{};
   StereoTuner stereo_;
+  Grounding grounding_;
   std::atomic<bool> analysisOn_{false};
   SourceAnalyzer analyzer_;
   double smoothedGain_ = 1.0, gainTarget_ = 1.0, gainStep_ = 0.0;

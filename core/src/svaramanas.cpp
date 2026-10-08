@@ -195,6 +195,103 @@ double predictedGuideLoudnessDeltaDb(const std::vector<BandParams>& bands, const
   return den > 0 && num > 0 ? 10 * std::log10(num / den) : 0;
 }
 
+namespace {
+double bark(double f) { return 13.0 * std::atan(0.00076 * f) + 3.5 * std::atan((f / 7500.0) * (f / 7500.0)); }
+
+// von Bismarck sharpness of third-octave band levels (dB). Band powers are converted to per-Bark intensity
+// (the bands are not equally wide in Bark), then to specific loudness with the 0.23 power law.
+double sharpnessOf(const double* bandDb) {
+  double num = 0.0, den = 0.0;
+  for (int i = 0; i < SourceFeatures::kBands; ++i) {
+    const double fc = SourceFeatures::bandCentreHz(i);
+    const double dz = bark(fc * std::pow(2.0, 1.0 / 6.0)) - bark(fc * std::pow(2.0, -1.0 / 6.0));
+    const double z = bark(fc);
+    const double inten = std::pow(10.0, bandDb[i] / 10.0) / std::max(dz, 1e-6);
+    const double n = std::pow(inten, 0.23) * dz;
+    const double g = z < 15.8 ? 1.0 : 0.15 * std::exp(0.42 * (z - 15.8)) + 0.85;
+    num += n * g * z;
+    den += n;
+  }
+  return den > 0.0 ? 0.11 * num / den : 0.0;
+}
+}  // namespace
+
+double relativeSharpness(const SourceFeatures& f) {
+  static const double ref = [] {
+    double ref[SourceFeatures::kBands];
+    for (int i = 0; i < SourceFeatures::kBands; ++i)
+      ref[i] = kSvaresaTiltTargetDbPerOct * std::log2(SourceFeatures::bandCentreHz(i) / 1000.0);
+    return sharpnessOf(ref);
+  }();
+  return ref > 0.0 ? sharpnessOf(f.bandDb.data()) / ref : 1.0;
+}
+
+namespace {
+double bassToMidsOf(const double* bandDb) {
+  double bass = 0.0, mids = 0.0;
+  int nb = 0, nm = 0;
+  for (int i = 0; i < SourceFeatures::kBands; ++i) {
+    const double fc = SourceFeatures::bandCentreHz(i);
+    if (fc >= 39.0 && fc <= 101.0) { bass += bandDb[i]; ++nb; }
+    else if (fc >= 199.0 && fc <= 2001.0) { mids += bandDb[i]; ++nm; }
+  }
+  return (nb && nm) ? bass / nb - mids / nm : 0.0;
+}
+}  // namespace
+
+double bassToMidsDb(const SourceFeatures& f) { return bassToMidsOf(f.bandDb.data()); }
+
+double healthyBassToMidsDb() {
+  static const double v = [] {
+    double ref[SourceFeatures::kBands];
+    for (int i = 0; i < SourceFeatures::kBands; ++i)
+      ref[i] = kSvaresaTiltTargetDbPerOct * std::log2(SourceFeatures::bandCentreHz(i) / 1000.0);
+    return bassToMidsOf(ref);
+  }();
+  return v;
+}
+
+void TasteTarget::pack(double* out) const {
+  out[0] = valid ? 1.0 : 0.0;
+  out[1] = tracks;
+  out[2] = tiltDbPerOct;
+  out[3] = bassToMidsDb;
+  out[4] = sharpness;
+  out[5] = sideToMidDb;
+  out[6] = plrDb;
+}
+
+TasteTarget TasteTarget::unpack(const double* in, int n) {
+  TasteTarget t;
+  if (!in || n < kPacked) return t;
+  for (int i = 0; i < kPacked; ++i)
+    if (!std::isfinite(in[i])) return t;
+  t.valid = in[0] != 0.0 && in[1] >= 1.0;
+  t.tracks = static_cast<int>(std::clamp(in[1], 0.0, 1e6));
+  t.tiltDbPerOct = std::clamp(in[2], -6.0, 0.0);
+  t.bassToMidsDb = std::clamp(in[3], 0.0, 25.0);
+  t.sharpness = std::clamp(in[4], 0.5, 1.8);
+  t.sideToMidDb = std::clamp(in[5], -40.0, 0.0);
+  t.plrDb = std::clamp(in[6], 0.0, 30.0);
+  return t;
+}
+
+TasteTarget learnTaste(const TasteTarget& prev, const SourceFeatures& f) {
+  if (!f.valid || f.seconds < kTasteMinSeconds) return prev;
+  TasteTarget t = prev.valid ? prev : TasteTarget{};
+  const double w = prev.valid ? std::min(prev.tracks, kTasteMaxWeight) : 0.0;
+  auto mix = [w](double old, double now) { return (old * w + now) / (w + 1.0); };
+  t.tiltDbPerOct = std::clamp(mix(t.tiltDbPerOct, f.tiltDbPerOct), -6.0, 0.0);
+  t.bassToMidsDb = std::clamp(mix(t.bassToMidsDb, bassToMidsDb(f)), 0.0, 25.0);
+  const bool lossy = f.cutoffHz > 0.0 && f.cutoffHz < 15000.0;
+  if (!lossy) t.sharpness = std::clamp(mix(t.sharpness, relativeSharpness(f)), 0.5, 1.8);
+  if (!f.monoLike) t.sideToMidDb = std::clamp(mix(t.sideToMidDb, f.sideToMidDb), -40.0, 0.0);
+  t.plrDb = std::clamp(mix(t.plrDb, f.plrDb), 0.0, 30.0);
+  t.tracks = prev.valid ? prev.tracks + 1 : 1;
+  t.valid = true;
+  return t;
+}
+
 Plan plan(const Request& r, const SourceFeatures* features) {
   Plan p;
   // Svaresa does not infer taste or instruments: it corrects what was measured
@@ -228,6 +325,9 @@ Plan plan(const Request& r, const SourceFeatures* features) {
     return d.admitted;
   };
   bool okBoom = false, okMud = false, okHarsh = false, okTilt = false, okLoud = false, okStereo = false;
+  // Svaresa house-voicing actions (docs/SONIC_IDENTITY.md): each needs its own admitted evidence, otherwise it
+  // falls back to the static house value (a preference) or to nothing (punch, atmosphere, adaptive grounding).
+  bool okFound = false, okBody = false, okSoft = false, okPunch = false, okAtmos = false, okGround = false;
   if (heard) {
     const bool protective = gate("SM-LOSSY-1", {{policy::Metric::BandwidthCutoffHz, features->cutoffHz}}) &
                             gate("SM-CRUSH-1", {{policy::Metric::PlrDb, features->plrDb}, {policy::Metric::ClipsPerSecond, features->clipsPerSecond}}) &
@@ -238,9 +338,19 @@ Plan plan(const Request& r, const SourceFeatures* features) {
     okTilt = gate("SM-TILT-1", {{policy::Metric::TiltDbPerOct, features->tiltDbPerOct}});
     okLoud = gate("SM-LOUD-1", {{policy::Metric::LoudnessLufs, features->loudnessLufs}});
     okStereo = gate("SM-STEREO-1", {{policy::Metric::SideToMidDb, features->sideToMidDb}, {policy::Metric::Correlation, features->correlation}});
+    if (r.svaresaMode) {
+      okFound = gate("SM-FOUND-1", {{policy::Metric::BassToMidsDb, bassToMidsDb(*features)}, {policy::Metric::BoomDb, features->boomDb}});
+      okBody = gate("SM-BODY-1", {{policy::Metric::BoomDb, features->boomDb}, {policy::Metric::MudDb, features->mudDb}});
+      okSoft = gate("SM-SOFT-1", {{policy::Metric::SharpnessRatio, relativeSharpness(*features)}, {policy::Metric::BandwidthCutoffHz, features->cutoffHz}});
+      okPunch = gate("SM-PUNCH-1", {{policy::Metric::PlrDb, features->plrDb}});
+      okAtmos = gate("SM-ATMOS-1", {{policy::Metric::SideToMidDb, features->sideToMidDb}, {policy::Metric::MonoLike, features->monoLike ? 1.0 : 0.0}});
+      okGround = gate("SM-GROUND-1", {{policy::Metric::AirDb, features->airDb}, {policy::Metric::HarshDb, features->harshDb}, {policy::Metric::TiltDbPerOct, features->tiltDbPerOct}});
+    }
     if (!protective) heard = false;
   }
   if (!heard) addNote(p, kNoteListening);
+  const TasteTarget* taste = (r.svaresaMode && r.taste && r.taste->valid) ? r.taste : nullptr;
+  const double tiltTarget = taste ? std::clamp(taste->tiltDbPerOct, -4.0, -1.0) : kSvaresaTiltTargetDbPerOct;
 
   // ---- 2. the listener's request: feel + accepted categories -----------------
   p.categories = r.svaresaMode ? CategoryCheck{} : checkCategories(r);
@@ -313,12 +423,18 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   slots.push_back({{FilterType::Peak, 3500, 0.0, 1.2, true}, false});
   const size_t airIdx = slots.size();
   slots.push_back({{FilterType::HighShelf, 11000, 0.0, 0.71, true}, false});
-  size_t tiltLowIdx = 0, tiltHighIdx = 0;
+  size_t tiltLowIdx = 0, tiltHighIdx = 0, foundIdx = 0, bodyIdx = 0, softIdx = 0;
   if (r.svaresaMode) {
     tiltLowIdx = slots.size();
     slots.push_back({{FilterType::LowShelf, 200, 0.0, 0.71, true}, false});
     tiltHighIdx = slots.size();
     slots.push_back({{FilterType::HighShelf, 4000, 0.0, 0.71, true}, false});
+    foundIdx = slots.size();
+    slots.push_back({{FilterType::LowShelf, 65, 0.0, 0.71, true}, false});
+    bodyIdx = slots.size();
+    slots.push_back({{FilterType::Peak, 180, 0.0, 0.9, true}, false});
+    softIdx = slots.size();
+    slots.push_back({{FilterType::HighShelf, 8500, 0.0, 0.71, true}, false});
   }
   double svaresaSmooth = 0.0;
 
@@ -334,7 +450,7 @@ Plan plan(const Request& r, const SourceFeatures* features) {
     if (sv) {
       svaresaSmooth = okHarsh ? std::clamp((features->harshDb - 1.5) / 6.0, 0.0, 0.5) * cs : 0.0;
       // Overall tonal balance: a thin/bright or dark/heavy mix moves toward a healthy tilt.
-      const double dev = features->tiltDbPerOct - kSvaresaTiltTargetDbPerOct;
+      const double dev = features->tiltDbPerOct - tiltTarget;
       const double beyond = std::fabs(dev) - kSvaresaTiltDeadbandDbPerOct;
       if (okTilt && beyond > 0 && features->tiltDbPerOct != 0.0) {
         const double move = std::min(kSvaresaMaxTiltDb, 0.55 * beyond) * cs;
@@ -388,6 +504,48 @@ Plan plan(const Request& r, const SourceFeatures* features) {
     }
   }
 
+  if (r.svaresaMode) {
+    // House voicing (owner decision, docs/SONIC_IDENTITY.md). Targets come from the learned taste when there
+    // is one, otherwise from the built-in house values.
+    const double cs = std::min(strength, 1.0);
+    const bool crushed = heard && features->plrDb > 0 && (features->plrDb < 8.0 || features->clipsPerSecond > 1.0);
+    double foundation = kFoundationStaticDb, body = kHouseBodyDb, soft = kHouseSoftnessDb;
+    if (heard) {
+      // Foundation: lift only what the track lacks; a measured boom means the low end is already too much.
+      if (okFound) {
+        const double target = taste ? taste->bassToMidsDb : healthyBassToMidsDb() + kHouseDeepBassDb;
+        foundation = std::clamp(target - bassToMidsDb(*features), 0.0, kFoundationMaxDb);
+        foundation *= 1.0 - std::clamp((features->boomDb - 1.0) / 2.5, 0.0, 1.0);
+      }
+      if (okBody) body *= 1.0 - std::clamp(std::max(std::max(features->boomDb, features->mudDb), 0.0) / 4.0, 0.0, 1.0);
+      if (okSoft) {
+        const double sharpRef = taste ? taste->sharpness : 1.0;
+        const double excess = relativeSharpness(*features) / sharpRef - 1.0 - kSharpnessDeadband;
+        if (excess > 0.0) soft += std::max(kSoftnessMaxDb, -kSoftnessSlopeDb * excess);
+        // A lossy stream has nothing above its ceiling to soften: do not tilt what is not there.
+        if (features->cutoffHz > 0 && features->cutoffHz < 12000.0) soft = 0.0;
+      }
+      // Punch: limited masters lose their kick first; give the bass envelope a little of it back.
+      if (okPunch && features->plrDb > 0) {
+        const double limited = std::clamp((10.0 - features->plrDb) / 4.0, 0.0, 1.0);
+        if (limited > 0.0) { bassChar += kPunchOnLimited * limited * cs; addNote(p, kNotePunch); }
+      }
+      // Atmosphere: a narrow (but not mono) mix gets a little side ambience, up to the target width.
+      if (okAtmos && r.stereoEngine && !features->monoLike && features->sideToMidDb > -40.0) {
+        const double targetSide = taste ? taste->sideToMidDb : kHouseSideToMidDb;
+        const double space = std::clamp(0.04 * (targetSide - features->sideToMidDb), 0.0, kAtmosphereMax) * cs;
+        if (space > 0.005) { st.space += space; addNote(p, kNoteAtmosphere); }
+      }
+    }
+    if (r.speakerRoute) foundation = 0.0;  // a phone speaker cannot reproduce it
+    if (crushed) { foundation *= 0.5; body *= 0.5; }  // never stack full lifts on a crushed master
+    slots[foundIdx].band.gainDb = foundation * cs;
+    slots[bodyIdx].band.gainDb = body * cs;
+    slots[softIdx].band.gainDb = soft * cs;
+    if (foundation != 0.0 || body != 0.0 || soft != 0.0) addNote(p, kNoteVoicing);
+    if (taste) addNote(p, kNoteTaste);
+  }
+
   const double bandCap = r.svaresaMode ? kSvaresaMaxCorrectionDb : kMaxBandDb;
   for (auto& s : slots) {
     s.band.gainDb = std::clamp(s.band.gainDb, -bandCap, bandCap);
@@ -405,6 +563,24 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   }
   // Harshness smoothing is a measured correction, so Svaresa asks for it on both engines.
   if (r.svaresaMode) p.stereo.smoothness = clampStereo(svaresaSmooth, 0.0);
+
+  if (r.svaresaMode) {
+    // Grounded voicing: constant gentle body, plus restraint/body that scale with measured
+    // top-end excess (airy, shrill or bright-tilted material) -- the typical hi-res complaint.
+    const double cs = std::min(strength, 1.0);
+    double restraint = kGroundingBaseRestraint, body = kGroundingBaseBody;
+    if (heard && okGround) {
+      const double dev = features->tiltDbPerOct != 0.0 ? features->tiltDbPerOct - tiltTarget : 0.0;
+      const double spiky = 0.25 * std::max(0.0, features->airDb - 1.0) + 0.15 * std::max(0.0, features->harshDb - 1.0) +
+                           0.20 * std::max(0.0, dev - 0.5);
+      restraint += spiky;
+      body += 0.2 * std::max(0.0, dev - 0.5);
+      if (features->plrDb > 0 && (features->plrDb < 8.0 || features->clipsPerSecond > 1.0)) body *= 0.5;  // already dense
+    }
+    p.grounding.restraint = std::clamp(restraint, 0.0, 1.0) * cs;
+    p.grounding.body = std::clamp(body, 0.0, kGroundingMaxBody) * cs;
+    if (!p.grounding.isOff()) addNote(p, kNoteGrounded);
+  }
 
   // ---- 1. loudness match: never win by being louder ------------------------------
   p.predictedDeltaDb = predictedGuideLoudnessDeltaDb(p.bands, p.stereo, heard && okLoud && okStereo ? features : nullptr);

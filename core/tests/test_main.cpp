@@ -33,6 +33,7 @@
 #include "eqcore/spatial.h"
 #include "eqcore/bass_unmask.h"
 #include "eqcore/policy.h"
+#include "eqcore/grounding.h"
 #include <fstream>
 #include <sstream>
 
@@ -2972,7 +2973,9 @@ TEST(svaresa_corrects_side_only_masking_without_inventing_instrument_picks) {
   const auto heard = analyse(x);
   sv::Request r; r.svaresaMode = true;
   const auto p = sv::plan(r, &heard);
-  CHECK(p.categories.accepted == 0 && p.bassCharacter == 0);
+  // No picks are invented; the only bass character is the measured limited-master punch.
+  CHECK(p.categories.accepted == 0);
+  CHECK_NEAR(p.bassCharacter, sv::kPunchOnLimited * std::clamp((10.0 - heard.plrDb) / 4.0, 0.0, 1.0), 1e-9);
   EngineConfig c; c.autoHeadroom = false; c.gainProtection = false;
   Engine e(c); e.setBandsAllChannels(p.bands); e.setPreampDb(p.preampDb); e.setStereoTuner(p.stereo);
   auto y = x;
@@ -3096,7 +3099,9 @@ TEST(svaresa_ignores_guided_taste_and_only_corrects_measured_mix_issues) {
   for (const auto& b : p.bands)
     if (b.freqHz == 300.0) cut300 = b.gainDb;
   CHECK(cut300 < -2.0);
-  CHECK(p.bassCharacter == 0.0);
+  // Guided bass picks never leak in: only the measured limited-master punch, identical with or without picks.
+  CHECK_NEAR(p.bassCharacter, q.bassCharacter, 1e-12);
+  CHECK_NEAR(p.bassCharacter, sv::kPunchOnLimited * std::clamp((10.0 - muddy.plrDb) / 4.0, 0.0, 1.0), 1e-9);
 }
 
 TEST(svaresa_moves_a_bright_or_dark_mix_toward_a_healthy_balance_within_bounds) {
@@ -3157,12 +3162,20 @@ TEST(svaresa_asks_for_harshness_smoothing_on_both_engines_when_the_mix_is_shrill
   sv::Request guided;
   guided.stereoEngine = false;
   CHECK(sv::plan(guided, &shrill).stereo.smoothness == 0.0);  // guided mode keeps its own rules
-  // Nothing heard: Svaresa changes nothing by itself (context layers are added by the app).
+  // Nothing heard: no MEASURED correction, only the owner's house voicing at its fixed values
+  // (context layers are added by the app).
   sv::Request none;
   none.svaresaMode = true;
   none.stereoEngine = false;
   const auto idle = sv::plan(none, nullptr);
-  for (const auto& b : idle.bands) CHECK(b.gainDb == 0.0);
+  int voicing = 0;
+  for (const auto& b : idle.bands) {
+    if (b.freqHz == 65.0 && b.type == FilterType::LowShelf) { CHECK_NEAR(b.gainDb, sv::kFoundationStaticDb, 1e-9); ++voicing; }
+    else if (b.freqHz == 180.0 && b.type == FilterType::Peak) { CHECK_NEAR(b.gainDb, sv::kHouseBodyDb, 1e-9); ++voicing; }
+    else if (b.freqHz == 8500.0 && b.type == FilterType::HighShelf) { CHECK_NEAR(b.gainDb, sv::kHouseSoftnessDb, 1e-9); ++voicing; }
+    else CHECK(b.gainDb == 0.0);
+  }
+  CHECK(voicing == 3);
 }
 
 TEST(svaramanas_respects_lossy_sources_mono_files_and_crushed_masters) {
@@ -3656,6 +3669,453 @@ TEST(vocal_budget_live_changes_cross_zero_without_timeline_or_block_changes) {
     CHECK(maxDeltaStep<.025);
     CHECK(blockError<1e-7);
   }
+}
+
+// ---- Grounding (docs/SONIC_IDENTITY.md) -------------------------------------------------
+namespace {
+// Tone with amplitude `amp` through Grounding (stereo, identical channels); returns steady-state output.
+std::vector<double> groundTone(const GroundingParams& gp, double freq, double amp, double fs, int n) {
+  Grounding g(fs);
+  g.setParams(gp);
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) l[i] = r[i] = amp * std::sin(2 * kPi * freq * i / fs);
+  for (int s = 0; s < n; s += 480) g.process(&l[s], &r[s], std::min(480, n - s));
+  return l;
+}
+double thdDb(const std::vector<double>& y, double f0, double fs, size_t a, size_t b) {
+  const double f = sineAmplitude(y, f0, fs, a, b);
+  double h = 0;
+  for (int k = 2; k <= 6; ++k) { const double v = sineAmplitude(y, f0 * k, fs, a, b); h += v * v; }
+  return 10 * std::log10(std::max(h, 1e-30)) - 20 * std::log10(f);
+}
+}  // namespace
+
+TEST(grounding_off_is_bit_exact_bypass) {
+  const double fs = 48000;
+  Grounding g(fs);
+  std::mt19937 rng(7);
+  std::normal_distribution<double> nd(0, 0.1);
+  std::vector<double> l(4800), r(4800);
+  for (auto& v : l) v = nd(rng);
+  for (auto& v : r) v = nd(rng);
+  auto l0 = l, r0 = r;
+  g.process(l.data(), r.data(), 4800);
+  CHECK(l == l0);
+  CHECK(r == r0);
+}
+
+TEST(grounding_body_is_clean_when_quiet_odd_order_only_and_never_gritty_when_loud) {
+  const double fs = 48000;
+  const int n = 48000;
+  const size_t a = 24000, b = 48000;
+  // Quiet: -50 dBFS. Essentially linear: harmonics below -90 dBc, gain unity within 0.1 dB.
+  auto quiet = groundTone({0, 1}, 300, 0.00316, fs, n);
+  const double quietThd = thdDb(quiet, 300, fs, a, b);
+  CHECK(quietThd < -90.0);
+  CHECK_NEAR(toDb(sineAmplitude(quiet, 300, fs, a, b) / 0.00316), 0.0, 0.1);
+  // Moderate level: -20 dBFS adds a touch of weight (3rd harmonic about -44 dBc), not yet audible as distortion.
+  auto mid = groundTone({0, 1}, 300, 0.1, fs, n);
+  const double midThd = thdDb(mid, 300, fs, a, b);
+  CHECK(midThd > -50.0 && midThd < -38.0);
+  // Loud: -12 dBFS band level is audible weight (about -32 dBc), well short of grit.
+  auto loud = groundTone({0, 1}, 300, 0.25, fs, n);
+  const double thd = thdDb(loud, 300, fs, a, b);
+  CHECK(thd > -40.0 && thd < -28.0);
+  CHECK_NEAR(toDb(sineAmplitude(loud, 300, fs, a, b) / 0.25), 0.0, 1.0);  // < 1 dB fundamental compression
+  // The knee keeps even a -6 dBFS band peak from turning gritty: harmonics stay below -26 dBc, squash under 1.5 dB.
+  auto peak = groundTone({0, 1}, 300, 0.5, fs, n);
+  CHECK(thdDb(peak, 300, fs, a, b) < -26.0);
+  CHECK_NEAR(toDb(sineAmplitude(peak, 300, fs, a, b) / 0.5), 0.0, 1.5);
+  CHECK(thd > quietThd + 50.0);  // clean when quiet, weighty when loud
+  // Symmetric (odd-order) only by default: no 2nd harmonic at all.
+  CHECK(toDb(sineAmplitude(loud, 600, fs, a, b) / sineAmplitude(loud, 300, fs, a, b)) < -120.0);
+  // The even-order knob is for blind tests only; when raised it does create a 2nd harmonic.
+  auto even = groundTone({0, 1, 1}, 300, 0.25, fs, n);
+  CHECK(toDb(sineAmplitude(even, 600, fs, a, b) / sineAmplitude(even, 300, fs, a, b)) > -50.0);
+  // Depth scales it monotonically.
+  auto half = groundTone({0, 0.5}, 300, 0.25, fs, n);
+  CHECK(thdDb(half, 300, fs, a, b) < thd);
+  // Nothing is created far above the order-6 harmonics.
+  CHECK(toDb(sineAmplitude(loud, 300 * 12, fs, a, b)) < -80.0);
+}
+
+TEST(grounding_restraint_leaves_sustained_air_and_the_body_alone) {
+  const double fs = 48000;
+  const int n = 48000;
+  // Sustained 8 kHz at -20 dBFS: no crest, no reduction (< 0.1 dB).
+  auto air = groundTone({1, 0}, 8000, 0.1, fs, n);
+  CHECK_NEAR(toDb(sineAmplitude(air, 8000, fs, 24000, 48000) / 0.1), 0.0, 0.1);
+  // 200 Hz is below the restrained band: untouched.
+  auto low = groundTone({1, 0}, 200, 0.2, fs, n);
+  CHECK_NEAR(toDb(sineAmplitude(low, 200, fs, 24000, 48000) / 0.2), 0.0, 0.05);
+}
+
+TEST(grounding_restraint_softens_hf_spikes_by_at_most_four_db_and_recovers) {
+  const double fs = 48000;
+  Grounding g(fs);
+  g.setParams({1, 0});
+  // 0.5 s bed of quiet 6 kHz (-34 dBFS), then a 3 ms burst +30 dB over it, then bed again.
+  const int n = 48000;
+  std::vector<double> l(n), r(n), l0;
+  for (int i = 0; i < n; ++i) {
+    double amp = 0.02;
+    if (i >= 24000 && i < 24000 + 144) amp = 0.6;
+    l[i] = r[i] = amp * std::sin(2 * kPi * 6000.0 * i / fs);
+  }
+  l0 = l;
+  double worst = 0;
+  for (int s = 0; s < n; s += 128) {
+    g.process(&l[s], &r[s], std::min(128, n - s));
+    worst = std::min(worst, g.restraintDb());
+  }
+  CHECK(worst < -1.0);          // spike is audibly eased
+  CHECK(worst >= -4.0001);      // never beyond the cap
+  // The 0.5 ms attack lets the very first cycles of a spike through; the body of the burst is eased.
+  double eIn = 0, eOut = 0;
+  for (int i = 24000; i < 24144; ++i) { eIn += l0[i] * l0[i]; eOut += l[i] * l[i]; }
+  const double burstDb = 10 * std::log10(eOut / eIn);
+  CHECK(burstDb < -0.5);   // eased...
+  CHECK(burstDb > -4.0);   // ...but within the 4 dB cap: still a transient, not a stump
+  // Back to the bed: gain recovers to unity within 100 ms.
+  CHECK_NEAR(toDb(sineAmplitude(l, 6000, fs, 24000 + 144 + 4800, 24000 + 144 + 9600) / 0.02), 0.0, 0.1);
+  CHECK(g.restraintDb() > -0.1);
+}
+
+TEST(grounding_gain_is_stereo_linked_and_preserves_the_image) {
+  const double fs = 48000;
+  Grounding g(fs);
+  g.setParams({1, 0});
+  const int n = 24000;
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) {  // right = half of left (a panned source); burst in the middle
+    double amp = (i >= 12000 && i < 12100) ? 0.6 : 0.02;
+    l[i] = amp * std::sin(2 * kPi * 7000.0 * i / fs);
+    r[i] = 0.5 * l[i];
+  }
+  auto l0 = l;
+  g.process(l.data(), r.data(), n);
+  for (int i = 11000; i < 13000; ++i) CHECK_NEAR(r[i], 0.5 * l[i], 1e-9);  // ratio held sample by sample
+  CHECK(l[12050] != l0[12050]);
+}
+
+TEST(grounding_ramps_in_and_out_without_steps_and_is_block_independent) {
+  const double fs = 48000;
+  const int n = 9600;
+  auto render = [&](int block) {
+    Grounding g(fs);
+    std::vector<double> l(n), r(n);
+    for (int i = 0; i < n; ++i) l[i] = r[i] = 0.3 * std::sin(2 * kPi * 300.0 * i / fs) + 0.05 * std::sin(2 * kPi * 5000.0 * i / fs);
+    for (int s = 0; s < n; s += block) {
+      if (s == 2400) g.setParams({1, 1});
+      if (s == 7200) g.setParams({0, 0});
+      g.process(&l[s], &r[s], std::min(block, n - s));
+    }
+    return l;
+  };
+  auto a = render(2400), b = render(2400);
+  CHECK(a == b);  // deterministic
+  auto c = render(1200);  // parameter changes land on block boundaries both ways
+  for (int i = 0; i < n; ++i) CHECK_NEAR(a[i], c[i], 1e-9);
+  double step = 0;  // no single-sample jump larger than the signal's own slope
+  for (int i = 1; i < n; ++i) step = std::max(step, std::fabs(a[i] - a[i - 1]));
+  CHECK(step < 0.15);
+  for (int i = 7200 + 960 + 960; i < n; ++i) { CHECK(std::isfinite(a[i])); }
+}
+
+TEST(engine_grounding_is_a_no_op_when_off_and_stays_protected_when_on) {
+  EngineConfig c;
+  c.autoHeadroom = false;
+  Engine on(c), off(c);
+  on.setGrounding({1, 1});
+  std::vector<float> in(2 * 4800), a(in.size()), b(in.size());
+  std::mt19937 rng(3);
+  std::normal_distribution<double> nd(0, 0.2);
+  for (auto& v : in) v = static_cast<float>(std::clamp(nd(rng), -0.99, 0.99));
+  off.process(in.data(), a.data(), 4800);
+  Engine ref(c);
+  ref.process(in.data(), b.data(), 4800);
+  CHECK(a == b);  // grounding at defaults changes nothing
+  on.process(in.data(), a.data(), 4800);
+  for (float v : a) CHECK(std::isfinite(v) && std::fabs(v) <= 1.0f);
+  CHECK(on.groundingRestraintDb() <= 0.0 && on.groundingRestraintDb() >= -4.0001);
+}
+
+TEST(svaresa_grounded_voicing_scales_with_measured_top_end_excess_within_bounds) {
+  using namespace svaramanas;
+  SourceFeatures f;
+  f.valid = true; f.seconds = 20; f.loudnessLufs = -14; f.plrDb = 12; f.cutoffHz = 22000;
+  f.tiltDbPerOct = kSvaresaTiltTargetDbPerOct;
+  Request r; r.svaresaMode = true;
+  auto balanced = plan(r, &f);
+  CHECK_NEAR(balanced.grounding.body, kGroundingBaseBody, 1e-9);
+  CHECK_NEAR(balanced.grounding.restraint, kGroundingBaseRestraint, 1e-9);
+  f.airDb = 5; f.harshDb = 4; f.tiltDbPerOct = kSvaresaTiltTargetDbPerOct + 3;
+  auto airy = plan(r, &f);
+  CHECK(airy.grounding.restraint > balanced.grounding.restraint + 0.4);
+  CHECK(airy.grounding.body > balanced.grounding.body);
+  CHECK(airy.grounding.restraint <= 1.0 && airy.grounding.body <= kGroundingMaxBody);
+  f.plrDb = 6;  // crushed master: body is halved
+  CHECK(plan(r, &f).grounding.body < airy.grounding.body);
+  // Not heard yet: baseline voicing only. Guided (non-Svaresa) mode never grounds.
+  auto unheard = plan(r, nullptr);
+  CHECK_NEAR(unheard.grounding.body, kGroundingBaseBody, 1e-9);
+  Request guided; guided.feel = Feel::Warm;
+  CHECK(plan(guided, &f).grounding.isOff());
+}
+
+// ---- Svaresa house voicing: fullness + softened top ---------------------------------------
+namespace {
+// Hand-built features for a spectrum with the given band-level tilt: exact, no analyser noise.
+SourceFeatures tiltFeatures(double tiltDbPerOct) {
+  SourceFeatures f;
+  f.valid = true; f.seconds = 20; f.loudnessLufs = -14; f.plrDb = 12; f.cutoffHz = 22000;
+  f.tiltDbPerOct = tiltDbPerOct;
+  for (int i = 0; i < SourceFeatures::kBands; ++i)
+    f.bandDb[i] = tiltDbPerOct * std::log2(SourceFeatures::bandCentreHz(i) / 1000.0);
+  return f;
+}
+double voicingGain(const svaramanas::Plan& p, double hz, FilterType t) {
+  for (const auto& b : p.bands) if (b.freqHz == hz && b.type == t) return b.gainDb;
+  return 1e9;
+}
+}  // namespace
+
+TEST(relative_sharpness_follows_tilt_ignores_level_and_drops_for_lossy_files) {
+  namespace sv = svaramanas;
+  CHECK_NEAR(sv::relativeSharpness(tiltFeatures(sv::kSvaresaTiltTargetDbPerOct)), 1.0, 1e-9);
+  double prev = 0;
+  for (double tilt : {-6.0, -4.0, -2.5, -1.5, -0.5, 0.5, 2.0}) {
+    const double s = sv::relativeSharpness(tiltFeatures(tilt));
+    CHECK(s > prev);  // brighter balance is always sharper
+    prev = s;
+  }
+  const double s15 = sv::relativeSharpness(tiltFeatures(-1.5));
+  CHECK(s15 > 1.10 && s15 < 1.18);  // measured 1.142 for +1 dB/oct brighter than the healthy balance
+  auto loud = tiltFeatures(-2.5);
+  for (auto& v : loud.bandDb) v += 20.0;
+  CHECK_NEAR(sv::relativeSharpness(loud), 1.0, 1e-9);  // a ratio: independent of level
+  auto lossy = tiltFeatures(-2.5);
+  for (int i = 0; i < SourceFeatures::kBands; ++i) if (SourceFeatures::bandCentreHz(i) > 16000) lossy.bandDb[i] = -90;
+  CHECK(sv::relativeSharpness(lossy) < 0.85);
+}
+
+TEST(svaresa_house_voicing_is_audible_bounded_and_backs_off_on_evidence) {
+  namespace sv = svaramanas;
+  sv::Request r;
+  r.svaresaMode = true;
+  const auto f0 = tiltFeatures(sv::kSvaresaTiltTargetDbPerOct);
+  CHECK_NEAR(sv::bassToMidsDb(f0), sv::healthyBassToMidsDb(), 1e-9);
+  CHECK(sv::healthyBassToMidsDb() > 7.5 && sv::healthyBassToMidsDb() < 9.0);
+  // Healthy balance: the house deep-bass target is kHouseDeepBassDb above it, so the foundation lifts exactly that.
+  auto pHealthy = sv::plan(r, &f0);
+  CHECK_NEAR(voicingGain(pHealthy, 65.0, FilterType::LowShelf), sv::kHouseDeepBassDb, 1e-9);
+  CHECK_NEAR(voicingGain(pHealthy, 180.0, FilterType::Peak), sv::kHouseBodyDb, 1e-9);
+  CHECK_NEAR(voicingGain(pHealthy, 8500.0, FilterType::HighShelf), sv::kHouseSoftnessDb, 1e-9);
+  CHECK(std::find(pHealthy.notes.begin(), pHealthy.notes.end(), sv::kNoteVoicing) != pHealthy.notes.end());
+  CHECK(std::find(pHealthy.notes.begin(), pHealthy.notes.end(), sv::kNoteTaste) == pHealthy.notes.end());
+  CHECK(std::fabs(pHealthy.preampDb + pHealthy.predictedDeltaDb) < 1e-6);  // loudness matched
+  // Foundation lifts only what is missing: a bass-heavy track gets nothing, a thin one at most kFoundationMaxDb.
+  auto heavy = f0, thin = f0;
+  for (int i = 0; i < SourceFeatures::kBands; ++i)
+    if (SourceFeatures::bandCentreHz(i) <= 101.0) { heavy.bandDb[i] += 4.0; thin.bandDb[i] -= 3.0; }
+  CHECK_NEAR(voicingGain(sv::plan(r, &heavy), 65.0, FilterType::LowShelf), 0.0, 1e-9);
+  CHECK_NEAR(voicingGain(sv::plan(r, &thin), 65.0, FilterType::LowShelf), sv::kFoundationMaxDb, 1e-9);
+  // A measured boom removes the foundation (half at 2.25 dB, none at 3.5 dB); mud/boom remove the body.
+  auto boomy = f0; boomy.boomDb = 2.25;
+  CHECK_NEAR(voicingGain(sv::plan(r, &boomy), 65.0, FilterType::LowShelf), 0.5 * sv::kHouseDeepBassDb, 1e-9);
+  boomy.boomDb = 3.5;
+  CHECK_NEAR(voicingGain(sv::plan(r, &boomy), 65.0, FilterType::LowShelf), 0.0, 1e-9);
+  auto muddy = f0; muddy.mudDb = 2.0;
+  CHECK_NEAR(voicingGain(sv::plan(r, &muddy), 180.0, FilterType::Peak), 0.5 * sv::kHouseBodyDb, 1e-9);
+  muddy.mudDb = 4.0;
+  CHECK_NEAR(voicingGain(sv::plan(r, &muddy), 180.0, FilterType::Peak), 0.0, 1e-9);
+  // Softness deepens with measured sharpness, never beyond the house shelf plus kSoftnessMaxDb.
+  double prev = sv::kHouseSoftnessDb + 1e-9;
+  for (double tilt : {-2.0, -1.0, 0.0, 1.0, 3.0}) {
+    const auto f = tiltFeatures(tilt);
+    const double g = voicingGain(sv::plan(r, &f), 8500.0, FilterType::HighShelf);
+    CHECK(g <= prev + 1e-9);
+    CHECK(g >= sv::kHouseSoftnessDb + sv::kSoftnessMaxDb - 1e-9);
+    prev = g;
+  }
+  CHECK(prev < sv::kHouseSoftnessDb - 1.0);
+  const auto dark = tiltFeatures(-5.0);  // a dark mix is not made darker
+  CHECK_NEAR(voicingGain(sv::plan(r, &dark), 8500.0, FilterType::HighShelf), sv::kHouseSoftnessDb, 1e-9);
+  auto lossy = f0; lossy.cutoffHz = 11000;
+  CHECK_NEAR(voicingGain(sv::plan(r, &lossy), 8500.0, FilterType::HighShelf), 0.0, 1e-9);
+  // Phone speaker: no foundation (a small driver cannot reproduce it), body and softness stay.
+  sv::Request spk = r; spk.speakerRoute = true;
+  CHECK_NEAR(voicingGain(sv::plan(spk, &f0), 65.0, FilterType::LowShelf), 0.0, 1e-9);
+  CHECK_NEAR(voicingGain(sv::plan(spk, nullptr), 65.0, FilterType::LowShelf), 0.0, 1e-9);
+  CHECK_NEAR(voicingGain(sv::plan(spk, &f0), 180.0, FilterType::Peak), sv::kHouseBodyDb, 1e-9);
+  // Strength scales it; guided mode has no voicing bands at all.
+  sv::Request half = r; half.strength = 0.5;
+  CHECK_NEAR(voicingGain(sv::plan(half, &f0), 65.0, FilterType::LowShelf), 0.5 * sv::kHouseDeepBassDb, 1e-9);
+  sv::Request guided;
+  CHECK(voicingGain(sv::plan(guided, &f0), 65.0, FilterType::LowShelf) > 1e8);
+  CHECK(voicingGain(sv::plan(guided, &f0), 180.0, FilterType::Peak) > 1e8);
+  CHECK(sv::plan(r, nullptr).bands.size() == pHealthy.bands.size());  // one skeleton heard or not
+  // Before anything is heard (SM-HOUSE-1): the static house voicing, exactly.
+  const auto idle = sv::plan(r, nullptr);
+  CHECK_NEAR(voicingGain(idle, 65.0, FilterType::LowShelf), sv::kFoundationStaticDb, 1e-9);
+  CHECK_NEAR(voicingGain(idle, 180.0, FilterType::Peak), sv::kHouseBodyDb, 1e-9);
+  CHECK_NEAR(voicingGain(idle, 8500.0, FilterType::HighShelf), sv::kHouseSoftnessDb, 1e-9);
+  CHECK_NEAR(idle.bassCharacter, 0.0, 1e-12);
+  CHECK_NEAR(idle.stereo.space, 0.0, 1e-12);
+}
+
+TEST(voicing_actions_are_evidence_gated_and_skip_when_evidence_is_stale_or_foreign) {
+  namespace sv = svaramanas;
+  auto f = tiltFeatures(sv::kSvaresaTiltTargetDbPerOct);
+  f.plrDb = 6.0; f.sideToMidDb = -20.0;  // would trigger punch and atmosphere if the evidence were good
+  for (int i = 0; i < SourceFeatures::kBands; ++i)
+    if (SourceFeatures::bandCentreHz(i) <= 101.0) f.bandDb[i] -= 3.0;  // and a thin bass
+  sv::Request r;
+  r.svaresaMode = true;
+  auto skipOf = [](const sv::Plan& p, const char* id) {
+    for (const auto& g : p.gates) if (std::string(g.rule) == id) return g.skip;
+    return policy::Skip::MissingInput;
+  };
+  const auto good = sv::plan(r, &f);
+  for (const char* id : {"SM-FOUND-1", "SM-BODY-1", "SM-SOFT-1", "SM-PUNCH-1", "SM-ATMOS-1", "SM-GROUND-1"})
+    CHECK(skipOf(good, id) == policy::Skip::None);          // fresh, same-epoch evidence: all admitted
+  CHECK(good.bassCharacter > 0.1 && good.stereo.space > 0.15);
+  // Guided mode consults none of them.
+  sv::Request guided;
+  const auto gp = sv::plan(guided, &f);
+  CHECK(skipOf(gp, "SM-FOUND-1") == policy::Skip::MissingInput);
+  // A single non-finite measurement skips only its own action; the others still run.
+  auto broken = f;
+  broken.plrDb = std::nan("");
+  const auto partial = sv::plan(r, &broken);
+  CHECK(skipOf(partial, "SM-PUNCH-1") == policy::Skip::Invalid);
+  CHECK(skipOf(partial, "SM-FOUND-1") == policy::Skip::None);
+  CHECK_NEAR(partial.bassCharacter, 0.0, 1e-12);
+  // Stale, foreign-epoch or low-confidence evidence: the protective rules fail, so the plan is the static
+  // house voicing -- the new adaptive actions (measured foundation, punch, atmosphere) do not run.
+  struct Case { policy::Skip skip; void (*mutate)(sv::Request&); };
+  const Case cases[] = {
+      {policy::Skip::Stale, [](sv::Request& q) { q.featuresAgeSeconds = 120.0; }},
+      {policy::Skip::WrongEpoch, [](sv::Request& q) { q.epoch = 5; q.featuresEpoch = 4; }},
+      {policy::Skip::LowConfidence, [](sv::Request& q) { q.featuresConfidence = 0.5; }},
+  };
+  const auto idle = sv::plan(r, nullptr);
+  for (const auto& c : cases) {
+    sv::Request q = r;
+    c.mutate(q);
+    const auto p = sv::plan(q, &f);
+    CHECK(skipOf(p, "SM-FOUND-1") == c.skip);
+    CHECK(skipOf(p, "SM-PUNCH-1") == c.skip);
+    CHECK_NEAR(voicingGain(p, 65.0, FilterType::LowShelf), sv::kFoundationStaticDb, 1e-9);
+    CHECK_NEAR(p.bassCharacter, 0.0, 1e-12);
+    CHECK_NEAR(p.stereo.space, 0.0, 1e-12);
+    for (size_t i = 0; i < p.bands.size(); ++i) CHECK_NEAR(p.bands[i].gainDb, idle.bands[i].gainDb, 1e-12);
+  }
+}
+
+TEST(svaresa_restores_punch_on_limited_masters_and_crushed_masters_get_half_lifts) {
+  namespace sv = svaramanas;
+  sv::Request r;
+  r.svaresaMode = true;
+  auto f = tiltFeatures(sv::kSvaresaTiltTargetDbPerOct);
+  CHECK_NEAR(sv::plan(r, &f).bassCharacter, 0.0, 1e-12);  // dynamic master: no punch
+  f.plrDb = 9.0;
+  CHECK_NEAR(sv::plan(r, &f).bassCharacter, sv::kPunchOnLimited * 0.25, 1e-9);
+  f.plrDb = 6.0;
+  const auto crushed = sv::plan(r, &f);
+  CHECK_NEAR(crushed.bassCharacter, sv::kPunchOnLimited, 1e-9);
+  CHECK(crushed.bassCharacter <= 0.15);
+  CHECK(std::find(crushed.notes.begin(), crushed.notes.end(), sv::kNotePunch) != crushed.notes.end());
+  CHECK_NEAR(voicingGain(crushed, 65.0, FilterType::LowShelf), 0.5 * sv::kHouseDeepBassDb, 1e-9);
+  CHECK_NEAR(voicingGain(crushed, 180.0, FilterType::Peak), 0.5 * sv::kHouseBodyDb, 1e-9);
+  CHECK(crushed.grounding.body < sv::plan(r, &(f.plrDb = 14.0, f)).grounding.body);
+}
+
+TEST(svaresa_opens_atmosphere_only_on_narrow_stereo_mixes) {
+  namespace sv = svaramanas;
+  sv::Request r;
+  r.svaresaMode = true;
+  auto f = tiltFeatures(sv::kSvaresaTiltTargetDbPerOct);
+  f.sideToMidDb = -20.0;  // narrow
+  const auto narrow = sv::plan(r, &f);
+  CHECK_NEAR(narrow.stereo.space, sv::kAtmosphereMax, 1e-9);  // 8 dB short of the target: capped
+  CHECK(std::find(narrow.notes.begin(), narrow.notes.end(), sv::kNoteAtmosphere) != narrow.notes.end());
+  f.sideToMidDb = -14.0;
+  CHECK_NEAR(sv::plan(r, &f).stereo.space, 0.08, 1e-9);
+  f.sideToMidDb = -8.0;  // already wider than the target: untouched
+  CHECK_NEAR(sv::plan(r, &f).stereo.space, 0.0, 1e-12);
+  f.sideToMidDb = -20.0;
+  f.monoLike = true;  // a mono file is never widened
+  CHECK_NEAR(sv::plan(r, &f).stereo.space, 0.0, 1e-12);
+  f.monoLike = false;
+  sv::Request sys = r; sys.stereoEngine = false;  // system effects have no M/S tuner
+  CHECK_NEAR(sv::plan(sys, &f).stereo.space, 0.0, 1e-12);
+  CHECK(std::fabs(narrow.preampDb + narrow.predictedDeltaDb) < 1e-6);  // the side lift is loudness matched too
+}
+
+TEST(taste_learning_averages_references_and_drives_the_voicing_targets) {
+  namespace sv = svaramanas;
+  auto a = tiltFeatures(-2.0), b = tiltFeatures(-3.0);
+  a.seconds = b.seconds = 40; a.sideToMidDb = -10; b.sideToMidDb = -14; a.plrDb = 14; b.plrDb = 10;
+  for (int i = 0; i < SourceFeatures::kBands; ++i)
+    if (SourceFeatures::bandCentreHz(i) <= 101.0) { a.bandDb[i] += 3.0; b.bandDb[i] += 1.0; }
+  sv::TasteTarget t;
+  CHECK(!t.valid);
+  auto short_ = a; short_.seconds = 5;
+  CHECK(!sv::learnTaste(t, short_).valid);                // too little heard: nothing learned
+  auto invalid = a; invalid.valid = false;
+  CHECK(!sv::learnTaste(t, invalid).valid);
+  t = sv::learnTaste(t, a);
+  CHECK(t.valid && t.tracks == 1);
+  CHECK_NEAR(t.tiltDbPerOct, -2.0, 1e-9);
+  CHECK_NEAR(t.bassToMidsDb, sv::bassToMidsDb(a), 1e-9);
+  t = sv::learnTaste(t, b);
+  CHECK(t.tracks == 2);
+  CHECK_NEAR(t.tiltDbPerOct, -2.5, 1e-9);
+  CHECK_NEAR(t.sideToMidDb, -12.0, 1e-9);
+  CHECK_NEAR(t.plrDb, 12.0, 1e-9);
+  CHECK_NEAR(t.bassToMidsDb, 0.5 * (sv::bassToMidsDb(a) + sv::bassToMidsDb(b)), 1e-9);
+  CHECK_NEAR(t.sharpness, 0.5 * (sv::relativeSharpness(a) + sv::relativeSharpness(b)), 1e-9);
+  // A lossy reference does not teach sharpness; everything else still learns.
+  auto lossy = b; lossy.cutoffHz = 14000;
+  const auto tl = sv::learnTaste(t, lossy);
+  CHECK_NEAR(tl.sharpness, t.sharpness, 1e-12);
+  CHECK(tl.tracks == 3);
+  // Weight is capped: after many references a new one still moves the target by 1/13.
+  sv::TasteTarget many = t; many.tracks = 100;
+  auto bright = tiltFeatures(-1.0); bright.seconds = 40;
+  CHECK_NEAR(sv::learnTaste(many, bright).tiltDbPerOct, (t.tiltDbPerOct * 12 + (-1.0)) / 13.0, 1e-9);
+  // Pack / unpack round trip; garbage is rejected.
+  double packed[sv::TasteTarget::kPacked];
+  t.pack(packed);
+  const auto u = sv::TasteTarget::unpack(packed, sv::TasteTarget::kPacked);
+  CHECK(u.valid && u.tracks == 2);
+  CHECK_NEAR(u.bassToMidsDb, t.bassToMidsDb, 1e-12);
+  CHECK(!sv::TasteTarget::unpack(packed, 3).valid);
+  packed[3] = std::nan("");
+  CHECK(!sv::TasteTarget::unpack(packed, sv::TasteTarget::kPacked).valid);
+  CHECK(!sv::TasteTarget::unpack(nullptr, 7).valid);
+
+  // The learned taste drives the targets: foundation, softness reference, tilt target, atmosphere.
+  sv::Request r;
+  r.svaresaMode = true;
+  sv::TasteTarget deep = t;
+  deep.bassToMidsDb = sv::healthyBassToMidsDb() + 1.0;   // a little less deep than the house target
+  r.taste = &deep;
+  const auto f0 = tiltFeatures(sv::kSvaresaTiltTargetDbPerOct);
+  const auto withTaste = sv::plan(r, &f0);
+  CHECK_NEAR(voicingGain(withTaste, 65.0, FilterType::LowShelf), 1.0, 1e-9);
+  CHECK(std::find(withTaste.notes.begin(), withTaste.notes.end(), sv::kNoteTaste) != withTaste.notes.end());
+  sv::TasteTarget brightTaste = deep;  // a listener who likes it brighter: less softening of the same track
+  brightTaste.sharpness = 1.3;
+  sv::Request rb = r; rb.taste = &brightTaste;
+  const auto edgy = tiltFeatures(-0.5);
+  CHECK(voicingGain(sv::plan(rb, &edgy), 8500.0, FilterType::HighShelf) > voicingGain(sv::plan(r, &edgy), 8500.0, FilterType::HighShelf));
+  sv::TasteTarget invalidTaste;  // an invalid taste is ignored: house values
+  sv::Request ri = r; ri.taste = &invalidTaste;
+  CHECK_NEAR(voicingGain(sv::plan(ri, &f0), 65.0, FilterType::LowShelf), sv::kHouseDeepBassDb, 1e-9);
+  sv::Request guided; guided.taste = &deep;  // guided mode never uses it
+  CHECK(sv::plan(guided, &f0).notes.end() == std::find(sv::plan(guided, &f0).notes.begin(), sv::plan(guided, &f0).notes.end(), sv::kNoteTaste));
 }
 
 int main(int argc, char** argv) {

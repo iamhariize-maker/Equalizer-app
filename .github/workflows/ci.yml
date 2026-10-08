@@ -25,6 +25,10 @@ jobs:
           cmake -S core -B build/tsan -DEQCORE_SANITIZE=thread -DCMAKE_BUILD_TYPE=Debug
           cmake --build build/tsan -j
           ./build/tsan/eqcore_tests eq_parameter
+      - name: Mastering-reference tooling tests (numpy)
+        run: |
+          python3 -m pip install --quiet numpy
+          python3 -W ignore tools/mastering/test_mastering.py
 
   android:
     runs-on: ubuntu-latest

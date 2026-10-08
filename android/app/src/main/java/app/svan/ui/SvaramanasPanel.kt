@@ -72,6 +72,9 @@ fun SvaramanasPanel(
     val eq by SvanRepository.eq.collectAsState()
     var message by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(message) { if (message != null) { delay(4000); message = null } }
+    val tasteTracks by Svaramanas.tasteTracks.collectAsState()
+    var tasteMessage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(tasteMessage) { if (tasteMessage != null) { delay(5000); tasteMessage = null } }
 
     Column(
         modifier
@@ -168,6 +171,31 @@ fun SvaramanasPanel(
         AnimatedVisibility(request.mode == SmartMode.SVARESA) {
             Column {
                 Spacer(Modifier.height(10.dp))
+                SectionLabel("Your sound")
+                Text(
+                    if (tasteTracks == 0)
+                        "Play a track you love, mastered the way you like it, and tap Learn. Svaresa keeps only its measured balance (bass depth, brightness, width, dynamics) on this phone, never the audio, and steers other tracks toward it. Until then it uses the house voicing: deep foundation, warm body, softened top."
+                    else
+                        "Learned from $tasteTracks reference track${if (tasteTracks == 1) "" else "s"}. Add more to refine it; each new one moves the target a little.",
+                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pill(
+                        text = "Learn this sound",
+                        selected = false,
+                        onClick = { tasteMessage = Svaramanas.learnFromCurrent() },
+                        enabled = request.enabled && listening && heard?.valid == true,
+                    )
+                    if (tasteTracks > 0) Pill(
+                        text = "Use house voicing",
+                        selected = false,
+                        onClick = { Svaramanas.forgetTaste(); tasteMessage = "Back to the house voicing." },
+                    )
+                }
+                AnimatedVisibility(tasteMessage != null) {
+                    Text(tasteMessage ?: "", style = MaterialTheme.typography.bodySmall, color = Svan.Gold, modifier = Modifier.padding(top = 6.dp))
+                }
                 SectionLabel("Svaresa adapts to")
                 SettingSwitchRow("Selective dynamic EQ","Capture engine only: reduces sustained local resonances without boosting. Up to 1.5 dB per band, 3 dB total; short transients are preserved. Upper-band centre cuts yield to your Smooth control; side correction remains available.",
                     request.selectiveEq,{on->Svaramanas.update {it.copy(selectiveEq=on,enabled=true)}})

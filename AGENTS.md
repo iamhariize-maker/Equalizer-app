@@ -103,3 +103,15 @@ production-mode checks use a disposable CI key. See docs/RELEASE_SIGNING.md; pre
 export/restore and the production Activity's rejection of scripted command extras.
 
 Recording mode (Hi-Fi) is audio-only with a frame clock, sync flash/speaker cue and aligned exports, for editing in VN against an LG camera video of the TECNO screen: see `docs/CODEX_RECORDING_MODE.md` (brief + prompt) and `docs/RECORDING_MODE.md`.
+
+Grounded sound (8 Oct 2026, built on the 0.5.8 base): Svaresa carries the owner's house voicing for deep, clean bass
+(Rahman / Massive Attack) and natural transients and atmosphere (Wilco): a 65 Hz *foundation* that lifts only what a
+track lacks (none with measured boom or on the phone speaker), a 180 Hz body, a sharpness-driven softer top, bass punch
+on limited masters, side ambience on narrow mixes, and a bounded `Grounding` stage (odd-order body saturation with a
+level knee, downward-only top-band spike restraint). Every adaptive action is a registered policy rule
+(SM-FOUND-1, SM-BODY-1, SM-SOFT-1, SM-PUNCH-1, SM-ATMOS-1, SM-GROUND-1, plus SM-HOUSE-1 and SM-TASTE-1) with an evidence
+gate and a named test. **Learn this sound** (`TasteTarget`, `learnTaste`, `nativeTasteLearn`) lets the owner teach it
+reference tracks on the phone (features only). `tools/mastering/` has the same-master test (`ab_compare.py`) and
+corpus tools; the owner has no PC, so audio analysis happens in the working session on uploaded excerpts. Read
+docs/SONIC_IDENTITY.md, docs/RESEARCH_GROUNDED_SOUND.md, docs/OWNER_REFERENCE_TASTE.md and docs/MASTERING_TRAINING.md.
+Listening qualification is pending: do not claim listeners prefer it until the protocol in SONIC_IDENTITY.md has run.

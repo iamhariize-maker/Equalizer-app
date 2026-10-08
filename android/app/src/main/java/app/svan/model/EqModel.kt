@@ -266,6 +266,9 @@ data class SmartLayer(
     val smoothness: Double = 0.0,
     val space: Double = 0.0,
     val instruments: Double = 0.0,
+    /** Svaresa's grounded voicing (docs/SONIC_IDENTITY.md): HF transient restraint and low-mid body, each 0..1. */
+    val groundingRestraint: Double = 0.0,
+    val groundingBody: Double = 0.0,
     /** Svaresa's level-evening amount 0..1 (system effects' compressor); null = not part of this layer. */
     val levelling: Double? = null,
     val graphicFitRmsDb: Double? = null,

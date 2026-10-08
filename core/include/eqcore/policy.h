@@ -27,7 +27,7 @@ enum class Owner { Fast, Slow, Context };  // Svaresa ~250 ms on PCM; Svaramanas
 enum class Metric : int {
   PeakDbfs, LoudnessLufs, PlrDb, ClipsPerSecond, Correlation, SideToMidDb, MonoLike, BandwidthCutoffHz,
   TiltDbPerOct, MudDb, BoomDb, HarshDb, AirDb, BassNote, LanePromDb, ResidualCoherence, SideMidPower,
-  VolumeProxy, RouteHint, ClockMinutes, kCount
+  VolumeProxy, RouteHint, ClockMinutes, BassToMidsDb, SharpnessRatio, kCount
 };
 
 struct MetricSpec {

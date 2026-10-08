@@ -232,6 +232,38 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetStereoTuner(
   fromHandle(h)->setStereoTuner({intimacy, warmth, smoothness, space, instruments, backingVocals, spatialDetail});
 }
 
+// Adds the features just heard to the learned taste. prev may be null. Returns the packed TasteTarget
+// (unchanged when the features are not valid or too short).
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeTasteLearn(JNIEnv* env, jclass, jdoubleArray prev,
+                                                                           jdoubleArray features) {
+  svaramanas::TasteTarget t;
+  if (prev) {
+    const jsize n = env->GetArrayLength(prev);
+    std::vector<jdouble> v(static_cast<size_t>(n));
+    if (n) env->GetDoubleArrayRegion(prev, 0, n, v.data());
+    t = svaramanas::TasteTarget::unpack(v.data(), n);
+  }
+  if (features) {
+    const jsize n = env->GetArrayLength(features);
+    std::vector<jdouble> v(static_cast<size_t>(n));
+    if (n) env->GetDoubleArrayRegion(features, 0, n, v.data());
+    t = svaramanas::learnTaste(t, SourceFeatures::unpack(v.data(), n));
+  }
+  double out[svaramanas::TasteTarget::kPacked];
+  t.pack(out);
+  jdoubleArray res = env->NewDoubleArray(svaramanas::TasteTarget::kPacked);
+  env->SetDoubleArrayRegion(res, 0, svaramanas::TasteTarget::kPacked, out);
+  return res;
+}
+
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetGrounding(JNIEnv*, jclass, jlong h, jdouble restraint, jdouble body) {
+  fromHandle(h)->setGrounding({restraint, body});
+}
+
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeGroundingRestraintDb(JNIEnv*, jclass, jlong h) {
+  return fromHandle(h)->groundingRestraintDb();
+}
+
 namespace {
 // [rmsErrorDb, maxErrorDb, f0, g0, q0, f1, g1, q1, ...]
 jdoubleArray packFit(JNIEnv* env, const DenseFit& fit) {
@@ -310,12 +342,15 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeAnalysis(JNIEnv*
 
 // Svaramanas plan. features: packed SourceFeatures or null (static plan).
 // Returns [preamp, predictedDelta, bassChar, intimacy, warmth, smoothness, space, instruments,
-//          accepted, rejected, conflictWith, nNotes, notes..., nBands, (type, freq, gain, q)...].
+//          accepted, rejected, conflictWith, nNotes, notes..., nBands, (type, freq, gain, q)...,
+//          groundingRestraint, groundingBody] and, with `withGates`, then the gate list below.
+// speakerRoute: output is the phone speaker. taste: packed TasteTarget or null.
 // With `withGates`, appends nGates, then (ruleIndex, skipCode) per consulted rule (skipCode 0 = admitted;
 // ruleIndex is the position in nativePolicyRulesJson()). `evidence` is null or
 // [featuresEpoch, currentEpoch, featuresAgeSeconds, featuresConfidence].
 static jdoubleArray planToArray(JNIEnv* env, jdoubleArray features, jint feel, jintArray order, jdouble strength,
-                                jboolean stereoEngine, jboolean svaresaMode, jdoubleArray evidence, bool withGates) {
+                                jboolean stereoEngine, jboolean svaresaMode, jboolean speakerRoute, jdoubleArray taste,
+                                jdoubleArray evidence, bool withGates) {
   svaramanas::Request r;
   r.feel = static_cast<svaramanas::Feel>(feel < 0 || feel > 5 ? 0 : feel);
   const jsize n = order ? env->GetArrayLength(order) : 0;
@@ -335,6 +370,15 @@ static jdoubleArray planToArray(JNIEnv* env, jdoubleArray features, jint feel, j
     r.epoch = static_cast<uint64_t>(e[1] < 0 ? 0 : e[1]);
     r.featuresAgeSeconds = e[2];
     r.featuresConfidence = e[3];
+  }
+  r.speakerRoute = speakerRoute == JNI_TRUE;
+  svaramanas::TasteTarget learned;
+  if (taste) {
+    const jsize tn = env->GetArrayLength(taste);
+    std::vector<jdouble> tv(static_cast<size_t>(tn));
+    if (tn) env->GetDoubleArrayRegion(taste, 0, tn, tv.data());
+    learned = svaramanas::TasteTarget::unpack(tv.data(), tn);
+    if (learned.valid) r.taste = &learned;
   }
   SourceFeatures f;
   bool have = false;
@@ -358,6 +402,9 @@ static jdoubleArray planToArray(JNIEnv* env, jdoubleArray features, jint feel, j
     out.push_back(b.gainDb);
     out.push_back(b.q);
   }
+  // Appended after the bands so older readers stay valid: Svaresa's grounded voicing (2 values).
+  out.push_back(p.grounding.restraint);
+  out.push_back(p.grounding.body);
   if (withGates) {
     out.push_back(static_cast<double>(p.gates.size()));
     for (const auto& g : p.gates) {
@@ -372,15 +419,15 @@ static jdoubleArray planToArray(JNIEnv* env, jdoubleArray features, jint feel, j
 
 JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
     JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine,
-    jboolean svaresaMode) {
-  return planToArray(env, features, feel, order, strength, stereoEngine, svaresaMode, nullptr, false);
+    jboolean svaresaMode, jboolean speakerRoute, jdoubleArray taste) {
+  return planToArray(env, features, feel, order, strength, stereoEngine, svaresaMode, speakerRoute, taste, nullptr, false);
 }
 
 // Same plan, with evidence identity in and the evidence-gate outcome appended (see planToArray).
 JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlanGated(
     JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine,
-    jboolean svaresaMode, jdoubleArray evidence) {
-  return planToArray(env, features, feel, order, strength, stereoEngine, svaresaMode, evidence, true);
+    jboolean svaresaMode, jboolean speakerRoute, jdoubleArray taste, jdoubleArray evidence) {
+  return planToArray(env, features, feel, order, strength, stereoEngine, svaresaMode, speakerRoute, taste, evidence, true);
 }
 
 // Human text for a skip code returned by the gated plan ("" for 0 = admitted).

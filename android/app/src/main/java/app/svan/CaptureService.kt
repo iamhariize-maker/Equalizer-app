@@ -462,6 +462,10 @@ class CaptureService : Service() {
         val v = eq.activeVocal
         val i = eq.activeInstrument
         if (previous == null || v != previous.activeVocal || i != previous.activeInstrument) engine.setStereoTuner(v.intimacy, v.warmth, v.smoothness, i.space, i.instruments, i.backingVocals, i.spatialDetail)
+        val smart = eq.activeSmart
+        val before = previous?.activeSmart
+        if (previous == null || smart?.groundingRestraint != before?.groundingRestraint || smart?.groundingBody != before?.groundingBody)
+            engine.setGrounding(smart?.groundingRestraint ?: 0.0, smart?.groundingBody ?: 0.0)
     }
 
     private fun applyProtection(engine: NativeEngine,eq: EqState,settings: AudioSettings) {
