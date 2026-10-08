@@ -48,3 +48,8 @@
   `AudioQualityLab.kt` (`rules.size == 19`) now reads 27. That is the only Kotlin-lane tripwire edit; the rest of the
   Kotlin change is the JNI signature (`speakerRoute`, `taste`), grounding wiring and the "Your sound" block.
 * The `19 rules` line in `CODEX_STATUS.md` records an earlier run and is left as history.
+* `android/scripts/eq_workspace.sh`: "Svaresa owns bands without hidden manual boost" asserted the 1 kHz test tone stays within
+  1 dB of baseline. Svaresa now carries the house voicing (a loudness-matched shape with about -1 dB at 1 kHz), so the tone
+  measured -1.00 dB against a native prediction of -0.97 dB (CI #210, API 34). The check now compares the measured delta with
+  the engine's own predicted response (tolerance 1 dB, as the personal-gain check does) and still requires delta < 1 dB, so a
+  hidden +6 dB manual boost would still fail it.

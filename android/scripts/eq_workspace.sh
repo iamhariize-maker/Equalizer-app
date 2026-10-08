@@ -81,7 +81,7 @@ def check(name,ok,detail):
  print(('PASS ' if ok else 'FAIL ')+name+' — '+detail)
  failures+=not ok
 check('manual band changes actual output',abs(level('manual')-level('baseline')-6)<1, f"delta={level('manual')-level('baseline'):.2f} dB")
-check('Svaresa owns bands without hidden manual boost',auto['state']['smartEqControl'] and auto['state']['bands']==manual['state']['bands'] and abs(level('automatic')-level('baseline'))<1, f"delta={level('automatic')-level('baseline'):.2f} dB")
+check('Svaresa owns bands without hidden manual boost',auto['state']['smartEqControl'] and auto['state']['bands']==manual['state']['bands'] and abs(level('automatic')-level('baseline')-auto['response'])<1 and level('automatic')-level('baseline')<1, f"delta={level('automatic')-level('baseline'):.2f} dB, predicted={auto['response']:.2f} dB")
 check('graphic faders are the applied automatic filters',len(graphic['smartBands'])==31 and graphic['smartBands']==graphic['appliedBands'] and abs(level('graphic')-level('automatic'))<1, f"{len(graphic['smartBands'])} filters; delta={level('graphic')-level('automatic'):.2f} dB")
 expected=pref['response']-graphic['response']; actual=level('preference')-level('graphic')
 check('personal gain reaches measured output and its native prediction',abs(expected)>.15 and abs(actual-expected)<1, f"measured={actual:.2f}, predicted={expected:.2f} dB")
