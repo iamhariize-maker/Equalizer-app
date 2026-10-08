@@ -245,6 +245,11 @@ class CaptureService : Service() {
             var writtenFrames = maxOf(primedWritten, 0) / 2L
             val headClock = PlaybackHeadClock()
             var dspNanos = 0L
+            // Timing probe for the 2 s log only: where the audio thread waits or works per block.
+            var readWaitMaxNs = 0L
+            var dspMaxNs = 0L
+            var writeWaitMaxNs = 0L
+            var overBudgetBlocks = 0
             var processedFrames = 0L
             // Frames of exact digital silence in a row (a capture-blocked or paused source).
             var silentRun = 0L
@@ -256,7 +261,9 @@ class CaptureService : Service() {
                 // filter latency apply at the next capture start. Source changes reset the
                 // native analysis at this explicit, faded boundary, keeping latency unchanged.
                 val sourceChanged = next != allowed
+                val readBegin = System.nanoTime()
                 val n = input.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                readWaitMaxNs = maxOf(readWaitMaxNs, System.nanoTime() - readBegin)
                 if (n < 0) {
                     if (running) EqController.log("capture: read failed ($n)")
                     if (running && !safeFallback && (rate != RatePolicy.SAFE_HZ || epoch?.detailed == true)) {
@@ -289,6 +296,8 @@ class CaptureService : Service() {
                     dsp.process(buf, buf, n / 2)
                     val elapsed = System.nanoTime() - begin
                     dspNanos += elapsed
+                    dspMaxNs = maxOf(dspMaxNs, elapsed)
+                    if (elapsed > (n / 2) * 1_000_000_000L / rate) overBudgetBlocks++
                 } else {
                     // No admitted source, or >1 s of digital silence (filter state has fully
                     // decayed): do not spend phone CPU oversampling silence or let dither/filter
@@ -300,12 +309,14 @@ class CaptureService : Service() {
                 for (i in 0 until n) outputPeak = maxOf(outputPeak, kotlin.math.abs(buf[i]))
                 processedFrames += n / 2
                 var written = 0
+                val writeBegin = System.nanoTime()
                 while (running && written < n) {
                     val count = output.write(buf, written, n - written, AudioTrack.WRITE_BLOCKING)
                     if (count <= 0) { running = false; break }
                     written += count
                     writtenFrames += count / 2
                 }
+                writeWaitMaxNs = maxOf(writeWaitMaxNs, System.nanoTime() - writeBegin)
                 if (sourceChanged && running) {
                     input.stop(); input.release(); record = null; activeRecord = null
                     allowed = next
@@ -377,7 +388,9 @@ class CaptureService : Service() {
                     unmaskSnapshot = dsp.bassUnmaskDiagnostics() // audio-thread snapshot; UI never races DSP getters
                     val muted = SessionRouter.snapshot.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.joinToString { it.pkg }
                     EqController.log("capture level: peak=%.4f over %d frames; output queued=%.1f ms, underruns=%d, DSP=%.1f%%, muted=[%s], otherPlayers=%d".format(levelPeak, levelFrames, stats!!.queuedMs, stats!!.underruns, stats!!.dspPercent, muted, otherActivePlayers))
+                    EqController.log("capture timing: readWaitMaxMs=%.1f dspMaxMs=%.2f writeWaitMaxMs=%.1f overBudgetBlocks=%d blockMs=%.2f".format(readWaitMaxNs / 1e6, dspMaxNs / 1e6, writeWaitMaxNs / 1e6, overBudgetBlocks, frames * 1000.0 / rate))
                     levelPeak = 0f; outputPeak = 0f; levelFrames = 0; dspNanos = 0; processedFrames = 0
+                    readWaitMaxNs = 0L; dspMaxNs = 0L; writeWaitMaxNs = 0L; overBudgetBlocks = 0
                 }
             }
         } catch (e: Exception) {

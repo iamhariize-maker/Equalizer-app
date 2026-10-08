@@ -53,3 +53,13 @@
   measured -1.00 dB against a native prediction of -0.97 dB (CI #210, API 34). The check now compares the measured delta with
   the engine's own predicted response (tolerance 1 dB, as the personal-gain check does) and still requires delta < 1 dB, so a
   hidden +6 dB manual boost would still fail it.
+
+## Capture timing probe in the 2 s log (Claude, 8 Oct 2026, Kotlin lane, no audible change)
+
+* `CaptureService.kt` now times, per 2 s window, the audio thread's blocking capture read, the DSP call and the blocking
+  output write, and counts blocks that exceed their 5.3 ms slot. It logs one extra line, `capture timing: ...`, and
+  resets the counters with the existing `capture level` reset. Nothing else in the loop changes.
+* Why: the API 34 emulator log from CI #210 shows underruns going 0 to 5 at a tone-to-silence transition while DSP was
+  about 2%, and 0 to 12 later while DSP was 0.8%. The output queue fell from about 70 ms to 16 to 35 ms and did not
+  return to the 80 ms cushion. The timing line should show whether the thread is waiting for capture (read wait) or
+  working (DSP).
