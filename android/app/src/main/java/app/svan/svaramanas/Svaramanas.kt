@@ -119,12 +119,16 @@ data class SmartPlan(
     val rejected: Int,
     val conflictWith: Int,
     val notes: List<Int>,
+    val groundingRestraint: Double = 0.0,
+    val groundingBody: Double = 0.0,
 ) {
-    fun toLayer() = SmartLayer(bands, preampDb, bassCharacter, intimacy, smoothness, space, instruments)
+    fun toLayer() = SmartLayer(bands, preampDb, bassCharacter, intimacy, smoothness, space, instruments,
+        groundingRestraint = groundingRestraint, groundingBody = groundingBody)
 
     /** The measured plan plus Svaresa's context layer (quiet listening, output protection, night). */
     fun toLayer(context: ContextLayer?): SmartLayer = if (context == null) toLayer() else SmartLayer(
-        bands + context.bands, preampDb + context.preampDb, bassCharacter, intimacy, smoothness, space, instruments, context.levelling,
+        bands + context.bands, preampDb + context.preampDb, bassCharacter, intimacy, smoothness, space, instruments,
+        groundingRestraint, groundingBody, context.levelling,
     )
 
     companion object {
@@ -143,9 +147,11 @@ data class SmartPlan(
                 val o = i + 4 * k
                 Band(NativeEngine.FilterType.entries[raw[o].toInt()], raw[o + 1], raw[o + 2], raw[o + 3])
             }
+            val g = i + 4 * nBands  // grounded voicing is appended after the bands
             return SmartPlan(
                 bands, raw[0], raw[1], raw[2], raw[3], raw[5], raw[6], raw[7],
                 raw[8].toInt(), raw[9].toInt(), raw[10].toInt(), notes,
+                raw.getOrElse(g) { 0.0 }, raw.getOrElse(g + 1) { 0.0 },
             )
         }
     }

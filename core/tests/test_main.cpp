@@ -27,6 +27,7 @@
 #include "eqcore/bass.h"
 #include "eqcore/tuning.h"
 #include "eqcore/stereo.h"
+#include "eqcore/grounding.h"
 #include <fstream>
 #include <sstream>
 
@@ -1921,6 +1922,187 @@ TEST(dynamic_eq_budget_survives_changes_of_resonance) {
   for(int j=0;j<1024;++j,++frame){double x=0;for(double f:frequencies)x+=.1*std::sin(2*kPi*f*frame/48000);v[2*j]=v[2*j+1]=x;}
   e.process(v.data(),v.data(),1024);double sum=0;for(double db:e.dynamicReductionsDb())sum-=db;CHECK(sum<=3.00001);
  }
+}
+
+// ---- Grounding (docs/SONIC_IDENTITY.md) -------------------------------------------------
+namespace {
+// Tone with amplitude `amp` through Grounding (stereo, identical channels); returns steady-state output.
+std::vector<double> groundTone(const GroundingParams& gp, double freq, double amp, double fs, int n) {
+  Grounding g(fs);
+  g.setParams(gp);
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) l[i] = r[i] = amp * std::sin(2 * kPi * freq * i / fs);
+  for (int s = 0; s < n; s += 480) g.process(&l[s], &r[s], std::min(480, n - s));
+  return l;
+}
+double thdDb(const std::vector<double>& y, double f0, double fs, size_t a, size_t b) {
+  const double f = sineAmplitude(y, f0, fs, a, b);
+  double h = 0;
+  for (int k = 2; k <= 6; ++k) { const double v = sineAmplitude(y, f0 * k, fs, a, b); h += v * v; }
+  return 10 * std::log10(std::max(h, 1e-30)) - 20 * std::log10(f);
+}
+}  // namespace
+
+TEST(grounding_off_is_bit_exact_bypass) {
+  const double fs = 48000;
+  Grounding g(fs);
+  std::mt19937 rng(7);
+  std::normal_distribution<double> nd(0, 0.1);
+  std::vector<double> l(4800), r(4800);
+  for (auto& v : l) v = nd(rng);
+  for (auto& v : r) v = nd(rng);
+  auto l0 = l, r0 = r;
+  g.process(l.data(), r.data(), 4800);
+  CHECK(l == l0);
+  CHECK(r == r0);
+}
+
+TEST(grounding_body_is_linear_when_quiet_and_adds_bounded_low_order_harmonics_when_loud) {
+  const double fs = 48000;
+  const int n = 48000;
+  const size_t a = 24000, b = 48000;
+  // Quiet: -50 dBFS. Harmonics (dominated by the 2nd, which rises with level like analog gear) stay
+  // below -75 dB, and gain is unity within 0.1 dB.
+  auto quiet = groundTone({0, 1}, 300, 0.00316, fs, n);
+  const double quietThd = thdDb(quiet, 300, fs, a, b);
+  CHECK(quietThd < -75.0);
+  CHECK_NEAR(toDb(sineAmplitude(quiet, 300, fs, a, b) / 0.00316), 0.0, 0.1);
+  // Loud: -12 dBFS. Audible but small (a console-like few tenths of a percent to a couple of percent).
+  auto loud = groundTone({0, 1}, 300, 0.25, fs, n);
+  const double thd = thdDb(loud, 300, fs, a, b);
+  CHECK(thd > -45.0);
+  CHECK(thd < -30.0);
+  CHECK(thd > quietThd + 30.0);  // distortion is level dependent: clean when quiet, weighty when loud
+  CHECK_NEAR(toDb(sineAmplitude(loud, 300, fs, a, b) / 0.25), 0.0, 0.7);  // ~0.5 dB fundamental compression
+  // Nothing is created far above the order-6 harmonics (aliasing / hash stays low).
+  CHECK(toDb(sineAmplitude(loud, 300 * 12, fs, a, b)) < -80.0);
+  // Depth scales it monotonically.
+  auto half = groundTone({0, 0.5}, 300, 0.25, fs, n);
+  CHECK(thdDb(half, 300, fs, a, b) < thd);
+}
+
+TEST(grounding_restraint_leaves_sustained_air_and_the_body_alone) {
+  const double fs = 48000;
+  const int n = 48000;
+  // Sustained 8 kHz at -20 dBFS: no crest, no reduction (< 0.1 dB).
+  auto air = groundTone({1, 0}, 8000, 0.1, fs, n);
+  CHECK_NEAR(toDb(sineAmplitude(air, 8000, fs, 24000, 48000) / 0.1), 0.0, 0.1);
+  // 200 Hz is below the restrained band: untouched.
+  auto low = groundTone({1, 0}, 200, 0.2, fs, n);
+  CHECK_NEAR(toDb(sineAmplitude(low, 200, fs, 24000, 48000) / 0.2), 0.0, 0.05);
+}
+
+TEST(grounding_restraint_softens_hf_spikes_by_at_most_four_db_and_recovers) {
+  const double fs = 48000;
+  Grounding g(fs);
+  g.setParams({1, 0});
+  // 0.5 s bed of quiet 6 kHz (-34 dBFS), then a 3 ms burst +30 dB over it, then bed again.
+  const int n = 48000;
+  std::vector<double> l(n), r(n), l0;
+  for (int i = 0; i < n; ++i) {
+    double amp = 0.02;
+    if (i >= 24000 && i < 24000 + 144) amp = 0.6;
+    l[i] = r[i] = amp * std::sin(2 * kPi * 6000.0 * i / fs);
+  }
+  l0 = l;
+  double worst = 0;
+  for (int s = 0; s < n; s += 128) {
+    g.process(&l[s], &r[s], std::min(128, n - s));
+    worst = std::min(worst, g.restraintDb());
+  }
+  CHECK(worst < -1.0);          // spike is audibly eased
+  CHECK(worst >= -4.0001);      // never beyond the cap
+  // The 0.5 ms attack lets the very first cycles of a spike through; the body of the burst is eased.
+  double eIn = 0, eOut = 0;
+  for (int i = 24000; i < 24144; ++i) { eIn += l0[i] * l0[i]; eOut += l[i] * l[i]; }
+  const double burstDb = 10 * std::log10(eOut / eIn);
+  CHECK(burstDb < -0.5);   // eased...
+  CHECK(burstDb > -4.0);   // ...but within the 4 dB cap: still a transient, not a stump
+  // Back to the bed: gain recovers to unity within 100 ms.
+  CHECK_NEAR(toDb(sineAmplitude(l, 6000, fs, 24000 + 144 + 4800, 24000 + 144 + 9600) / 0.02), 0.0, 0.1);
+  CHECK(g.restraintDb() > -0.1);
+}
+
+TEST(grounding_gain_is_stereo_linked_and_preserves_the_image) {
+  const double fs = 48000;
+  Grounding g(fs);
+  g.setParams({1, 0});
+  const int n = 24000;
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) {  // right = half of left (a panned source); burst in the middle
+    double amp = (i >= 12000 && i < 12100) ? 0.6 : 0.02;
+    l[i] = amp * std::sin(2 * kPi * 7000.0 * i / fs);
+    r[i] = 0.5 * l[i];
+  }
+  auto l0 = l;
+  g.process(l.data(), r.data(), n);
+  for (int i = 11000; i < 13000; ++i) CHECK_NEAR(r[i], 0.5 * l[i], 1e-9);  // ratio held sample by sample
+  CHECK(l[12050] != l0[12050]);
+}
+
+TEST(grounding_ramps_in_and_out_without_steps_and_is_block_independent) {
+  const double fs = 48000;
+  const int n = 9600;
+  auto render = [&](int block) {
+    Grounding g(fs);
+    std::vector<double> l(n), r(n);
+    for (int i = 0; i < n; ++i) l[i] = r[i] = 0.3 * std::sin(2 * kPi * 300.0 * i / fs) + 0.05 * std::sin(2 * kPi * 5000.0 * i / fs);
+    for (int s = 0; s < n; s += block) {
+      if (s == 2400) g.setParams({1, 1});
+      if (s == 7200) g.setParams({0, 0});
+      g.process(&l[s], &r[s], std::min(block, n - s));
+    }
+    return l;
+  };
+  auto a = render(2400), b = render(2400);
+  CHECK(a == b);  // deterministic
+  auto c = render(1200);  // parameter changes land on block boundaries both ways
+  for (int i = 0; i < n; ++i) CHECK_NEAR(a[i], c[i], 1e-9);
+  double step = 0;  // no single-sample jump larger than the signal's own slope
+  for (int i = 1; i < n; ++i) step = std::max(step, std::fabs(a[i] - a[i - 1]));
+  CHECK(step < 0.15);
+  for (int i = 7200 + 960 + 960; i < n; ++i) { CHECK(std::isfinite(a[i])); }
+}
+
+TEST(engine_grounding_is_a_no_op_when_off_and_stays_protected_when_on) {
+  EngineConfig c;
+  c.autoHeadroom = false;
+  Engine on(c), off(c);
+  on.setGrounding({1, 1});
+  std::vector<float> in(2 * 4800), a(in.size()), b(in.size());
+  std::mt19937 rng(3);
+  std::normal_distribution<double> nd(0, 0.2);
+  for (auto& v : in) v = static_cast<float>(std::clamp(nd(rng), -0.99, 0.99));
+  off.process(in.data(), a.data(), 4800);
+  Engine ref(c);
+  ref.process(in.data(), b.data(), 4800);
+  CHECK(a == b);  // grounding at defaults changes nothing
+  on.process(in.data(), a.data(), 4800);
+  for (float v : a) CHECK(std::isfinite(v) && std::fabs(v) <= 1.0f);
+  CHECK(on.groundingRestraintDb() <= 0.0 && on.groundingRestraintDb() >= -4.0001);
+}
+
+TEST(svaresa_grounded_voicing_scales_with_measured_top_end_excess_within_bounds) {
+  using namespace svaramanas;
+  SourceFeatures f;
+  f.valid = true; f.seconds = 20; f.loudnessLufs = -14; f.plrDb = 12; f.cutoffHz = 22000;
+  f.tiltDbPerOct = kSvaresaTiltTargetDbPerOct;
+  Request r; r.svaresaMode = true;
+  auto balanced = plan(r, &f);
+  CHECK_NEAR(balanced.grounding.body, kGroundingBaseBody, 1e-9);
+  CHECK_NEAR(balanced.grounding.restraint, kGroundingBaseRestraint, 1e-9);
+  f.airDb = 5; f.harshDb = 4; f.tiltDbPerOct = kSvaresaTiltTargetDbPerOct + 3;
+  auto airy = plan(r, &f);
+  CHECK(airy.grounding.restraint > balanced.grounding.restraint + 0.4);
+  CHECK(airy.grounding.body > balanced.grounding.body);
+  CHECK(airy.grounding.restraint <= 1.0 && airy.grounding.body <= kGroundingMaxBody);
+  f.plrDb = 6;  // crushed master: body is halved
+  CHECK(plan(r, &f).grounding.body < airy.grounding.body);
+  // Not heard yet: baseline voicing only. Guided (non-Svaresa) mode never grounds.
+  auto unheard = plan(r, nullptr);
+  CHECK_NEAR(unheard.grounding.body, kGroundingBaseBody, 1e-9);
+  Request guided; guided.feel = Feel::Warm;
+  CHECK(plan(guided, &f).grounding.isOff());
 }
 
 int main(int argc, char** argv) {

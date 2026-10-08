@@ -178,6 +178,14 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetStereoTuner(
   fromHandle(h)->setStereoTuner({intimacy, warmth, smoothness, space, instruments});
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetGrounding(JNIEnv*, jclass, jlong h, jdouble restraint, jdouble body) {
+  fromHandle(h)->setGrounding({restraint, body});
+}
+
+JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeGroundingRestraintDb(JNIEnv*, jclass, jlong h) {
+  return fromHandle(h)->groundingRestraintDb();
+}
+
 namespace {
 // [rmsErrorDb, maxErrorDb, f0, g0, q0, f1, g1, q1, ...]
 jdoubleArray packFit(JNIEnv* env, const DenseFit& fit) {
@@ -294,6 +302,9 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
     out.push_back(b.gainDb);
     out.push_back(b.q);
   }
+  // Appended after the bands so older readers stay valid: Svaresa's grounded voicing.
+  out.push_back(p.grounding.restraint);
+  out.push_back(p.grounding.body);
   jdoubleArray res = env->NewDoubleArray(static_cast<jsize>(out.size()));
   env->SetDoubleArrayRegion(res, 0, static_cast<jsize>(out.size()), out.data());
   return res;

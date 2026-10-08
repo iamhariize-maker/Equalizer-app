@@ -84,3 +84,8 @@ keep the ten detection, 39 routing, nine workspace and eight control checks inta
 Production signing uses a private owner key outside Git/CI, never preview.keystore. Four additional
 production-mode checks use a disposable CI key. See docs/RELEASE_SIGNING.md; preserve settings
 export/restore and the production Activity's rejection of scripted command extras.
+
+0.5.6 (in progress) adds the owner's **Grounded** sonic identity: a bounded HF-transient restrainer and a
+low-mid harmonic body stage (`core/.../grounding.*`, driven by Svaresa), plus offline mastering-reference tools
+(`tools/mastering/`). Read docs/SONIC_IDENTITY.md and docs/MASTERING_TRAINING.md. Listening qualification is
+pending: do not claim listeners prefer it until the protocol in SONIC_IDENTITY.md has been run.

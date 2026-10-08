@@ -34,6 +34,7 @@ add_library(eqcore STATIC
   src/autoeq.cpp
   src/true_peak.cpp
   src/dynamic_eq.cpp
+  src/grounding.cpp
   src/engine.cpp
   src/analyzer.cpp
   src/svaramanas.cpp)

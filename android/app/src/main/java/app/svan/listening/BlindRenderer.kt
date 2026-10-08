@@ -32,6 +32,7 @@ object BlindRenderer {
             it.setBassCharacter(state.bassCharacter,state.bass.crossoverHz)
             val v=state.activeVocal;val i=state.activeInstrument;it.setStereoTuner(v.intimacy,v.warmth,v.smoothness,i.space,i.instruments)
             it.setDynamicEq(state.dynamicEq)
+            val sm=state.activeSmart;it.setGrounding(sm?.groundingRestraint?:0.0,sm?.groundingBody?:0.0)
         }
         fun process(state: EqState): FloatArray =engine(state).use {e->
             val warm=clip.samples.copyOfRange(0,minOf(clip.samples.size,clip.rate*2));e.process(warm,warm,warm.size/2)

@@ -64,6 +64,12 @@ class NativeEngine(
     fun setStereoTuner(intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double) =
         nativeSetStereoTuner(handle, intimacy, warmth, smoothness, space, instruments)
 
+    /** Grounding: top-end transient restraint + low-mid harmonic body, each 0..1 (Engine B only). */
+    fun setGrounding(restraint: Double, body: Double) = nativeSetGrounding(handle, restraint, body)
+
+    /** Reduction Grounding currently applies to the top band, dB (<= 0). */
+    val groundingRestraintDb: Double get() = nativeGroundingRestraintDb(handle)
+
     /** Preamp minus auto headroom currently applied, in dB. */
     val appliedGainDb: Double get() = nativeAppliedGainDb(handle)
 
@@ -144,6 +150,8 @@ class NativeEngine(
         @JvmStatic external fun nativeSetStereoTuner(
             handle: Long, intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double,
         )
+        @JvmStatic external fun nativeSetGrounding(handle: Long, restraint: Double, body: Double)
+        @JvmStatic external fun nativeGroundingRestraintDb(handle: Long): Double
         @JvmStatic external fun nativeComputeTuning(measurement: String, target: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray
         @JvmStatic external fun nativeFitCorrection(text: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray
 

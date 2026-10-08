@@ -315,6 +315,8 @@ class CaptureService : Service() {
         val v = eq.activeVocal
         val i = eq.activeInstrument
         engine.setStereoTuner(v.intimacy, v.warmth, v.smoothness, i.space, i.instruments)
+        val smart = eq.activeSmart
+        engine.setGrounding(smart?.groundingRestraint ?: 0.0, smart?.groundingBody ?: 0.0)
     }
 
     private fun applyProtection(engine: NativeEngine,eq: EqState,settings: AudioSettings) {

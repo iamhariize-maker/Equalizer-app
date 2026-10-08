@@ -368,6 +368,24 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   // Harshness smoothing is a measured correction, so Svaresa asks for it on both engines.
   if (r.svaresaMode) p.stereo.smoothness = clampStereo(svaresaSmooth, 0.0);
 
+  if (r.svaresaMode) {
+    // Grounded voicing: constant gentle body, plus restraint/body that scale with measured
+    // top-end excess (airy, shrill or bright-tilted material) -- the typical hi-res complaint.
+    const double cs = std::min(strength, 1.0);
+    double restraint = kGroundingBaseRestraint, body = kGroundingBaseBody;
+    if (heard) {
+      const double dev = features->tiltDbPerOct != 0.0 ? features->tiltDbPerOct - kSvaresaTiltTargetDbPerOct : 0.0;
+      const double spiky = 0.25 * std::max(0.0, features->airDb - 1.0) + 0.15 * std::max(0.0, features->harshDb - 1.0) +
+                           0.20 * std::max(0.0, dev - 0.5);
+      restraint += spiky;
+      body += 0.2 * std::max(0.0, dev - 0.5);
+      if (features->plrDb > 0 && (features->plrDb < 8.0 || features->clipsPerSecond > 1.0)) body *= 0.5;  // already dense
+    }
+    p.grounding.restraint = std::clamp(restraint, 0.0, 1.0) * cs;
+    p.grounding.body = std::clamp(body, 0.0, kGroundingMaxBody) * cs;
+    if (!p.grounding.isOff()) addNote(p, kNoteGrounded);
+  }
+
   // ---- 1. loudness match: never win by being louder ------------------------------
   p.predictedDeltaDb = predictedGuideLoudnessDeltaDb(p.bands, p.stereo, heard ? features : nullptr);
   p.preampDb = std::clamp(-p.predictedDeltaDb, -18.0, 1.5);

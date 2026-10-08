@@ -18,6 +18,7 @@
 
 #include "eqcore/analyzer.h"
 #include "eqcore/biquad.h"
+#include "eqcore/grounding.h"
 #include "eqcore/stereo.h"
 
 namespace eqcore::svaramanas {
@@ -52,6 +53,7 @@ enum Note : int {
   kNoteMono = 16,           // no side signal: widening skipped
   kNoteBright = 17,         // Svaresa: mix thinner/brighter than a healthy balance, eased
   kNoteDark = 18,           // Svaresa: mix darker/heavier than a healthy balance, opened
+  kNoteGrounded = 19,       // Svaresa: top-end spikes restrained / body added to ground the mix
   kNoteBudget = 20,         // emphasis scaled to fit the budget
   kNoteConflictDropped = 21,
   kNoteOverlapSoftened = 22,
@@ -90,6 +92,7 @@ struct Plan {
   double predictedDeltaDb = 0.0;  // estimated static guide loudness change before trim
   double bassCharacter = 0.0;     // suggestion, -1..1
   StereoTunerParams stereo{};     // suggestion (Engine B only)
+  GroundingParams grounding{};    // Svaresa only: organic-body identity (docs/SONIC_IDENTITY.md)
   CategoryCheck categories;
   std::vector<int> notes;
 };
@@ -101,6 +104,11 @@ constexpr double kSvaresaMaxCorrectionDb = 4.0;  // Svaresa's measured cuts
 constexpr double kSvaresaTiltTargetDbPerOct = -2.5;  // healthy third-octave balance (energy per band vs octave)
 constexpr double kSvaresaTiltDeadbandDbPerOct = 1.5; // no tilt move inside +-1.5 of the target
 constexpr double kSvaresaMaxTiltDb = 2.5;          // largest tilt shelf pair move
+// Svaresa's "grounded" voicing (owner-chosen identity, docs/SONIC_IDENTITY.md): a small constant
+// body and restraint, raised only by measured top-end excess. Depth is 0..1 of Grounding's own caps.
+constexpr double kGroundingBaseBody = 0.25;
+constexpr double kGroundingBaseRestraint = 0.15;
+constexpr double kGroundingMaxBody = 0.7;
 constexpr double kEmphasisBudgetDb = 6.0;  // sum of positive request gains
 
 // features may be null (Engine A / nothing heard yet): a static plan matched
