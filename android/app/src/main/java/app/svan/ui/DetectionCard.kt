@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import app.svan.DiagnosticReport
@@ -21,11 +22,32 @@ import kotlinx.coroutines.withContext
 fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
     val context = LocalContext.current
     val report by PlaybackSessions.report.collectAsState()
+    val shell by app.svan.ShizukuAudioReports.state.collectAsState()
     var showDetails by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(app.svan.OnboardingAndroid.working(context)) }
-    ObserveWhileVisible { working = app.svan.OnboardingAndroid.working(context) }
+    var wholeMix by remember { mutableStateOf(app.svan.EqController.globalEq.mixFallbackOn) }
+    val settings by app.svan.SvanRepository.settings.collectAsState()
+    ObserveWhileVisible {
+        working = app.svan.OnboardingAndroid.working(context)
+        wholeMix = app.svan.EqController.globalEq.mixFallbackOn
+    }
     SectionLabel("Music detection")
+    Text(when {
+        shell.stage == app.svan.ShizukuAudioReports.Stage.READY && app.svan.ShizukuAudioReports.ready -> "Enhanced detection · Shizuku is connected"
+        PlaybackSessions.hasDumpPermission(context) -> "Enhanced detection · built into Svan (Shizuku not needed)"
+        else -> "Basic detection · no extra setup needed for supported players"
+    }, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+    Text("Detection finds player connections; it does not change EQ bandwidth. Full native DSP and Recording mode require a capturable music source.",
+        style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+    KeepEnhancedCard()
     WorkingStatusCard(working, stats = captureStats)
+    if (wholeMix) Text("A player is hiding its audio connection, so your EQ is on the whole phone output for now " +
+        "(notification sounds included). It switches back as soon as a player connects.",
+        style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+    SettingSwitchRow("Whole-phone EQ for hidden players",
+        "When a playing app doesn't announce its audio and none is connected, apply your EQ to the whole output mix. " +
+            "No extra permission. Experimental: some phones allow it only on one output; attachment does not verify your music path.",
+        settings.wholeMixFallback, { on -> app.svan.SvanRepository.updateSettings { it.copy(wholeMixFallback = on) }; SystemEqService.refreshDetection(context) })
     SvanCard {
         Column {
             SetupHelpLinks()
@@ -34,6 +56,25 @@ fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
             Text("Detailed reports stay local until you choose to share them in Android's share sheet.",
                 style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
             DetailedReportButton()
+        }
+    }
+    SharedOutputCard()
+}
+
+@Composable
+private fun SharedOutputCard() {
+    val shared by app.svan.SharedOutput.status.collectAsState()
+    SvanCard {
+        Column {
+            Text("Shared-output EQ · experimental", style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
+            Text(shared.message, style = MaterialTheme.typography.bodyMedium)
+            Text("Can apply system EQ without a player's session announcement on supported outputs. May affect other sounds sharing that output. Player names, per-app isolation and direct/offload support are unavailable here.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            Text("Test with your music and headphones. Device connection changes stop this option; re-test after switching outputs. Use per-player connections for the audiophile engine and Recording mode.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            OutlinedButton(onClick = { app.svan.SessionRouter.setSharedOutput(!shared.requested) }) {
+                Text(if (shared.requested) "Stop shared-output EQ" else "Try shared-output EQ")
+            }
         }
     }
 }

@@ -27,7 +27,7 @@ cd android
 ./gradlew -PsvanProduction=true :app:assembleRelease :app:bundleRelease
 ```
 
-Production builds use version name `0.5.5` and disable the exported Activity's scripted test
+Current production builds use version name `0.5.7` (code 14) and disable the exported Activity's scripted test
 commands. The launcher remains exported so Android can open the app normally. No permission
 or notification listener is added. CI exercises the production R8 APK with a disposable
 test key: launch, rejected command extras, settings migration UI, offline quality probes,

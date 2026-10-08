@@ -1,0 +1,41 @@
+package app.svan
+
+/** Worker-owned connection history. Closed entries are hints, never attach/capture authority. */
+internal class SessionConnectionHistory(private val maxClosed: Int = 32, private val retentionMs: Long = 120_000) {
+    data class Entry(val sessionId: Int, val pkg: String, val uid: Int, val generation: Long,
+                     val openedMs: Long, val closedMs: Long? = null)
+    private val entries = linkedMapOf<Int, Entry>()
+    private var generation = 0L
+    fun active(sid: Int): Entry? = entries[sid]?.takeIf { it.closedMs == null }
+    fun opened(sid: Int, pkg: String, uid: Int, nowMs: Long): Long {
+        prune(nowMs)
+        val current = active(sid)
+        if (current?.pkg == pkg && current.uid == uid) return current.generation
+        entries.remove(sid)
+        entries[sid] = Entry(sid, pkg, uid, ++generation, nowMs)
+        return generation
+    }
+    fun closed(sid: Int, pkg: String, nowMs: Long): Boolean {
+        val current = active(sid) ?: return false
+        if (current.pkg != pkg) return false
+        entries[sid] = current.copy(closedMs = nowMs)
+        prune(nowMs)
+        return true
+    }
+    fun recent(nowMs: Long): List<Entry> { prune(nowMs); return entries.values.filter { it.closedMs != null } }
+    fun clear() { entries.clear() }
+    private fun prune(nowMs: Long) {
+        entries.entries.removeAll { it.value.closedMs?.let { closed -> nowMs - closed >= retentionMs } == true }
+        val closed = entries.values.filter { it.closedMs != null }.sortedBy { it.closedMs }
+        closed.take((closed.size - maxClosed).coerceAtLeast(0)).forEach { entries.remove(it.sessionId) }
+    }
+}
+
+internal object SessionAnnouncement {
+    fun valid(sid: Int, pkg: String, uid: Int, ownUid: Int): Boolean =
+        sid > 0 && pkg.isNotBlank() && uid >= 0 && uid != ownUid
+}
+
+internal object SharedOutputPolicy {
+    fun allowed(requested: Boolean, service: Boolean, capture: Boolean) = requested && service && !capture
+}

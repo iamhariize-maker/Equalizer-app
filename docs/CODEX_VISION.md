@@ -12,7 +12,7 @@ Implementation and limits: [0.5.3 EQ workspace](EQ_WORKSPACE_0.5.3.md).
 Fresh session? Read in this order: `AGENTS.md` → this file → `docs/HANDOFF.md` (0.5.2 section = newest truth) →
 `docs/SMART.md` → `docs/CODEX_SVARAMANAS.md` (older research agenda, still valid) → `docs/AUDIOPHILE.md` (measured numbers)
 → `docs/PHONE_VALIDATION.md`. Repo `iamhariize-maker/Equalizer-app`. Work on the branch your session instructs
-(currently `ccr-f859b567-dgrdoj`, PR #1 open). No other branches, no new PRs.
+(currently `claude/codex-audio-crackling-amplifier-gkj007`; PR #1 is closed). No other branches, no new PRs.
 
 ---
 
@@ -30,7 +30,7 @@ Three pillars, in the owner's priority order:
    Every player (YouTube Music, Apple Music, Spotify, Amazon, Neutron, Poweramp, HiBy, Onkyo, VLC, local files, games,
    video) on every route (speaker, wired, USB DAC, Bluetooth/LHDC/LE Audio) must be found within a beat, stay found
    across track changes, route changes, screen-off and app switching, and — when Android makes processing impossible —
-   Svan must *say exactly why* instead of silently doing nothing. No root. Shizuku only as an optional one-time helper.
+   Svan must *say exactly why* instead of silently doing nothing. No root. Shizuku is optional; shell-report mode needs it running.
 2. **Absolute sonic brilliance.** Measured, never imagined: 64-bit DSP, oversampled EQ, honest headroom, loudness-matched
    everything, low latency, no echo/doubling, no clipping, no "louder = better" tricks. Quality claims need numbers or
    blind-test evidence (AGENTS.md rule 2). Perceived resolution and clarity are the goal; respecting the music is the law.
@@ -110,13 +110,13 @@ test in `core/`. Coding quality matters here: prefer small, tested increments ov
 reveal (OEM column differences, MTK/HiOS quirks, package names absent on Android ≤12, uid filters). Update
 `DetectionStatus.assess` wording to whatever the real failures are. Never guess a root cause the report can show.
 
-**A1. Notification-access player recognition is rejected (owner decision, 5 October 2026).**
-The owner requested its setting, service and permission be removed after the 0.5.1 APK
-raised a Play Protect security/financial-fraud warning. It names players but does not
-unlock audio sessions or improve sound. Do not reintroduce NotificationListenerService,
-notification-access prompts, SMS permissions or accessibility access to recognize players.
-Use the existing audio reports, playback callbacks and session broadcasts; measure
-improvements in real detection/processing. Keep Play Protect enabled during testing.
+**A1. Owner follow-up (6 October 2026): optional player recognition is authorized.**
+Use only package/playback state from MediaSessionManager after the user enables
+Android notification access. Do not read notification text, SMS, track history or
+use accessibility access. Keep this evidence separate from real audio-session IDs;
+recognition never implies processing or permission to mute/capture a source.
+Shell UserService reports replace the default app DUMP grant; basic broadcasts and
+existing/manual grants remain independent fallback paths.
 
 **A2. Make "unprocessable" explicit and, where possible, fixable.** Per-app coach driven by `LedgerSession.pathLabel` +
 `Verification`: direct / offload / bit-perfect / MMAP / exclusive-USB outputs bypass session effects *and* capture.

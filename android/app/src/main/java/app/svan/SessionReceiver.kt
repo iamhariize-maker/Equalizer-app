@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.media.audiofx.AudioEffect
+import android.os.Process
 
 /**
  * Runtime receiver owned by the foreground service. Players may broadcast
@@ -16,23 +17,21 @@ import android.media.audiofx.AudioEffect
 class SessionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (!SystemEqService.isRunning) return
-        SystemEqService.onSessionSignal()
         val session = intent.getIntExtra(AudioEffect.EXTRA_AUDIO_SESSION, -1)
-        val pkg = intent.getStringExtra(AudioEffect.EXTRA_PACKAGE_NAME) ?: "?"
+        val pkg = intent.getStringExtra(AudioEffect.EXTRA_PACKAGE_NAME) ?: return
+        val uid = runCatching { context.packageManager.getApplicationInfo(pkg, 0).uid }.getOrDefault(-1)
+        if (!SessionAnnouncement.valid(session, pkg, uid, Process.myUid()) ||
+            intent.getIntExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC) == AudioEffect.CONTENT_TYPE_VOICE) return
+        SystemEqService.onSessionSignal()
         when (intent.action) {
             AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION -> {
-                val uid = try {
-                    context.packageManager.getApplicationInfo(pkg, 0).uid
-                } catch (e: Exception) {
-                    -1 // resolved from the dump by SessionRouter
-                }
                 EqController.log("OPEN  session=$session pkg=$pkg")
                 SessionRouter.init(context)
                 SessionRouter.sessionOpened(session, pkg, uid)
             }
             AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION -> {
                 EqController.log("CLOSE session=$session pkg=$pkg")
-                SessionRouter.sessionClosed(session)
+                SessionRouter.sessionClosed(session, pkg)
             }
         }
     }

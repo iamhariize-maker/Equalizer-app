@@ -84,6 +84,12 @@ private fun DetectionWizard(fixture: String?) {
     ScreenTitle(if (snapshot.dumpGranted) "Music detection enabled" else "Music detection", "Optional help for players that do not announce an audio session.")
     Text("System effects can work without this setup when a player announces its session.",
         style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+    if (fixture == null) {
+        Spacer(Modifier.height(8.dp))
+        if (error) Text(grant.message, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+        TextButton(onClick = { OnboardingUi.panel.value = HelpPanel.NONE }) { Text("Continue with basic detection") }
+        KeepEnhancedCard()
+    }
     Spacer(Modifier.height(10.dp))
     WizardStep.entries.forEachIndexed { index, step ->
         val checked = when (step) {
@@ -92,9 +98,9 @@ private fun DetectionWizard(fixture: String?) {
             WizardStep.START -> snapshot.running == true
             WizardStep.AUTHORIZE -> snapshot.authorized == true
             WizardStep.GRANT -> snapshot.dumpGranted
-            WizardStep.FINISH -> snapshot.dumpGranted && snapshot.debugging.verifiablyOff
+            WizardStep.FINISH -> snapshot.dumpGranted
         }
-        val label = if (snapshot.dumpGranted && step.ordinal < WizardStep.GRANT.ordinal && !checked) "Not needed now" else if (checked) "✓" else if (step == snapshot.step) "Current" else "Pending"
+        val label = if (step == WizardStep.GRANT && error) "Unavailable · optional" else if (step == WizardStep.GRANT && !checked) "Optional" else if (snapshot.dumpGranted && step.ordinal < WizardStep.GRANT.ordinal && !checked) "Not needed now" else if (checked) "✓" else if (step == snapshot.step) "Current" else "Pending"
         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("${index + 1}. ${step.title}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
             Text(label, color = if (checked || step == snapshot.step) Svan.Gold else Svan.TextMuted,
@@ -110,11 +116,11 @@ private fun DetectionWizard(fixture: String?) {
                 WizardStep.DEBUGGING -> if (Build.VERSION.SDK_INT >= 30) "In Developer options, enable Wireless debugging on Wi-Fi; then open Shizuku to pair." else "Android 10 lacks phone-only wireless pairing. Shizuku's official guide describes computer-assisted setup."
                 WizardStep.START -> "In Shizuku, choose Pairing and enter Android's pairing code, then tap Start."
                 WizardStep.AUTHORIZE -> "Tap Allow Svan below and approve Svan in Shizuku's permission prompt."
-                WizardStep.GRANT -> "Tap Enable music detection. Svan requests only its own DUMP permission."
-                WizardStep.FINISH -> "The grant stays after Shizuku stops. Turn USB and wireless debugging off, then return to check."
+                WizardStep.GRANT -> "Tap Enable music detection. Svan reads audio details through Shizuku; it does not grant a permission to the app."
+                WizardStep.FINISH -> "Enhanced detection is available. Check the active mode below before turning debugging off."
             }, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             if (snapshot.step == WizardStep.DEBUGGING || snapshot.step == WizardStep.FINISH) DebuggingReadout(snapshot.debugging)
-            if (grant.stage == DetectionSetup.Stage.ERROR && fixture == null) Text(grant.message,
+            if (fixture == null && grant.message.isNotBlank() && !error) Text(grant.message,
                 color = Svan.Ember, style = MaterialTheme.typography.bodySmall)
             if (fixture == "error") Text(detectionGrantFailureMessage(false), color = Svan.Ember, style = MaterialTheme.typography.bodySmall)
             if (fixture == "working") Text("Enabling detection…", style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
@@ -142,7 +148,7 @@ private fun DetectionWizard(fixture: String?) {
                 WizardStep.FINISH -> {
                     OutlinedButton(onClick = { open(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }, enabled = fixture == null,
                         modifier = Modifier.fillMaxWidth()) { Text("Open Developer options") }
-                    Text("Switch USB debugging and Wireless debugging off. You may turn Developer options off too. In Shizuku, use its menu to Stop when ready; Svan does not stop it automatically.",
+                    Text(if (fixture == null && !PlaybackSessions.hasDumpPermission(context)) "Enhanced detection works while Shizuku runs; restart it after a phone reboot. To remove Shizuku, tap Keep enhanced detection without Shizuku above first." else "Enhanced detection is built into Svan. You can uninstall Shizuku and turn Developer options off.",
                         style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     Button(onClick = { OnboardingUi.panel.value = HelpPanel.NONE }, enabled = fixture == null,
                         modifier = Modifier.fillMaxWidth()) { Text("Finish") }
@@ -157,6 +163,13 @@ private fun DetectionWizard(fixture: String?) {
                 Text(if (error) "Retry" else "Check again")
             }
         }
+    }
+    if (fixture == null && error) {
+        TextButton(onClick = { linkError = openSettings(context, Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }) { Text("Open Developer options") }
+        var advanced by remember { mutableStateOf(false) }
+        TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "Hide computer option" else "Other option: use a computer") }
+        if (advanced) Text("If you have a computer with adb, an optional existing-permission route is: adb shell pm grant app.svan android.permission.DUMP. This may still be blocked by your phone. Svan runs this same grant only when you tap Keep enhanced detection without Shizuku.",
+            style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
     }
     if (!snapshot.dumpGranted) Text("Pairing cannot be verified separately from a running Shizuku binder. Its running tick is the observed result of startup, not a claim about a stored pairing.",
         style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
@@ -193,8 +206,8 @@ fun WorkingStatusCard(state: WorkingState, fixture: Boolean = false, stats: Capt
             Text(when (state.kind) {
                 WorkingKind.IDLE -> "Nothing playing"
                 WorkingKind.UNKNOWN -> "Can't tell whether playback is active"
-                WorkingKind.UNREACHABLE -> "Player found, but not connected"
-                WorkingKind.ROUTED -> "Player found and routed"
+                WorkingKind.UNREACHABLE -> if (fixture) "Player found, but not connected" else "Music playing · session unavailable"
+                WorkingKind.ROUTED -> if (fixture) "Player found and routed" else if (state.players.any { it.engine == UiEngine.SHARED_OUTPUT }) "Shared-output effect attached" else "Player connected"
             }, style = MaterialTheme.typography.bodyMedium)
             state.players.forEach { player ->
                 Text("${player.name} · ${player.engine?.title ?: player.reason ?: "No attachable session"}",
@@ -228,7 +241,7 @@ fun ContextualSetupPrompt(state: WorkingState) {
     val name = state.players.first { it.key == key }.name
     SvanCard {
         Column {
-            Text("$name is playing but Svan can't reach it yet. Fix in about 2 minutes.", style = MaterialTheme.typography.bodyMedium)
+            Text("$name is playing but Svan can't reach its audio yet. Try the optional detection options.", style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { OnboardingUi.panel.value = HelpPanel.DETECTION }) { Text("Fix music detection") }
                 TextButton(onClick = { OnboardingAndroid.dismiss(context, key); dismissed = OnboardingAndroid.dismissed(context) }) { Text("Not now") }

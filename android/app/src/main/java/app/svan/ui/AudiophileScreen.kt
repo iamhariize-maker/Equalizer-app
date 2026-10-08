@@ -46,6 +46,8 @@ import app.svan.model.EngineMode
 import app.svan.model.QualityMode
 import app.svan.listening.ProofCapture
 import app.svan.listening.ProofRecorder
+import app.svan.model.SpatialMode
+import app.svan.RatePolicy
 import kotlinx.coroutines.delay
 
 /** Svan processing controls and observed routing status. */
@@ -62,8 +64,11 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     var verdicts by remember { mutableStateOf(SessionRouter.compat().all()) }
     var running by remember { mutableStateOf(CaptureService.isRunning) }
     var routes by remember { mutableStateOf(SessionRouter.snapshot.toList()) }
+    var showRules by remember { mutableStateOf(false) }
+    if (showRules) PolicyRulesScreen { showRules = false }
     val detection by DetectionMonitor.status.collectAsState()
     val captureStartup by CaptureService.startupMessage.collectAsState()
+    val captureRecovery by CaptureService.recoveryMessage.collectAsState()
     LaunchedEffect(Unit) {
         while (true) {
             stats = CaptureService.stats
@@ -72,7 +77,10 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             verdicts = SessionRouter.compat().all()
             systemApps = prefs.systemOnlyPackages()
             knownApps = verdicts.keys + systemApps + SessionRouter.snapshot.map { it.pkg } +
-                DetectionMonitor.status.value.sessions.map { it.session.packageName }
+                DetectionMonitor.status.value.sessions.filter { source ->
+                    app.svan.MusicSourcePolicy.immediate(source.session) || SessionRouter.snapshot.any { it.sessionId == source.session.sessionId }
+                }.map { it.session.packageName }
+            knownApps = knownApps.filterNot { app.svan.MusicSourcePolicy.excludedPackage(it) }.toSet()
             routes = SessionRouter.snapshot.toList()
             delay(700)
         }
@@ -80,6 +88,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
         ScreenTitle("Hi-Fi", "Choose processing, then check what each app actually uses.")
+        OutlinedButton(onClick = { showRules = true }, modifier = Modifier.fillMaxWidth()) { Text("How Svaresa decides") }
 
         DetectionCard(captureStats = stats)
 
@@ -128,20 +137,24 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                 }
             }
         }
+        if (captureRecovery.isNotBlank()) Text(captureRecovery, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
         if (running) {
             SvanCard {
                 Column {
                     if (routes.none { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }) {
-                        Text("No music connected. Complete Music detection above, then play your song and check Apps & engines. The DSP is idle until a player connects.",
+                        Text("No music connected. Play a song; if it stays disconnected, try the optional Music detection options above. The DSP is idle until a player connects.",
                             style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     }
                     stats?.let { st ->
                         Text("Signal peak · in %.1f dBFS · out %.1f dBFS".format(st.inputPeakDb, st.outputPeakDb), style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
                         Text("Output queue %.1f ms · buffer %.1f ms".format(st.queuedMs, st.bufferMs), style = MaterialTheme.typography.bodySmall)
                         Text("DSP %.1f ms · load %.1f%% · underruns %d".format(st.dspLatencyMs, st.dspPercent, st.underruns), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                        Text("Spatial blend: %.0f%% Detailed".format(st.detailedMix * 100), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                        Text("Spatial mode applied: ${CaptureService.epoch?.appliedSettings?.spatialMode?.title ?: "—"}", style = MaterialTheme.typography.bodySmall)
+                        CaptureService.rateFacts?.let { Text(it.summary(), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
                         Text("Applied gain %.1f dB · protection %.1f dB".format(st.gainDb, st.protectionDb), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     }
-                    Text("These readings exclude capture, Android mixing and Bluetooth delay. If playback stutters, try Efficient; use system effects for the shortest path.",
+                    Text("These readings exclude capture, Android mixing and Bluetooth delay. Svan increases buffering after underruns and returns to system effects if capture repeatedly cannot keep up.",
                         style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
                 }
             }
@@ -153,7 +166,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
 
         SectionLabel("Apps & engines")
-        Text("Try Spotify, Amazon Music, YouTube Music, Apple Music, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
+        Text("Notifications, interface effects and known utility sounds are left outside Svan processing. Unknown players must show sustained playback. Their alerts remain audible normally. Try Spotify, Amazon Music, YouTube Music, Apple Music, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         if (knownApps.isEmpty()) Text("No audio apps detected yet.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         val livePkgs = routes.map { it.pkg }.toSet() + detection.sessions.map { it.session.packageName }
@@ -167,6 +180,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                     Text(pkg, style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
                     val status = when {
                         appRoutes.any { it.owner == SessionRouter.Owner.PROBING } -> "Checking capture…"
+                        appRoutes.any { it.owner == SessionRouter.Owner.SHARED_OUTPUT } -> "Shared-output EQ · music path unverified"
                         appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_B_MUTED } -> "Audiophile engine · full DSP"
                         appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_A && it.sessionId in EqController.globalEq.attachedSessions } -> "System effects · gain per band"
                         appRoutes.isNotEmpty() -> "Unprocessed · system effect unavailable"
@@ -174,6 +188,12 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         else -> "Not playing right now (remembered from earlier)"
                     }
                     Text(status, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+                    Text(when {
+                        !eq.enabled -> "Processing off. Saved tuner values are retained."
+                        appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_B_MUTED } -> "Orchestral controls and Bass Resolve applied through native capture. ${if (CaptureService.epoch?.detailed == true) "Detailed" else "Fast"} spatial mode."
+                        appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_A } -> "System-effects approximation for EQ, bass Feel and vocal tone. Orchestral controls and Resolve unavailable on this route."
+                        else -> "Tuner capability unavailable until a player is connected."
+                    }, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     appRoutes.firstOrNull { it.owner == SessionRouter.Owner.ENGINE_A }?.let { r ->
                         val v = SessionRouter.verification[r.sessionId]
                         val path = SessionRouter.evidence[r.sessionId]?.pathLabel.orEmpty()
@@ -195,8 +215,28 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             }
         }
 
+        SectionLabel("Spatial processing")
+        SpatialMode.entries.forEach { mode ->
+            ChoiceRow(mode.title, mode.detail, s.spatialMode == mode, onClick = { SvanRepository.updateSettings { it.copy(spatialMode = mode) } })
+        }
+        Text("Starting capture in Auto or Detailed allows live, smooth spatial changes. Its added delay stays fixed during switches. Capture started in Fast needs a restart to enable Auto or Detailed; rate changes also need a restart. Short load spikes grow buffering and fade spatial work toward Fast while capture keeps running. Persistent failure can still return to system effects. Phone qualification pending.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        SectionLabel("Capture rate")
+        RatePolicy.Mode.entries.forEach { mode ->
+            val label = when (mode) { RatePolicy.Mode.SAFE -> "Safe 48 kHz"; RatePolicy.Mode.EVIDENCE_HIGH_RATE -> "High-rate (device evidence)"; RatePolicy.Mode.EXPERIMENTAL_192K -> "Experimental 192 kHz" }
+            val detail = when (mode) { RatePolicy.Mode.SAFE -> "Default and fallback. Stereo float transport."; RatePolicy.Mode.EVIDENCE_HIGH_RATE -> "Try 88.2/96 kHz only when reported by the routed output; fall back serially to 48 kHz."; RatePolicy.Mode.EXPERIMENTAL_192K -> "Also try reported 176.4/192 kHz. Phone performance and listening checks are pending." }
+            ChoiceRow(label, detail, s.captureRateMode == mode, onClick = { SvanRepository.updateSettings { it.copy(captureRateMode = mode) } })
+        }
+        Text("Client rates describe Svan's transport. Original streaming-file rate and physical DAC rate remain unknown.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
+
+        SectionLabel("Experimental bass unmasking")
+        SettingSwitchRow("Experimental bass unmasking", "Off by default. May cut sustained peaks outside a detected bass note's harmonics, up to 2 dB combined. Validated on synthetic fixtures only; it can misclassify music. Auto master never enables this.",
+            s.experimentalBassUnmask, { on -> SvanRepository.updateSettings { it.copy(experimentalBassUnmask = on) } })
+        if (s.experimentalBassUnmask && running) CaptureService.bassUnmaskDiagnostics()?.let { d ->
+            if (d.size == 5) Text("70/110/180/280 Hz cuts: ${d.take(4).joinToString { "%.2f dB".format(it) }} · estimated note ${if (d[4] > 0) "%.1f Hz".format(d[4]) else "unknown"}", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        }
+
         SectionLabel("Capture processing quality")
-        Text("These quality and dither settings apply to the capture engine. System effects use Android’s own processing.",
+        Text("Quality and dither changes take effect when capture restarts. This keeps filter latency stable during a song. System effects use Android’s own processing.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         QualityMode.entries.forEach { q ->
             ChoiceRow(q.title, q.detail, s.quality == q, onClick = { SvanRepository.updateSettings { it.copy(quality = q) } },
@@ -270,26 +310,22 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
 private fun ProofRecorderCard(engineRunning: Boolean) {
     val context = LocalContext.current
     val state by ProofRecorder.state.collectAsState()
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
     var error by remember { mutableStateOf("") }
-    var withScreen by remember { mutableStateOf(true) }
-    LaunchedEffect(state) { while (state is ProofRecorder.State.Recording) { now = System.currentTimeMillis(); delay(500) } }
+    var compatibility by remember { mutableStateOf(true) }
+    var matchLevel by remember { mutableStateOf(false) }
+    val countdown by ProofRecordingUi.countdown.collectAsState()
     SectionLabel("Recording mode")
     SvanCard {
         Column {
-            Text("Other screen recorders can’t hear the audiophile engine. Record inside Svan instead: it captures your screen together with Svan’s processed sound in one MP4, so what you hear in the video is what Svan sent to your headphones. Change settings while it records; each change you pause on is logged and measured separately.",
+            Text("Film this phone with another phone. Svan saves aligned dry and processed audio, charts and a report. The clock above every tab is the file time. Sync adds a flash and speaker clicks for your camera.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             Spacer(Modifier.height(8.dp))
-            Text("You also get dry and processed WAVs, a chart of the whole recording, a “what each setting did” chart, and a JSON report. Choose Entire screen when Android asks for screen access. Covers apps on the audiophile engine and Svan’s digital output, not your DAC, Bluetooth link or headphones.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
+            Text("Svan's digital output, excluding the DAC, Bluetooth and headphones. Louder often sounds better; compare at matched RMS level.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             Spacer(Modifier.height(12.dp))
             when (val st = state) {
                 is ProofRecorder.State.Recording -> {
-                    val secs = ((now - st.startedAtMs) / 1000).coerceAtLeast(0)
-                    Text("Recording · %d:%02d".format(secs / 60, secs % 60), style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = { ProofCapture.stop() }, modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Svan.Gold, contentColor = Svan.OnGold)) { Text("Stop and save") }
+                    Text("Recording. Use Sync, Mark now and Stop above; change settings on any tab.", style = MaterialTheme.typography.bodyMedium, color = Svan.Gold)
                 }
                 is ProofRecorder.State.Finishing -> Text("Analysing and saving…", style = MaterialTheme.typography.bodyMedium, color = Svan.Gold)
                 is ProofRecorder.State.Done -> {
@@ -302,7 +338,7 @@ private fun ProofRecorderCard(engineRunning: Boolean) {
                     if (r.processed.overs > 0) Text("${r.processed.overs} processed samples reached full scale.", style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     if (r.droppedFrames > 0) Text("${r.droppedFrames} frames dropped because storage fell behind.", style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     if (r.segments.size > 1) Text("${r.segments.size} stretches measured, one per setting change.", style = MaterialTheme.typography.bodySmall)
-                    ProofCapture.lastScreenNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.Ember) }
+                    ProofCapture.lastExportNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.Ember) }
                     ProofCapture.lastLocation?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
                     Spacer(Modifier.height(8.dp))
                     OutlinedButton(onClick = { ProofCapture.dismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Done") }
@@ -313,17 +349,31 @@ private fun ProofRecorderCard(engineRunning: Boolean) {
                     OutlinedButton(onClick = { ProofCapture.dismiss() }, modifier = Modifier.fillMaxWidth()) { Text("OK") }
                 }
                 is ProofRecorder.State.Idle -> {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Pill("Screen + sound", withScreen, { withScreen = true })
-                        Pill("Sound only", !withScreen, { withScreen = false })
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = compatibility, onCheckedChange = { compatibility = it })
+                        Text("16-bit WAV for editors", style = MaterialTheme.typography.bodyMedium)
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Text(if (compatibility) "16-bit PCM with TPDF dither; DSP stays unchanged. Also saves M4A." else "24-bit PCM WAV. Also saves M4A. Check VN import on your phone.",
+                        style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = matchLevel, onCheckedChange = { matchLevel = it })
+                        Text("Also save RMS-matched audio", style = MaterialTheme.typography.bodyMedium)
+                    }
                     if (error.isNotBlank()) Text(error, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     Button(
-                        onClick = { error = ""; runCatching { ProofCapture.start(context, withScreen) }.onFailure { error = it.message ?: "Couldn’t start recording" } },
-                        enabled = engineRunning, modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            error = ""
+                            runCatching { ProofCapture.start(context, if (compatibility) 16 else 24, matchLevel) }
+                                .onFailure { error = it.message ?: "Could not start recording" }
+                        },
+                        enabled = engineRunning && countdown == null, modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = Svan.Gold, contentColor = Svan.OnGold),
                     ) { Text(if (engineRunning) "Start recording" else "Start the audiophile engine first") }
+                    OutlinedButton(onClick = {
+                        ProofRecordingUi.wavBits = if (compatibility) 16 else 24
+                        ProofRecordingUi.matchLevel = matchLevel
+                        ProofRecordingUi.countdown.value = 3
+                    }, enabled = engineRunning && countdown == null, modifier = Modifier.fillMaxWidth()) { Text("Start with countdown") }
                 }
             }
         }

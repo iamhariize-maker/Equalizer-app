@@ -60,6 +60,9 @@ PY
     "${A[@]}" shell input tap "$x" "$y"
 }
 : > "$OUT/results.txt"
+# This prelude intentionally tests basic detection. A previously authorized Shizuku
+# manager can survive app reinstall and automatically reconnect the shell helper.
+"${A[@]}" shell 'for p in $(pidof shizuku_server); do kill "$p"; done'
 tone --ez stop true || true
 "${A[@]}" uninstall app.svan >/dev/null 2>&1 || true
 "${A[@]}" install "$APK" >/dev/null
@@ -103,3 +106,5 @@ assert_state 'stopped playback removes the prompt' "s['kind']=='IDLE' and not s[
 tap 'Hi-Fi'
 "${A[@]}" exec-out screencap -p > "$OUT/status-idle.png"
 cat "$OUT/results.txt"
+
+bash scripts/detection_fallbacks.sh "$S" "$OUT/fallbacks"

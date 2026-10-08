@@ -1,4 +1,107 @@
+## Combined 0.5.7 feature checks — pending, not run on phones
+
+Install the original-key 0.5.7/code 14 update over the supplied spatial-test APK, without uninstalling.
+Confirm saved presets/manual curves/settings remain, and Fast/Detailed/Auto, Backing/Binaural,
+Bass Resolve, experimental unmask, rate choices/provenance, rule view, protection, calibration,
+blind listening, Svaresa and all fine controls are still present. Test Recording mode at the safe
+48 kHz setting and, if the route supports it, a higher capture-client rate. WAV/clock/report must
+agree on actual rate/duration; the M4A convenience export remains 48 kHz.
+
+Amazon is the owner's larger problem: it is sometimes observed but never becomes a usable music
+source. Capture a local diagnostic report while a song plays, separately on IM4 and Realme Air 8;
+check whether the report gives a real nonzero session, usage/content exclusion, effect bypass,
+or an unresolved player. Try the retained automatic whole-phone fallback and, separately, the
+manual shared-output experiment with enhanced access unavailable. Report actual audible EQ change
+and route, without inferring per-app capture or full native processing from an attached mix effect.
+Apple: repeat play/pause/resume, stop/restart and several track changes, then the same route checks.
+Neither result is claimed fixed on TECNO or LG by the synthetic tests below.
+
+# 0.5.7 player-connection checks — pending
+
+Use the new original-key owner-signed 0.5.7/code 14 APK. It updates the earlier owner beta;
+preview-signed builds use a different certificate. No new permission is needed for connections
+or the shared-output experiment. Keep Play Protect enabled. See [player connections](PLAYER_CONNECTIONS_0.5.7.md).
+
+1. With shared-output off, test Spotify, YouTube Music, Apple Music and Amazon Music HD on each
+   actual output. Record app versions, phone, route, whether the local report says DUMP granted,
+   and actual connection/effect behavior. Repeat pause/resume, stop/restart, track changes,
+   app switching and screen-off. Save a local report after failure; historical names are not proof.
+2. If a player exposes its EQ-panel command, select Svan and check its EQ opens, changes are
+   audible and Done returns to the player. Check later restart behavior separately.
+3. For a missing session, explicitly try shared-output EQ. Compare Flat against a clear EQ cut
+   at fixed volume on that same music. Record whether it changes the sound on speaker, wired,
+   USB and Bluetooth independently. Attached/control is not processing proof. Do not infer
+   support for an offload/HD route from a speaker or self-tone test.
+4. While shared-output is active, verify no doubled EQ when a player announces a new session;
+   per-app overrides are unavailable. Connect/disconnect an output and check the experiment
+   stops. Also select between already-connected outputs: that selection may produce no device
+   connection event, so stop and re-test manually. Check stop restores per-player processing and Engine B refuses to start until it stops.
+5. Test other sounds sharing the output and stop the option if it affects audio unexpectedly.
+   Confirm the Recording mode workflow still works after returning to Engine B. Shared-output
+   EQ does not create processed recording files for capture-blocked apps.
+
+None of these commercial-player/physical-route checks has passed yet. Owner observations of
+earlier versions remain history. CI's source app and route-handler simulation cannot replace them.
+
+---
+
+# Recording-mode owner checks — pending
+
+Use the new recording-mode build identified in [HANDOFF.md](HANDOFF.md), not the older
+owner-signed beta named below. **None of these physical-phone checks has passed yet.**
+TECNO LH7n / Android 14 runs Svan; LG V60 / Android 13 films the TECNO screen from outside.
+Follow [RECORDING_MODE.md](RECORDING_MODE.md) and keep Play Protect enabled.
+CI's preview-signed APK cannot update the original-key owner beta. The combined 0.5.7/code 14
+APK has been privately signed with the original owner key, preserving every tested production
+payload entry. See [COMBINED_APK_VERIFICATION_0.5.7.md](COMBINED_APK_VERIFICATION_0.5.7.md) for its
+source, checksum and signer. It is a direct owner delivery, not a published release.
+
+1. At normal filming distance and room light, is the `m:ss.mmm` clock readable in the LG
+   video? Are the current segment and Sync/Mark now/Stop controls readable? Does the white
+   flash show clearly, including with settings on another tab? Check the screen stays awake.
+2. Does the LG microphone clearly record three speaker clicks? In VN, measure the flash-to-click
+   interval: record several syncs; locate the first bright frame and the first click's waveform
+   onset; subtract their timeline times. Note LG video frame rate, recording resolution, distance,
+   each measured interval in ms and its spread. Check the displayed clock against `syncSeconds`,
+   and whether flash, clock and click agree within one LG video frame. A video frame only bounds
+   the visual instant; this measures aggregate flash/click/camera timing, not DAC latency.
+   Prefer the visible clock if clicks are delayed, inconsistent or unavailable. No speaker
+   latency or “few tens of ms” precision is claimed before this measurement.
+3. Play and import the full and from-sync WAVs, cue copy and M4A in VN. Test both the default
+   16-bit TPDF WAV and the optional 24-bit WAV. Record VN version and which formats actually
+   import/play, plus any AAC offset. Finish a short exported VN video using plain processed
+   audio, remove the cue copy and mute the LG microphone audio.
+4. With the owner's headphones on the TECNO, does the edited dry/processed A/B resemble the
+   live demonstration? Compare at matched RMS level; keep DAC/Bluetooth/acoustic differences
+   separate from the digital-output proof. Do not infer listening preference from file tests.
+5. While headphones remain connected (wired/USB/Bluetooth as available), does Sync use only
+   the TECNO speaker? Do headphones remain on their music route? Confirm the cue is absent
+   from plain dry/processed and matched WAVs and M4A, and absent from headphones. Disconnect
+   or switch routes during a sync to test cue suppression. Retain any cue-routing message.
+
+Also test countdown cancel, multiple syncs, typed manual labels, a long demo and storage failure.
+Keep the report's dropped-frame count with each observation. Record results as actual device
+observations with date, source player and output route; emulator tests cannot establish these.
+
+---
+
 # Current onboarding validation (after a603146)
+# 0.5.6 owner evidence and remaining phone checks
+
+On 7 October 2026 the owner reports working playback on the current TECNO LH7n preview.
+Their photo shows Spotify routed through Audiophile with live capture peaks. BHIM and GPay
+work after Shizuku is uninstalled while Developer options remain enabled; the owner did not
+need to disable Developer options. This is owner-reported evidence for that phone/preview,
+not a result for the final owner-signed beta or every payment app.
+
+For the final beta, verify installation/update, retained settings/grant, a fresh explicit
+keep-enhanced grant, reboot, screen-off playback and output changes. Record the actual player,
+engine and output path. Test LG V60, Bluetooth and other phone/payment combinations separately.
+Keep Play Protect enabled. See [release readiness](RELEASE_READINESS.md) and
+[preview migration](MOVING_FROM_PREVIEW.md). No need to repeat a successful payment test merely
+because Developer options remain enabled; record their actual state with each result.
+
+# Earlier onboarding validation (after a603146)
 
 Use `Svan-0.5.5-owner-signed-fbc2ff6.apk` and the hash in the
 [beta release notes](releases/v0.5.5-beta.md). The original owner-signed a603146 APK

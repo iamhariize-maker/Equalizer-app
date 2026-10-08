@@ -87,14 +87,32 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("quality")?.let { pendingQuality = QualityMode.valueOf(it) }
         EqController.log("CMD $cmd")
         when (cmd) {
+            "shared_output" -> if (BuildConfig.DEBUG) SessionRouter.setSharedOutput(intent.getBooleanExtra("on", false))
+            "test_output_change" -> if (BuildConfig.DEBUG) SessionRouter.outputChanged()
+            "basic_status" -> if (BuildConfig.DEBUG) {
+                val d = org.json.JSONObject().put("dump", PlaybackSessions.hasDumpPermission(this))
+                    .put("reportAccess", PlaybackSessions.hasReportAccess(this))
+                    .put("sharedRequested", SharedOutput.status.value.requested).put("sharedAttached", EqController.globalEq.isHealthy(0))
+                    .put("capture", CaptureService.isRunning)
+                    .put("attached", org.json.JSONArray(EqController.globalEq.attachedSessions.toList()))
+                    .put("recent", org.json.JSONArray(SessionRouter.recentConnections))
+                    .put("routes", org.json.JSONArray(SessionRouter.snapshot.map {
+                        org.json.JSONObject().put("sid", it.sessionId).put("pkg", it.pkg).put("owner", it.owner.name)
+                    }))
+                java.io.File(filesDir, "basic-status.json").writeText(d.toString())
+                EqController.log("BASIC_STATUS_READY")
+            }
             "onboarding_state" -> {
                 val state = OnboardingAndroid.working(this)
                 val snapshot = OnboardingAndroid.wizard(this)
                 val data = org.json.JSONObject()
                     .put("kind", state.kind.name).put("prompt", state.promptKey(OnboardingAndroid.dismissed(this)) != null)
                     .put("dump", snapshot.dumpGranted).put("wizard", snapshot.step.name)
+                    .put("namedTestPlayer", state.players.any { it.key == "app.svan.testsource.capturable" })
+                    .put("connectedPlayers", state.players.count { it.engine != null })
                     .put("usb", snapshot.debugging.usb.name).put("wireless", snapshot.debugging.wireless.name)
                     .put("system", SystemEqService.isRunning).put("capture", CaptureService.isRunning)
+                    .put("mixFallback", EqController.globalEq.mixFallbackOn)
                     .put("engineMode", SvanRepository.settings.value.engineMode.name)
                     .put("preset", SvanRepository.eq.value.presetName).put("preamp", SvanRepository.eq.value.preampDb)
                     .put("smart", app.svan.svaramanas.Svaramanas.request.value.enabled)
@@ -115,7 +133,31 @@ class MainActivity : ComponentActivity() {
             }
             "onboarding_reset_prompts" -> OnboardingAndroid.resetPrompts(this)
             "blind_lab" -> app.svan.listening.BlindLab.open.value=true
+            "proof_start" -> if (BuildConfig.DEBUG) {
+                runCatching { app.svan.listening.ProofCapture.start(this, matchLevel = true) }
+                    .onFailure { EqController.log("PROOF_FAILED ${it.message}") }
+            }
+            "proof_countdown" -> if (BuildConfig.DEBUG) {
+                app.svan.ui.ProofRecordingUi.wavBits = 16
+                app.svan.ui.ProofRecordingUi.matchLevel = true
+                app.svan.ui.ProofRecordingUi.countdown.value = 3
+            }
+            "proof_status" -> if (BuildConfig.DEBUG) thread {
+                runCatching { app.svan.listening.RecordingEvidence.write(this); EqController.log("PROOF_EVIDENCE_READY") }
+                    .onFailure { EqController.log("PROOF_FAILED ${it.message}") }
+            }
+            "proof_dismiss" -> if (BuildConfig.DEBUG) app.svan.listening.ProofCapture.dismiss()
+            "source_policy_state" -> {
+                val pkg=intent.getStringExtra("pkg").orEmpty()
+                val observed=SessionRouter.evidence.values.filter { it.session.packageName==pkg }
+                EqController.log("SOURCE_POLICY_STATE "+org.json.JSONObject()
+                    .put("observed",observed.size)
+                    .put("excluded",observed.count {MusicSourcePolicy.exclusion(it.session)!=null})
+                    .put("routes",SessionRouter.snapshot.count {it.pkg==pkg}))
+            }
+            "continuity_lab" -> thread { runCatching {app.svan.listening.ContinuityLab.verify()}.onFailure {EqController.log("CONTINUITY_LAB_FAILED ${it.message}")} }
             "quality_lab" -> thread { runCatching {app.svan.listening.QualityLab.verify(this)}.onFailure {EqController.log("QUALITY_LAB_FAILED ${it.message}")} }
+            "audio_quality_lab" -> thread { runCatching {app.svan.listening.AudioQualityLab.verify()}.onFailure {EqController.log("AUDIO_QUALITY_LAB_FAILED ${it.message}")} }
             "probe" -> thread { EqController.log(DynamicsProbe.run(this)) }
             "resolution" -> runResolutionProbe()
             "sessions" -> thread { EqController.log(sessionReport()) }
@@ -172,6 +214,8 @@ class MainActivity : ComponentActivity() {
             "engine_mode" -> SvanRepository.updateSettings {
                 it.copy(engineMode = if (intent.getBooleanExtra("system_only", false)) app.svan.model.EngineMode.SYSTEM_ONLY else app.svan.model.EngineMode.AUTO)
             }
+            "mix_fallback" -> SvanRepository.updateSettings { it.copy(wholeMixFallback = intent.getBooleanExtra("on", true)) }
+            "shell_route" -> ShizukuAudioReports.connect(this, retry = true, forceDirect = intent.getBooleanExtra("direct", false))
             "start_system" -> SystemEqService.start(this)
             "stop_system" -> SystemEqService.stop(this)
             "test_drop_system_effects" -> {
@@ -222,7 +266,7 @@ class MainActivity : ComponentActivity() {
                 SvanRepository.update {
                     it.copy(
                         vocal = app.svan.model.VocalTuner(f("intimacy"), f("warmth"), f("smooth")),
-                        instrument = app.svan.model.InstrumentTuner(f("space"), f("instruments")),
+                        instrument = app.svan.model.InstrumentTuner(f("space"), f("instruments"), f("backing"), f("spatial")),
                     )
                 }
                 val r = EqController.curveEngine.responseDb(doubleArrayOf(1000.0))[0]
@@ -289,7 +333,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sessionReport(): String = buildString {
-        appendLine("DUMP granted: ${PlaybackSessions.hasDumpPermission(this@MainActivity)}")
+        appendLine("Audio-report access: ${PlaybackSessions.hasReportAccess(this@MainActivity)}; app DUMP: ${PlaybackSessions.hasDumpPermission(this@MainActivity)}")
         val sessions = PlaybackSessions.query(this@MainActivity)
         if (sessions == null) appendLine("dump: unavailable (${PlaybackSessions.lastError})")
         else sessions.forEach {
@@ -307,7 +351,7 @@ class MainActivity : ComponentActivity() {
             return
         }
         SystemEqService.start(this)
-        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasDumpPermission(this), SessionRouter.snapshot, android.os.Process.myUid())
+        val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasReportAccess(this), SessionRouter.snapshot, android.os.Process.myUid(), SharedOutput.status.value.requested)
         if (blocker != null) {
             CaptureService.startupMessage.value = blocker
             DetectionSetup.refresh()

@@ -20,7 +20,7 @@ object OnboardingAndroid {
             catch (_: PackageManager.NameNotFoundException) { false } catch (_: RuntimeException) { null },
         running = try { Shizuku.pingBinder() } catch (_: RuntimeException) { null },
         authorized = try { Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED } catch (_: RuntimeException) { null },
-        dumpGranted = PlaybackSessions.hasDumpPermission(context), debugging = debugging(context),
+        dumpGranted = PlaybackSessions.hasReportAccess(context), debugging = debugging(context),
     )
 
     fun working(context: Context): WorkingState {
@@ -43,9 +43,11 @@ object OnboardingAndroid {
                 appRoutes.isNotEmpty() && appRoutes.all { it.playing == false } -> false
                 else -> null
             }
-            val engine = if (!SystemEqService.isRunning) null else when { b != null -> UiEngine.AUDIOPHILE; a != null -> UiEngine.SYSTEM_EFFECTS; else -> null }
+            val shared = appRoutes.any { it.owner == SessionRouter.Owner.SHARED_OUTPUT } && SharedOutput.status.value.attached
+            val engine = if (!SystemEqService.isRunning) null else when { shared -> UiEngine.SHARED_OUTPUT; b != null -> UiEngine.AUDIOPHILE; a != null -> UiEngine.SYSTEM_EFFECTS; else -> null }
             val attachable = appRoutes.any { it.sessionId > 0 } || observed.any { it.sessionId > 0 }
             val reason = when {
+                shared -> "The shared-output effect is attached; this player's signal path is unverified."
                 active == null && engine != null -> "Announced session routed; current playback association is unverified."
                 !SystemEqService.isRunning -> "System equalizer is stopped."
                 appRoutes.any { it.owner == SessionRouter.Owner.PROBING } -> "Checking capture; not connected yet."
@@ -58,7 +60,12 @@ object OnboardingAndroid {
         // The public count is anonymous, not an app count. Never invent an identity from it.
         val publicOther = (if (fresh) st.publicActive else DetectionMonitor.publicActiveCount(context))
             ?.let { (it - if (CaptureService.isRunning) 1 else 0).coerceAtLeast(0) }
-        return WorkingState.derive(publicOther, players, PlaybackSessions.hasDumpPermission(context))
+        if (players.isEmpty() && (publicOther ?: 0) > 0 && SharedOutput.status.value.attached && SystemEqService.isRunning) {
+            return WorkingState.derive(publicOther, listOf(WorkingPlayer(WorkingState.ANONYMOUS_PLAYER,
+                "Player unidentified", true, false, UiEngine.SHARED_OUTPUT,
+                "Shared-output EQ is attached; this music's path is unverified.")), PlaybackSessions.hasReportAccess(context))
+        }
+        return WorkingState.derive(publicOther, players, PlaybackSessions.hasReportAccess(context))
     }
 
     private fun label(context: Context, key: String): String = if (key.startsWith("uid:") || key.startsWith("pid:")) "A player" else DetectionStatus.appLabel(key) { pkg ->

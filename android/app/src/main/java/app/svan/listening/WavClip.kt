@@ -4,10 +4,10 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /** Local PCM/float WAV, bounded to an eight-second stereo excerpt. No decoder/network permission. */
-data class WavClip(val rate: Int,val samples: FloatArray) {
+data class WavClip(val rate: Int,val samples: FloatArray, val captureSettings: app.svan.model.AudioSettings? = null) {
     companion object {
         fun decode(bytes: ByteArray): WavClip {
-            require(bytes.size in 44..12_000_000) { "Choose a WAV smaller than 12 MB" }
+            require(bytes.size in 44..16_777_216) { "Choose a WAV smaller than 16 MB" }
             val b=ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
             fun text(pos: Int)=String(bytes,pos,4,Charsets.US_ASCII)
             require(text(0)=="RIFF"&&text(8)=="WAVE") { "Choose a PCM or float WAV file" }
@@ -23,8 +23,8 @@ data class WavClip(val rate: Int,val samples: FloatArray) {
                 if(text(pos)=="data"){dataStart=pos+8;dataLength=length}
                 pos+=8+length+(length and 1)
             }
-            require(channels in 1..2&&rate in 16000..96000&&bits in listOf(16,24,32)&&align==channels*bits/8&&
-                (format==1||(format==3&&bits==32))&&dataLength>0&&dataLength%align==0) { "Use mono/stereo 16/24/32-bit PCM or 32-bit float WAV (16–96 kHz)" }
+            require(channels in 1..2&&rate in 16000..192000&&bits in listOf(16,24,32)&&align==channels*bits/8&&
+                (format==1||(format==3&&bits==32))&&dataLength>0&&dataLength%align==0) { "Use mono/stereo 16/24/32-bit PCM or 32-bit float WAV (16–192 kHz)" }
             val frames=minOf(dataLength/align,rate*8);require(frames>=rate*4) {"Choose at least four seconds of music"}
             val out=FloatArray(frames*2);b.position(dataStart)
             repeat(frames) {i ->

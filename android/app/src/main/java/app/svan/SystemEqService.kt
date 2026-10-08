@@ -28,8 +28,8 @@ class SystemEqService : Service() {
     @Volatile private var alive = false
     private var callback: AudioManager.AudioPlaybackCallback? = null
     private val deviceCallback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) { recover("output connected") }
-        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) { recover("output disconnected") }
+        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) { SessionRouter.outputChanged(); recover("output connected") }
+        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) { SessionRouter.outputChanged(); recover("output disconnected") }
     }
     private val wakeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) { recover("playback route or screen wake") }
@@ -72,6 +72,8 @@ class SystemEqService : Service() {
             .addAction(Notification.Action.Builder(null, "Svaramanas", smart).build())
             .addAction(Notification.Action.Builder(null, "Stop", stop).build()).build(),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        DetectionSetup.init(this)
+        ShizukuAudioReports.connect(this)
         SvanRepository.init(this)
         if (app.svan.svaramanas.Svaramanas.bubble.value) app.svan.svaramanas.SvaramanasBubbleService.start(this)
         SessionRouter.init(this)
@@ -79,6 +81,7 @@ class SystemEqService : Service() {
         alive = true
         isRunning = true
         instance = this
+        consumePanelRequest()
         // A start that finds this flag still "dirty" means Android (or the OEM's cleaner) killed the last run.
         prefs().edit().putBoolean(KEY_CLEAN, false).putLong(KEY_STARTED, System.currentTimeMillis()).apply()
         ContextCompat.registerReceiver(this, sessionReceiver, IntentFilter().apply {
@@ -126,6 +129,7 @@ class SystemEqService : Service() {
                                     outcome.ledger.sessions.associateBy { it.session.sessionId }, st.verification,
                                 )
                             } else SessionRouter.repairKnownSessions()
+                            MixFallback.evaluate(this)
                         }
                     }
                 } catch (e: Exception) {
@@ -143,11 +147,15 @@ class SystemEqService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        consumePanelRequest()
         recover("service start or manual refresh")
         return START_STICKY
     }
 
     private fun prefs() = getSharedPreferences(CHANNEL, MODE_PRIVATE)
+    private fun consumePanelRequest() {
+        panelRequest.getAndSet(null)?.let { SessionRouter.sessionOpened(it.sid, it.pkg, it.uid) }
+    }
 
     override fun onDestroy() {
         alive = false
@@ -160,6 +168,7 @@ class SystemEqService : Service() {
         callback?.let { runCatching { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(it) } }
         runCatching { getSystemService(AudioManager::class.java).unregisterAudioDeviceCallback(deviceCallback) }
         executor.shutdownNow()
+        Thread { EqController.globalEq.setMixFallback(false) }.start()
         stopService(Intent(this, CaptureService::class.java))
         SessionRouter.shutdown()
         EqController.log("system service: stopped")
@@ -167,6 +176,8 @@ class SystemEqService : Service() {
     }
 
     companion object {
+        private data class PanelRequest(val sid: Int, val pkg: String, val uid: Int)
+        private val panelRequest = java.util.concurrent.atomic.AtomicReference<PanelRequest?>()
         private const val CHANNEL = "system_eq"
         private const val STOP = "app.svan.STOP_EQ"
         private const val KEY_CLEAN = "clean_shutdown"
@@ -192,6 +203,13 @@ class SystemEqService : Service() {
 
         fun startIfEnabled(context: Context) {
             if (context.getSharedPreferences(CHANNEL, MODE_PRIVATE).getBoolean("enabled", true)) start(context)
+        }
+
+        fun openEffectPanel(context: Context, sid: Int, pkg: String, uid: Int) {
+            if (!context.getSharedPreferences(CHANNEL, MODE_PRIVATE).getBoolean("enabled", true)) return
+            panelRequest.set(PanelRequest(sid, pkg, uid))
+            startIfEnabled(context)
+            instance?.let { s -> s.main.post { s.consumePanelRequest() } }
         }
 
         fun refreshDetection(context: Context) {

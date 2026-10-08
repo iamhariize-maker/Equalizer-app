@@ -79,6 +79,10 @@ data class BassTuner(
     val amountDb: Double = 0.0,     // -6..+12
     val focusHz: Double = 80.0,     // 40 (deep sub) .. 160 (mid-bass)
     val character: Double = 0.0,    // -1 sustain/boom .. +1 punch/tight
+    /** Bass Resolve (manual level 0..1): protects the note's own shape from the dynamic Feel control. */
+    val resolve: Double = 0.0,
+    /** Resolve owner: false = Manual/Off by `resolve`; true = Svaresa may raise it while she is driving. Saved `resolve` is never overwritten. */
+    val resolveAuto: Boolean = false,
 ) {
     val isOff: Boolean get() = amountDb == 0.0 && character == 0.0
 
@@ -93,9 +97,15 @@ data class BassTuner(
     }
 
     fun toJson(): JSONObject = JSONObject().put("amt", amountDb).put("focus", focusHz).put("char", character)
+        .put("res", resolve).put("resAuto", resolveAuto)
 
     companion object {
-        fun fromJson(o: JSONObject) = BassTuner(o.optDouble("amt", 0.0), o.optDouble("focus", 80.0), o.optDouble("char", 0.0))
+        /** Svaresa's Resolve level while she owns it (policy v1: protection, not a detector; never below the manual value). */
+        const val AUTO_RESOLVE = 0.6
+
+        // Old state has no "res"/"resAuto": it migrates to Resolve Off, Manual. Values are range-checked.
+        fun fromJson(o: JSONObject) = BassTuner(o.optDouble("amt", 0.0), o.optDouble("focus", 80.0), o.optDouble("char", 0.0),
+            o.optDouble("res", 0.0).let { if (it.isFinite()) it.coerceIn(0.0, 1.0) else 0.0 }, o.optBoolean("resAuto", false))
 
         val PRESETS = listOf(
             "Off" to BassTuner(),
@@ -159,7 +169,7 @@ data class EqState(
     /** System effects cannot run native dynamic EQ; keep their automatic smoothing. */
     val systemSmoothness: Double get() = if (!enabled) 0.0 else maxOf(vocal.smoothness, activeSmart?.smoothness ?: 0.0)
     val activeInstrument: InstrumentTuner get() = if (!enabled) InstrumentTuner() else activeSmart?.let {
-        InstrumentTuner(if (instrument.space != 0.0) instrument.space else it.space, maxOf(instrument.instruments, it.instruments))
+        InstrumentTuner(if (instrument.space != 0.0) instrument.space else it.space, maxOf(instrument.instruments, it.instruments), instrument.backingVocals, instrument.spatialDetail)
     } ?: instrument
 
     /** The user's own EQ layer (parametric or graphic). */
@@ -178,6 +188,9 @@ data class EqState(
     val levelling: Double? get() = smart?.levelling?.let { if (activeSmart != null) it else 0.0 }
 
     /** Bass shaper amount the engines should run (0 when the EQ is off). */
+    /** Effective Bass Resolve: your level, raised to Svaresa's level only when you chose Auto and she is driving. Explicit 0 + Manual = Off. */
+    val bassResolve: Double get() = if (!enabled) 0.0 else
+        if (bass.resolveAuto && activeSmart != null) maxOf(bass.resolve, BassTuner.AUTO_RESOLVE) else bass.resolve
     val bassCharacter: Double get() = if (enabled) (bass.character + (activeSmart?.bassCharacter ?: 0.0)).coerceIn(-1.0, 1.0) else 0.0
 
     /** Your preamp plus Svaramanas's loudness-matching trim. */
@@ -302,13 +315,19 @@ data class VocalTuner(
 data class InstrumentTuner(
     val space: Double = 0.0,       // -1 caved in .. +1 spacious
     val instruments: Double = 0.0, // 0..1 string/sax presence, body, air
+    val backingVocals: Double = 0.0,
+    val spatialDetail: Double = 0.0, // "Binaural" in the UI: image-motion enhancer
 ) {
-    val isOff: Boolean get() = space == 0.0 && instruments == 0.0
+    val isOff: Boolean get() = space == 0.0 && instruments == 0.0 && backingVocals == 0.0 && spatialDetail == 0.0
 
     fun toJson(): JSONObject = JSONObject().put("space", space).put("inst", instruments)
+        .put("backingVocals", backingVocals).put("spatialDetail", spatialDetail)
 
     companion object {
-        fun fromJson(o: JSONObject) = InstrumentTuner(o.optDouble("space", 0.0), o.optDouble("inst", 0.0))
+        fun fromJson(o: JSONObject): InstrumentTuner {
+            fun value(key: String, low: Double = 0.0) = o.optDouble(key, 0.0).let { if(it.isFinite()) it.coerceIn(low,1.0) else 0.0 }
+            return InstrumentTuner(value("space",-1.0), value("inst"), value("backingVocals"), value("spatialDetail"))
+        }
 
         val PRESETS = listOf(
             "Off" to InstrumentTuner(),
@@ -316,6 +335,8 @@ data class InstrumentTuner(
             "Strings & sax" to InstrumentTuner(0.3, 0.9),
             "Intimate stage" to InstrumentTuner(-0.5, 0.3),
             "Wide open" to InstrumentTuner(1.0, 0.6),
+            "Vocal layers" to InstrumentTuner(backingVocals = 0.5),
+            "Binaural motion" to InstrumentTuner(spatialDetail = 0.5),
         )
     }
 }
@@ -368,6 +389,12 @@ enum class EngineMode(val title: String, val detail: String) {
     SYSTEM_ONLY("System effects only", "Android DynamicsProcessing on each app. Avoids capture and replay; gain-per-band EQ."),
 }
 
+enum class SpatialMode(val title: String, val detail: String, val nativeMode: Int) {
+    FAST("Fast", "Lower latency at capture start. A live switch from Auto or Detailed retains its timing for smooth playback.", 0),
+    DETAILED("Detailed", "Enhances existing decorrelated detail; adds about 21–23 ms. Holds on already-wide or hard-panned material. Cannot isolate backing vocals. Phone qualification pending.", 1),
+    AUTO("Auto · Svaresa", "Blends toward Detailed for sustained ambience and toward Fast for attacks or dominant sides. Uses local audio cues, with your Backing/Binaural amounts. Experimental; compare by ear.", 2),
+}
+
 /** Svan processing settings. */
 data class AudioSettings(
     val engineMode: EngineMode = EngineMode.SYSTEM_ONLY,
@@ -378,17 +405,41 @@ data class AudioSettings(
     val gainProtection: Boolean = true,
     val systemBands: Int = 128,
     val systemFrameMs: Int = 80,
+    /** EQ the whole output mix while a playing app hides its audio session (see MixFallback). */
+    val wholeMixFallback: Boolean = true,
+    val spatialMode: SpatialMode = SpatialMode.FAST,
+    val captureRateMode: app.svan.RatePolicy.Mode = app.svan.RatePolicy.Mode.SAFE,
+    /** Explicit experiment only; Auto master never enables this. */
+    val experimentalBassUnmask: Boolean = false,
 ) {
     /** Auto master may add protection, but never rewrites the listener's saved choices. */
     fun effectiveFor(eq: EqState): AudioSettings = if (eq.smartProtection)
         copy(autoHeadroom=true,gainProtection=true) else this
 
     fun sameCaptureFormat(other: AudioSettings): Boolean = quality==other.quality &&
-        outputBits==other.outputBits && dither==other.dither
+        outputBits==other.outputBits && dither==other.dither && spatialMode==other.spatialMode &&
+        captureRateMode==other.captureRateMode
+
+    /** Runtime controls update without applying a pending format change or undoing a safety fallback. */
+    fun withLiveCaptureControls(requested: AudioSettings): AudioSettings = copy(
+        autoHeadroom = requested.autoHeadroom,
+        gainProtection = requested.gainProtection,
+        experimentalBassUnmask = requested.experimentalBassUnmask,
+    )
+
+    /** Maintain the original internal-rate target as the client rate increases. */
+    fun oversampleAt(rate: Int): Int {
+        val family = if (rate in listOf(44100, 88200, 176400)) 44100 else 48000
+        val target = family * quality.oversample
+        var factor = 1
+        while (factor < 8 && rate * factor < target) factor *= 2
+        return factor
+    }
 
     fun toJson(): JSONObject = JSONObject()
         .put("engine", engineMode.name).put("quality", quality.name).put("bits", outputBits)
-        .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs)
+        .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs).put("mixFallback", wholeMixFallback)
+        .put("spatialMode", spatialMode.name).put("captureRateMode", captureRateMode.name).put("bassUnmaskExperimental", experimentalBassUnmask)
 
     companion object {
         fun fromJson(o: JSONObject) = AudioSettings(
@@ -400,6 +451,10 @@ data class AudioSettings(
             gainProtection = o.optBoolean("agp", true),
             systemFrameMs = o.optInt("sysFrameMs", 80).takeIf { it in listOf(10, 40, 80) } ?: 80,
             systemBands = o.optInt("sysBands", 128).takeIf { it in listOf(64, 128, 256) } ?: 128,
+            wholeMixFallback = o.optBoolean("mixFallback", true),
+            spatialMode = runCatching { SpatialMode.valueOf(o.getString("spatialMode")) }.getOrDefault(SpatialMode.FAST),
+            captureRateMode = runCatching { app.svan.RatePolicy.Mode.valueOf(o.getString("captureRateMode")) }.getOrDefault(app.svan.RatePolicy.Mode.SAFE),
+            experimentalBassUnmask = o.optBoolean("bassUnmaskExperimental", false),
         )
     }
 }

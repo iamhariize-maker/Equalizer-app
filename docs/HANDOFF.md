@@ -1,3 +1,218 @@
+## Combined owner APK baseline — 2026-10-07
+
+Owner explicitly requires every feature from their uploaded `Svan-0.5.6-spatial-test.apk`, plus
+Recording mode and the detection work. The uploaded SHA-256 is
+`d3d77a576bbfb6bf1e0d76204eed1c0e1f6f8bb5989ffa7711549ca2344a20cf`.
+All 73 ZIP payload entries match the production fixture in CI 37655986331 at `6300e82`.
+That exact source branch was merged into this branch; no private signing material was imported.
+Fast/Detailed/experimental Auto, live spatial blending/recovery, Backing/Binaural, Bass Resolve,
+experimental unmasking, rate negotiation/provenance, rule registry, mastering protection,
+calibration/blind listening, presets, manual/Svaresa curves, all controls and detection setup remain.
+The spatial baseline's automatic whole-output fallback is preserved and cannot overlap the new
+manual shared-output experiment. New detection changes do not increase Engine A DSP capability
+or bypass another app's capture policy. Amazon and Apple physical-phone checks are still pending.
+
+Recording now follows actual capture-client rate, includes applied spatial/unmask settings in
+segments, and finishes before a capture-format reopen. Its wet tap follows the baseline's final
+output fade. WAVs keep the captured rate; only the convenience AAC export is resampled offline
+to 48 kHz. The native core is unchanged from the uploaded spatial source; 151 host tests pass.
+The production payload has been privately signed with the original owner key, preserving all
+73 ZIP entries and all four original native library payloads. Combined CI 37702568531 passes
+all eleven jobs; reviewed logs/images and delivery evidence are in
+[COMBINED_APK_VERIFICATION_0.5.7.md](COMBINED_APK_VERIFICATION_0.5.7.md).
+
+## Player connections and shared-output experiment — 2026-10-07
+
+Owner authorized implementation of the Astra design and delivery signed with the original
+private backup. Work stays on `ccr-c220a1e1-hikg7s`; no PR/other-branch push. Version 0.5.7/code 14
+retains the exact uploaded spatial baseline and recording features and adds no permissions. Backup certificate matches release-cert.sha256;
+key/recovery data stays outside Git/CI. Delivery must use the verified production payload.
+
+See [PLAYER_CONNECTIONS_0.5.7.md](PLAYER_CONNECTIONS_0.5.7.md). Standard manifest announcements and
+an EQ-panel activity supplement the existing callbacks. Known effects recover through bounded
+control/enable callbacks; unrelated CLOSE cannot remove a different package's connection. Closed
+history is bounded metadata only. Missing new IDs cannot be guessed. Shared-output EQ is explicit,
+experimental and off by default, exclusive with per-session EQ/Engine B, stopped by output changes
+and never a global mute. Attached is not commercial-player/route verification. Apple/Amazon,
+TECNO/LG and USB/Bluetooth/offload behavior remain pending in PHONE_VALIDATION.md.
+
+Combined JVM tests: 211 pass, including seven new lifecycle/policy tests, 17 recorder tests,
+two offline conversion tests and explicit Apple/Amazon source-policy coverage. Native 151 tests
+and 17 Python UI/control/host-meter assertions pass. Final combined debug/release assembly, lint and all 211 JVM tests pass (3m37s final rerun).
+Both test-source flavors build. Compiled permission policy and four-library 16 KB alignment pass.
+CI adds a separate 12-check DUMP-free integration/measurement suite, preserving every old gate.
+CI 37702568531 has passed Android build/lint/JVM tests, native/sanitizer tests and all five
+compatibility checks. The two focused API 33/34 jobs each pass twelve DUMP-free detection checks.
+Actual emulator host output changes by -5.9965 dB for the requested 1 kHz cut on both per-player
+and shared-output paths. Panel/Done and shared-output screenshots have been reviewed on both APIs.
+Both complete API 33/34 suites also pass every preserved baseline gate, all six recording
+checks and all twelve basic-detection checks. Their logs/results and final recording,
+countdown/flash, chart, panel, boot and large-font screenshots were reviewed. The full API 33
+fixture measures -6.0277 dB; API 34 measures -5.9965 dB. These synthetic measurements do not
+qualify commercial players or phone routes. The original-key APK has been delivered directly;
+its checksum and exact tested production provenance are recorded in
+[COMBINED_APK_VERIFICATION_0.5.7.md](COMBINED_APK_VERIFICATION_0.5.7.md).
+
+## Audio-only Recording mode — 2026-10-07
+
+Work is on `ccr-c220a1e1-hikg7s`, with no PR or other-branch push. The TECNO runs Svan;
+the LG films its screen externally. Real soundtrack files are Svan's processed digital
+output, excluding the output mixer/DAC/Bluetooth/acoustics. See [RECORDING_MODE.md](RECORDING_MODE.md).
+
+Removed ScreenDemoRecorder, WetTap, projection exposure/screenUsed and Movies/video publishing.
+CaptureService's dry-before-DSP/wet-after-DSP hooks and DSP chain are unchanged. A persistent,
+fixed recording panel on every tab shows committed-frame `m:ss.mmm`, the segment and Sync/Mark
+now/Stop. Recording/countdown keeps the app window awake and bright, with restoration afterward.
+Countdown cancels safely and seeds its first sync at frame zero. Manual labels are capped at 40 chars.
+
+Sync records exact committed frames and epoch timestamps, requests a white flash and plays the
+same tested three-burst waveform on a separate capture-excluded AudioTrack preferring/checking
+built-in-speaker routing. Missing/changed routes suppress or stop clicks; no volume/focus changes.
+Android preference is advisory: headphone exclusion/OEM behavior and acoustic latency remain
+owner checks. No unmeasured latency guarantee is made; use the displayed file clock.
+
+After finishing, exact PCM tails start at the first sync, plus a disposable click-mixed alignment
+copy. Report adds ordered sync arrays, first-signal block time, clock/request epochs and matched
+gains. Default UI export is 16-bit TPDF PCM; 24-bit remains selectable. VN import is unverified.
+MediaCodec/MediaMuxer produce full-duration AAC-LC at requested 48 kHz/stereo/256 kbps; AAC failure
+preserves WAV publishing and is reported. Optional per-segment RMS matching defaults off, with
+peak limits explicitly reported. Plain recordings never receive generated cue samples.
+
+Segments now analyse the finished PCM at exact marker frames, fixing late markers after writer
+drain, duplicate empty opening/end stretches, and missed EQ/tuner changes with unchanged band
+count. Overall measurements precede export; segment RMS/spectrum includes saved PCM quantisation.
+Charts say louder often sounds better and comparisons require matched RMS; no LUFS claims.
+The latest successful private session is retained for diagnostics; older published private
+sessions are cleaned on subsequent success. Failed private exports are retained.
+
+Verification: native baseline 98 tests passed. Local debug/release assembly, lint and 150 JVM tests
+(including 16 ProofRecorder tests) pass on the final implementation. Compiled permission and
+16 KB native-alignment gates pass. offerDry/commitWet/copyIn are textually unchanged.
+The unchanged e2e PASS sets remain required. A separate recording_mode.sh CI check uses real
+Engine B testsource audio, UI Sync/Mark/Stop, byte-identical MediaStore payloads, AAC packets,
+exact tails, cue isolation and countdown frame zero, and captures recording/mark/countdown/EQ
+screenshots on API 33/34. Implementation `bbbb790ddb8add968d31e6ee51779d1bb86ea500` passed all
+nine jobs in [CI 37678599236](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37678599236).
+Downloaded logs/artifacts confirm all 39 existing audio checks and six new recording checks
+on each API, with zero FAIL lines. The other required suites also pass. Recording/mark/EQ,
+countdown and chart screenshots were viewed at phone resolution; the clock/buttons fit and
+stay visible across tabs. API 34 captured the white flash; API 33's screenshot missed that
+transient, so it is not visual flash evidence. Boot title, EQ's 9 and system splash were also
+reviewed. Exact counts, file checks and measured cue isolation are in
+[RECORDING_MODE_VERIFICATION.md](RECORDING_MODE_VERIFICATION.md).
+
+No owner-phone or VN checks are claimed passed; see PHONE_VALIDATION.md. CI's Svan-preview.apk
+uses the preview signer and cannot update the owner's existing original-key installation.
+The combined 0.5.7 update above now supplies that original-key build, signed outside Git/CI as
+described in RELEASE_SIGNING.md. The earlier recording-only work did not perform signing or
+publish a release. Physical-phone/VN checks remain pending.
+## Public beta released — 2026-10-07, 0.5.6
+
+> **Audio-quality follow-up (7 Oct 2026):** see `docs/audio-quality/STATUS.md` for what is implemented
+> in Claude's core/JNI and `docs/audio-quality/CODEX_STATUS.md` for the Kotlin integration and exact
+> verification. Detailed WOLA, optional unmasking, rule JSON and rate negotiation are now wired;
+> phone qualification and runtime registry admission remain gated. This follow-up is not a new release.
+
+
+[v0.5.6-beta.1](https://github.com/iamhariize-maker/Equalizer-app/releases/tag/v0.5.6-beta.1)
+is published with the original owner signer, package `app.svan`, version 0.5.6/code 13.
+The exact green production fixture from `64b5ae0` was privately re-signed; all 73 payload
+entries are unchanged. The private backup/keystore were deleted, passwords stayed in memory,
+and no signing material entered GitHub or CI. Read [the evidence record](CI_VERIFICATION_0.5.6.md)
+for original/fresh CI, public payload hashes, staging and passing hosted verification.
+PR #6 remains open/unmerged; the default branch remains `ccr-208702a3-2mju42`.
+
+Notification-listener recognition is removed; no SMS or accessibility capability is allowed.
+Enhanced detection is retained only by the explicit user-tapped keep-enhanced grant. The
+owner reports working preview playback and BHIM/GPay after Shizuku removal while Developer
+options remain enabled. Final-beta updates/grant retention, reboot/background behavior,
+Bluetooth, LG V60 and broader phone/player/payment coverage need phone evidence.
+
+The sections below record earlier work; their notification-listener descriptions and
+unpublished/signing-pending status are superseded by this entry and AGENTS.md.
+
+## OEM detection fallbacks — 2026-10-06, 0.5.6 follow-up
+
+The current request supersedes the earlier notification-access restriction for optional player
+recognition only. Setup binds a read-only Shizuku UserService as shell and probes a real audio
+report, without granting app DUMP. Either audio/audio_flinger report can establish capability;
+connection and IPC/read deadlines prevent a blocked OEM call from freezing setup or adding
+unbounded workers. Existing/manual app grants remain supported. Shell mode needs Shizuku running;
+reboots/disconnections return to basic session broadcasts, with clear OEM help and retry.
+
+Optional notification access is explicitly explained in Hi-Fi → Music detection. The listener
+queries package/playback state only, never notification text, song titles or track history, and
+clears its in-memory state on disconnect. Recognition can name an otherwise unreachable player,
+but never creates a session ID, alters a capture verdict, mutes a source or changes sound settings.
+The 0.5.6 utility-source filters and capture/continuity safeguards remain intact. Original measured
+CI counts are preserved; four additional real MediaSession/listener fallback checks are added.
+
+Validation results for this follow-up are recorded in docs/DETECTION_FALLBACKS.md. OEM behavior,
+including OxygenOS UserService binding, needs phone evidence; do not infer it from stock emulators.
+
+## Playback continuity and stereo detail — 2026-10-06, 0.5.6 candidate
+
+Owner requested priority crackling fixes, automatic rejection of utility sounds, and backing-vocal/
+binaural-detail control. Work remains on ccr-f859b567-dgrdoj. See CONTINUITY_0.5.6.md for actual
+implementation, research sources and limits. Crackling on the owner's phone has not been reproduced;
+its engine/output/diagnostic report are still needed. Never claim the device issue is confirmed fixed.
+
+Version/code are 0.5.6/13. No owner signing, public release, Play submission or PR is made. Preview
+identity is unchanged; an owner-signed public beta needs the original owner key for an in-place update.
+The read-only release verifier accepts the two exact supported pairs (0.5.5/12 and 0.5.6/13).
+
+Native stereo edits crossfade over 20 ms with fixed banks; bass bypass releases over 10 ms. System
+MBC stays neutral/allocated rather than recreating effects on dynamics changes. Unchanged values are
+not repeatedly sent. Capture primes output, grows its effective buffer after underruns and stops with
+an explanatory fallback after persistent starvation at capacity. Capture-format changes apply at
+restart; source changes fade. Capturable mix usage is MEDIA only (unknown/game use system effects).
+Routing batches publish complete UID ownership, including excluded active media siblings. Discovery
+filters sonification/SoundPool/system/known utility sounds; unrecognized started sources need 1.5 s
+of observations. Routing still requires real session reports/broadcasts; the optional package-only
+recognition described above cannot authorize processing or capture. Diagnostic memory is bounded.
+
+Orchestral amplifier has separate Backing vocals and Binaural (stored as spatialDetail) dials, default off.
+Revised later the same night — see "0.5.6 follow-up" below and CONTINUITY_0.5.6.md. They shape
+existing side energy, cannot isolate stems or guarantee faithful binaural enhancement. Manual dials
+survive Svaresa layering/export/restore and are included in blind rendering. Host tests verify response,
+mono preservation, edit continuity, concurrency, and protection at 44.1/48/96 kHz.
+
+Local verification: all 103 Release core tests pass. The 101-test ASan/UBSan suite plus both newly
+added tests and concurrent publication checks pass without findings. Android debug/release assembly,
+lintDebug, all 142 JVM tests and both test-source builds pass. The preview APK verifies with the
+existing preview certificate, v2 signing and four 16 KB-aligned native libraries; no forbidden
+permissions are declared. Four screenshot-assertion Python tests also pass. Original routing/
+detection/workspace/control/quality/production CI checks remain intact, with four JNI detail checks
+and three live source-attribute checks added. Extra screenshots cover the new knob row.
+
+First integration run 37515350637 (source 75db47e) passed core including all 103 ASan/UBSan tests
+and both TSan publication tests; Android build/lint/unit/release-verifier and all five compatibility
+jobs passed. Both API 33/34 runs passed new source filtering 3/3, new detail JNI 4/4, release quality
+4/4, detection 10/10, controls 8/8, production 4/4 and screenshot interactions (scroll + 15 fixtures).
+However, routing was 38/39 and workspace 8/9: stale closed-session evidence caused a premature
+capture stop instead of the silence watchdog; after process restart, manual output was 32.5/36.6 dB
+above its earlier measurement. Do not report this run as all green.
+
+The follow-up drops definitive CLOSE evidence while keeping active policy-rejected records, clears
+the ledger on shutdown, and tests capture exclusion against unrouted MEDIA siblings and UID reuse.
+New system-effect attachments use a minimal muted bootstrap to disable any existing native module
+before the full constructor's per-band writes, then enable the configured handle so Android
+reapplies stream volume after architecture initialization. No user volume is changed. All 146 JVM
+tests (including four new UID-policy cases), local debug/release/lint (including the bootstrap
+refinement) and the 103 core tests pass; full device reruns still need final validation. Original failing
+watchdog and manual-output assertions are kept intact. Workspace
+artifacts now retain continuous logs and the restored Android audio/effect dumps for diagnosis.
+
+Combined with the OEM fallback commits through eedfe770, local debug/release builds, lint,
+all 152 JVM tests, both test-source builds and four screenshot-assertion tests pass. Native code
+is unchanged from the verified 103-test core/ASan/UBSan suite and two TSan checks above; the 103
+Release core tests also pass again before this push. The combined API 33/34 rerun is still pending.
+
+Manual screenshot review: both new knob rows are readable on API 33/34 and match the gold/charcoal
+theme. API 33 boot full name fits on one line; API 34's captured system splash shows the correct स्व
+glyph. API 34's two timed Compose boot captures missed the text, so do not claim its name frame was
+verified from this run. Both EQ screenshots show the intended 9 glyph.
+
 ## Owner-authorized GitHub beta candidate — 2026-10-06
 
 The owner recovered the original private signing backup and authorized signing/publication.
@@ -710,3 +925,94 @@ flipped-d lift (see §6 item 1) — pushed with this file.
 Play preparation follow-up: native ELF load alignment was still 4 KB despite 16 KB ZIP packaging.
 NDK 27 flexible page-size support now produces 16 KB load segments. The release artifact gate
 checks every shared library in both APK and AAB; older 4 KB Android systems remain supported.
+
+## 0.5.6 follow-up — 2026-10-07, branch claude/codex-audio-crackling-amplifier-gkj007
+
+Merged all of ccr-f859b567-dgrdoj (Codex continuity + OEM detection work). Its last CI run
+(37525591141) failed only `manual override restores original curve and output` (+32.5 dB on API 34)
+on both API 33/34; routing and every other suite passed. Changes on top (details and measurements
+in CONTINUITY_0.5.6.md):
+- System effects: deterministic volume re-arm on attach, bootstrap removed, one NO_INIT retry.
+- Capture: 250 ms recorder buffer (no added latency) and a 40 ms primed output cushion.
+- Backing vocals: dynamic de-masking lift added; Binaural: Blumlein bell + per-band motion enhancer.
+- Core 105 tests (two new); host ASan/UBSan/TSan, Android debug/release, lint and JVM tests pass
+  locally. Emulator CI on this branch and owner-phone listening are still required; the owner's
+  crackle has not been reproduced on a device.
+
+## Play Protect fraud warning — 2026-10-07
+
+The owner's sideloaded 0.5.6 preview triggered Play Protect's "financial fraud" alarm. Cause: the
+optional player-recognition NotificationListenerService (BIND_NOTIFICATION_LISTENER_SERVICE), which
+enhanced fraud protection treats like OTP-stealing malware. Removed entirely (service, UI option,
+diagnostics, tests); `check_manifest_permissions.py` now forbids notification listeners, and
+`detection_fallbacks.sh` asserts the installed package declares none, then checks the no-Shizuku
+broadcast path (3 checks). Shizuku shell reports and session broadcasts remain the detection paths.
+Follow-up the same day: the problem recognition targeted (hidden players get no EQ when Shizuku is
+blocked) is now handled by the whole-phone output-mix fallback; see DETECTION_FALLBACKS.md.
+TECNO enhanced detection: steps 1-4 pass but the helper (UserService) fails; added a direct Shizuku route
+and a visible failure reason. See DETECTION_FALLBACKS.md. Unverified on HiOS until the owner tests it.
+Keep enhanced detection without Shizuku (owner request; payment apps block Shizuku): a one-tap,
+user-initiated DUMP self-grant through Shizuku (`DumpGrant`, `KeepEnhancedCard`). CI taps it, then
+uninstalls Shizuku and measures a hidden player. See DETECTION_FALLBACKS.md.
+
+## Audio-quality Kotlin integration — 7 October 2026
+
+Claude core/JNI branch `ccr-2e937472-6z53b0` at `b3022a9` merged without conflict as `2f04da5`.
+Read `audio-quality/COORDINATION.md`, `CODEX_STATUS.md` and `REQUESTS_FROM_CODEX.md` for ownership,
+exact verification and remaining evidence. Codex left core/JNI and Claude-owned status/rules untouched.
+Fast/Detailed, Safe/high-rate capture candidates, variable-rate clips/rendering, per-player tuner
+capability, a compiled rule explanation screen and optional off-by-default unmasking are wired in
+Kotlin. Existing defaults remain Fast and safe 48k. Core: 142 pass. Android debug/release/lint/JVM
+checks pass locally (179 JVM tests after the live-controls fix); API33/34 screenshots pending. No phone CPU/battery/listening
+claims. No new version, PR, release or merge of PR #6. The earlier LR4-side "gotcha" above is obsolete:
+Claude fixed the relative-phase defect with dry plus delta processing; do not reintroduce it.
+Implementation is pushed as `1c437cf`. Both CI runs 37607981934/37607988956 passed core sanitizers,
+Android checks and production APK/AAB verification; full emulator screenshots are still pending.
+The downloaded CI preview uses the preview signer, not the owner signer; do not present it as a
+public-beta update. The existing blind UI is a combined tuned-versus-original comparison, not yet
+a selectable isolated-feature or Fast-versus-Detailed qualification tool.
+Follow-up: live protection/unmasking controls now update the applied capture metadata, invalidate
+mixed-setting recordings, and survive UID reopens without applying pending format changes or
+undoing a Fast/48k fallback. Core 142 and Android build/lint/JVM 179 checks pass locally.
+Initial API34 full suites and all six width/font cases passed; images were inspected. Both API33
+runs disconnected after the two 320dp cases, so overall CI is not green. The follow-up corrects
+large-font Instruments wrapping and dock/tab clipping. Its harness keeps one physical display
+size and varies density (320/360/411.43dp) to investigate the suspected resize-related emulator
+failure, preserving all assertions. New screenshots/runtime results are still required.
+
+Claude follow-up `62c43cf` merged without conflicts as `a682deb`: core 147 tests, full Android
+debug/release/lint/JVM (179 tests) and both NDK ABIs pass locally. No Codex JNI fixes. Fast pure-side
+static response is intentional and now explicit in UI; Detailed holds it. Bass diagnostic getters
+are atomic. High-rate analysis decimates to preserve time windows, but below ~80 Hz remains coarse.
+The core planner now records evidence-admission outcomes. Android's legacy planner entry point
+still defaults evidence to fresh/same-epoch; genuine snapshot age/epoch provenance and live skip
+reporting must be wired and tested before presenting a live audit. See CODEX_STATUS for details.
+
+Owner asked for a direct website upload with update notes only, leaving design and screenshot
+changes for later. `docs/index.html` now has a scoped development-preview notes section; download
+buttons and existing screenshots are unchanged. Live GitHub Pages was checked through its API:
+source `ccr-f859b567-dgrdoj:/docs`, status built. This differs from the only push branch allowed by
+AGENTS. Resolve a notes-only deployment-branch exception with the owner before publishing; do not
+merge the app branch, change the Pages source or attach a preview-signed APK as a public update.
+
+Final source `281e4d8`: push CI `37615943549` and PR CI `37615950311` now pass all nine jobs,
+including both full emulator suites with 41 routing/13 detection/4 production/7 added matrix-native
+passes each. The owner then explicitly renewed the instruction to sign and upload to the website:
+this permits a website-docs-only update on the existing Pages branch, not an app merge or redesign.
+The original owner certificate matches; the exact tested production artifact `11479767100` was
+re-signed, not rebuilt. All 73 ZIP payloads/four native hashes match. Local private signing material
+was deleted; none enters GitHub/CI. Candidate records are `releases/v0.5.6-beta.2*`, app 0.5.6/code13
+unchanged, with beta 1 retained. Confirm hosted release verification and Pages readback before
+calling publication complete. Phone qualification and true live gate reporting remain pending.
+
+Upload is now blocked: draft beta 2 release `405749853` exists with zero assets; uploads.github.com
+returns HTTP 401 on upload and retry while api.github.com works. Do not publish the empty draft,
+overwrite beta 1, claim website upload succeeded or retrieve the signing key again. The verified
+signed APK is `/workspace/scratch/audio-quality-design/Svan-0.5.6-owner-signed-281e4d8.apk`, SHA-256
+`84ddca6e6a05344cf3a316945ef86c425461bbdcb74e61cc858ba7269591959e` (also handed to owner).
+Restore release-upload authentication via workspace/product settings. Upload this exact file and
+checksum, remove the candidate-only note, publish/verify, then update the prepared site links to
+beta 2 and deploy its docs-only changes. Current prepared links remain the existing published beta 1;
+live Pages is still unchanged. Do not add a credential to Git/CI or bypass authentication controls.
+Before publishing, point the still-untagged draft at the docs-only release-record commit; confirm
+its diff from tested `281e4d8` contains only docs. Never retarget an existing published tag.

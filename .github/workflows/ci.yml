@@ -13,6 +13,8 @@ jobs:
           cmake -S core -B build/core
           cmake --build build/core -j
           ./build/core/eqcore_tests
+      - name: Policy rule matrix is generated from the registry
+        run: ./build/core/eqcore_policy_doc | diff -u docs/audio-quality/POLICY_RULES.md -
       - name: Test with ASan + UBSan
         run: |
           cmake -S core -B build/asan -DEQCORE_SANITIZE=address,undefined -DCMAKE_BUILD_TYPE=Debug
@@ -35,9 +37,9 @@ jobs:
       - name: Assemble debug APK, lint, unit tests
         working-directory: android
         run: ./gradlew --no-daemon assembleDebug assembleRelease lintDebug testDebugUnitTest
-      - name: Test screenshot assertions
+      - name: Test screenshot and control assertions
         working-directory: android
-        run: python3 -m unittest discover -s scripts -p test_setup_screen_assertions.py
+        run: python3 -m unittest discover -s scripts -p 'test_*.py'
       - name: Prepare phone preview
         run: |
           mkdir -p android/build-kit
@@ -144,11 +146,19 @@ jobs:
           mkdir -p e2e-out
           curl -fL --retry 3 https://github.com/RikkaApps/Shizuku/releases/download/v13.6.0/shizuku-v13.6.0.r1086.2650830c-release.apk -o shizuku.apk
           echo '6e273ab0e991c4e79bc8b1bbb9b9dd739ccac1a8712a541a214078886b7b790f  shizuku.apk' | sha256sum -c -
+      - name: Verify emulator host audio measurement
+        run: |
+          python3 -m unittest discover -s android/scripts -p test_host_audio_level.py
       - name: Run e2e on emulator
         uses: reactivecircus/android-emulator-runner@v2
         env:
           SHIZUKU_APK: ${{ github.workspace }}/shizuku.apk
           SVAN_ONBOARDING_OUT: ${{ github.workspace }}/e2e-out/onboarding
+          QEMU_AUDIO_DRV: wav
+          QEMU_WAV_PATH: /tmp/svan-emulator-output.wav
+          QEMU_WAV_FREQUENCY: '48000'
+          QEMU_WAV_DAC_FIXED_CHANNELS: '2'
+          QEMU_WAV_FORMAT: s16
         with:
           api-level: ${{ matrix.api }}
           target: default
@@ -157,7 +167,7 @@ jobs:
           # No -noaudio: the test needs the emulator's audio HAL.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
-          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/quality_lab.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/quality" || exit 1 ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/precision_controls.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/precision" || exit 1 ; bash scripts/e2e.sh emulator-5554 ; bash scripts/eq_workspace.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/workspace" ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" ; bash scripts/production_release.sh emulator-5554 "$GITHUB_WORKSPACE/tested-production/Svan-production-test.apk" "$GITHUB_WORKSPACE/e2e-out/production" || exit 1
+          script: bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/quality_lab.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/quality" || exit 1 ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/precision_controls.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/precision" || exit 1 ; bash scripts/e2e.sh emulator-5554 ; bash scripts/source_filter.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/source-filter" || exit 1 ; bash scripts/eq_workspace.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/workspace" ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" ; bash scripts/recording_mode.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/recording" || exit 1 ; bash scripts/basic_detection.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/basic-detection" || exit 1 ; bash scripts/production_release.sh emulator-5554 "$GITHUB_WORKSPACE/tested-production/Svan-production-test.apk" "$GITHUB_WORKSPACE/e2e-out/production" || exit 1
       - name: Results
         if: always()
         run: |
@@ -168,12 +178,24 @@ jobs:
           grep -q '^PASS sound scroll preserves EQ settings' e2e-out/screens/interaction.txt
           test "$(grep -c '^PASS setup fixture ' e2e-out/screens/interaction.txt)" -eq 15
           ! grep -q '^FAIL' e2e-out/screens/interaction.txt
+          cat e2e-out/recording/results.txt
+          test "$(grep -c '^PASS' e2e-out/recording/results.txt)" -eq 6
+          ! grep -q '^FAIL' e2e-out/recording/results.txt
+          cat e2e-out/basic-detection/results.txt
+          test "$(grep -c '^PASS' e2e-out/basic-detection/results.txt)" -eq 12
+          ! grep -q '^FAIL' e2e-out/basic-detection/results.txt
           cat e2e-out/workspace/results.txt
           if grep -q '^FAIL' e2e-out/workspace/results.txt; then exit 1; fi
           test "$(grep -c '^PASS' e2e-out/workspace/results.txt)" -eq 9
           cat e2e-out/precision/results.txt
           if grep -q '^FAIL' e2e-out/precision/results.txt; then exit 1; fi
           test "$(grep -c '^PASS' e2e-out/precision/results.txt)" -eq 8
+          cat e2e-out/source-filter/results.txt
+          test "$(grep -c '^PASS' e2e-out/source-filter/results.txt)" -eq 3
+          ! grep -q '^FAIL' e2e-out/source-filter/results.txt
+          cat e2e-out/quality/continuity/results.txt
+          test "$(grep -c '^PASS' e2e-out/quality/continuity/results.txt)" -eq 4
+          ! grep -q '^FAIL' e2e-out/quality/continuity/results.txt
           cat e2e-out/quality/results.txt
           if grep -q '^FAIL' e2e-out/quality/results.txt; then exit 1; fi
           test "$(grep -c '^PASS' e2e-out/quality/results.txt)" -eq 4
@@ -182,10 +204,13 @@ jobs:
           ! grep -q '^FAIL' e2e-out/production/results.txt
           cat e2e-out/detection/detection.txt
           if grep -q '^FAIL' e2e-out/detection/detection.txt; then echo 'release detection results contain a failure'; exit 1; fi
-          test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 10
+          test "$(grep -c '^PASS' e2e-out/detection/detection.txt)" -eq 13
           cat e2e-out/onboarding/results.txt
           test "$(grep -c '^PASS' e2e-out/onboarding/results.txt)" -eq 8
           ! grep -q '^FAIL' e2e-out/onboarding/results.txt
+          cat e2e-out/onboarding/fallbacks/results.txt
+          test "$(grep -c '^PASS' e2e-out/onboarding/fallbacks/results.txt)" -eq 3
+          ! grep -q '^FAIL' e2e-out/onboarding/fallbacks/results.txt
           cat e2e-out/detection/onboarding.txt
           test "$(grep -c '^PASS' e2e-out/detection/onboarding.txt)" -eq 6
           ! grep -q '^FAIL' e2e-out/detection/onboarding.txt
@@ -196,6 +221,65 @@ jobs:
           name: e2e-results-api${{ matrix.api }}
           if-no-files-found: warn
           path: e2e-out/
+
+  # Fast feedback for the new connection path; the full e2e job still requires these same checks.
+  basic-detection:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [33, 34]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build test players
+        working-directory: android
+        run: ./gradlew --no-daemon :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-debug
+          path: tested-debug
+      - name: Verify emulator host audio measurement
+        run: |
+          python3 -m unittest discover -s android/scripts -p test_host_audio_level.py
+          mkdir -p basic-out
+      - name: Exercise DUMP-free connections and measure processed host output
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          QEMU_AUDIO_DRV: wav
+          QEMU_WAV_PATH: /tmp/svan-emulator-output.wav
+          QEMU_WAV_FREQUENCY: '48000'
+          QEMU_WAV_DAC_FIXED_CHANNELS: '2'
+          QEMU_WAV_FORMAT: s16
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
+          working-directory: android
+          script: adb -s emulator-5554 install -r "$GITHUB_WORKSPACE/tested-debug/app-debug.apk" ; adb -s emulator-5554 install -r testsource/build/outputs/apk/capturable/debug/testsource-capturable-debug.apk ; adb -s emulator-5554 install -r testsource/build/outputs/apk/blocked/debug/testsource-blocked-debug.apk ; adb -s emulator-5554 shell wm size 320x640 ; adb -s emulator-5554 shell wm density 160 ; bash scripts/basic_detection.sh emulator-5554 "$GITHUB_WORKSPACE/basic-out"
+      - name: Results
+        if: always()
+        run: |
+          cat basic-out/results.txt
+          test "$(grep -c '^PASS' basic-out/results.txt)" -eq 12
+          ! grep -q '^FAIL' basic-out/results.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: basic-detection-api${{ matrix.api }}
+          path: basic-out/
 
   # Install + launch the release APK on several Android versions (the user's phones run 10-15 and
   # vendor skins on top). Emulators cannot reproduce OEM skins; this catches OS-version breakage.

@@ -40,6 +40,15 @@ wait_for() {
   done
   echo "TIMEOUT waiting for: $pat"; return 1
 }
+# Poll the app's state file until a python expression over it holds; prints 1 or 0.
+mix_state() { # $1 = expression over s
+  for i in $(seq 1 15); do
+    eq onboarding_state; sleep 2
+    $A shell run-as $EQ cat files/onboarding-state.json > "$TMP/e2e_state.json" 2>/dev/null || continue
+    if python3 -c "import json,sys; s=json.load(open(sys.argv[1])); sys.exit(0 if ($1) else 1)" "$TMP/e2e_state.json"; then echo 1; return; fi
+  done
+  echo 0
+}
 measure() { # $1 = label
   $A logcat -c
   eq measure_mix --ef seconds 4
@@ -180,11 +189,15 @@ tone $CAP --ez stop true; sleep 3
 log "T18 already-playing player before a live detection grant"
 tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false; sleep 3
 measure "T18 no detection before permission grant"
+# The test meter is first in the output-mix chain, so the whole-mix fallback is verified structurally.
+MIX_ON=$(mix_state "s['mixFallback'] and not s['capture']")
+$A shell dumpsys media.audio_flinger > "$TMP/e2e_mix_af.txt"
 $A logcat -c
 $A shell pm grant $EQ android.permission.DUMP
 eq refresh_detection
 wait_for "route: $CAP .*Engine A" 30; sleep 3
 measure "T19 live permission grant discovers existing playback"
+MIX_OFF=$(mix_state "not s['mixFallback'] and s['connectedPlayers']>=1")
 log "T21 Svaramanas static plan on system effects"
 $A logcat -c
 eq svaramanas --ez on true --es mode GUIDED --es feel BRIGHT --es picks VOCALS,GUITARS,DRUMS
@@ -329,7 +342,16 @@ check "System EQ remains effective behind the launcher" "$(near "$T15" "$T1" 2.0
 check "Undetected audio is excluded from capture" "$(near "$T16" "$T0" 1.0)" "T16=$T16 vs T0=$T0"
 T17=$(lvl T17); T18=$(lvl T18); T19=$(lvl T19)
 check "General player broadcasts connect without DUMP" "$(near "$T17" "$T1" 1.0)" "T17=$T17 vs T1=$T1"
-check "Missing permission does not pretend to process an unknown player" "$(near "$T18" "$T0" 1.0)" "T18=$T18 vs T0=$T0"
+check "Unknown player is not counted as a session route (pre-mix level unchanged)" "$(near "$T18" "$T0" 1.0)" "T18=$T18 vs T0=$T0"
+MIXAF=$(python3 - "$TMP/e2e_mix_af.txt" <<'PY2'
+import re,sys
+t=open(sys.argv[1]).read()
+blocks=re.split(r"\n\s*\d+ effects for session ", t)[1:]
+print(1 if any(re.match(r"0\b", b) and "Dynamics Processing" in b and re.search(r"\n\s*00000\s+003\s+y\s+y", b) for b in blocks) else 0)
+PY2
+)
+check "Hidden player gets whole-mix fallback EQ (active output-mix effect)" "$([ "$MIX_ON" = 1 ] && [ "$MIXAF" = 1 ] && echo 1 || echo 0)" "app state=$MIX_ON; session-0 DynamicsProcessing active=$MIXAF"
+check "Whole-mix fallback switches off once the player is routed" "$MIX_OFF" "after the live grant routed the player"
 check "Permission granted during playback takes effect without restarting" "$(near "$T19" "$T1" 1.0)" "T19=$T19 vs T1=$T1"
 T20=$(lvl T20)
 check "Silent capture fails open to Engine A (never leaves silence)" "$(near "$T20" "$T1" 3.0)" "T20=$T20 vs T1=$T1 ±3 dB"

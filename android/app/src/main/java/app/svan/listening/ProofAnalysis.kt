@@ -13,7 +13,7 @@ class LevelMeter {
     var peak = 0.0; private set
     var sumSquares = 0.0; private set
     var samples = 0L; private set
-    /** Samples at or beyond full scale; they are clamped when written to the 24-bit WAV. */
+    /** Samples at or beyond full scale; they are clamped when written to the exported WAV. */
     var overs = 0L; private set
     fun add(x: Float) {
         val a = abs(x.toDouble())
@@ -134,16 +134,20 @@ class SpectrumPair(private val rate: Int, private val size: Int = 8192) {
 object SettingsDiff {
     /** Settings worth naming in a segment label. Order is the display order. */
     private val NAMES = linkedMapOf(
-        "qualityMode" to "Quality", "dither" to "Dither", "outputBitsIfDithered" to "Dither bits",
+        "spatialMode" to "Spatial mode", "captureRateHz" to "Capture rate Hz",
+        "experimentalBassUnmask" to "Experimental bass unmask", "qualityMode" to "Quality", "dither" to "Dither", "outputBitsIfDithered" to "Dither bits",
         "autoHeadroom" to "Auto headroom", "gainProtection" to "Gain protection", "eqEnabled" to "EQ",
         "preampDb" to "Preamp dB", "eqBandsApplied" to "EQ bands", "bassCharacter" to "Bass character",
-        "headphoneCorrection" to "Headphone correction",
+        "headphoneCorrection" to "Headphone correction", "eqCurve" to "EQ curve",
+        "vocalTuner" to "Vocal tuner", "instrumentTuner" to "Instrument tuner", "dynamicEq" to "Dynamic EQ",
     )
 
     /** "Quality: Balanced → Audiophile · Preamp dB: 0 → -3" */
     fun describe(before: Map<String, Any?>, after: Map<String, Any?>): String {
         val parts = NAMES.mapNotNull { (k, name) ->
-            if (before[k] == after[k]) null else "$name: ${show(before[k])} → ${show(after[k])}"
+            if (before[k] == after[k]) null
+            else if (k in setOf("eqCurve", "vocalTuner", "instrumentTuner")) "$name changed"
+            else "$name: ${show(before[k])} → ${show(after[k])}"
         }
         return parts.joinToString(" · ").ifEmpty { "Settings changed" }
     }

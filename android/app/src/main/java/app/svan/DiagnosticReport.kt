@@ -24,26 +24,32 @@ object DiagnosticReport {
         appendLine("Build: ${Build.DISPLAY}")
         appendLine()
         appendLine("== Permissions and background ==")
-        appendLine("DUMP (music detection): ${st.dumpPermission}")
+        appendLine("Audio-report access (app grant or shell): ${st.dumpPermission}")
         appendLine(DetectionSetup.diagnostics())
         appendLine("RECORD_AUDIO: ${context.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED}")
         appendLine("Battery optimisation ignored: ${runCatching { context.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(context.packageName) }.getOrNull()}")
         appendLine("System equalizer service running: ${SystemEqService.isRunning} · last started ${SystemEqService.lastStartedMs(context).let { if (it == 0L) "never" else DateFormat.getTimeInstance().format(Date(it)) }}")
         appendLine("Stopped by Android (not by Svan): ${SystemEqService.wasKilledByAndroid(context)}")
         appendLine("Capture engine running: ${CaptureService.isRunning}")
+        appendLine("Requested spatial mode: ${SvanRepository.settings.value.spatialMode}")
+        appendLine("Capture epoch: ${CaptureService.epoch ?: "none"}")
+        appendLine(CaptureService.rateFacts?.summary() ?: "Capture/client rates unavailable; original source rate=unknown; DAC rate=unknown")
+        appendLine("Capture measurements: ${CaptureService.stats ?: "none"}")
+        appendLine("Capture recovery: ${CaptureService.recoveryMessage.value.ifBlank { "none" }}")
         appendLine()
         appendLine("== Verdict ==")
         appendLine("${st.health}: ${st.headline}")
         if (st.advice.isNotBlank()) appendLine(st.advice)
         appendLine("Scans so far: ${DetectionMonitor.scans} · last scan ${if (st.atMs == 0L) "never" else DateFormat.getTimeInstance().format(Date(st.atMs))}")
-        appendLine("Player list (dumpsys audio): ${if (!st.dumpPermission) "NOT REQUESTED: detection permission missing" else if (st.playersOk) "ok" else "FAILED ${st.playersError ?: ""}"}")
-        appendLine("Audio server (dumpsys media.audio_flinger): ${if (!st.dumpPermission) "NOT REQUESTED: detection permission missing" else if (st.serverOk) "ok${if (st.serverPartial) " (partial)" else ""}" else "FAILED ${st.serverError ?: ""}"}")
+        appendLine("Player list (dumpsys audio): ${if (!st.dumpPermission) "NOT REQUESTED: enhanced report access unavailable" else if (st.playersOk) "ok" else "FAILED ${st.playersError ?: ""}"}")
+        appendLine("Audio server (dumpsys media.audio_flinger): ${if (!st.dumpPermission) "NOT REQUESTED: enhanced report access unavailable" else if (st.serverOk) "ok${if (st.serverPartial) " (partial)" else ""}" else "FAILED ${st.serverError ?: ""}"}")
         appendLine("Android public API says active players: ${st.publicActive ?: "unavailable"}")
         appendLine("== Sessions Svan found (${st.sessions.size}) ==")
         st.sessions.forEach {
             val s = it.session
             appendLine("- ${s.packageName} uid=${s.uid} pid=${it.pid} session=${s.sessionId} ${s.state} ${s.usage} flags=0x${s.flags.toString(16)} " +
                 "source=${it.source} path=${it.pathLabel.ifEmpty { "?" }} devices=${it.devices.ifEmpty { "?" }} type=${s.playerType.ifEmpty { "?" }} " +
+                "content=${s.contentType} excluded=${MusicSourcePolicy.exclusion(s) ?: "no"} " +
                 "verify=${st.verification[s.sessionId] ?: "n/a"}")
         }
         if (st.unresolved.isNotEmpty()) {
@@ -54,6 +60,8 @@ object DiagnosticReport {
         appendLine("== Svan routes ==")
         SessionRouter.snapshot.forEach { appendLine("- ${it.pkg} session=${it.sessionId} ${it.owner} playing=${it.playing}") }
         appendLine("Capture verdicts: ${SessionRouter.compat().all()}")
+        appendLine("Shared output: ${SharedOutput.status.value}")
+        appendLine("Recently closed connections (not current/capture authority): ${SessionRouter.recentConnections}")
         appendLine()
         appendLine("== Output devices (public API) ==")
         runCatching {

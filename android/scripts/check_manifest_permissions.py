@@ -9,9 +9,6 @@ if "E: manifest" not in manifest or "android.permission.MODIFY_AUDIO_SETTINGS" n
 
 # These are forbidden even on services/receivers, not only uses-permission nodes.
 forbidden = (
-    "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE",
-    "android.service.notification.NotificationListenerService",
-    "PlayerRecognitionService",
     "android.permission.BIND_ACCESSIBILITY_SERVICE",
     "android.accessibilityservice.AccessibilityService",
     "android.permission.READ_SMS",
@@ -23,8 +20,12 @@ forbidden = (
     "android.permission.QUERY_ALL_PACKAGES",
     "android.permission.BIND_DEVICE_ADMIN",
     "android.app.action.DEVICE_ADMIN_ENABLED",
+    # Play Protect's enhanced fraud protection blocks sideloaded apps that can read
+    # notifications (OTP theft), so Svan must never declare a notification listener.
+    "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE",
+    "android.service.notification.NotificationListenerService",
 )
 found = [capability for capability in forbidden if capability in manifest]
 if found:
     sys.exit("FAIL APK permission policy: " + ", ".join(found))
-print("PASS APK permission policy: notification/SMS/accessibility access and forbidden capabilities absent")
+print("PASS APK permission policy: no notification listener; forbidden capabilities absent")

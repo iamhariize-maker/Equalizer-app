@@ -25,9 +25,13 @@ import kotlin.math.sin
  */
 class TonePlayerService : Service() {
 
-    @Volatile private var playing = false
-    private var thread: Thread? = null
-    private var explicitBroadcast = true
+    private class ToneRun(val explicit: Boolean, val component: Boolean) {
+        @Volatile var stopped = false
+        @Volatile var paused = false
+        @Volatile var track: AudioTrack? = null
+        var thread: Thread? = null
+    }
+    @Volatile private var activeRun: ToneRun? = null
     private lateinit var mediaSession: MediaSession
 
     override fun onCreate() {
@@ -57,6 +61,13 @@ class TonePlayerService : Service() {
     }
 
     private fun handle(intent: Intent) {
+        if (intent.hasExtra("pause")) {
+            activeRun?.let {
+                it.paused = intent.getBooleanExtra("pause", false)
+                mediaState(if (it.paused) PlaybackState.STATE_PAUSED else PlaybackState.STATE_PLAYING)
+            }
+            return
+        }
         stopTone()
         if (intent.getBooleanExtra("stop", false)) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -66,19 +77,20 @@ class TonePlayerService : Service() {
         val freq = intent.getFloatExtra("freq", 1000f).toDouble()
         val amp = intent.getFloatExtra("amp", 0.25f)
         val broadcast = intent.getBooleanExtra("broadcast", true)
-        explicitBroadcast = intent.getBooleanExtra("explicit", true)
+        val run = ToneRun(intent.getBooleanExtra("explicit", true), intent.getBooleanExtra("component", false))
         // Simulates a stream that opts out of playback capture mid-session (DRM'd track, ad, ...).
         val noCapture = intent.getBooleanExtra("nocapture", false)
-        playing = true
-        thread = Thread { play(freq, amp, broadcast, noCapture) }.also { it.start() }
+        activeRun = run
+        run.thread = Thread { play(run, freq, amp, broadcast, noCapture, intent.getIntExtra("usage", AudioAttributes.USAGE_MEDIA), intent.getIntExtra("content", AudioAttributes.CONTENT_TYPE_MUSIC)) }.also { it.start() }
     }
 
-    private fun play(freq: Double, amp: Float, broadcast: Boolean, noCapture: Boolean) {
+    private fun play(run: ToneRun, freq: Double, amp: Float, broadcast: Boolean, noCapture: Boolean, usage: Int, content: Int) {
+        if (run.stopped) return
         val rate = 48000
         val track = AudioTrack.Builder()
             .setAudioAttributes(
-                AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                AudioAttributes.Builder().setUsage(usage)
+                    .setContentType(content)
                     .setAllowedCapturePolicy(if (noCapture) AudioAttributes.ALLOW_CAPTURE_BY_NONE else AudioAttributes.ALLOW_CAPTURE_BY_ALL)
                     .build(),
             )
@@ -89,16 +101,22 @@ class TonePlayerService : Service() {
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
         val session = track.audioSessionId
-        if (broadcast) sendSession(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION, session)
-        Log.i(TAG, "playing ${freq}Hz amp=$amp session=$session broadcast=$broadcast noCapture=$noCapture pkg=$packageName")
-        val n = 960
-        val buf = FloatArray(n * 2)
-        var phase = 0.0
-        val step = 2 * PI * freq / rate
-        track.play()
-        mediaState(PlaybackState.STATE_PLAYING)
+        run.track = track
+        var announced = false
         try {
-            while (playing) {
+            if (run.stopped) return
+            if (broadcast) { sendSession(run, AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION, session); announced = true }
+            Log.i(TAG, "playing ${freq}Hz amp=$amp session=$session broadcast=$broadcast noCapture=$noCapture pkg=$packageName")
+            val n = 960
+            val buf = FloatArray(n * 2)
+            var phase = 0.0
+            val step = 2 * PI * freq / rate
+            if (run.stopped) return
+            track.play()
+            if (activeRun === run) mediaState(PlaybackState.STATE_PLAYING)
+            while (!run.stopped) {
+                if (run.paused) { if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.pause(); Thread.sleep(20); continue }
+                if (track.playState != AudioTrack.PLAYSTATE_PLAYING) track.play()
                 for (i in 0 until n) {
                     val v = (amp * sin(phase)).toFloat()
                     buf[2 * i] = v; buf[2 * i + 1] = v
@@ -107,29 +125,37 @@ class TonePlayerService : Service() {
                 }
                 track.write(buf, 0, buf.size, AudioTrack.WRITE_BLOCKING)
             }
+        } catch (e: RuntimeException) {
+            if (!run.stopped) Log.e(TAG, "test player failed session=$session", e)
         } finally {
-            track.stop()
-            if (broadcast) sendSession(AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION, session)
-            track.release()
+            runCatching { track.stop() }
+            if (announced) sendSession(run, AudioEffect.ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION, session)
+            runCatching { track.release() }
+            run.track = null
             Log.i(TAG, "stopped session=$session")
         }
     }
 
-    private fun sendSession(action: String, session: Int) {
+    private fun sendSession(run: ToneRun, action: String, session: Int) {
         sendBroadcast(
             Intent(action)
                 .putExtra(AudioEffect.EXTRA_AUDIO_SESSION, session)
                 .putExtra(AudioEffect.EXTRA_PACKAGE_NAME, packageName)
                 .putExtra(AudioEffect.EXTRA_CONTENT_TYPE, AudioEffect.CONTENT_TYPE_MUSIC)
-                .apply { if (explicitBroadcast) setPackage(EQ_PACKAGE) },
+                .apply { if (run.explicit) setPackage(EQ_PACKAGE) }
+                .apply { if (run.component) component = android.content.ComponentName(EQ_PACKAGE, "app.svan.SessionReceiver") },
         )
     }
 
     private fun stopTone() {
         mediaState(PlaybackState.STATE_STOPPED)
-        playing = false
-        thread?.join(1000)
-        thread = null
+        val run = activeRun ?: return
+        activeRun = null
+        // A replacement must not revive an old blocked writer with a shared playing flag.
+        run.stopped = true
+        run.track?.let { track -> runCatching { track.pause(); track.flush(); track.stop() } }
+        run.thread?.join(1000)
+        run.thread = null
     }
 
     override fun onDestroy() {
