@@ -237,6 +237,43 @@ Labels used below:
 - The CPU figures in `docs/AUDIOPHILE.md` are host numbers. The doc itself says phones are several times slower.
 
 ## 8. Security, privacy, manifest and licensing sweep
-Pending. A read-only sweep (manifests and exported components, network use, command surfaces in release builds, data
-written to storage or logs, secrets in Git, GPL provenance) was started during this pass. Its findings are appended
-here when it returns, each with a file and line reference and a confidence label.
+
+A read-only sweep ran on `a979f0b` (no code changed). Each row is the sweep's finding. The notes after the table are my
+own checks: "confirmed" means I re-read the line, and "severity note" is my adjustment.
+
+| ID | Sev (sweep) | Location | Risk | Confidence |
+|---|---|---|---|---|
+| S1 | high | `android/app/src/main/java/app/svan/MainActivity.kt:85`, `:179` to `:181`, `:212`, `:250` to `:257`; `core/src/biquad.cpp:31` | In the preview APK, any installed app can send `--es cmd` to the exported launcher and change EQ or stop audio. Gain is reported as unclamped. | by reading |
+| S2 | high | `android/preview.keystore`; `android/app/build.gradle.kts:47` to `49`, `:59`; `.github/workflows/ci.yml:4`, `:67` to `70` | Preview and CI builds are signed with a public key whose password is in the Gradle file. A repackaged APK could install over a preview install. | by reading, the impact is inferred |
+| S3 | medium | `AndroidManifest.xml:96` to `108`; `SessionContinuity.kt:35` to `36`; `SessionRouter.kt:219` to `233` | In both builds, an exported receiver and activity without a permission accept any claimed package and session, so one app can take over another app's session. | by reading |
+| S4 | low | `EqController.kt:19`; `SessionReceiver.kt:28` | Every build logs every line to logcat, including music-app package names and start and stop times. No track titles found. | by reading |
+| S5 | low | `DiagnosticReport.kt:12` to `16`, `:71` to `77`, `:92` | The shared diagnostic report lists package names and output-device addresses, probably Bluetooth MAC addresses, despite its "no account data" docstring. | by reading |
+| S6 | low | `listening/ProofCapture.kt:137` to `171` | Hi-Fi exports leave captured dry playback and the device model in shared Music and Download folders until deleted. | by reading |
+| S7 | low | `docs/OWNER_REFERENCE_TASTE.md:57` and `:72`; `Svaramanas.kt:226` | The doc asks for audio uploads at line 57 and says audio is never uploaded at line 72. The code keeps taste on the device. | by reading |
+| S8 | low | `tuning/AutoEqSource.kt:17`, `:96`, `:101` | The only network call reveals the chosen headphone and the device IP to GitHub. Downloads have no checksum and no size cap. | by reading |
+| S9 | low | `.github/workflows/ci.yml:1` to `6`, `:10`, `:157`; `stage-beta.yml:10`, `:22` | No token `permissions:` block, and action tags are mutable, unlike the release workflows. | by reading |
+| S10 | low | `core/tests/data/README.md:1` to `2`; `docs/site-assets/fonts/DejaVu-notice.txt:58`; `docs/SPIKE.md:55` to `56` | Thin notices. AutoEq has only an MIT summary. A GPL-2+ DejaVu notice ships with no DejaVu font. There is no in-app Apache-2.0 notice. "No GPL copied" rests on reading RootlessJamesDSP. | by reading |
+
+**Clean areas (from the sweep, not all re-checked):** not debuggable in the built APK; `allowBackup=false` and no
+cleartext config; minSdk 29, targetSdk 36; the mediaProjection foreground service type; no notification listener
+(`check_manifest_permissions.py`); one HTTP client and no analytics, crash SDK, WebView or socket code; production
+builds reject command extras (`MainActivity.kt:85`); ClipRecorder is memory-only; settings export is user-chosen;
+no `secrets.` or `pull_request_target` in any workflow; DUMP is granted only after a user tap.
+
+**My severity notes, after checking:**
+- **S1 confirmed.** `handleCommand` returns early only when `BuildConfig.PHONE_PREVIEW` is false. Production is safe.
+  For the preview APK, fix it by removing command handling from the exported launcher, or by restricting it to
+  debug-only with a signature-level permission. Clamp the gain in the same change. Keep the test scripts working.
+- **S2 confirmed, rated medium rather than high.** Preview builds are designed to share one public key so testers
+  can update in place (`build.gradle.kts:43` to `44`). The owner's production install is signed with a different key,
+  so this key cannot update it. The risk is limited to preview testers. Owner decision 4 (section 3) covers it.
+- **S3 confirmed.** The receiver and activity are exported with no permission (`AndroidManifest.xml:96` to `108`).
+  Fix by checking the sender (`getSentFromUid()` on API 34 and later, or a signature permission), and by validating
+  the claimed package against the session it is reporting.
+- **S7** is a documentation contradiction. Fix the wording in `OWNER_REFERENCE_TASTE.md`.
+- **S9 and S10** are low-effort hardening: add a `permissions:` block, pin action SHAs, and ship only the notices that
+  match what is bundled.
+- **D2 check:** the sweep names `.github/workflows/stage-beta.yml`, and the brief named `stage-beta-0.5.6.yml`. The
+  file list confirms what is present. Check both before removing either.
+
+**Added to the fix pass** (in order of risk): S1, S3, then S2 with the owner's decision, S5, S6, S8, S7, S9, S10, S4.
