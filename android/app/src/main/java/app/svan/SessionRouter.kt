@@ -87,18 +87,24 @@ object SessionRouter {
 
     /** Packages whose capture proved silent while playing: Engine A only, until the expiry (ms). */
     private val tempBlocked = ConcurrentHashMap<String, Long>()
-    private const val TEMP_BLOCK_MS = 3 * 60_000L
+    /** Fail-opens per package in this capture session; each one blocks Engine B for longer. */
+    private val failOpens = ConcurrentHashMap<String, Int>()
 
     /**
      * Engine B muted sources but their capture stayed digital silence while other media played:
      * unmute them and give them to Engine A so the listener is never left in silence.
-     * Not cached as BLOCKED — the cause may be transient (one stream, an ad, a track).
+     * Not cached as BLOCKED — the cause may be transient (one stream, an ad, a track). Repeats in the
+     * same capture session back off (see [FailOpenBackoff]) so a player that keeps capturing silence on
+     * this phone is not muted for four seconds every few minutes.
      */
     fun onCaptureSilent() {
         worker.execute {
             routes.values.filter { it.owner == Owner.ENGINE_B_MUTED && it.playing != false }.forEach {
-                tempBlocked[it.pkg] = System.currentTimeMillis() + TEMP_BLOCK_MS
-                EqController.log("fail-open: ${it.pkg} (session ${it.sessionId}) → Engine A for a while")
+                val count = (failOpens[it.pkg] ?: 0) + 1
+                failOpens[it.pkg] = count
+                val blockMs = FailOpenBackoff.blockMs(count)
+                tempBlocked[it.pkg] = if (blockMs == Long.MAX_VALUE) Long.MAX_VALUE else System.currentTimeMillis() + blockMs
+                EqController.log("fail-open: ${it.pkg} (session ${it.sessionId}) → Engine A ${FailOpenBackoff.describe(count)}")
                 toEngineA(it.sessionId, it.pkg, it.uid, it.playing)
             }
         }
@@ -219,6 +225,8 @@ object SessionRouter {
         projection = null
         startupProbeWindow = false
         captureUids = emptySet()
+        // A new capture session starts fresh: the silence may have been specific to that session.
+        failOpens.clear(); tempBlocked.clear()
         worker.execute {
             muter.releaseAll()
             if (sharedHandoff.captureStopped(enabled)) attachSharedOnWorker()

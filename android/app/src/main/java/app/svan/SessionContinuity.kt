@@ -49,3 +49,22 @@ internal object SessionAnnouncement {
 internal object SharedOutputPolicy {
     fun allowed(requested: Boolean, service: Boolean, capture: Boolean) = requested && service && !capture
 }
+
+/**
+ * How long a player stays on Engine A after its capture proved silent while it played. The first time
+ * may be transient (an ad, one stream), so retry after 3 minutes; a second time suggests this phone
+ * routes that player where capture cannot hear it, so wait 15 minutes; after a third, stay on Engine A
+ * for the rest of the capture session. Nothing is saved: a new session tries again.
+ */
+internal object FailOpenBackoff {
+    fun blockMs(count: Int): Long = when {
+        count <= 1 -> 3 * 60_000L
+        count == 2 -> 15 * 60_000L
+        else -> Long.MAX_VALUE
+    }
+    fun describe(count: Int): String = when {
+        count <= 1 -> "for 3 minutes"
+        count == 2 -> "for 15 minutes (second silent capture)"
+        else -> "until capture restarts (repeated silent capture)"
+    }
+}

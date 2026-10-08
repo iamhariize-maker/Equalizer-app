@@ -54,6 +54,12 @@ class SessionContinuityTest {
         assertFalse(SessionAnnouncement.valid(7, "apple", -1, 99))
         assertFalse(SessionAnnouncement.valid(7, "svan", 99, 99))
     }
+    @Test fun repeatedSilentCaptureBacksOffInsteadOfRetryingEveryFewMinutes() {
+        assertEquals(3 * 60_000L, FailOpenBackoff.blockMs(1))
+        assertEquals(15 * 60_000L, FailOpenBackoff.blockMs(2))
+        assertEquals(Long.MAX_VALUE, FailOpenBackoff.blockMs(3))
+        assertEquals(Long.MAX_VALUE, FailOpenBackoff.blockMs(7))
+    }
     @Test fun claimedOwnerMustMatchTheAudioServiceWhenItNamesAnotherApp() {
         assertTrue(SessionAnnouncement.consistent(10_123, null))      // no report: cannot judge
         assertTrue(SessionAnnouncement.consistent(10_123, 10_123))    // matches
