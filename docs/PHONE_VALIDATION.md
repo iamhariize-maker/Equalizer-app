@@ -8,6 +8,8 @@ They report that disabling EQ/tuners improves foggy playback while Engine B rema
 Amazon's own EQ command does not redirect to Svan on this installation, according to the owner.
 The report does not include their tuner/curve values, so the responsible combination is unknown.
 
+Install the original-key 0.5.8/code 15 update over the current Svan app without uninstalling.
+Confirm saved presets, curves and settings remain. These checks are pending on the owner phones.
 For the 0.5.8 quality changes, repeat on the same headphones, same passage and fixed device volume:
 
 1. Keep Engine B running. Start with EQ/tuners off, then enable the saved settings one layer at

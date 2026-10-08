@@ -85,8 +85,8 @@ See [RECORDING_MODE.md](RECORDING_MODE.md).
 
 Local native Release and ASan/UBSan suites pass all 164 tests. ThreadSanitizer passes all
 five parameter-publication tests, including two concurrent tuner writers. Android debug/release
-build, lint and all 230 JVM tests pass; 17 Python checks pass. Final emulator CI logs/images
-and exact owner-signed production provenance are pending. No existing CI gate is removed;
+build, lint and all 230 JVM tests pass; 17 Python checks pass. Final emulator CI and original-key
+production verification pass as documented below. No existing CI gate is removed;
 the DUMP-free integration suite grows from twelve to fourteen checks. Recording checks grow from six to seven, retaining their
 original assertions and exercising the actual Before/After buttons and MediaStore files.
 The eight A/B helper tests cover exact saved PCM outside fades at 44.1/48/96/192 kHz in
@@ -116,4 +116,59 @@ route attached, and the production guard correctly blocked startup. The fixture 
 the announced route, grants only the existing capture notification permission, and requires
 a confirmed Engine B route before handoff. The capture guard and fourteen assertions remain.
 Source-filter runs also retain each poll and pre-clear player logs so a future failure can
-be diagnosed. Final CI and signing provenance will supersede this initial candidate.
+be diagnosed. The final CI and signing evidence below supersede this initial candidate.
+
+## Final CI and owner-signed APK — 8 October 2026
+
+[CI 37745825272](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37745825272)
+at `35c9bd7e1630f5cca7814784a79e00221260e481` passes all eleven jobs: native,
+Android build/lint/unit tests, both dedicated DUMP-free suites, both full emulator suites,
+and release compatibility smoke on APIs 29/30/33/35/36. Native sanitizer and publication
+checks pass. All completed job logs were reviewed; neither full emulator log contains a
+reported FAIL. The final Android production fixture is used by both production-mode suites.
+
+Both API 33/34 full artifacts retain these PASS counts:
+
+| Gate | PASS on each API |
+|---|---:|
+| Routing | 41 |
+| Detection / detection onboarding | 13 / 6 |
+| Workspace / precision controls | 9 / 8 |
+| Quality / continuity | 4 / 4 |
+| Source filtering | 3 |
+| Onboarding / fallbacks | 8 / 3 |
+| Screen interactions / audio-quality layouts | 16 / 7 |
+| Recording / DUMP-free detection | 7 / 14 |
+| Production / release smoke | 4 / 1 |
+
+Artifacts `e2e-results-api33` (11537752284) and `e2e-results-api34` (11537473332)
+were downloaded and reviewed. The frame-clock/Before/After/Sync/Mark/Stop panels fit the
+small emulator screen, remain present over EQ, and use the existing gold/white/charcoal
+palette. Countdown, manual segment, settings charts, effect-panel/shared-output screens,
+boot and representative tuner/large-font layouts were inspected. Screenshots do not prove
+physical camera readability, speaker route or flash/click timing. The flash-attempt capture
+is not a measurement of cue latency.
+
+Both recording fixtures report 48 kHz, 16-bit TPDF exports and zero dropped frames. Their
+exact first syncs are frame 208896 (API 33) and 216064 (API 34); Before/After presses and
+timeline crops use full recording frame positions. Both nonempty A/B files have correct
+48 kHz stereo PCM headers and lengths. Matching defaults on and reports five-millisecond
+fades plus per-range gains. These are fixture observations, not player or phone guarantees.
+The dedicated DUMP-free checks also measure the requested -6 dB system EQ cut as -5.9965 dB
+for their host 1 kHz tone, including after the explicit capture-stop handoff. This does not
+establish the owner's Amazon shared-output route.
+
+The private deliverable is `Svan-0.5.8-owner-signed.apk`, version 0.5.8/code 15,
+5,621,999 bytes. It comes from production artifact 11535749036 in that same final run.
+After re-signing, all 73 ZIP payload entries match the tested production fixture byte for
+byte. The original owner certificate SHA-256 is
+`9cb9daca3b49fbdd17683d45dfb069fa9c6d05e3733934795f92546fef696b0f`.
+Release verification passes package/version, single signer, permission allowlist and
+16 KB ELF/ZIP alignment for all four native libraries. APK SHA-256:
+`7ca911f596d2028818c1a4cd3604dd736061b40233badbc1912c82637d2a8a45`.
+Key/recovery material remains outside Git and CI; no public release or PR is created.
+
+Unlike the unchanged native payload in 0.5.7, this version deliberately changes native DSP
+to repair the tested defects. Existing spatial and other feature gates remain. Install over
+the current original-key Svan without uninstalling; owner-phone checks, subjective quality
+and Amazon's hidden-session native support remain open in PHONE_VALIDATION.md.

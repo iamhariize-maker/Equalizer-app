@@ -23,7 +23,13 @@ and two recorder integration checks pass; emulator recording gates grow from six
 All existing spatial, capture, recording, calibration, blind-listening, detection and preset
 features remain. No permission is added. Local native/ASan/UBSan suites pass 164 tests, TSan
 passes five publication tests, Android debug/release/lint and 230 JVM tests pass, and 17 Python
-checks pass. Final emulator CI and owner-key signing are pending. Phone checks remain open.
+checks pass. CI [37745825272](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37745825272)
+at `35c9bd7` passes all eleven jobs. Both full API 33/34 logs, recording exports and relevant
+screenshots were reviewed; all earlier gates remain, with seven recording and fourteen
+DUMP-free checks on each API. The exact CI production payload is signed with the original
+owner key and passes release verification. APK SHA-256:
+`7ca911f596d2028818c1a4cd3604dd736061b40233badbc1912c82637d2a8a45`.
+Full provenance is in the quality document. Amazon native processing and phone checks remain open.
 
 ## Combined owner APK baseline — 2026-10-07
 

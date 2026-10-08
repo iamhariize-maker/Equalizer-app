@@ -85,8 +85,10 @@ changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 Latest 0.5.8 quality work responds to LG owner feedback: EQ/tuner bypass improves reported fog,
 Amazon remains hidden and its own EQ does not open Svan. Read `docs/QUALITY_RECOVERY_0.5.8.md`.
 Local native (164), ASan/UBSan (164), TSan publication (5), Android JVM (230), debug/release
-build and lint checks pass. Final emulator CI/log/image and owner-key APK verification are pending;
-Amazon native processing remains unresolved.
+build and lint checks pass. CI 37745825272 at `35c9bd7` passes all eleven jobs; API 33/34 logs,
+recording exports and screenshots were reviewed. The exact tested production payload is verified
+and signed with the original owner key; see `docs/QUALITY_RECOVERY_0.5.8.md` for provenance.
+Amazon native processing and new physical-phone qualification remain unresolved.
 0. Combined 0.5.7/code 14 preserves the exact owner spatial-test source/features plus recording/detection. CI 37702568531 passes all eleven jobs; full API 33/34 logs/images were reviewed and the tested production APK was delivered signed with the original owner key. See `docs/COMBINED_APK_VERIFICATION_0.5.7.md`. Twelve DUMP-free checks supplement every existing PASS set. Amazon-first and Apple physical-phone qualification remain open; shared-output EQ is experimental with no commercial-player/route guarantee.
 1. Recording implementation `bbbb790` passed all nine jobs in CI 37678599236; API 33/34 logs and recording/boot/EQ/splash screenshots were reviewed. Keep this evidence and all required PASS sets intact for future changes; see `docs/RECORDING_MODE_VERIFICATION.md`. Physical camera readability, flash/click timing and OEM routes remain open.
 2. **Real-phone validation** (TECNO LH7n/Android 14 and LG V60/Android 13, no PC): the owner reports earlier listening success; new DSP, player/device coverage and LG Quad DAC behavior still need phone checks.
