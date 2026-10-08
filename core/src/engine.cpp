@@ -176,8 +176,10 @@ void Engine::process(const float* in, float* out, int frames) {
     if (C == 2) unmask_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);
     else if (C == 1) unmask_.process(&outBuf_[0], nullptr, n);
     dynamic_.yieldLowLanes(unmask_.cutting());
-    if (C == 2) stereo_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);
-    dynamic_.process(&outBuf_[0],C==2?&outBuf_[cfg_.maxBlock]:nullptr,n,dynamicAmount_.load(std::memory_order_relaxed));
+    // The preamp scratch is free after EQ; reuse it for sample-aligned manual
+    // de-harsh coefficients, including any fixed spatial delay.
+    if (C == 2) stereo_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n, gains_.data());
+    dynamic_.process(&outBuf_[0],C==2?&outBuf_[cfg_.maxBlock]:nullptr,n,dynamicAmount_.load(std::memory_order_relaxed),C==2?gains_.data():nullptr);
     const auto reductions=dynamic_.reductionsDb();for(int b=0;b<4;++b)dynamicDb_[b].store(reductions[b],std::memory_order_relaxed);
     if(cfg_.truePeak) {
       if(gainResetPending_.exchange(false))limiter_.resetGain();

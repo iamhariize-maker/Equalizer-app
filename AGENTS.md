@@ -38,7 +38,7 @@ That feature is removed and `check_manifest_permissions.py` rejects any such dec
 ## Repo map
 | Path | What |
 |---|---|
-| `core/` | Portable C++17 DSP library `eqcore` (CMake). 151 unit tests in `core/tests/test_main.cpp` (no framework). |
+| `core/` | Portable C++17 DSP library `eqcore` (CMake). 164 unit tests in `core/tests/test_main.cpp` (no framework). |
 | `android/app/src/main/cpp/` | JNI bridge → `eqcore` |
 | `android/app/src/main/java/app/svan/` | Kotlin: engines, routing, repository, UI (Compose); `svaramanas/` = controller, dialog, bubble, QS tile |
 | `android/app/src/main/java/app/svan/ui/` | Screens (Sound, EQ, Presets, Hi-Fi, Lab), `Theme.kt` (gold palette), `Brand.kt` (boot animation, brand line, "EQ exten9ed"), `Knob.kt`, `ResponseGraph.kt` |
@@ -82,6 +82,11 @@ Owner's engine follow-up: give Svaresa broader authority only where it improves 
 changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
+Latest 0.5.8 quality work responds to LG owner feedback: EQ/tuner bypass improves reported fog,
+Amazon remains hidden and its own EQ does not open Svan. Read `docs/QUALITY_RECOVERY_0.5.8.md`.
+Local native (164), ASan/UBSan (164), TSan publication (5), Android JVM (230), debug/release
+build and lint checks pass. Final emulator CI/log/image and owner-key APK verification are pending;
+Amazon native processing remains unresolved.
 0. Combined 0.5.7/code 14 preserves the exact owner spatial-test source/features plus recording/detection. CI 37702568531 passes all eleven jobs; full API 33/34 logs/images were reviewed and the tested production APK was delivered signed with the original owner key. See `docs/COMBINED_APK_VERIFICATION_0.5.7.md`. Twelve DUMP-free checks supplement every existing PASS set. Amazon-first and Apple physical-phone qualification remain open; shared-output EQ is experimental with no commercial-player/route guarantee.
 1. Recording implementation `bbbb790` passed all nine jobs in CI 37678599236; API 33/34 logs and recording/boot/EQ/splash screenshots were reviewed. Keep this evidence and all required PASS sets intact for future changes; see `docs/RECORDING_MODE_VERIFICATION.md`. Physical camera readability, flash/click timing and OEM routes remain open.
 2. **Real-phone validation** (TECNO LH7n/Android 14 and LG V60/Android 13, no PC): the owner reports earlier listening success; new DSP, player/device coverage and LG Quad DAC behavior still need phone checks.

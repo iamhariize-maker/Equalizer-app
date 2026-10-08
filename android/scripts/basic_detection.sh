@@ -111,12 +111,29 @@ measure shared-restored
 eq shared_output --ez on true; sleep 2
 eq test_output_change; sleep 2
 status output-changed
+# A remembered player/capture route must not trap a newly hidden player behind Engine B.
+# Exercise the explicit user handoff with no report permission: capture releases its output
+# before source mutes are removed and the single shared effect is attached.
+tone --ez stop true; sleep 2
+tone --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez component true
+eq engine_mode --ez system_only false
+"${A[@]}" shell appops set app.svan PROJECT_MEDIA allow
+eq start_capture --es quality EFFICIENT
+for ((i=0;i<30;i++)); do
+  sleep 1; status handoff-before
+  if python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(not(d["capture"] and any(r["owner"]=="ENGINE_B_MUTED" for r in d["routes"])))' "$OUT/handoff-before.json"; then break; fi
+done
+eq switch_shared_output
+sleep 4
+status handoff-after
+measure handoff-cut
+"${A[@]}" exec-out screencap -p > "$OUT/handoff-after.png"
 python3 - "$OUT" <<'PY' | tee "$OUT/results.txt"
 import json,pathlib,sys
 p=pathlib.Path(sys.argv[1]);d=lambda n:json.loads((p/(n+'.json')).read_text());v=lambda n:float((p/(n+'.db')).read_text())
 def a(n):return any(r['owner']=='ENGINE_A' and r['sid'] in d(n)['attached'] for r in d(n)['routes'])
 def near(x,y):return abs(x-y)<=.75
-names=['component','paused','resumed','recovered','hidden','panel','unrelated-close','shared','shared-known','capture-blocked','shared-stopped','output-changed']+[f'cycle-{i}' for i in range(4)]
+names=['component','paused','resumed','recovered','hidden','panel','unrelated-close','shared','shared-known','capture-blocked','shared-stopped','output-changed','handoff-before','handoff-after']+[f'cycle-{i}' for i in range(4)]
 checks=[('all basic-detection checks run with DUMP revoked',all(not d(n)['dump'] and not d(n)['reportAccess'] for n in names)),
  ('manifest session announcements apply measured per-player EQ',a('component') and near(v('per-player-cut')-v('per-player-flat'),-6)),
  ('pause/resume retains the same connection and measured response',a('paused') and d('paused')['routes']==d('resumed')['routes'] and near(v('resumed-cut'),v('per-player-cut'))),
@@ -128,9 +145,11 @@ checks=[('all basic-detection checks run with DUMP revoked',all(not d(n)['dump']
  ('shared-output EQ reaches an unannounced source without per-player effects',d('shared')['sharedAttached'] and d('shared')['attached']==[0] and not d('shared')['routes'] and near(v('shared-cut')-v('shared-flat'),-6)),
  ('new announced sessions never stack EQ on the shared output',d('shared-known')['attached']==[0] and len(d('shared-known')['routes'])==1 and d('shared-known')['routes'][0]['owner']=='SHARED_OUTPUT' and near(v('shared-known-cut'),v('shared-cut'))),
  ('output-change handler retires the shared effect',not d('output-changed')['sharedRequested'] and 0 not in d('output-changed')['attached']),
- ('shared-output processing blocks Engine B and restores the original level on stop',not d('capture-blocked')['capture'] and d('capture-blocked')['sharedRequested'] and not d('shared-stopped')['attached'] and near(v('shared-restored'),v('shared-flat')))]
-for n in ['per-player-flat','per-player-cut','resumed-cut','recovered-cut','hidden-flat','panel-cut','shared-flat','shared-cut','shared-known-cut','shared-restored']: print(f'INFO {n}: {v(n):.4f} dBFS (emulator host output after effects)')
+ ('shared-output processing blocks Engine B and restores the original level on stop',not d('capture-blocked')['capture'] and d('capture-blocked')['sharedRequested'] and not d('shared-stopped')['attached'] and near(v('shared-restored'),v('shared-flat'))),
+ ('explicit hidden-player handoff stops capture before one measured shared EQ path',d('handoff-before')['capture'] and any(r['owner']=='ENGINE_B_MUTED' for r in d('handoff-before')['routes']) and not d('handoff-after')['capture'] and d('handoff-after')['sharedRequested'] and d('handoff-after')['attached']==[0] and all(r['owner']=='SHARED_OUTPUT' for r in d('handoff-after')['routes']) and near(v('handoff-cut')-v('per-player-flat'),-6)),
+ ('basic routes remain visible without claiming anonymous player identity',d('component')['health']=='BASIC' and 'cannot be matched' in d('component')['headline'])]
+for n in ['per-player-flat','per-player-cut','resumed-cut','recovered-cut','hidden-flat','panel-cut','shared-flat','shared-cut','shared-known-cut','shared-restored','handoff-cut']: print(f'INFO {n}: {v(n):.4f} dBFS (emulator host output after effects)')
 for name,ok in checks:print(('PASS ' if ok else 'FAIL ')+name)
 assert all(ok for _,ok in checks)
 PY
-tone --ez stop true; eq reset_sound
+eq shared_output --ez on false; tone --ez stop true; eq reset_sound

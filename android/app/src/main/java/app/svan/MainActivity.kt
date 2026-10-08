@@ -88,12 +88,15 @@ class MainActivity : ComponentActivity() {
         EqController.log("CMD $cmd")
         when (cmd) {
             "shared_output" -> if (BuildConfig.DEBUG) SessionRouter.setSharedOutput(intent.getBooleanExtra("on", false))
+            "switch_shared_output" -> if (BuildConfig.DEBUG) SessionRouter.switchToSharedOutput()
             "test_output_change" -> if (BuildConfig.DEBUG) SessionRouter.outputChanged()
             "basic_status" -> if (BuildConfig.DEBUG) {
                 val d = org.json.JSONObject().put("dump", PlaybackSessions.hasDumpPermission(this))
                     .put("reportAccess", PlaybackSessions.hasReportAccess(this))
                     .put("sharedRequested", SharedOutput.status.value.requested).put("sharedAttached", EqController.globalEq.isHealthy(0))
                     .put("capture", CaptureService.isRunning)
+                    .put("health", DetectionMonitor.status.value.health.name)
+                    .put("headline", DetectionMonitor.status.value.headline)
                     .put("attached", org.json.JSONArray(EqController.globalEq.attachedSessions.toList()))
                     .put("recent", org.json.JSONArray(SessionRouter.recentConnections))
                     .put("routes", org.json.JSONArray(SessionRouter.snapshot.map {

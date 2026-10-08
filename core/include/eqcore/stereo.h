@@ -24,14 +24,17 @@
 //                     2.5 dB), side air shelf (4 kHz, up to 1.5 dB), and a
 //                     dynamic per-band (<1k / 1-4k / >4k) side lift of up to
 //                     ~5 dB driven by how fast each band's left/right position
-//                     is moving. Static images stay put; channel-to-channel
-//                     movement already in the recording is exaggerated.
+//                     is moving. That dynamic lift holds stationary images;
+//                     channel-to-channel
+//                     movement already in the recording is exaggerated. The
+//                     static bell/shelf can also change stationary width.
 // Every side-channel control leaves the mono sum unchanged. Fast adds no
 // spatial delay; a Detailed-capable stage delays both channels equally and
 // retains that delay while blending modes. No artificial reverb is created.
 #include <atomic>
 #include <array>
 #include <memory>
+#include <vector>
 
 #include "eqcore/biquad.h"
 #include "eqcore/spatial.h"
@@ -70,7 +73,9 @@ class StereoTuner {
   void setParams(const StereoTunerParams& p);
 
   // In-place on one block of left/right samples. Allocation-free.
-  void process(double* left, double* right, int frames);
+  // Optional sample-aligned de-harsh coefficients (1 = no de-harshing), for
+  // sharing attenuation with a later automatic processor on the mid channel.
+  void process(double* left, double* right, int frames, double* deharshGains = nullptr);
   void reset();
 
   // Last de-harsh gain reduction applied, dB (<= 0). For UI meters/tests.
@@ -105,6 +110,13 @@ class StereoTuner {
     bool heard_[kBands] = {};
     double aPan_, aSlow_, aMotionUp_, aMotionDown_;
     double budgetMm_ = 0, budgetSs_ = 0, budgetSd_ = 0, budgetDd_ = 0, budgetScale_ = 1, aBudget_ = 0, aBudgetUp_ = 0;
+    bool vocalActive_ = false, sideActive_ = false, fastActive_ = false;
+    void resetVocalHistory();
+    void resetSideHistory();
+    void resetFastHistory();
+    void resetSmoothHistory();
+    void resetBackingHistory();
+    void resetMotionHistory();
     double budgetedSpatialDelta(double side, double mid, double delta);
     double backingLift(double highSide, double mid);
     double motion(double highSide, double mid);
@@ -113,6 +125,8 @@ class StereoTuner {
     double process(double& left, double& right, bool fastSpatial = true, double* fastDelta = nullptr);
   };
   std::unique_ptr<SpatialResidual> residual_;
+  std::vector<double> deharshDelay_;
+  size_t deharshPos_ = 0;
   double fs_;
   int fadeFrames_, fadeRemaining_ = 0, active_ = 0;
   bool initialized_ = false;

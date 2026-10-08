@@ -34,6 +34,7 @@ internal object ProofRecordingUi {
     val countdown = MutableStateFlow<Int?>(null)
     var wavBits = 16
     var matchLevel = false
+    var abMatchLevel = true
 }
 
 private fun Context.activity(): Activity? = when (this) {
@@ -50,6 +51,7 @@ fun ProofRecordingPanel() {
     val context = LocalContext.current
     val label by ProofRecorder.currentLabel.collectAsState()
     val sync by ProofRecorder.lastSync.collectAsState()
+    val ab by ProofRecorder.lastAb.collectAsState()
     val cueNote by ProofCapture.cueNote.collectAsState()
     var frame by remember { mutableLongStateOf(ProofRecorder.recordedFrames) }
     var marking by remember { mutableStateOf(false) }
@@ -58,7 +60,7 @@ fun ProofRecordingPanel() {
     LaunchedEffect(Unit) {
         while (true) withFrameNanos { frame = ProofRecorder.recordedFrames }
     }
-    Column(Modifier.fillMaxWidth().height(218.dp).background(Svan.Black).padding(horizontal = 16.dp, vertical = 4.dp)) {
+    Column(Modifier.fillMaxWidth().height(274.dp).background(Svan.Black).padding(horizontal = 16.dp, vertical = 4.dp)) {
         Text("SVANAM SHRESHTHAM · Recording", color = Svan.Gold, style = MaterialTheme.typography.labelSmall,
             maxLines = 1, overflow = TextOverflow.Ellipsis)
         BoxWithConstraints(Modifier.fillMaxWidth().height(62.dp), contentAlignment = Alignment.CenterStart) {
@@ -70,11 +72,16 @@ fun ProofRecordingPanel() {
                     contentDescription = "Recording time ${ProofRecorder.clockText(frame / ProofRecorder.sampleRate * ProofRecorder.sampleRate)}"
                 })
         }
-        Text(label, fontSize = 20.sp, lineHeight = 24.sp, color = Svan.Gold, maxLines = 2,
+        Text(ab?.let { val choice = if (it.isAfter) "After" else "Before"; if (label == choice) choice else "$choice · $label" } ?: label,
+            fontSize = 20.sp, lineHeight = 24.sp, color = Svan.Gold, maxLines = 2,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.fillMaxWidth().height(50.dp))
         Text(sync?.let { "Sync at ${ProofRecorder.clockText(it.frame)}" } ?: "Press Sync for a flash and speaker clicks",
             color = Svan.Text, style = MaterialTheme.typography.bodySmall, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.height(20.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { ProofCapture.markAb(false) }, modifier = Modifier.weight(1f)) { Text("Before") }
+            OutlinedButton(onClick = { ProofCapture.markAb(true) }, modifier = Modifier.weight(1f)) { Text("After") }
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { ProofCapture.sync(context) }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 8.dp)) { Text("Sync", maxLines = 1) }
             OutlinedButton(onClick = { marking = true; name = ""; markError = null }, modifier = Modifier.weight(1.2f), contentPadding = PaddingValues(horizontal = 8.dp)) { Text("Mark now", maxLines = 1) }
@@ -135,7 +142,8 @@ fun ProofRecordingOverlay() {
         val n = countdown ?: return@LaunchedEffect
         if (n > 0) { delay(1000); ProofRecordingUi.countdown.value = n - 1 }
         else {
-            runCatching { ProofCapture.start(context, ProofRecordingUi.wavBits, ProofRecordingUi.matchLevel, automaticSync = true) }
+            runCatching { ProofCapture.start(context, ProofRecordingUi.wavBits, ProofRecordingUi.matchLevel,
+                automaticSync = true, abMatchLevel = ProofRecordingUi.abMatchLevel) }
                 .onFailure { ProofRecorder.state.value = ProofRecorder.State.Failed(it.message ?: "Could not start recording") }
             ProofRecordingUi.countdown.value = null
         }

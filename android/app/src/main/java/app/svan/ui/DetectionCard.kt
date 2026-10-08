@@ -64,6 +64,8 @@ fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
 @Composable
 private fun SharedOutputCard() {
     val shared by app.svan.SharedOutput.status.collectAsState()
+    var captureRunning by remember { mutableStateOf(app.svan.CaptureService.isRunning) }
+    ObserveWhileVisible { captureRunning = app.svan.CaptureService.isRunning }
     SvanCard {
         Column {
             Text("Shared-output EQ · experimental", style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
@@ -72,8 +74,17 @@ private fun SharedOutputCard() {
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             Text("Test with your music and headphones. Device connection changes stop this option; re-test after switching outputs. Use per-player connections for the audiophile engine and Recording mode.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            OutlinedButton(onClick = { app.svan.SessionRouter.setSharedOutput(!shared.requested) }) {
-                Text(if (shared.requested) "Stop shared-output EQ" else "Try shared-output EQ")
+            Text("For a hidden player such as Amazon Music: keep only that player playing, try this option, then compare a clear EQ cut. An attached effect does not prove that Amazon's current output accepts EQ.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            Text("If your player offers an Equalizer setting, open Svan there to request a direct connection. Native Hi-Fi needs that connection to silence the original playback before rendering processed audio.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            if (captureRunning && !shared.requested) Text("This stops Hi-Fi and finishes any recording before switching to system EQ.",
+                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            OutlinedButton(onClick = {
+                if (shared.requested) app.svan.SessionRouter.setSharedOutput(false)
+                else app.svan.SessionRouter.switchToSharedOutput()
+            }) {
+                Text(if (shared.requested) "Stop shared-output EQ" else if (captureRunning) "Stop Hi-Fi and try shared-output EQ" else "Try shared-output EQ")
             }
         }
     }
@@ -95,8 +106,13 @@ private fun DetailedReportButton() {
 
 @Composable
 private fun ScanSummary(report: PlaybackScanReport, showDetails: Boolean, onToggleDetails: () -> Unit) {
-    if (report.scannedAtMs == 0L && report.error == null) return
     val context = LocalContext.current
+    if (!PlaybackSessions.hasReportAccess(context)) {
+        Text("Enhanced Android reports are unavailable. Basic player connections are shown above; an absent report does not mean no music is playing.",
+            style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        return
+    }
+    if (report.scannedAtMs == 0L && report.error == null) return
     val scannedAt = if (report.scannedAtMs != 0L) DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(report.scannedAtMs)) else null
     if (report.error != null) {
         Text("Android audio details are unavailable. Keep music playing and retry the scan.",

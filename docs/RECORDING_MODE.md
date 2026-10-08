@@ -21,9 +21,13 @@ requires its normal playback-capture consent. Apps on system effects are outside
    3, 2, 1 leads to recording at 0 with a sync flash and speaker clicks. Alternatively choose
    **Start recording**, then press **Sync** once filming is underway.
 4. Demonstrate settings. The fixed recording panel stays above every tab, with a large
-   `m:ss.mmm` clock, segment label, **Sync**, **Mark now** and **Stop**. Use Mark now to type a
-   label of up to 40 characters for the next stretch. Pause after changing settings so the
-   automatic setting marker can settle. Additional syncs are allowed and reported in order.
+   `m:ss.mmm` clock, segment label, **Before**, **After**, **Sync**, **Mark now** and **Stop**.
+   Press Before/After on the beats you want to compare. Each press marks the exact recording
+   frame, updates the large choice label and starts a measured segment with that label. These
+   buttons select the saved-file source only: they do not change live playback or DSP. Svan
+   continues processing while you listen. Use Mark now to type a label of up to 40 characters
+   for other stretches. Pause after changing settings so the automatic setting marker can settle.
+   Additional syncs are allowed and reported in order.
 5. Press **Stop**, wait for saving, then stop filming. Files are in the session folder shown
    by Svan: audio under `Music/Svan Proof/<stamp>/`, charts/report under
    `Download/Svan Proof/<stamp>/`. Transfer Svan's audio files to the LG locally as needed.
@@ -38,8 +42,19 @@ requires its normal playback-capture consent. Apps on system effects are outside
    check alignment across the demo, especially if `droppedFrames` is nonzero.
 8. Delete the cue copy from the project and mute the LG microphone track. Keep the plain
    processed-from-sync file as the finished soundtrack. For A/B demonstrations, the
-   dry-from-sync file has the same frame alignment. Judge differences at matched RMS level;
-   louder often sounds better. Export your video from VN.
+   dry-from-sync file has the same frame alignment. For a single-take A/B demo, use
+   `svan-ab-timeline-from-sync.wav` as the only audio track; it follows the Before/After marks,
+   so no manual cutting is needed. The regular `svan-ab-timeline.wav` begins at the first A/B
+   mark; that first press selects the initial source and later presses switch it. Switches are
+   recorded against the full-recording clock in `abSwitches`. The from-sync copy begins at the
+   first Sync frame, preserving its offset from the full recording; the on-screen clock remains
+   full-recording time, so subtract the first `syncSeconds` when relating it to a from-sync file.
+   Align the from-sync copy with the click cue as above, then remove the cue and mute the LG microphone.
+   The A/B timeline uses default-on per-segment RMS matching and 5 ms equal-power transitions.
+   Equal-power fades avoid a hard sample jump, but correlated dry/processed samples can briefly
+   sum louder through a transition. The export gain does not affect live audio. Judge the
+   headphone result for yourself at fixed device volume; louder often sounds better. Export
+   your video from VN.
 
 Speaker/flash delay has **not** been measured on either owner phone. The clicks are an
 approximate acoustic alignment aid; no “few tens of ms” guarantee is established. The
@@ -57,6 +72,8 @@ measurement protocol in [PHONE_VALIDATION.md](PHONE_VALIDATION.md) before relyin
 | `svan-dry-from-sync.wav` | Exact byte-copy tail of the dry WAV at the first sync frame |
 | `svan-processed-from-sync.wav` | Exact byte-copy tail of the processed WAV at the first sync frame |
 | `svan-processed-sync-cue.wav` | Alignment-only copy with clicks mixed at 0, 250 and 500 ms |
+| `svan-ab-timeline.wav` | Offline dry/processed A/B sequence from the first Before/After mark, with RMS matching and 5 ms equal-power transitions |
+| `svan-ab-timeline-from-sync.wav` | A/B timeline copy whose start is the first sync frame, when a sync exists |
 | `svan-processed-matched.wav` | Optional full-duration processed audio with per-segment RMS matching |
 | `svan-proof-chart.png` | Whole-recording spectrum and levels |
 | `svan-settings-effects.png` | Per-segment spectrum difference and RMS difference |
@@ -82,6 +99,19 @@ The report lists `matchedGainLinear`, `matchedGainDb` and `matchLimitedByPeak`. 
 zero gain; a peak-limited segment cannot necessarily reach dry RMS. Gain is constant within
 a segment; changes at boundaries may be audible. This optional file starts at the full
 recording's frame zero. No LUFS/BS.1770 claim is made.
+
+The A/B timeline is a separate offline export: when at least one Before/After mark exists, it
+starts at the first mark and follows the selected dry or processed stream. It defaults to RMS
+matching per A/B segment and records each applied gain in the report. Later switches blend the two aligned streams over 5 ms with equal-power weights; the source
+at an export's initial frame is selected immediately. Gain targets use the union of setting and
+A/B boundaries and changes are smoothed over 5 ms. Highly correlated samples can sum
+above either input during a fade, so the transition may briefly lift in level even when the
+segments are RMS-matched. Saturated timeline samples are counted separately for each exported file in the report.
+Changed 16-bit timeline samples receive additional TPDF at re-quantization; untouched endpoint
+frames keep their saved PCM bytes. Charts continue to measure the original dry/processed
+streams, not the spliced timeline. The matching and fades alter only the exported timeline; they never
+change what the listener hears live. The optional full-duration `svan-processed-matched.wav`
+remains a separate export and still defaults off.
 
 ## Clock, sync and segments
 
@@ -111,7 +141,9 @@ recording's frame zero. No LUFS/BS.1770 claim is made.
   are analysed at those exact boundaries, fixing markers that arrive after a writer chunk
   has drained. Marks at zero replace the opening label; trailing zero-length marks are omitted.
 - At most 12 segments are measured; later changes merge into the final segment and the report
-  says when the limit was reached. All syncs remain separate from the segment limit.
+  says when the limit was reached. All syncs and A/B choices remain separate from the segment limit. After the limit, the chart
+  cannot show a new measured row for every press; timeline matching still measures every A/B
+  range and reports its gain.
 
 ## Limits and verification
 

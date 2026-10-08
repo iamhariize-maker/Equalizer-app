@@ -28,8 +28,14 @@ class SystemEqService : Service() {
     @Volatile private var alive = false
     private var callback: AudioManager.AudioPlaybackCallback? = null
     private val deviceCallback = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) { SessionRouter.outputChanged(); recover("output connected") }
-        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) { SessionRouter.outputChanged(); recover("output disconnected") }
+        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) {
+            if (SharedOutputHandoff.physicalOutputChanged(added.map { it.type })) SessionRouter.outputChanged()
+            recover("output connected")
+        }
+        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) {
+            if (SharedOutputHandoff.physicalOutputChanged(removed.map { it.type })) SessionRouter.outputChanged()
+            recover("output disconnected")
+        }
     }
     private val wakeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) { recover("playback route or screen wake") }

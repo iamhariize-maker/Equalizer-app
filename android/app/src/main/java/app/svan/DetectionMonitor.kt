@@ -108,8 +108,21 @@ object DetectionMonitor {
                 put(sid, if (judgeable) EffectVerifier.verify(sid, af, ownPid) else Verification.UNKNOWN)
             }
         }
+        val routeSnapshot = SessionRouter.snapshot.toList()
+        val basicRoutes = routeSnapshot.asSequence()
+            .filter { it.uid != ownUid }
+            .map { route ->
+                BasicRouteStatus(route.pkg, when (route.owner) {
+                    SessionRouter.Owner.ENGINE_A -> BasicRouteEngine.SYSTEM_EFFECTS
+                    SessionRouter.Owner.ENGINE_B_MUTED -> BasicRouteEngine.CAPTURE
+                    SessionRouter.Owner.SHARED_OUTPUT -> BasicRouteEngine.SHARED_OUTPUT
+                    SessionRouter.Owner.UNPROCESSED -> BasicRouteEngine.UNPROCESSED
+                    SessionRouter.Owner.PROBING -> BasicRouteEngine.PROBING
+                }, route.playing)
+            }.toList()
         val (health, headline, advice) = DetectionStatus.assess(
-            perm, players != null, if (needServer) af != null else lastServerOk == true, publicActive, ownActive, musicSessions, musicUnresolved, verification,
+            perm, players != null, if (needServer) af != null else lastServerOk == true, publicActive, ownActive,
+            musicSessions, musicUnresolved, verification, basicRoutes, CaptureService.isRunning,
         ) { pkg -> runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrNull() }
         val status = DetectionStatus(
             atMs = now, dumpPermission = perm, serviceRunning = SystemEqService.isRunning,
@@ -117,7 +130,9 @@ object DetectionMonitor {
             serverOk = if (needServer) af != null else lastServerOk == true,
             serverError = if (needServer) afError else lastServerError, serverPartial = af?.partial == true,
             publicActive = publicActive,
-            knownAudioSessions = SessionRouter.snapshot.count { it.sessionId > 0 && it.uid >= 0 && it.uid != ownUid && it.playing != false },
+            knownAudioSessions = routeSnapshot.count { it.sessionId > 0 && it.uid >= 0 && it.uid != ownUid && it.playing != false },
+            basicRoutes = basicRoutes,
+            captureServiceRunning = CaptureService.isRunning,
             sessions = musicSessions, unresolved = musicUnresolved,
             verification = verification, health = health, headline = headline, advice = advice,
         )

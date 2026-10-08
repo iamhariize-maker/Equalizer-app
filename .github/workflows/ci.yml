@@ -179,10 +179,10 @@ jobs:
           test "$(grep -c '^PASS setup fixture ' e2e-out/screens/interaction.txt)" -eq 15
           ! grep -q '^FAIL' e2e-out/screens/interaction.txt
           cat e2e-out/recording/results.txt
-          test "$(grep -c '^PASS' e2e-out/recording/results.txt)" -eq 6
+          test "$(grep -c '^PASS' e2e-out/recording/results.txt)" -eq 7
           ! grep -q '^FAIL' e2e-out/recording/results.txt
           cat e2e-out/basic-detection/results.txt
-          test "$(grep -c '^PASS' e2e-out/basic-detection/results.txt)" -eq 12
+          test "$(grep -c '^PASS' e2e-out/basic-detection/results.txt)" -eq 14
           ! grep -q '^FAIL' e2e-out/basic-detection/results.txt
           cat e2e-out/workspace/results.txt
           if grep -q '^FAIL' e2e-out/workspace/results.txt; then exit 1; fi
@@ -273,7 +273,7 @@ jobs:
         if: always()
         run: |
           cat basic-out/results.txt
-          test "$(grep -c '^PASS' basic-out/results.txt)" -eq 12
+          test "$(grep -c '^PASS' basic-out/results.txt)" -eq 14
           ! grep -q '^FAIL' basic-out/results.txt
       - uses: actions/upload-artifact@v4
         if: always()

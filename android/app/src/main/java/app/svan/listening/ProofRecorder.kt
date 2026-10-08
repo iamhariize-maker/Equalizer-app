@@ -51,16 +51,20 @@ object ProofRecorder {
         val segments: List<Segment> = emptyList(),
         val dryFromSyncWav: File? = null, val processedFromSyncWav: File? = null,
         val syncCueWav: File? = null, val matchedWav: File? = null,
+        val abTimelineWav: File? = null, val abTimelineFromSyncWav: File? = null,
     )
 
-    data class Options(val wavBits: Int = 24, val matchLevel: Boolean = false, val startWithSync: Boolean = false)
+    data class Options(val wavBits: Int = 24, val matchLevel: Boolean = false, val startWithSync: Boolean = false,
+                       val abMatchLevel: Boolean = true)
     data class Sync(val frame: Long, val epochMs: Long)
+    data class AbSwitch(val frame: Long, val isAfter: Boolean)
 
     private class Marker(val position: Long, val label: String, val settings: Map<String, Any?>)
 
     val state = MutableStateFlow<State>(State.Idle)
     val currentLabel = MutableStateFlow("Opening settings")
     val lastSync = MutableStateFlow<Sync?>(null)
+    val lastAb = MutableStateFlow<AbSwitch?>(null)
     val recordedFrames: Long get() = session?.written?.div(2) ?: 0L
     val sampleRate: Int get() = session?.rate ?: 48000
     fun clockText(frame: Long = recordedFrames, rate: Int = sampleRate): String {
@@ -78,6 +82,7 @@ object ProofRecorder {
     ) {
         val markers = ConcurrentLinkedQueue<Marker>()
         val syncs = ConcurrentLinkedQueue<Sync>()
+        val abSwitches = ConcurrentLinkedQueue<AbSwitch>()
         val startedAtNanos = System.nanoTime()
         @Volatile var markerCount = 0
         @Volatile var ignoredMarkers = 0
@@ -138,6 +143,7 @@ object ProofRecorder {
         val s = Session(dir, rate, meta, stats, onFinished, System.currentTimeMillis(), options)
         currentLabel.value = "Opening settings"
         lastSync.value = null
+        lastAb.value = null
         if (options.startWithSync) {
             val sync = Sync(0, s.startedAtMs); s.syncs.add(sync); lastSync.value = sync
         }
@@ -156,13 +162,17 @@ object ProofRecorder {
     fun mark(label: String, settings: Map<String, Any?>, expectedRecording: State? = null): Boolean {
         val s = session ?: return false
         if (s.stop.get() || (expectedRecording != null && state.value !== expectedRecording)) return false
+        return addMarker(s, s.written, label, settings)
+    }
+
+    private fun addMarker(s: Session, position: Long, label: String, settings: Map<String, Any?>): Boolean {
         if (s.markerCount >= MAX_SEGMENTS - 1) {
             s.ignoredMarkers++
             currentLabel.value = "Changes merged into final segment"
             return false
         }
         s.markerCount++
-        s.markers.add(Marker(s.written, label, settings))
+        s.markers.add(Marker(position, label, settings))
         currentLabel.value = label
         return true
     }
@@ -175,6 +185,19 @@ object ProofRecorder {
         val sync = Sync(s.written / 2, System.currentTimeMillis())
         s.syncs.add(sync); lastSync.value = sync
         return sync
+    }
+
+    /** Export choice only. Records one committed position; never changes DSP or live playback. */
+    @Synchronized
+    fun markAb(isAfter: Boolean, settings: Map<String, Any?> = emptyMap()): AbSwitch? {
+        val s = session ?: return null
+        if (s.stop.get()) return null
+        val position = s.written
+        val choice = AbSwitch(position / 2, isAfter)
+        s.abSwitches.add(choice)
+        lastAb.value = choice
+        addMarker(s, position, if (isAfter) "After" else "Before", settings)
+        return choice
     }
 
     /** Fixed 240-frame blocks, independent of disk chunk size and settings boundaries. */
@@ -291,11 +314,34 @@ object ProofRecorder {
                 cue = File(s.dir, "svan-processed-sync-cue.wav").also { ProofWav.withCue(wetSync!!, it) }
             }
             val matched = if (s.options.matchLevel) File(s.dir, "svan-processed-matched.wav").also { ProofWav.matched(wetFile, it, segments) } else null
+            var abTimeline: File? = null; var abSync: File? = null
+            var abGains: List<ProofAbTimeline.RangeGain> = emptyList()
+            var abSyncGains: List<ProofAbTimeline.RangeGain> = emptyList()
+            val abSwitches = s.abSwitches.toList()
+            abSwitches.firstOrNull()?.let { first ->
+                abTimeline = File(s.dir, "svan-ab-timeline.wav")
+                abGains = ProofAbTimeline.render(dryFile, wetFile, abTimeline!!, abSwitches, segments,
+                    first.frame.coerceAtMost(frames), s.options.abMatchLevel)
+                s.syncs.peek()?.let { sync ->
+                    abSync = File(s.dir, "svan-ab-timeline-from-sync.wav")
+                    abSyncGains = ProofAbTimeline.render(dryFile, wetFile, abSync!!, abSwitches, segments,
+                        sync.frame.coerceAtMost(frames), s.options.abMatchLevel)
+                }
+            }
             val seconds = frames.toDouble() / s.rate
             val bands = spectrum.bands()
             val report = buildReport(s, seconds, dryMeter, wetMeter, bands, lastStats, segments, signal.firstFrame)
+            report.put("abSwitches", JSONArray().also { a -> abSwitches.forEach {
+                a.put(JSONObject().put("frame", it.frame).put("seconds", it.frame.toDouble() / s.rate)
+                    .put("choice", if (it.isAfter) "After" else "Before"))
+            } })
+            if (abTimeline != null) report.put("abTimeline", JSONObject()
+                .put("startFrame", abSwitches.first().frame).put("fromSyncStartFrame", s.syncs.peek()?.frame ?: JSONObject.NULL)
+                .put("matchLevel", s.options.abMatchLevel).put("crossfadeMs", 5)
+                .put("rangeGains", abGainReport(abGains)).put("fromSyncRangeGains", abGainReport(abSyncGains))
+                .put("note", "Export choices do not change live playback. Equal-power fades can lift correlated signals; any saturated timeline samples are counted. RMS gains use exact setting/choice ranges, with 5 ms gain transitions and a peak cap, not LUFS. The sync timeline uses full recording frame positions."))
             val reportFile = File(s.dir, "svan-proof-report.json").apply { writeText(report.toString(2)) }
-            val result = Result(s.dir, dryFile, wetFile, reportFile, seconds, dryMeter, wetMeter, bands, s.dropped / 2, report, segments, drySync, wetSync, cue, matched)
+            val result = Result(s.dir, dryFile, wetFile, reportFile, seconds, dryMeter, wetMeter, bands, s.dropped / 2, report, segments, drySync, wetSync, cue, matched, abTimeline, abSync)
             s.onFinished(result)
         } catch (e: Throwable) {
             session = null
@@ -358,5 +404,10 @@ object ProofRecorder {
 
     private fun round1(x: Double) = Math.round(x * 10) / 10.0
     private fun round2(x: Double) = Math.round(x * 100) / 100.0
+    private fun abGainReport(gains: List<ProofAbTimeline.RangeGain>) = JSONArray().also { a -> gains.forEach { g ->
+        a.put(JSONObject().put("startFrame", g.startFrame).put("endFrame", g.endFrame)
+            .put("gainLinear", g.gainLinear).put("gainDb", if (g.gainLinear > 0) LevelMeter.toDb(g.gainLinear) else JSONObject.NULL)
+            .put("limitedByPeak", g.limitedByPeak).put("clippedSamples", g.clippedSamples))
+    } }
 
 }

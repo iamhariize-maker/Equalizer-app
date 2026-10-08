@@ -1,4 +1,35 @@
-## Combined 0.5.7 feature checks — pending, not run on phones
+## 8 October 2026 owner observations — LG V60 / Android 13
+
+On Svan 0.5.7/code 14, the owner's report shows Apple Music session 22905 routed to Engine B,
+48 kHz capture/output clients, nonzero capture and zero reported underruns without DUMP/Shizuku.
+This establishes that session's reported activity, not commercial-player coverage or fidelity.
+The owner reports Amazon Music remains hidden and shared-output EQ makes little useful change.
+They report that disabling EQ/tuners improves foggy playback while Engine B remains running.
+Amazon's own EQ command does not redirect to Svan on this installation, according to the owner.
+The report does not include their tuner/curve values, so the responsible combination is unknown.
+
+For the 0.5.8 quality changes, repeat on the same headphones, same passage and fixed device volume:
+
+1. Keep Engine B running. Start with EQ/tuners off, then enable the saved settings one layer at
+   a time: headphone correction, EQ/bass, vocal controls, instrument/spatial controls, Svaresa.
+   Record the new local report's effective settings and the first layer/combination that worsens sound.
+2. Use the existing blind comparison with matched level, or Recording mode dry/processed/matched
+   exports. Do not infer preference from an unmatched louder/quieter comparison. Check transients,
+   stationary images, sustained vocals and fades, not only one steady tone.
+3. Toggle Detailed/Fast/Auto and individual Smooth/Backing/Binaural controls while playing and
+   after silence. Listen for stale tails, zipper noise or abrupt image motion. Phone results pending.
+4. Amazon's own EQ command currently does not open Svan. Save a report while Amazon alone plays,
+   and record any change after a player/system update. Installed/recognised package is not a music connection;
+   a remaining Apple route is not Amazon's identity. Note Amazon version and output route.
+5. The explicit Stop Hi-Fi and try shared-output EQ action must stop capture before restoring
+   originals and attaching shared EQ, finish any recording, and cancel on physical output change.
+   It remains system EQ; it does not provide native replay for an unidentified source. Check the
+   same clear cut on the actual Amazon stream and record little/no effect honestly.
+
+No new 0.5.8 phone result or solution for Amazon native processing is claimed. See
+[QUALITY_RECOVERY_0.5.8.md](QUALITY_RECOVERY_0.5.8.md).
+
+## Combined 0.5.7 feature checks — full matrix pending
 
 Install the original-key 0.5.7/code 14 update over the supplied spatial-test APK, without uninstalling.
 Confirm saved presets/manual curves/settings remain, and Fast/Detailed/Auto, Backing/Binaural,
@@ -78,6 +109,17 @@ source, checksum and signer. It is a direct owner delivery, not a published rele
    the TECNO speaker? Do headphones remain on their music route? Confirm the cue is absent
    from plain dry/processed and matched WAVs and M4A, and absent from headphones. Disconnect
    or switch routes during a sync to test cue suppression. Retain any cue-routing message.
+6. Test the single-take A/B timeline with Engine B and the same source left playing. Press
+   Before and After several times on clear beats; confirm the large choice label and recording
+   clock change, and that live headphone output does not switch or pause. After stopping, confirm
+   `svan-ab-timeline.wav` follows the marks from the first A/B press and
+   `svan-ab-timeline-from-sync.wav` starts at the first Sync frame. In VN, align the from-sync
+   file with the sync cue, then use it as the only music track without manual cuts. Check that
+   the 5 ms transitions have no clicks; listen for any brief level lift on correlated material.
+   Record the report's `abSwitches`, per-segment RMS gains and any peak limit. Timeline RMS
+   matching defaults on; the optional full processed matched export is separate. Compare the
+   edit with what was heard live at the same phone volume. This check has not been performed on
+   either owner phone.
 
 Also test countdown cancel, multiple syncs, typed manual labels, a long demo and storage failure.
 Keep the report's dropped-frame count with each observation. Record results as actual device

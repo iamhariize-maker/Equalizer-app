@@ -7,6 +7,7 @@ import android.os.PowerManager
 import android.os.Process
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
 
 /**
  * One text report that answers "why isn't my player processed?" without guessing: what the phone
@@ -16,6 +17,8 @@ import java.util.Date
 object DiagnosticReport {
     fun build(context: Context): String = buildString {
         val st = DetectionMonitor.status.value
+        val eq = SvanRepository.eq.value
+        val settings = SvanRepository.settings.value
         val pm = context.packageManager
         val info = runCatching { pm.getPackageInfo(context.packageName, 0) }.getOrNull()
         appendLine("Svan diagnostic report — ${DateFormat.getDateTimeInstance().format(Date())}")
@@ -31,14 +34,34 @@ object DiagnosticReport {
         appendLine("System equalizer service running: ${SystemEqService.isRunning} · last started ${SystemEqService.lastStartedMs(context).let { if (it == 0L) "never" else DateFormat.getTimeInstance().format(Date(it)) }}")
         appendLine("Stopped by Android (not by Svan): ${SystemEqService.wasKilledByAndroid(context)}")
         appendLine("Capture engine running: ${CaptureService.isRunning}")
-        appendLine("Requested spatial mode: ${SvanRepository.settings.value.spatialMode}")
+        appendLine("Requested spatial mode: ${settings.spatialMode.title}")
         appendLine("Capture epoch: ${CaptureService.epoch ?: "none"}")
         appendLine(CaptureService.rateFacts?.summary() ?: "Capture/client rates unavailable; original source rate=unknown; DAC rate=unknown")
         appendLine("Capture measurements: ${CaptureService.stats ?: "none"}")
         appendLine("Capture recovery: ${CaptureService.recoveryMessage.value.ifBlank { "none" }}")
         appendLine()
+        appendLine("== Current EQ and controller snapshot ==")
+        appendLine("Saved/requested snapshot; this does not prove these settings reached a particular player's signal path.")
+        appendLine("EQ enabled=${eq.enabled} · workspace=${eq.workspaceMode} · preset=${eq.presetName} · requested preamp=${db(eq.preampDb)} dB · current effective preamp=${db(eq.effectivePreampDb())} dB")
+        appendLine("Saved manual curve (${eq.manualBands().size} bands): ${formatBands(eq.manualBands())}")
+        val effectiveBands = eq.effectiveBands()
+        appendLine("Current effective curve (${effectiveBands.size} bands): ${formatBands(effectiveBands).ifBlank { "none (EQ off)" }}")
+        appendLine("Headphone correction layer requested=${eq.tuning?.enabled == true} · bands=${eq.tuning?.takeIf { it.enabled }?.bands?.size ?: 0} (model name omitted)")
+        val activeVocal = eq.activeVocal
+        val activeInstrument = eq.activeInstrument
+        appendLine("Bass requested: level=${db(eq.bass.amountDb)} dB focus=${hz(eq.bass.focusHz)} Hz character=${number(eq.bass.character)} Resolve=${pct(eq.bass.resolve)}%${if (eq.bass.resolveAuto) " Auto" else " Manual"}; effective while EQ ${if (eq.enabled) "on" else "off"}: level=${db(if (eq.enabled) eq.bass.amountDb else 0.0)} dB character=${number(eq.bassCharacter)} Resolve=${pct(eq.bassResolve)}%")
+        appendLine("Vocal tuner requested: intimacy=${pct(eq.vocal.intimacy)}% warmth=${pct(eq.vocal.warmth)}% smoothness=${pct(eq.vocal.smoothness)}%; current effective: intimacy=${pct(activeVocal.intimacy)}% warmth=${pct(activeVocal.warmth)}% smoothness=${pct(activeVocal.smoothness)}%")
+        appendLine("Instrument tuner requested: space=${number(eq.instrument.space)} instruments=${pct(eq.instrument.instruments)}% backingVocals=${pct(eq.instrument.backingVocals)}% spatialDetail=${pct(eq.instrument.spatialDetail)}%; current effective: space=${number(activeInstrument.space)} instruments=${pct(activeInstrument.instruments)}% backingVocals=${pct(activeInstrument.backingVocals)}% spatialDetail=${pct(activeInstrument.spatialDetail)}%")
+        val smart = eq.smart
+        appendLine("Latest controller snapshot: layer=${if (smart == null) "none" else "published"} · active=${eq.activeSmart != null} · bypass=${eq.smartBypass} · enabled=${eq.enabled}" +
+            (smart?.let { " · smart bands=${it.bands.size} · preamp trim=${db(if (eq.activeSmart != null) it.preampDb else 0.0)} dB · dynamic EQ requested=${pct(it.dynamicEq)}% effective=${pct(eq.dynamicEq)}% · space=${number(it.space)} · instruments=${pct(it.instruments)}% · protectEngine=${it.protectEngine}" } ?: ""))
+        appendLine("Capture DSP delay=${CaptureService.epoch?.let { "${it.latencyFrames} frames @ ${it.sampleRate} Hz (%.2f ms)".format(Locale.US, it.latencyFrames * 1000.0 / it.sampleRate) } ?: "unavailable"}; this excludes capture, platform mixing and output transport.")
+        appendLine("Spatial pipeline available at capture start=${CaptureService.epoch?.let { it.detailed.toString() } ?: "unavailable"} · applied mode=${CaptureService.epoch?.appliedSettings?.spatialMode?.title ?: "none"} · current Detailed blend=${CaptureService.stats?.let { "%.0f%%".format(Locale.US, it.detailedMix * 100.0) } ?: "unavailable"}. The blend is a live controller value, not a quality score.")
+        appendLine()
         appendLine("== Verdict ==")
         appendLine("${st.health}: ${st.headline}")
+        appendLine("Enhanced audio-report access: ${if (st.dumpPermission) "available" else "unavailable"}")
+        appendLine("Basic route snapshot at last scan (${st.basicRoutes.size}): ${st.basicRoutes.joinToString { "${it.packageName} ${it.engine} playing=${it.playing ?: "unknown"}" }.ifBlank { "none" }}")
         if (st.advice.isNotBlank()) appendLine(st.advice)
         appendLine("Scans so far: ${DetectionMonitor.scans} · last scan ${if (st.atMs == 0L) "never" else DateFormat.getTimeInstance().format(Date(st.atMs))}")
         appendLine("Player list (dumpsys audio): ${if (!st.dumpPermission) "NOT REQUESTED: enhanced report access unavailable" else if (st.playersOk) "ok" else "FAILED ${st.playersError ?: ""}"}")
@@ -84,4 +107,12 @@ object DiagnosticReport {
         appendLine(lines.joinToString("\n"))
         appendLine("Own pid/uid: ${Process.myPid()}/${Process.myUid()}")
     }
+
+    private fun db(value: Double): String = "%.2f".format(Locale.US, value)
+    private fun hz(value: Double): String = "%.1f".format(Locale.US, value)
+    private fun pct(value: Double): String = "%.0f".format(Locale.US, value * 100.0)
+    private fun number(value: Double): String = "%.2f".format(Locale.US, value)
+    private fun formatBands(bands: List<app.svan.model.Band>): String = bands.joinToString { band ->
+        "${band.type}@${hz(band.freqHz)}Hz ${db(band.gainDb)}dB Q=${db(band.q)}${if (band.enabled) "" else " off"}"
+    }.ifBlank { "none" }
 }

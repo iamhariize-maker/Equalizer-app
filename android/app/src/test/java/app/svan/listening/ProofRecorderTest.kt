@@ -285,6 +285,54 @@ class ProofRecorderTest {
         assertEquals("EQ: on → off", SettingsDiff.describe(a, a + mapOf("eqEnabled" to false)))
         assertEquals("Settings changed", SettingsDiff.describe(a, a + mapOf("device" to "z")))
     }
+    @Test fun abPositionsUseCommittedFramesAndExportsLeavePlainWavsUntouched() {
+        val r = session(ProofRecorder.Options(abMatchLevel = false)) {
+            feed(12345, 2f)
+            val b = tone(240, 1000.0, 0.2)
+            ProofRecorder.offerDry(b, b.size)
+            assertEquals(12345L, ProofRecorder.markAb(false)!!.frame)
+            assertEquals("Before", ProofRecorder.currentLabel.value)
+            ProofRecorder.markSync()
+            ProofRecorder.commitWet(b, b.size)
+            assertEquals(12585L, ProofRecorder.markAb(true)!!.frame)
+            feed(rate, 2f)
+        }
+        val switches = r.report.getJSONArray("abSwitches")
+        assertEquals(12345L, switches.getJSONObject(0).getLong("frame"))
+        assertEquals("Before", switches.getJSONObject(0).getString("choice"))
+        assertEquals(12585L, switches.getJSONObject(1).getLong("frame"))
+        assertEquals(12585.0 / rate, switches.getJSONObject(1).getDouble("seconds"), 1e-12)
+        assertEquals(12585L + rate - 12345, ProofWav.header(r.abTimelineWav!!).frames)
+        assertArrayEquals(r.abTimelineWav!!.readBytes(), r.abTimelineFromSyncWav!!.readBytes())
+        val tail = ProofWav.read(r.abTimelineWav!!)
+        val wet = ProofWav.read(r.processedWav)
+        for (frame in 12585 + rate / 200 until 12585 + rate) {
+            assertEquals(wet[frame * 2], tail[(frame - 12345) * 2], 0f)
+        }
+        assertEquals(6.0206, r.processed.rmsDbfs - r.dry.rmsDbfs, 0.05)
+        assertTrue(r.segments.any { it.label == "Before" } && r.segments.any { it.label == "After" })
+    }
+
+    @Test fun abMatchingDefaultsOnAndSyncExportStartsBeforeFirstPress() {
+        val r = session(ProofRecorder.Options(startWithSync = true)) {
+            feed(rate, 2f)
+            ProofRecorder.markAb(true)
+            feed(rate, 2f)
+        }
+        val full = ProofWav.read(r.abTimelineFromSyncWav!!)
+        val timeline = ProofWav.read(r.abTimelineWav!!)
+        assertEquals(rate.toLong(), ProofWav.header(r.abTimelineWav!!).frames)
+        assertEquals((rate * 2).toLong(), ProofWav.header(r.abTimelineFromSyncWav!!).frames)
+        val before = LevelMeter(); val after = LevelMeter()
+        for (frame in rate / 4 until rate * 3 / 4) {
+            before.add(full[frame * 2]); after.add(timeline[frame * 2])
+        }
+        assertEquals(before.rmsDbfs, after.rmsDbfs, 0.05)
+        assertTrue(r.report.getJSONObject("abTimeline").getBoolean("matchLevel"))
+        val noAb = session { feed(240) }
+        assertTrue(noAb.abTimelineWav == null && noAb.abTimelineFromSyncWav == null)
+    }
+
     @Test fun highRateFrameClockSyncTailAndHeaderKeepTheActualCaptureRate() {
         val hz = 96000
         val dir = File.createTempFile("proof-high-rate", "").apply { delete() }

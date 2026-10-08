@@ -313,6 +313,7 @@ private fun ProofRecorderCard(engineRunning: Boolean) {
     var error by remember { mutableStateOf("") }
     var compatibility by remember { mutableStateOf(true) }
     var matchLevel by remember { mutableStateOf(false) }
+    var abMatchLevel by remember { mutableStateOf(true) }
     val countdown by ProofRecordingUi.countdown.collectAsState()
     SectionLabel("Recording mode")
     SvanCard {
@@ -325,7 +326,7 @@ private fun ProofRecorderCard(engineRunning: Boolean) {
             Spacer(Modifier.height(12.dp))
             when (val st = state) {
                 is ProofRecorder.State.Recording -> {
-                    Text("Recording. Use Sync, Mark now and Stop above; change settings on any tab.", style = MaterialTheme.typography.bodyMedium, color = Svan.Gold)
+                    Text("Use Before/After to choose the exported soundtrack; live listening stays unchanged. Sync, Mark now and Stop remain above every tab.", style = MaterialTheme.typography.bodyMedium, color = Svan.Gold)
                 }
                 is ProofRecorder.State.Finishing -> Text("Analysing and saving…", style = MaterialTheme.typography.bodyMedium, color = Svan.Gold)
                 is ProofRecorder.State.Done -> {
@@ -338,6 +339,12 @@ private fun ProofRecorderCard(engineRunning: Boolean) {
                     if (r.processed.overs > 0) Text("${r.processed.overs} processed samples reached full scale.", style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     if (r.droppedFrames > 0) Text("${r.droppedFrames} frames dropped because storage fell behind.", style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     if (r.segments.size > 1) Text("${r.segments.size} stretches measured, one per setting change.", style = MaterialTheme.typography.bodySmall)
+                    if (r.abTimelineWav != null) Text("Before/After timeline saved for VN.", style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+                    val abReport = r.report.optJSONObject("abTimeline")
+                    val abClipped = listOfNotNull(abReport?.optJSONArray("rangeGains"), abReport?.optJSONArray("fromSyncRangeGains"))
+                        .sumOf { ranges -> (0 until ranges.length()).sumOf { ranges.getJSONObject(it).getLong("clippedSamples") } }
+                    if (abClipped > 0) Text("$abClipped A/B timeline samples clipped. Check the transitions before editing.",
+                        style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     ProofCapture.lastExportNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.Ember) }
                     ProofCapture.lastLocation?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
                     Spacer(Modifier.height(8.dp))
@@ -359,11 +366,17 @@ private fun ProofRecorderCard(engineRunning: Boolean) {
                         androidx.compose.material3.Checkbox(checked = matchLevel, onCheckedChange = { matchLevel = it })
                         Text("Also save RMS-matched audio", style = MaterialTheme.typography.bodyMedium)
                     }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = abMatchLevel, onCheckedChange = { abMatchLevel = it })
+                        Text("Match Before/After levels", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Text("Before/After marks build one soundtrack for VN. They do not change what you hear live.",
+                        style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     if (error.isNotBlank()) Text(error, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     Button(
                         onClick = {
                             error = ""
-                            runCatching { ProofCapture.start(context, if (compatibility) 16 else 24, matchLevel) }
+                            runCatching { ProofCapture.start(context, if (compatibility) 16 else 24, matchLevel, abMatchLevel = abMatchLevel) }
                                 .onFailure { error = it.message ?: "Could not start recording" }
                         },
                         enabled = engineRunning && countdown == null, modifier = Modifier.fillMaxWidth(),
@@ -372,6 +385,7 @@ private fun ProofRecorderCard(engineRunning: Boolean) {
                     OutlinedButton(onClick = {
                         ProofRecordingUi.wavBits = if (compatibility) 16 else 24
                         ProofRecordingUi.matchLevel = matchLevel
+                        ProofRecordingUi.abMatchLevel = abMatchLevel
                         ProofRecordingUi.countdown.value = 3
                     }, enabled = engineRunning && countdown == null, modifier = Modifier.fillMaxWidth()) { Text("Start with countdown") }
                 }

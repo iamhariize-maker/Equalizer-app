@@ -52,7 +52,7 @@ object ProofCapture {
         )
     }
 
-    fun start(context: Context, wavBits: Int = 16, matchLevel: Boolean = false, automaticSync: Boolean = false) {
+    fun start(context: Context, wavBits: Int = 16, matchLevel: Boolean = false, automaticSync: Boolean = false, abMatchLevel: Boolean = true) {
         check(CaptureService.isRunning) { "Start the audiophile engine first" }
         val capture = checkNotNull(CaptureService.epoch) { "Wait for the audiophile engine to finish starting" }
         val app = context.applicationContext
@@ -66,7 +66,7 @@ object ProofCapture {
         lastExportNote = null
         cueNote.value = null
         ProofRecorder.start(dir, capture.sampleRate, opening, { engineStats() },
-            ProofRecorder.Options(wavBits, matchLevel, automaticSync)) { result -> publish(app, stamp, result) }
+            ProofRecorder.Options(wavBits, matchLevel, automaticSync, abMatchLevel)) { result -> publish(app, stamp, result) }
         check(CaptureService.epoch?.sampleRate == capture.sampleRate) {
             ProofRecorder.stop()
             "Capture format changed; start a new recording"
@@ -91,6 +91,8 @@ object ProofCapture {
         val clean = label.trim().take(40)
         return clean.isNotEmpty() && ProofRecorder.mark(clean, snapshot())
     }
+
+    fun markAb(isAfter: Boolean) = ProofRecorder.markAb(isAfter, snapshot())
 
     /** Back to the idle button after the user has read the outcome. */
     fun dismiss() { if (!ProofRecorder.isRecording && ProofRecorder.state.value !is ProofRecorder.State.Finishing) ProofRecorder.state.value = ProofRecorder.State.Idle }
@@ -157,7 +159,8 @@ object ProofCapture {
                     .put("note", "Lossy convenience export; encoder delay may affect alignment. Use WAV and the clock for precise sync."))
                 store(aac, audio, "Music", "audio/mp4")
             }
-            listOfNotNull(r.dryFromSyncWav, r.processedFromSyncWav, r.syncCueWav, r.matchedWav).forEach {
+            listOfNotNull(r.dryFromSyncWav, r.processedFromSyncWav, r.syncCueWav, r.matchedWav,
+                r.abTimelineWav, r.abTimelineFromSyncWav).forEach {
                 store(it, audio, "Music", "audio/x-wav")
             }
             r.reportJson.writeText(r.report.toString(2))

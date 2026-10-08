@@ -104,6 +104,36 @@ class SessionLedgerTest {
         assertEquals(Health.IDLE, assess(true, true, true, 1, own = 1, sessions = emptyList()))
     }
 
+    @Test fun noEnhancedAccessReportsBasicRoutesWithoutClaimingVerificationOrHidingOtherPlayers() {
+        val empty = emptyList<LedgerSession>()
+        val appleLabel: (String) -> String? = { if (it == "com.apple.android.music") "Apple Music" else null }
+        val appleA = BasicRouteStatus("com.apple.android.music", BasicRouteEngine.SYSTEM_EFFECTS, true)
+        val appleB = BasicRouteStatus("com.apple.android.music", BasicRouteEngine.CAPTURE, true)
+
+        val systemRoute = DetectionStatus.assess(false, false, false, 1, 0, empty, emptyList(), emptyMap(), listOf(appleA), false, appleLabel)
+        assertEquals(Health.BASIC, systemRoute.first)
+        assertTrue(systemRoute.second.contains("Apple Music routed to system effects (effect unverified)"))
+        assertTrue(systemRoute.third.contains("cannot verify system effects"))
+
+        val captureRoute = DetectionStatus.assess(false, false, false, 3, 1, empty, emptyList(), emptyMap(), listOf(appleB), true, appleLabel)
+        assertEquals(Health.BASIC, captureRoute.first)
+        assertTrue(captureRoute.second.contains("Apple Music routed to Engine B (capture service running; audio arrival/output unverified)"))
+        assertTrue(captureRoute.second.contains("public API also reports 2 active player(s)"))
+        assertTrue(captureRoute.second.contains("anonymous count cannot be matched to these routes"))
+        assertTrue(captureRoute.second.contains("other unidentified playback cannot be ruled out"))
+        assertTrue(captureRoute.third.contains("does not prove an audible or quality result"))
+
+        val anonymousOnly = DetectionStatus.assess(false, false, false, 2, 0, empty, emptyList(), emptyMap())
+        assertEquals(Health.NO_PERMISSION, anonymousOnly.first)
+        assertTrue(anonymousOnly.second.contains("2 player(s) playing"))
+        assertTrue(anonymousOnly.second.contains("no known session route"))
+
+        val staleRoute = DetectionStatus.assess(false, false, false, 2, 1, empty, emptyList(), emptyMap(),
+            listOf(appleB.copy(playing = false)), true, appleLabel)
+        assertEquals(Health.NO_PERMISSION, staleRoute.first)
+        assertTrue(staleRoute.second.contains("no known session route"))
+    }
+
     @Test fun releasedOrNonMediaSessionlessRecordsNeverOverrideTheLiveSession() {
         // YouTube Music's live record plus a released session-0 record (an old SoundPool) and a
         // session-0 notification click, all from the same pid: the live session must stay "started"

@@ -34,6 +34,7 @@ std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double f, 
 StereoTuner::StereoTuner(double sampleRate, bool residual)
     : residual_(residual ? std::make_unique<SpatialResidual>(sampleRate) : nullptr), fs_(sampleRate), fadeFrames_(std::max(1,static_cast<int>(sampleRate*.020))) {
   for(auto& state:states_)state.redesign({},fs_);
+  if (residual_) deharshDelay_.assign(static_cast<size_t>(residual_->latencyFrames()), 1.0);
 }
 
 void StereoTuner::setParams(const StereoTunerParams& p) {
@@ -43,9 +44,11 @@ void StereoTuner::setParams(const StereoTunerParams& p) {
   const auto unit=[](double x){return std::isfinite(x)?std::clamp(x,0.,1.):0.;};
   pending_ = {unit(p.intimacy),unit(p.warmth),unit(p.smoothness),
       std::isfinite(p.space)?std::clamp(p.space,-1.,1.):0.,unit(p.instruments),unit(p.backingVocals),unit(p.spatialDetail)};
-  pendingLock_.store(false, std::memory_order_release);
+  // Serialize the shared and residual parameter publications together. Reading
+  // pending_ after unlocking would race another UI writer and mix generations.
   if (residual_) residual_->setParams(pending_.backingVocals, pending_.spatialDetail);
   version_.fetch_add(1, std::memory_order_release);
+  pendingLock_.store(false, std::memory_order_release);
 }
 
 void StereoTuner::State::redesign(const StereoTunerParams& p, double fs_) {
@@ -72,29 +75,72 @@ void StereoTuner::State::redesign(const StereoTunerParams& p, double fs_) {
   aBudget_=coeff(150,fs_);aBudgetUp_=coeff(100,fs_);
   aPan_=coeff(15,fs_);aSlow_=coeff(600,fs_);aMotionUp_=coeff(10,fs_);aMotionDown_=coeff(300,fs_);
   spaceGain_ = std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0);
+  // Individually bypassed detectors also stop advancing while other groups
+  // remain active. Store a clean off state for any later reactivation.
+  if (p.smoothness == 0) resetSmoothHistory();
+  if (p.backingVocals == 0) resetBackingHistory();
+  if (p.spatialDetail == 0) resetMotionHistory();
 }
 
 void StereoTuner::State::reset() {
-  for (Bq* b : {&warmBell_, &warmShelf_, &intimacyBell_, &harshBand_, &sideHp_[0], &sideHp_[1], &bodyBell_,
-                &presenceBell_, &airShelf_, &backingBell_, &detailShelf_, &shuffleBell_, &vocalSide_, &vocalMid_,
-                &motionHp_[0], &motionHp_[1], &splitSide_[0], &splitSide_[1], &splitMid_[0], &splitMid_[1]})
-    b->z1 = b->z2 = 0;
-  envVocalSide_ = envVocalMid_ = backingLiftDb_ = 0;
-  for (int b = 0; b < kBands; ++b) { cross_[b] = power_[b] = panSlow_[b] = 0; motionGain_[b] = 1; heard_[b] = false; }
+  resetVocalHistory();
+  resetSideHistory();
+  resetFastHistory();
+  vocalActive_ = sideActive_ = fastActive_ = false;
+}
+
+void StereoTuner::State::resetVocalHistory() {
+  for (Bq* b : {&warmBell_, &warmShelf_, &intimacyBell_}) b->z1 = b->z2 = 0;
+  resetSmoothHistory();
+}
+
+void StereoTuner::State::resetSmoothHistory() {
+  harshBand_.z1 = harshBand_.z2 = 0;
   envBand_ = envFull_ = 1e-9;
   deharshGain_ = 1.0;
+}
+
+void StereoTuner::State::resetSideHistory() {
+  for (Bq* b : {&sideHp_[0], &sideHp_[1], &bodyBell_, &presenceBell_, &airShelf_}) b->z1 = b->z2 = 0;
+}
+
+void StereoTuner::State::resetFastHistory() {
+  resetBackingHistory();
+  resetMotionHistory();
   budgetMm_ = budgetSs_ = budgetSd_ = budgetDd_ = 0;
   budgetScale_ = 1;
+}
+
+void StereoTuner::State::resetBackingHistory() {
+  for (Bq* b : {&backingBell_, &vocalSide_, &vocalMid_}) b->z1 = b->z2 = 0;
+  envVocalSide_ = envVocalMid_ = backingLiftDb_ = 0;
+}
+
+void StereoTuner::State::resetMotionHistory() {
+  for (Bq* b : {&detailShelf_, &shuffleBell_, &motionHp_[0], &motionHp_[1], &splitSide_[0], &splitSide_[1], &splitMid_[0], &splitMid_[1]})
+    b->z1 = b->z2 = 0;
+  for (int b = 0; b < kBands; ++b) { cross_[b] = power_[b] = panSlow_[b] = 0; motionGain_[b] = 1; heard_[b] = false; }
 }
 
 double StereoTuner::State::process(double& left, double& right, bool fastSpatial, double* fastDelta) {
   if (fastDelta) *fastDelta = 0;
   if (p_.isOff()) {
+    vocalActive_ = sideActive_ = fastActive_ = false;
     return 1.;  // bit-exact passthrough
   }
   const bool vocal = p_.intimacy != 0 || p_.warmth != 0 || p_.smoothness != 0;
   const bool side = p_.space != 0 || p_.instruments != 0 ||
       (fastSpatial && (p_.backingVocals != 0 || p_.spatialDetail != 0));
+  const bool fast = fastSpatial && (p_.backingVocals != 0 || p_.spatialDetail != 0);
+  // A suspended group has not followed the current recording. Its old tails
+  // must not be replayed on resume. Clear only that group; active shared paths
+  // retain their histories across Fast/Detailed changes and parameter fades.
+  if (vocal && !vocalActive_) resetVocalHistory();
+  if (side && !sideActive_) resetSideHistory();
+  if (fast && !fastActive_) resetFastHistory();
+  vocalActive_ = vocal;
+  sideActive_ = side;
+  fastActive_ = fast;
   if (!vocal && !side) return 1.;
   // De-harsh: band level relative to the whole voice, above a threshold that
   // drops as smoothness rises; up to 12 dB of reduction.
@@ -123,7 +169,8 @@ double StereoTuner::State::process(double& left, double& right, bool fastSpatial
     // Dry side plus a bounded delta. The side signal itself is never filtered through
     // the 180 Hz crossover (its all-pass phase rotated S against M and swapped hard-panned
     // bass between channels); only the *difference* between the shaped and plain high
-    // band is added, so every control is continuous at zero and cannot move an image.
+    // band is added, so zero control is identity despite the crossover phase.
+    // Explicit Space/Instruments still alter width and relative M/S phase.
     const double plain = sideHp_[1].run(sideHp_[0].run(s));
     const double instr = bodyBell_.run(plain);
     const double hi1 = airShelf_.run(presenceBell_.run(instr));
@@ -221,10 +268,11 @@ void StereoTuner::reset() {
   if(fadeRemaining_>0)active_=1-active_;
   fadeRemaining_=0;initialized_=false;lastDeharshDb_=0;
   if(residual_)residual_->reset();
+  std::fill(deharshDelay_.begin(), deharshDelay_.end(), 1.0); deharshPos_ = 0;
   for(auto& state:states_)state.reset();
 }
 
-void StereoTuner::process(double* L,double* R,int frames) {
+void StereoTuner::process(double* L,double* R,int frames,double* deharshGains) {
   if(frames<=0)return;
   const int v=version_.load(std::memory_order_acquire);
   if(fadeRemaining_==0 && v!=appliedVersion_ && !pendingLock_.exchange(true,std::memory_order_acquire)) {
@@ -249,16 +297,26 @@ void StereoTuner::process(double* L,double* R,int frames) {
    for(int j=0;j<count;++j) {
     const int i=base+j;
     double d=0;
+    double deharsh = 1;
     if(fadeRemaining_>0) {
       double l=L[i],r=R[i];
       double nextDelta=0;
-      minGain=std::min(minGain,states_[active_].process(L[i],R[i],needFast,residual_?&d:nullptr));
-      minGain=std::min(minGain,states_[1-active_].process(l,r,needFast,residual_?&nextDelta:nullptr));
+      const double oldGain=states_[active_].process(L[i],R[i],needFast,residual_?&d:nullptr);
+      const double nextGain=states_[1-active_].process(l,r,needFast,residual_?&nextDelta:nullptr);
+      minGain=std::min({minGain,oldGain,nextGain});
       const double t=1.-static_cast<double>(fadeRemaining_)/fadeFrames_;
+      deharsh=oldGain+t*(nextGain-oldGain);
       L[i]+=t*(l-L[i]);R[i]+=t*(r-R[i]);
       d+=t*(nextDelta-d);
       if(--fadeRemaining_==0)active_=1-active_;
-    } else minGain=std::min(minGain,states_[active_].process(L[i],R[i],needFast,residual_?&d:nullptr));
+    } else { deharsh=states_[active_].process(L[i],R[i],needFast,residual_?&d:nullptr); minGain=std::min(minGain,deharsh); }
+    if(residual_) {
+      const double delayed = deharshDelay_[deharshPos_];
+      deharshDelay_[deharshPos_] = deharsh;
+      if(++deharshPos_ == deharshDelay_.size()) deharshPos_ = 0;
+      deharsh = delayed;
+    }
+    if(deharshGains) deharshGains[i] = deharsh;
     if(residual_) { m[j]=.5*(L[i]+R[i]);s[j]=.5*(L[i]-R[i]);fast[j]=d; }
    }
    if(residual_) {

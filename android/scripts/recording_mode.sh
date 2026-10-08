@@ -67,6 +67,12 @@ tap EQ
 sleep 1
 shot recording-eq
 cp "$OUT/ui.xml" "$OUT/marked-ui.xml"
+tap Before
+sleep 1
+shot before
+tap After
+sleep 1
+shot after
 eq eq_band --ef frequency 1000 --ef gain -3
 sleep 2
 shot setting-change
@@ -77,18 +83,29 @@ for ((i=0;i<60;i++)); do
   sleep 1
 done
 STAMP=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["directory"])' "$OUT/evidence.json")
-for file in svan-dry-input.wav svan-processed-output.wav svan-dry-from-sync.wav svan-processed-from-sync.wav svan-processed-sync-cue.wav svan-proof-report.json svan-settings-effects.png; do
+for file in svan-dry-input.wav svan-processed-output.wav svan-dry-from-sync.wav svan-processed-from-sync.wav svan-processed-sync-cue.wav svan-ab-timeline.wav svan-ab-timeline-from-sync.wav svan-proof-report.json svan-settings-effects.png; do
   "${A[@]}" exec-out run-as app.svan cat "files/proof/$STAMP/$file" > "$OUT/$file"
 done
 python3 - "$OUT" <<'PY' | tee "$OUT/results.txt"
 import json,pathlib,sys,wave,struct,math
 p=pathlib.Path(sys.argv[1]);d=json.loads((p/'evidence.json').read_text());r=d['report']
 required={'svan-dry-input.wav','svan-processed-output.wav','svan-dry-from-sync.wav','svan-processed-from-sync.wav','svan-processed-sync-cue.wav','svan-processed-matched.wav','svan-processed-output.m4a','svan-proof-chart.png','svan-settings-effects.png','svan-proof-report.json'}
+required.update({'svan-ab-timeline.wav','svan-ab-timeline-from-sync.wav'})
 checks=[]
 checks.append(('recording exports exist in MediaStore with identical nonempty payloads',required=={f['name'] for f in d['files']} and all(f.get('mediaStoreBytes',0)==f['privateBytes']>44 and f.get('bytesEqual') for f in d['files'])))
 a=d['aac']; checks.append(('AAC-LC export has readable 48 kHz stereo packets',a['aacObjectType']==2 and a['mime']=='audio/mp4a-latm' and a['rate']==48000 and a['channels']==2 and a['firstPacketBytes']>0 and a['durationUs']>0))
 checks.append(('sync trim uses the recorded frame without resampling',len(r['syncFrames'])==1 and all((p/full).read_bytes()[44+r['syncFrames'][0]*4:]==(p/tail).read_bytes()[44:] for full,tail in [('svan-dry-input.wav','svan-dry-from-sync.wav'),('svan-processed-output.wav','svan-processed-from-sync.wav')])))
 checks.append(('manual and settled EQ edits get separate segments',any(s['change']=='Manual_demo' for s in r['segments']) and any('EQ curve' in s['change'] for s in r['segments'])))
+with wave.open(str(p/'svan-ab-timeline.wav')) as w: ab_frames=w.getnframes()
+with wave.open(str(p/'svan-ab-timeline-from-sync.wav')) as w: sync_ab_frames=w.getnframes()
+with wave.open(str(p/'svan-dry-input.wav')) as w: full_frames=w.getnframes()
+switches=r['abSwitches']; ab=r['abTimeline']
+checks.append(('Before/After buttons export a sync-aligned RMS-matched timeline',
+ [s['choice'] for s in switches]==['Before','After'] and switches[0]['frame']<switches[1]['frame']
+ and all(abs(s['seconds']-s['frame']/r['sampleRateHz'])<1e-9 for s in switches)
+ and ab['matchLevel'] and ab['crossfadeMs']==5 and ab['rangeGains']
+ and ab_frames==full_frames-switches[0]['frame'] and sync_ab_frames==full_frames-r['syncFrames'][0]
+ and any(s['change']=='Before' for s in r['segments']) and any(s['change']=='After' for s in r['segments'])))
 def level(file,hz):
  with wave.open(str(p/file)) as w:
   values=struct.unpack('<'+'h'*(w.getnframes()*2),w.readframes(w.getnframes()))[::2]

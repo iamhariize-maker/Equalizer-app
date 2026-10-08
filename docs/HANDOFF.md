@@ -1,3 +1,30 @@
+## Quality and hidden-player recovery — 2026-10-08, 0.5.8/code 15
+
+Owner's LG V60 report on 0.5.7 shows Apple routed/captured without DUMP/Shizuku, but Amazon
+remains hidden. Shared-output EQ gives little useful change; Amazon's own EQ does not open Svan.
+Turning EQ/tuners off improves the reported fogginess while Engine B stays running. No measured
+root cause or reliable native Amazon route is established. See [QUALITY_RECOVERY_0.5.8.md](QUALITY_RECOVERY_0.5.8.md).
+
+The quality patch clears suspended tuner histories before resumption, coordinates manual Smooth
+with the upper automatic cuts on the mid signal, retains side/low corrections, and carries the
+real de-harsh metadata through the fixed spatial delay. It adds a serialized multiwriter tuner
+publication and a live-state check before committing a downloaded automatic headphone correction.
+Basic-route diagnostics now distinguish a session connection from missing enhanced reports and
+cannot associate anonymous current playback with an old Apple route. Reports include requested/
+effective EQ/tuners and the latest controller snapshot. The explicit shared-output recovery
+action stops capture before removing source mutes; virtual remote-submix closure cannot cancel
+that handoff. It remains system EQ and does not establish native Amazon support.
+
+The updated recording brief adds Before/After controls and two offline A/B timeline exports,
+with exact frame marks, default-on RMS matching, 5 ms source/gain fades and transformed-16-bit
+TPDF. The live engine and plain recording taps do not change. Eight new helper regressions
+and two recorder integration checks pass; emulator recording gates grow from six to seven.
+
+All existing spatial, capture, recording, calibration, blind-listening, detection and preset
+features remain. No permission is added. Local native/ASan/UBSan suites pass 164 tests, TSan
+passes five publication tests, Android debug/release/lint and 230 JVM tests pass, and 17 Python
+checks pass. Final emulator CI and owner-key signing are pending. Phone checks remain open.
+
 ## Combined owner APK baseline — 2026-10-07
 
 Owner explicitly requires every feature from their uploaded `Svan-0.5.6-spatial-test.apk`, plus

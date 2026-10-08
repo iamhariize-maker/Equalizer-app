@@ -194,7 +194,13 @@ object EffectVerifier {
     }
 }
 
-enum class Health { OK, IDLE, DEGRADED, BLIND, NO_PERMISSION }
+enum class Health { OK, IDLE, BASIC, DEGRADED, BLIND, NO_PERMISSION }
+
+/** Permission-free session-broadcast evidence. It identifies a route, not a healthy audio signal. */
+enum class BasicRouteEngine { SYSTEM_EFFECTS, CAPTURE, SHARED_OUTPUT, UNPROCESSED, PROBING }
+data class BasicRouteStatus(val packageName: String, val engine: BasicRouteEngine, val playing: Boolean?) {
+    val activeOrUnknown: Boolean get() = playing != false
+}
 
 /** One scan's complete outcome, rendered by the UI and the shareable diagnostic report. */
 data class DetectionStatus(
@@ -210,6 +216,9 @@ data class DetectionStatus(
     /** Public API: players Android says are active (anonymized; includes Svan's own output when Hi-Fi runs). */
     val publicActive: Int? = null,
     val knownAudioSessions: Int = 0,
+    /** Current routes learned through the permission-free player connection contract. */
+    val basicRoutes: List<BasicRouteStatus> = emptyList(),
+    val captureServiceRunning: Boolean = false,
     val sessions: List<LedgerSession> = emptyList(),
     val unresolved: List<PlaybackSession> = emptyList(),
     val verification: Map<Int, Verification> = emptyMap(),
@@ -222,6 +231,7 @@ data class DetectionStatus(
         fun assess(
             dumpPermission: Boolean, playersOk: Boolean, serverOk: Boolean, publicActive: Int?, ownActive: Int,
             sessions: List<LedgerSession>, unresolved: List<PlaybackSession>, verification: Map<Int, Verification>,
+            basicRoutes: List<BasicRouteStatus> = emptyList(), captureServiceRunning: Boolean = false,
             /** The installed app's display name for a package, or null (see [appLabel]). */
             labelFor: (String) -> String? = { null },
         ): Triple<Health, String, String> {
@@ -229,8 +239,27 @@ data class DetectionStatus(
             val other = publicActive?.let { (it - ownActive).coerceAtLeast(0) }
             val playing = sessions.filter { it.session.state == "started" || it.serverActive == true }
             if (!dumpPermission) {
+                val routed = basicRoutes.filter { it.activeOrUnknown }
+                if (routed.isNotEmpty()) {
+                    val routeDescription = routed.groupBy { it.engine }.entries.joinToString { (engine, routes) ->
+                        val names = routes.map { appLabel(it.packageName, labelFor) }.distinct().joinToString()
+                        when (engine) {
+                            BasicRouteEngine.SYSTEM_EFFECTS -> "$names routed to system effects (effect unverified)"
+                            BasicRouteEngine.CAPTURE -> "$names routed to Engine B (capture service ${if (captureServiceRunning) "running" else "not running"}; audio arrival/output unverified)"
+                            BasicRouteEngine.SHARED_OUTPUT -> "$names routed through shared output (music path unverified)"
+                            BasicRouteEngine.UNPROCESSED -> "$names connected without an attached engine"
+                            BasicRouteEngine.PROBING -> "$names being checked for capture"
+                        }
+                    }
+                    val countText = other?.let {
+                        " Android's public API also reports $it active player(s), but that anonymous count cannot be matched to these routes; other unidentified playback cannot be ruled out."
+                    }.orEmpty()
+                    return Triple(Health.BASIC,
+                        "Basic route observed: $routeDescription.$countText",
+                        "Enhanced audio reports are unavailable, so Svan cannot verify system effects or identify additional players. A route confirms a session connection only; it does not prove an audible or quality result.")
+                }
                 return if (other != null && other > 0) Triple(Health.NO_PERMISSION,
-                    "Android reports $other player(s) playing, but Svan cannot see which",
+                    "Android reports $other player(s) playing, but Svan has no known session route",
                     "Basic detection is active. Keep music playing; if no audio connection appears, restart the song or try the optional Music detection options below. Sound controls cannot fix a missing audio session.")
                 else Triple(Health.NO_PERMISSION, "Basic music detection is active",
                     "Play a song. Players that announce their audio connection can work now. Enhanced detection below is optional.")

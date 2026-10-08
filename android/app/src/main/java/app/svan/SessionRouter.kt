@@ -35,6 +35,7 @@ object SessionRouter {
     private val missingRepair = MissingEffectRepair()
     private val healthRepair = MissingEffectRepair(firstDelayMs = 1_000)
     private val history = SessionConnectionHistory()
+    private val sharedHandoff = SharedOutputHandoff()
     @Volatile var recentConnections: List<String> = emptyList()
         private set
     private val streamCaptureBlocked = mutableSetOf<Int>()
@@ -137,6 +138,7 @@ object SessionRouter {
             missingRepair.clear()
             healthRepair.clear()
             history.clear()
+            sharedHandoff.cancel()
             recentConnections = emptyList()
             SharedOutput.publish(false, false, "Off. Per-player connections are used.")
             streamCaptureBlocked.clear()
@@ -208,7 +210,8 @@ object SessionRouter {
         captureUids = emptySet()
         worker.execute {
             muter.releaseAll()
-            routes.values.toList().forEach { reroute(it.sessionId, it.pkg, it.uid, it.playing) }
+            if (sharedHandoff.captureStopped(enabled)) attachSharedOnWorker()
+            else routes.values.toList().forEach { reroute(it.sessionId, it.pkg, it.uid, it.playing) }
         }
     }
 
@@ -333,20 +336,46 @@ object SessionRouter {
     fun setSharedOutput(on: Boolean) {
         worker.execute {
             if (!on) { disableSharedOnWorker("Off. Per-player connections are used."); return@execute }
+            if (sharedHandoff.waiting) return@execute
             if (!SharedOutputPolicy.allowed(true, enabled, projection != null || CaptureService.isRunning)) {
                 SharedOutput.publish(false, false, "Stop the audiophile engine and start the system equalizer first.")
                 return@execute
             }
-            // No source is muted here. Only one Svan processing path may own the output.
-            muter.releaseAll()
-            EqController.globalEq.releaseAll()
-            val ok = EqController.globalEq.attachOutputMix()
-            SharedOutput.publish(ok, ok, if (ok)
-                "Shared-output EQ attached. Player identity and this music's path are unverified."
-                else "Android refused shared-output EQ. Per-player connections restored.")
-            routes.values.toList().forEach { toEngineA(it.sessionId, it.pkg, it.uid, it.playing) }
-            EqController.log("shared output: attached=$ok")
+            attachSharedOnWorker()
         }
+    }
+
+    /** Explicit UI choice for a hidden player: stop replay before releasing its source mutes. */
+    fun switchToSharedOutput() {
+        worker.execute {
+            if (!enabled) {
+                SharedOutput.publish(false, false, "Start the system equalizer before trying shared-output EQ.")
+                return@execute
+            }
+            if (sharedHandoff.request(projection != null || CaptureService.isRunning)) {
+                attachSharedOnWorker()
+            } else {
+                // Also blocks a new Engine B start while its old AudioTrack is closing.
+                SharedOutput.publish(true, false, "Stopping Hi-Fi and finishing any recording before trying shared-output EQ.")
+                appContext.stopService(android.content.Intent(appContext, CaptureService::class.java))
+            }
+        }
+    }
+
+    private fun attachSharedOnWorker() {
+        if (!SharedOutputPolicy.allowed(true, enabled, projection != null || CaptureService.isRunning)) {
+            SharedOutput.publish(false, false, "Shared-output EQ could not start while Hi-Fi was active. Try again after it stops.")
+            return
+        }
+        // Capture's AudioTrack has been released before this acknowledgement. Never replay and unmute together.
+        muter.releaseAll()
+        EqController.globalEq.releaseAll()
+        val ok = EqController.globalEq.attachOutputMix()
+        SharedOutput.publish(ok, ok, if (ok)
+            "Shared-output EQ attached. Player identity and this music's path are unverified."
+            else "Android refused shared-output EQ. Per-player connections restored.")
+        routes.values.toList().forEach { toEngineA(it.sessionId, it.pkg, it.uid, it.playing) }
+        EqController.log("shared output: attached=$ok")
     }
 
     fun outputChanged() {
@@ -358,6 +387,7 @@ object SessionRouter {
     }
 
     private fun disableSharedOnWorker(message: String) {
+        sharedHandoff.cancel()
         val wasShared = SharedOutput.status.value.requested || 0 in EqController.globalEq.attachedSessions
         SharedOutput.publish(false, false, message)
         if (!wasShared) return

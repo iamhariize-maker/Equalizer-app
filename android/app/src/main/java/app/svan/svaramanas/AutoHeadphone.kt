@@ -100,11 +100,22 @@ object AutoHeadphone {
                 if (t == null) {
                     status = "Could not load the correction for ${entry.name}: ${built.exceptionOrNull()?.message}"
                     EqController.log("svaresa: auto headphone failed: ${built.exceptionOrNull()}")
-                } else if (SvaresaSensors.headphoneName(context) == name) { // not unplugged while downloading
-                    autoManaged = t.headphone
-                    withContext(Dispatchers.Main) { SvanRepository.update { it.copy(tuning = t) } }
-                    status = "Recognised $name as ${entry.name} (${entry.label}); applied the Harman correction."
-                    EqController.log("svaresa: recognised $name → ${entry.name} (${entry.label}); applied Harman, fit rms=%.2f dB".format(t.fitRmsDb))
+                } else {
+                    withContext(Dispatchers.Main) {
+                        // The listener may disable recognition, unplug, or choose a manual
+                        // correction while the network/fit work is in flight. Check the live
+                        // state at the commit, not before dispatching back to the UI thread.
+                        if (AutoHeadphoneCommit.allowed(Svaramanas.request.value,
+                                SvaresaSensors.headphoneName(context), name, current, SvanRepository.eq.value.tuning)) {
+                            autoManaged = t.headphone
+                            SvanRepository.update { it.copy(tuning = t) }
+                            status = "Recognised $name as ${entry.name} (${entry.label}); applied the Harman correction."
+                            EqController.log("svaresa: recognised $name → ${entry.name} (${entry.label}); applied Harman, fit rms=%.2f dB".format(t.fitRmsDb))
+                        } else {
+                            lastKey = null // a future enabled check can start a fresh request
+                            EqController.log("svaresa: discarded an outdated automatic headphone correction")
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 status = "Headphone recognition needs the internet once (${e.javaClass.simpleName})."
