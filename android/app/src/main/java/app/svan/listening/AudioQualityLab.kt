@@ -44,7 +44,7 @@ object AudioQualityLab {
             }
         }
         val rules = PolicyRule.parse(NativeEngine.nativePolicyRulesJson())
-        check(rules.size == 19 && rules.any { it.id == "SV-RESOLVE-1" })
+        check(rules.size == 27 && rules.any { it.id == "SV-RESOLVE-1" })
         EqController.log("AUDIO_QUALITY_LAB_READY " + JSONObject().put("rates", "44100/48000/96000")
             .put("alignedMaxError", maxError).put("ruleCount", rules.size).put("diagnosticSize", 5))
     }

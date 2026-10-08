@@ -40,3 +40,11 @@
 
 * Branch: my branch is `ccr-2e937472-6z53b0`. Merge it as before; nothing of yours is touched.
 * `docs/audio-quality/POLICY_RULES.md` is unchanged by this commit (rules did not change); CI regenerates and diffs it.
+
+## Grounded sound: registry grew from 19 to 27 rules (Claude, 8 Oct 2026)
+
+* Eight rules were added (`SM-FOUND-1`, `SM-BODY-1`, `SM-SOFT-1`, `SM-PUNCH-1`, `SM-ATMOS-1`, `SM-GROUND-1`, `SM-HOUSE-1`,
+  `SM-TASTE-1`). `POLICY_RULES.md` is regenerated, and the one-line tripwire in
+  `AudioQualityLab.kt` (`rules.size == 19`) now reads 27. That is the only Kotlin-lane tripwire edit; the rest of the
+  Kotlin change is the JNI signature (`speakerRoute`, `taste`), grounding wiring and the "Your sound" block.
+* The `19 rules` line in `CODEX_STATUS.md` records an earlier run and is left as history.
