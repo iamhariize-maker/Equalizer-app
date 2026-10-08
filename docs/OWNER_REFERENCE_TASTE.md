@@ -55,3 +55,51 @@ chain (here the Bluetooth link), level or expectation. If it is "different maste
 limiting, brighter, etc.) and that is what Svaresa's voicing should be tuned against.
 
 No PC? Upload the two files (30 to 90 s excerpts are enough) to the session and the comparison can be run there.
+
+## Second reference list (8 Oct 2026, owner)
+Daft Punk (*Random Access Memories*), Tame Impala (*Currents*), Beck ("Debra", "Blue Moon", "Paper Tiger"), The Marshall
+Tucker Band ("Can't You See"), LCD Soundsystem, Nine Inch Nails ("Copy of A", "Closer", "Discipline"), Tool ("Fear
+Inoculum", "7empest", "The Pot"), The Rolling Stones, remasters ("Monkey Man", "Gimme Shelter"), Lynyrd Skynyrd ("Call Me
+the Breeze"), The Who ("Baba O'Riley", "Won't Get Fooled Again"). More to come.
+
+What this adds to the picture: much more electronic and heavily produced work (Daft Punk, Tame Impala, LCD, NIN, Tool)
+next to 1970s analog band recordings (Stones, Skynyrd, Marshall Tucker, The Who). The common thread is not one tonal
+balance. It is **mastering that keeps the music's own character**: synthetic bass that is deep but controlled, wide
+and phasey stereo that stays wide, aggressive material that is dense without sounding crushed, and old analog
+recordings that keep their warmth and top-end grain.
+
+### What Svan can and cannot do with a list of names
+* It cannot learn from names. Audio is never uploaded and nothing here is training data in the machine-learning sense.
+  "Learn this sound" measures features of what the owner plays on the phone, and only that.
+* Daft Punk's Atmos / 360 Reality Audio mixes are object-based. Svan only ever sees the two-channel stream the phone
+  outputs, so it treats them like any stereo source. The wide, rendered image must survive, which is the existing
+  "never narrow the stereo" rule.
+
+### Proposed split (owner to confirm or change)
+"Learn this sound" keeps a **running mean** (tilt, bass-to-mids, sharpness, width, PLR). Averaging records as different as
+Marshall Tucker and Nine Inch Nails gives a target that matches neither, so only records whose *balance* the owner wants
+Svan to move other music toward should be taught.
+
+* **Teach** (balance to move toward): Rahman and Massive Attack (bass), Wilco (transients and space), plus *Random
+  Access Memories* as the modern, dynamic, deep-low-end reference. Five to eight tracks, 20 s or more each, Hi-Fi on.
+* **Evaluation only** (never teach, listen for damage): Tame Impala *Currents* (wide, phasey stereo: width and
+  atmosphere must not collapse), Tool and NIN (dense, aggressive: grounding must not dull them or add grit), LCD
+  Soundsystem (clean synthetic bass: the foundation must not boom), and the 1970s band recordings (Stones remasters,
+  Skynyrd, Marshall Tucker, The Who: already warm, so softness must stay near zero where measured sharpness is low).
+* Beck sits between the two groups ("Blue Moon" and "Paper Tiger" are close to the Wilco side, "Debra" is a studio-funk
+  record). Treat them as evaluation tracks unless the owner wants them taught.
+
+### Blind-listening set seeded from this list
+For the protocol in SONIC_IDENTITY.md (12 tracks, 6 well mastered and 6 fatiguing), the owner's picks give these
+well-mastered candidates: "Get Lucky" or "Giorgio by Moroder" (RAM), "Let It Happen" (Currents), "Blue Moon" (Beck),
+"Gimme Shelter" (Stones remaster), "Baba O'Riley" and "Won't Get Fooled Again" (Who), "Fear Inoculum" (Tool), "Closer"
+(NIN). Pick the six fatiguing tracks from whatever currently sounds airy or spiky on the Buds. The most useful result
+is a **wrong-direction** note: any track where Svaresa made it worse.
+
+### Risks to check first on this list
+1. Dense, saturated mixes (Tool, NIN): the body saturation has a level knee, but it has not been judged on loud
+   distorted guitars. If they sound smoothed or flattened, lower the grounding body depth first.
+2. Wide, phasey mixes (*Currents*): atmosphere only ever adds side level on narrow mixes, so this should be untouched.
+   If the image shrinks, that is a bug and should be reported with the track and time.
+3. Analog-era records: the softness shelf should stay shallow where measured sharpness is below target. If they sound
+   dull, that is the first thing to switch off.
