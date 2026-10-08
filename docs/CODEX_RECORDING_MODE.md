@@ -81,6 +81,23 @@ Bluetooth or acoustic measurement.
    `svan-processed-sync-cue.wav` for alignment) → match the click waveform / flash frame / on-screen clock →
    delete the cue copy and mute the LG audio. Update `HANDOFF.md` and the AGENTS.md "Top open items".
 
+9. **Before/after in one take (A/B timeline).** The dry and processed WAVs are sample-aligned captures of the same
+   audio, so a "before" never needs the engine off. Add two buttons to the recording card, "Before" and "After".
+   Each press calls `ProofRecorder.markAb(isAfter: Boolean)`: it stores the exact frame index and the choice (same
+   audio-thread-safe position semantics as `mark`/`markSync`), shows the choice in large text on screen with the
+   clock, and also starts a new measured segment labelled "Before"/"After" (reuse `mark`). It does not change what
+   the owner hears live and does not change DSP; the owner may also flip a real setting on camera for the visual.
+   At stop, when at least one A/B press exists, write `svan-ab-timeline.wav`: from the first A/B press to the end,
+   the output follows the choice (dry for Before, processed for After) with a 5 ms equal-power crossfade at each
+   switch (no clicks), starting in Before unless the first press was After. Optional per-segment RMS level
+   matching (task 6) applies so After is not simply louder; default ON for this file and reported (applied gain
+   per segment). Also write `svan-ab-timeline-from-sync.wav` (starting at the first sync frame) when a sync exists.
+   Report `abSwitches: [{frame, seconds, choice}]`. Document: film the TECNO screen, press Before/After on the
+   beats you want, then in VN use `svan-ab-timeline-from-sync.wav` as the only audio track (no manual cutting).
+   Tests: crossfade is click-free (max sample step across a switch below a stated bound for a 1 kHz tone at
+   -6 dBFS), switch positions are exact, timeline equals dry/processed outside the 5 ms fades, and level matching
+   makes After's RMS equal Before's within 0.05 dB on a +6 dB test signal.
+
 ### Tests (must be in `testDebugUnitTest`, and add to CI if needed)
 - Extend `ProofRecorderTest`: `markSync` frame position is exact; `from-sync` WAVs equal the tail of the full
   WAVs sample-for-sample and have a correct header; `firstSignalSeconds` for a tone that starts at 1.5 s;
