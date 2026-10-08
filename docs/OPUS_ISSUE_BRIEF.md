@@ -91,14 +91,17 @@ Labels used below:
 - Acceptance: a stress test that toggles the spatial limit while the watcher runs. `readWaitMaxMs` and `dspMaxMs`
   should stay flat in the probe logs.
 
-**A6. One ineligible route can stop all capture.** [verified-code]
-- `SessionRouter.kt:62`: if any Engine-B-muted route's UID is missing from the eligible set, the whole service stops
-  ("conflicting UID routes; stopping safely"). There is no debounce and no per-source fallback.
-- Consequence: a player changing its audio usage, or a late session update, can end the session with no visible
-  error.
-- Fix: fall back to Engine A for that route only, and log it. Debounce the decision (for example, one second stable)
-  before acting. Stop everything only for a real conflict that persists.
-- Acceptance: a router unit test that flips one route's eligibility for 300 ms, then for 3 s.
+**A6. An unrouted sibling session can stop all capture.** [verified-code]
+- `CapturePolicy.kt:18` to `25`: a UID is eligible only when every route for it is Engine-B-muted and no other active
+  media session from that UID is observed outside those routes. A second media session from the same app that has
+  started but is not yet routed therefore makes the whole UID ineligible.
+- `SessionRouter.kt:62`: when a muted route's UID is no longer eligible, the router logs "conflicting UID routes;
+  stopping safely" and stops the whole service. There is no debounce and no per-source fallback. The user sees no message.
+- `CapturePolicyTest.kt:50` covers the eligibility rule. Nothing tests the consequence, which is the service stop.
+- Fix: route the new sibling session into Engine B on discovery, or fall back that UID to Engine A until it is routed.
+  Debounce the decision (for example, one second stable) before acting. Stop everything only for a conflict that persists.
+- Acceptance: a router-level test with a sibling session that starts, waits 300 ms, then gets routed, and a second
+  sibling that never routes. The service should keep running in the first case.
 
 **A7. Per-block allocation on the audio thread.** [verified-code] low priority
 - `CaptureService.kt:263`: `val sourceChanged = next != allowed` compares two Sets every block. Equal non-empty sets
