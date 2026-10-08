@@ -82,11 +82,11 @@ Owner's engine follow-up: give Svaresa broader authority only where it improves 
 changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
-0. Verify 0.5.7 player-connection CI/logs/images and signed original-key APK delivery. Twelve new DUMP-free checks supplement every existing PASS set. Shared-output EQ is experimental; no Apple/Amazon or physical-route guarantee. See `docs/PLAYER_CONNECTIONS_0.5.7.md` and phone checks.
+0. Combined 0.5.7/code 14 preserves the exact owner spatial-test source/features plus recording/detection. CI 37702568531 passes all eleven jobs; full API 33/34 logs/images were reviewed and the tested production APK was delivered signed with the original owner key. See `docs/COMBINED_APK_VERIFICATION_0.5.7.md`. Twelve DUMP-free checks supplement every existing PASS set. Amazon-first and Apple physical-phone qualification remain open; shared-output EQ is experimental with no commercial-player/route guarantee.
 1. Recording implementation `bbbb790` passed all nine jobs in CI 37678599236; API 33/34 logs and recording/boot/EQ/splash screenshots were reviewed. Keep this evidence and all required PASS sets intact for future changes; see `docs/RECORDING_MODE_VERIFICATION.md`. Physical camera readability, flash/click timing and OEM routes remain open.
 2. **Real-phone validation** (TECNO LH7n/Android 14 and LG V60/Android 13, no PC): the owner reports earlier listening success; new DSP, player/device coverage and LG Quad DAC behavior still need phone checks.
 3. Recording owner checks remain open: TECNO screen readability in LG video, measured flash/click timing, speaker-only routing with headphones and VN 16/24-bit WAV/M4A import. See `docs/PHONE_VALIDATION.md`.
-4. Product gaps: per-app engine UI, foreground-service robustness, release signing, Play Store policy (MediaProjection/foreground service).
+4. Product gaps: per-app engine UI, foreground-service robustness and Play Store policy (MediaProjection/foreground service). Original-key private APK delivery is verified; Play distribution/phone qualification remain separate work.
 
 0.5.5 adds reconstructed-peak protection, selective dynamic EQ, bounded headphone calibration
 and blind matched listening. See docs/QUALITY_LAB_0.5.5.md. Four release quality checks are required;

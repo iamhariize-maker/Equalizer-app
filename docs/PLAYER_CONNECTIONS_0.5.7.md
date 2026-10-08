@@ -91,8 +91,11 @@ fixture and meter fixes.
 
 The spatial baseline's 41 audio and 13 detection, four quality, nine workspace, eight control, onboarding,
 production and six recording checks remain required. CI results and reviewed images must be
-recorded in HANDOFF.md after the final implementation run. Emulator measurements do not verify
-TECNO/LG commercial players or offloaded/headphone paths.
+recorded in HANDOFF.md after the final implementation run. Final CI 37702568531 now passes
+all eleven jobs, including both full API 33/34 suites and their twelve DUMP-free checks;
+logs/images were reviewed. Exact production/owner-signing provenance and measured results are
+in [COMBINED_APK_VERIFICATION_0.5.7.md](COMBINED_APK_VERIFICATION_0.5.7.md).
+Emulator measurements do not verify TECNO/LG commercial players or offloaded/headphone paths.
 
 References: [Android AudioEffect](https://developer.android.com/reference/android/media/audiofx/AudioEffect),
 [playback capture rules](https://developer.android.com/media/platform/av-capture),

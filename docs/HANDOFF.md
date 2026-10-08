@@ -16,7 +16,10 @@ Recording now follows actual capture-client rate, includes applied spatial/unmas
 segments, and finishes before a capture-format reopen. Its wet tap follows the baseline's final
 output fade. WAVs keep the captured rate; only the convenience AAC export is resampled offline
 to 48 kHz. The native core is unchanged from the uploaded spatial source; 151 host tests pass.
-Combined Android/CI verification and original-key final delivery follow.
+The production payload has been privately signed with the original owner key, preserving all
+73 ZIP entries and all four original native library payloads. Combined CI 37702568531 passes
+all eleven jobs; reviewed logs/images and delivery evidence are in
+[COMBINED_APK_VERIFICATION_0.5.7.md](COMBINED_APK_VERIFICATION_0.5.7.md).
 
 ## Player connections and shared-output experiment — 2026-10-07
 
@@ -35,10 +38,20 @@ TECNO/LG and USB/Bluetooth/offload behavior remain pending in PHONE_VALIDATION.m
 
 Combined JVM tests: 211 pass, including seven new lifecycle/policy tests, 17 recorder tests,
 two offline conversion tests and explicit Apple/Amazon source-policy coverage. Native 151 tests
-and 11 Python UI/control assertions pass. Final combined debug/release assembly, lint and all 211 JVM tests pass (3m37s final rerun).
+and 17 Python UI/control/host-meter assertions pass. Final combined debug/release assembly, lint and all 211 JVM tests pass (3m37s final rerun).
 Both test-source flavors build. Compiled permission policy and four-library 16 KB alignment pass.
 CI adds a separate 12-check DUMP-free integration/measurement suite, preserving every old gate.
-Final builds/CI logs, measured responses, screenshots and signed-delivery hash are pending.
+CI 37702568531 has passed Android build/lint/JVM tests, native/sanitizer tests and all five
+compatibility checks. The two focused API 33/34 jobs each pass twelve DUMP-free detection checks.
+Actual emulator host output changes by -5.9965 dB for the requested 1 kHz cut on both per-player
+and shared-output paths. Panel/Done and shared-output screenshots have been reviewed on both APIs.
+Both complete API 33/34 suites also pass every preserved baseline gate, all six recording
+checks and all twelve basic-detection checks. Their logs/results and final recording,
+countdown/flash, chart, panel, boot and large-font screenshots were reviewed. The full API 33
+fixture measures -6.0277 dB; API 34 measures -5.9965 dB. These synthetic measurements do not
+qualify commercial players or phone routes. The original-key APK has been delivered directly;
+its checksum and exact tested production provenance are recorded in
+[COMBINED_APK_VERIFICATION_0.5.7.md](COMBINED_APK_VERIFICATION_0.5.7.md).
 
 ## Audio-only Recording mode — 2026-10-07
 
@@ -90,8 +103,9 @@ reviewed. Exact counts, file checks and measured cue isolation are in
 
 No owner-phone or VN checks are claimed passed; see PHONE_VALIDATION.md. CI's Svan-preview.apk
 uses the preview signer and cannot update the owner's existing original-key installation.
-Phone validation requires a new build signed with that same original private owner key,
-outside Git/CI, as described in RELEASE_SIGNING.md. No new signing or release is performed here.
+The combined 0.5.7 update above now supplies that original-key build, signed outside Git/CI as
+described in RELEASE_SIGNING.md. The earlier recording-only work did not perform signing or
+publish a release. Physical-phone/VN checks remain pending.
 ## Public beta released — 2026-10-07, 0.5.6
 
 > **Audio-quality follow-up (7 Oct 2026):** see `docs/audio-quality/STATUS.md` for what is implemented
