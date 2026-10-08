@@ -54,7 +54,8 @@ internal object SharedOutputPolicy {
  * How long a player stays on Engine A after its capture proved silent while it played. The first time
  * may be transient (an ad, one stream), so retry after 3 minutes; a second time suggests this phone
  * routes that player where capture cannot hear it, so wait 15 minutes; after a third, stay on Engine A
- * for the rest of the capture session. Nothing is saved: a new session tries again.
+ * for the rest of the capture session. These waits are not saved; confirmed repeats are kept as strikes
+ * per app version (see [SilentStrikes]).
  */
 internal object FailOpenBackoff {
     fun blockMs(count: Int): Long = when {

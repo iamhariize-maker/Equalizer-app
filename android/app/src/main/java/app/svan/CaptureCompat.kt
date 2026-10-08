@@ -17,21 +17,44 @@ import android.media.projection.MediaProjection
  * mute the app, open a capture for only its UID, and listen briefly:
  *  - any non-zero sample → CAPTURABLE (stay muted; Engine B renders it)
  *  - only zeros while it is playing → BLOCKED (unmute; Engine A EQs it instead)
- * Decisions are cached per package, so the brief silence happens once per app.
+ * Decisions are cached per app version, so the brief silence happens once per version. A later
+ * silent capture while the app plays is recorded as a strike; see [SilentStrikes].
  */
 class CaptureCompat(context: Context) {
 
     enum class Verdict { CAPTURABLE, BLOCKED }
 
     private val prefs = context.getSharedPreferences("capture_compat", Context.MODE_PRIVATE)
+    private val strikes = context.getSharedPreferences("capture_silence", Context.MODE_PRIVATE)
+    private val packages = context.packageManager
 
-    fun cached(pkg: String): Verdict? = prefs.getString(pkg, null)?.let(Verdict::valueOf)
+    /**
+     * The verdict belongs to one installed version of the app. An update can change how its audio
+     * reaches the mixer, so an older verdict must not outlive the version it was measured on.
+     */
+    fun key(pkg: String): String {
+        val info = runCatching { packages.getPackageInfo(pkg, 0) }.getOrNull()
+        return CaptureVerdictKey.of(pkg, info?.longVersionCode, info?.lastUpdateTime)
+    }
 
-    fun remember(pkg: String, v: Verdict) = prefs.edit().putString(pkg, v.name).apply()
+    fun cached(pkg: String): Verdict? = prefs.getString(key(pkg), null)?.let(Verdict::valueOf)
+
+    fun remember(pkg: String, v: Verdict) = prefs.edit().putString(key(pkg), v.name).apply()
+
+    /** Records that [pkg] was playing (as the audio service reported) while its capture stayed silent. Returns the count for this version. */
+    fun recordSilentPlayback(pkg: String): Int {
+        val k = key(pkg)
+        val count = strikes.getInt(k, 0) + 1
+        strikes.edit().putInt(k, count).apply()
+        return count
+    }
 
     fun all(): Map<String, String> = prefs.all.mapValues { it.value.toString() }
 
-    fun clear() = prefs.edit().clear().apply()
+    fun clear() {
+        prefs.edit().clear().apply()
+        strikes.edit().clear().apply()
+    }
 
     /**
      * Blocking: listens to [uid]'s capture for up to [timeoutMs]. Returns
@@ -107,4 +130,19 @@ class CaptureCompat(context: Context) {
         /** Usage list for the main (mixed) capture. */
         val MIX_USAGES = intArrayOf(AudioAttributes.USAGE_MEDIA)
     }
+}
+
+/** Verdict key: the package plus the installed version it was measured on (plain package if unknown). */
+internal object CaptureVerdictKey {
+    fun of(pkg: String, versionCode: Long?, updatedMs: Long?): String =
+        if (versionCode == null || updatedMs == null) pkg else "$pkg@$versionCode@$updatedMs"
+}
+
+/**
+ * Silent captures confirmed while the app plays. One can be a stream, an ad or a track; two on the same
+ * app version mean Engine B cannot hear it on this phone, so Engine B stops muting it for that version.
+ */
+internal object SilentStrikes {
+    const val LIMIT = 2
+    fun blocks(count: Int): Boolean = count >= LIMIT
 }

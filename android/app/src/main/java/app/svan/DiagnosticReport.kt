@@ -91,6 +91,7 @@ object DiagnosticReport {
         appendLine("== Svan routes ==")
         SessionRouter.snapshot.forEach { appendLine("- ${it.pkg} session=${it.sessionId} ${it.owner} playing=${it.playing}") }
         appendLine("Capture verdicts: ${SessionRouter.compat().all()}")
+        appendLine("Capture UIDs in the mix: ${SessionRouter.captureUids.sorted()}")
         appendLine("Shared output: ${SharedOutput.status.value}")
         appendLine("Recently closed connections (not current/capture authority): ${SessionRouter.recentConnections}")
         appendLine()

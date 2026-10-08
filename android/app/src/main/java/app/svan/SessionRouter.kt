@@ -93,9 +93,10 @@ object SessionRouter {
     /**
      * Engine B muted sources but their capture stayed digital silence while other media played:
      * unmute them and give them to Engine A so the listener is never left in silence.
-     * Not cached as BLOCKED — the cause may be transient (one stream, an ad, a track). Repeats in the
-     * same capture session back off (see [FailOpenBackoff]) so a player that keeps capturing silence on
-     * this phone is not muted for four seconds every few minutes.
+     * A single event may be transient (one stream, an ad, a track), so it only backs off within the capture
+     * session (see [FailOpenBackoff]). When the audio service confirms the source as playing, the event
+     * is also a strike against that app version; after [SilentStrikes.LIMIT] strikes the verdict is saved
+     * as BLOCKED, so the app is not muted and silenced again at every start. An app update resets it.
      */
     fun onCaptureSilent() {
         worker.execute {
@@ -104,6 +105,13 @@ object SessionRouter {
                 failOpens[it.pkg] = count
                 val blockMs = FailOpenBackoff.blockMs(count)
                 tempBlocked[it.pkg] = if (blockMs == Long.MAX_VALUE) Long.MAX_VALUE else System.currentTimeMillis() + blockMs
+                if (it.playing == true && !it.pkg.startsWith("uid:") && ::compatStore.isInitialized) {
+                    val strikes = compatStore.recordSilentPlayback(it.pkg)
+                    if (SilentStrikes.blocks(strikes)) {
+                        compatStore.remember(it.pkg, CaptureCompat.Verdict.BLOCKED)
+                        EqController.log("capture verdict: ${it.pkg} → Engine A for this app version (silent while playing $strikes times)")
+                    }
+                }
                 EqController.log("fail-open: ${it.pkg} (session ${it.sessionId}) → Engine A ${FailOpenBackoff.describe(count)}")
                 toEngineA(it.sessionId, it.pkg, it.uid, it.playing)
             }

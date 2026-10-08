@@ -124,3 +124,30 @@ The owner now reports enhanced detection and Spotify playback working on their T
 preview, and BHIM/GPay working after Shizuku removal with Developer options still enabled.
 That does not establish every HiOS device, a fresh grant on the final signed beta, or
 update/reboot retention. See RELEASE_INVESTIGATION_0.5.6.md for the current CI gate.
+
+## Streaming players: Spotify capture silence and Amazon/YouTube Music identity (8 October 2026)
+
+**Spotify.** On the owner's TECNO LH7n (enhanced detection on), the audio service listed Spotify as
+started on the mixer, but Engine B's capture of its UID stayed digital silence. Each start therefore muted
+Spotify for about 4 s before the watchdog failed it open, and a verdict cached as CAPTURABLE kept sending it
+back. Changes:
+- Capture verdicts are kept per installed app version (`CaptureVerdictKey`). An app update re-proves capture.
+- A silent capture confirmed while the audio service reports the app as started (`playing == true`) counts a
+  strike against that version (`SilentStrikes`). Two strikes save BLOCKED for that version: Engine A only,
+  with no further mute. Paused or unknown players never count. "Forget capture verdicts" resets it.
+- The shareable diagnostic report lists the UIDs in the capture mix (`Capture UIDs in the mix`).
+
+Not changed: an app with any started, unrouted media sibling (for example a second stream or sound-effect
+player) keeps its whole capture excluded, which is what silences it. `CapturePolicyTest` pins that rule on
+purpose. If Spotify still goes silent after this change, that rule is the first suspect; confirm it with the
+`Capture UIDs in the mix` line and the `detect:` log lines before changing it.
+
+**Amazon Music and YouTube Music without DUMP or Shizuku.** Android gives normal apps no package and no audio
+session for another app's playback unless that player announces its session with the standard open-session
+broadcast. Engine A, Engine B and per-app verification all need that session id. The whole-phone fallback
+(session 0) is the only permission-free processing, so it is the only path for a player that does not announce
+itself. Learning the package name would not make the player processable: a session id is still missing. The
+notification-listener route the owner removed would have named the player and nothing more. What settles it is a
+shareable diagnostic report made in basic mode (no DUMP) while the player plays: it shows whether the player
+announced a session (`Svan routes`, `Recently closed connections`) or was only counted (`Players listed by
+Android with no attachable session`).
