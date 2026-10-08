@@ -91,6 +91,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Automation entry for the adb test scripts. It requires DUMP, which the adb shell holds and
+             ordinary apps cannot obtain; the launcher entry above ignores command extras. -->
+        <activity-alias
+            android:name=".Command"
+            android:exported="true"
+            android:permission="android.permission.DUMP"
+            android:targetActivity=".MainActivity" />
+
         <!-- Runtime receiver in SystemEqService also receives general player
              broadcasts, which Android 8+ drops for a manifest-only receiver. -->
         <receiver android:name=".SessionReceiver" android:exported="true">

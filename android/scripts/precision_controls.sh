@@ -3,7 +3,7 @@
 set -euo pipefail
 S=${1:-emulator-5554}; OUT=${2:-/tmp/precision-controls}; A="adb -s $S"
 mkdir -p "$OUT"; : > "$OUT/results.txt"
-eq() { $A shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
+eq() { $A shell am start -n app.svan/.Command --es cmd "$@" >/dev/null; }
 read -r W H < <($A shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr 'x' ' ')
 DENSITY=$($A shell wm density | grep -oE '[0-9]+' | tail -1)
 node() {
@@ -72,7 +72,7 @@ state() {
 $A uninstall app.svan >/dev/null 2>&1 || true
 $A install -r -g app/build/outputs/apk/debug/app-debug.apk >/dev/null
 $A shell pm grant app.svan android.permission.DUMP
-$A shell am start -n app.svan/.MainActivity >/dev/null
+$A shell am start -n app.svan/.Command >/dev/null
 sleep 8
 eq reset_sound; eq eq_control --ez auto false --ez graphic true --ei count 10
 tap EQ

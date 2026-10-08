@@ -8,7 +8,7 @@ mkdir -p "$OUT"
 A=(adb -s "$S")
 CAP=app.svan.testsource.capturable
 : > "$OUT/results.txt"
-eq() { "${A[@]}" shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
+eq() { "${A[@]}" shell am start -n app.svan/.Command --es cmd "$@" >/dev/null; }
 tone() { "${A[@]}" shell am start -n "$CAP"/app.svan.testsource.ToneActivity "$@" >/dev/null; }
 cleanup() {
     "${A[@]}" logcat -d > "$OUT/logcat.txt" 2>&1 || true

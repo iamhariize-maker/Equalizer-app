@@ -8,7 +8,7 @@ mkdir -p "$OUT"
 : > "$OUT/source-events.txt"
 : > "$OUT/attempt-states.txt"
 trap '"${A[@]}" shell am start -n "$CAP/app.svan.testsource.ToneActivity" --ez stop true >/dev/null; "${A[@]}" logcat -d > "$OUT/logcat.txt"' EXIT
-"${A[@]}" shell am start -n app.svan/.MainActivity --es cmd stop_capture >/dev/null
+"${A[@]}" shell am start -n app.svan/.Command --es cmd stop_capture >/dev/null
 for spec in '5 4 notification' '1 4 media-labelled-interface' '1 2 music'; do
   read -r usage content label <<< "$spec"
   "${A[@]}" shell am start -n "$CAP/app.svan.testsource.ToneActivity" --ef amp 0.03 --ez broadcast false --ei usage "$usage" --ei content "$content" >/dev/null
@@ -19,7 +19,7 @@ for spec in '5 4 notification' '1 4 media-labelled-interface' '1 2 music'; do
     # A failed final count alone cannot establish whether the source ever arrived.
     "${A[@]}" logcat -d -s EqSpike:I EqTestSource:I AudioTrack:D >> "$OUT/source-events.txt"
     "${A[@]}" logcat -c
-    "${A[@]}" shell am start -W -n app.svan/.MainActivity --es cmd source_policy_state --es pkg "$CAP" >/dev/null
+    "${A[@]}" shell am start -W -n app.svan/.Command --es cmd source_policy_state --es pkg "$CAP" >/dev/null
     state=$("${A[@]}" logcat -d -s EqSpike:I | sed -n 's/^.*SOURCE_POLICY_STATE //p' | tail -1)
     printf '%s attempt=%s state=%s\n' "$label" "$attempt" "$state" >> "$OUT/attempt-states.txt"
     if [[ -n "$state" ]] && python3 - "$label" "$state" <<'PY'

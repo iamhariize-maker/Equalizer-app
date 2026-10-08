@@ -15,7 +15,7 @@ failure_shot() {
 }
 trap failure_shot EXIT
 CAP=app.svan.testsource.capturable
-eq() { "${A[@]}" shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
+eq() { "${A[@]}" shell am start -n app.svan/.Command --es cmd "$@" >/dev/null; }
 tone() { "${A[@]}" shell am start -n "$CAP"/app.svan.testsource.ToneActivity "$@" >/dev/null; }
 state() {
     "${A[@]}" shell run-as app.svan rm -f files/onboarding-state.json

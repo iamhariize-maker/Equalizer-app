@@ -14,8 +14,14 @@ import app.svan.NativeEngine.FilterType
 
 /**
  * Svan palette — the warm gold of molten metal, polished brass and the embers
- * of a yajna fire, on charred, earthy darks. Gold is the only hue; everything
- * else is warm neutral. Ember is reserved for warnings.
+ * of a yajna fire, on charred, earthy darks. Gold leads; Ember is reserved for warnings.
+ *
+ * Jewel accents (owner decision, 8 October 2026). Each has one meaning and is used only for it,
+ * like the colours of a miniature painting rather than a rainbow UI:
+ * - Lapis and Indigo (complementary to gold): air, treble, the sky above the music, listening.
+ * - Peacock (complementary): space, width, atmosphere.
+ * - Lotus (a warm contrast): the voice and intimacy.
+ * - Tulsi (a living contrast): your own learned sound and confirmations.
  */
 object Svan {
     // Grounds: charred wood and dark bronze, never pure black.
@@ -39,11 +45,20 @@ object Svan {
     val Ash = Color(0xFFA39A8B)     // cool counterweight: cuts, sustain, "negative" sides
     val Glow = Color(0xFFE9C46A)    // live indicators
 
+    // Jewel accents (see the note above).
+    val Lapis = Color(0xFF6A8BC9)   // lapis lazuli: air, treble, listening
+    val Indigo = Color(0xFF1A2138)  // night sky: illustration grounds only
+    val Peacock = Color(0xFF34968C) // peacock feather: space and width
+    val Lotus = Color(0xFFDA97A1)   // lotus: the voice
+    val Tulsi = Color(0xFF8DB077)   // tulsi leaf: your learned sound, confirmations
+
     val OnGold = Color(0xFF1A1206)
 
     /** Molten-metal gradient: bronze depth to a bright gold crest. */
     val AccentBrush = Brush.horizontalGradient(listOf(Bronze, Gold, Molten, Gold))
-    val CurveBrush = Brush.horizontalGradient(listOf(Bronze, Gold, Molten))
+    // Earth to sky across the spectrum: bronze bass, golden mids, molten presence, lapis air.
+    val CurveBrush = Brush.horizontalGradient(0f to Bronze, 0.42f to Gold, 0.78f to Molten, 1f to Lapis)
+    val SpectrumFill = Brush.horizontalGradient(0f to Bronze, 0.45f to Gold, 0.8f to Molten, 1f to Lapis)
 
     // Filter types stay within the gold family, told apart by value, not hue.
     fun typeColor(t: FilterType): Color = when (t) {
@@ -95,7 +110,8 @@ private val SvanType = Typography(
     bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
     labelLarge = TextStyle(fontWeight = FontWeight.Medium, fontSize = 14.sp),
     labelMedium = TextStyle(fontWeight = FontWeight.Medium, fontSize = 11.sp, letterSpacing = 1.2.sp),
-    labelSmall = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+    // Tabular figures keep numbers aligned without the console look of a monospace face.
+    labelSmall = TextStyle(fontSize = 11.sp, letterSpacing = 0.2.sp, fontFeatureSettings = "tnum"),
 )
 
 @Composable

@@ -171,7 +171,7 @@ private fun DetectionWizard(fixture: String?) {
         if (advanced) Text("If you have a computer with adb, an optional existing-permission route is: adb shell pm grant app.svan android.permission.DUMP. This may still be blocked by your phone. Svan runs this same grant only when you tap Keep enhanced detection without Shizuku.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
     }
-    if (!snapshot.dumpGranted) Text("Pairing cannot be verified separately from a running Shizuku binder. Its running tick is the observed result of startup, not a claim about a stored pairing.",
+    if (!snapshot.dumpGranted) Text("A tick means Shizuku answered just now. If Shizuku stops (for example after a restart), open it again and Svan will reconnect.",
         style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
 }
 
@@ -219,7 +219,7 @@ fun WorkingStatusCard(state: WorkingState, fixture: Boolean = false, stats: Capt
                 Text("Capture peaks · in %.1f dBFS · out %.1f dBFS".format(stats.inputPeakDb, stats.outputPeakDb),
                     style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
             }
-            if (state.kind == WorkingKind.ROUTED) Text("Routing is observed here; measured response and phone compatibility need separate checks.",
+            if (state.kind == WorkingKind.ROUTED) Text("Svan can see this player and is shaping it. How it sounds on your phone is for your ears to judge.",
                 style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
             TextButton(onClick = {
                 val text = OnboardingAndroid.summary(context, state)
@@ -256,12 +256,18 @@ fun FirstRunWelcome() {
     var show by remember { mutableStateOf(!OnboardingAndroid.prefs(context).getBoolean("welcome_seen", false)) }
     if (!show) return
     SvanCard {
+        Box {
+            // A faint lotus at the card's edge: decoration only, it never changes the layout.
+            androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+                drawLotusMandala(androidx.compose.ui.geometry.Offset(size.width - 18.dp.toPx(), 26.dp.toPx()), 46.dp.toPx(), strength = 0.45f)
+            }
         Column {
             Text("Start with your music", style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
             Text("System effects starts with Flat on a new install. Play your music; optional detection help appears only when Svan cannot reach it.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             TextButton(onClick = { OnboardingUi.panel.value = HelpPanel.BATTERY }) { Text("Background audio help") }
             TextButton(onClick = { OnboardingAndroid.prefs(context).edit().putBoolean("welcome_seen", true).apply(); show = false }) { Text("Got it") }
+        }
         }
     }
 }

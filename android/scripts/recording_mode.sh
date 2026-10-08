@@ -5,7 +5,7 @@ S=${1:-emulator-5554}; OUT=${2:-/tmp/svan-recording}; A=(adb -s "$S")
 CAP=app.svan.testsource.capturable
 mkdir -p "$OUT"
 trap '"${A[@]}" logcat -d > "$OUT/logcat.txt" 2>&1 || true' EXIT
-eq() { "${A[@]}" shell am start -W -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
+eq() { "${A[@]}" shell am start -W -n app.svan/.Command --es cmd "$@" >/dev/null; }
 shot() { "${A[@]}" exec-out screencap -p > "$OUT/$1.png"; }
 tap() {
   "${A[@]}" shell uiautomator dump /sdcard/recording-ui.xml >/dev/null 2>&1

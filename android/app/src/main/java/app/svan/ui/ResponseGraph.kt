@@ -224,11 +224,11 @@ private fun DrawScope.drawCurve(curve: DoubleArray, range: Float, alpha: Float) 
         lineTo(0f, zeroY)
         close()
     }
-    // Warm metallic sheen between the curve and 0 dB.
+    // Sheen between the curve and 0 dB: warm earth in the bass, lapis air at the top end.
+    drawPath(fill, Svan.SpectrumFill, alpha = 0.13f * alpha)
     drawPath(fill, Brush.verticalGradient(
-        0f to Svan.Molten.copy(alpha = 0.16f * alpha),
-        0.5f to Svan.Bronze.copy(alpha = 0.04f * alpha),
-        1f to Svan.Gold.copy(alpha = 0.12f * alpha),
+        0f to Svan.Molten.copy(alpha = 0.06f * alpha),
+        1f to Color.Transparent,
     ))
     // glow + crisp line
     drawPath(line, Svan.CurveBrush, alpha = 0.22f * alpha,

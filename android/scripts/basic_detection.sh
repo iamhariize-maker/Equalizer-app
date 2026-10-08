@@ -6,7 +6,7 @@ CAP=app.svan.testsource.capturable
 BLOCKED=app.svan.testsource.blocked
 mkdir -p "$OUT"
 trap '"${A[@]}" logcat -d > "$OUT/logcat.txt" 2>&1 || true; "${A[@]}" shell pm grant app.svan android.permission.DUMP >/dev/null 2>&1 || true' EXIT
-eq() { "${A[@]}" shell am start -W -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
+eq() { "${A[@]}" shell am start -W -n app.svan/.Command --es cmd "$@" >/dev/null; }
 tone() { "${A[@]}" shell am start -W -n "$CAP"/app.svan.testsource.ToneActivity "$@" >/dev/null; }
 status() {
   eq basic_status

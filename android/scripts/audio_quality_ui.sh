@@ -27,7 +27,7 @@ tap() {
   sleep 1
 }
 "${A[@]}" logcat -c
-"${A[@]}" shell am start -W -n app.svan/.MainActivity --es cmd audio_quality_lab >/dev/null
+"${A[@]}" shell am start -W -n app.svan/.Command --es cmd audio_quality_lab >/dev/null
 ready=''
 for ((attempt=0;attempt<90;attempt++)); do
   ready=$("${A[@]}" logcat -d -s EqSpike:I | sed -n 's/^.*AUDIO_QUALITY_LAB_READY //p' | tail -1)
@@ -52,7 +52,7 @@ for width in 320 360 411; do
     "${A[@]}" shell wm density "$density" >/dev/null
     "${A[@]}" shell settings put system font_scale "$scale" >/dev/null
     "${A[@]}" shell am force-stop app.svan
-    "${A[@]}" shell am start -W -n app.svan/.MainActivity >/dev/null
+    "${A[@]}" shell am start -W -n app.svan/.Command >/dev/null
     sleep 5
     tap 'Sound'
     : > "$dir/seen.txt"

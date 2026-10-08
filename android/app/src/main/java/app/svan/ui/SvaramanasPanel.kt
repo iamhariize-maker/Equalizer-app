@@ -1,5 +1,7 @@
 package app.svan.ui
 
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -76,11 +78,20 @@ fun SvaramanasPanel(
     var tasteMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tasteMessage) { if (tasteMessage != null) { delay(5000); tasteMessage = null } }
 
+    // The lotus around the स्व mark; it turns slowly while Svaramanas is listening.
+    val lotusSpin = androidx.compose.animation.core.rememberInfiniteTransition(label = "lotus")
+    val lotusAngle by lotusSpin.animateFloat(0f, 360f, androidx.compose.animation.core.infiniteRepeatable(
+        androidx.compose.animation.core.tween(60_000, easing = androidx.compose.animation.core.LinearEasing)), label = "turn")
+    val turning = listening && request.enabled
     Column(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
             .background(Svan.Surface)
+            .drawBehind {
+                drawLotusMandala(androidx.compose.ui.geometry.Offset(42.dp.toPx(), 40.dp.toPx()), 58.dp.toPx(),
+                    if (turning) lotusAngle else 0f, strength = 0.4f)
+            }
             .border(1.dp, Svan.Bronze.copy(alpha = 0.6f), RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 18.dp),
@@ -194,7 +205,7 @@ fun SvaramanasPanel(
                     )
                 }
                 AnimatedVisibility(tasteMessage != null) {
-                    Text(tasteMessage ?: "", style = MaterialTheme.typography.bodySmall, color = Svan.Gold, modifier = Modifier.padding(top = 6.dp))
+                    Text(tasteMessage ?: "", style = MaterialTheme.typography.bodySmall, color = Svan.Tulsi, modifier = Modifier.padding(top = 6.dp))
                 }
                 SectionLabel("Svaresa adapts to")
                 SettingSwitchRow("Selective dynamic EQ","Capture engine only: reduces sustained local resonances without boosting. Up to 1.5 dB per band, 3 dB total; short transients are preserved. Upper-band centre cuts yield to your Smooth control; side correction remains available.",
@@ -330,7 +341,11 @@ private fun FeelChip(f: Feel, selected: Boolean, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 9.dp),
     ) {
-        Text(f.title, style = MaterialTheme.typography.labelLarge, color = if (selected) Svan.Gold else Svan.Text)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FeelGlyph(f, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(f.title, style = MaterialTheme.typography.labelLarge, color = if (selected) Svan.Gold else Svan.Text)
+        }
         Text(f.line, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
     }
 }
@@ -343,7 +358,7 @@ private fun HeardBlock(h: Heard?, listening: Boolean) {
         return
     }
     if (h == null || !h.valid) {
-        Text("Listening… (%.0f s of music so far)".format(h?.seconds ?: 0.0), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        Text("Listening… (%.0f s of music so far)".format(h?.seconds ?: 0.0), style = MaterialTheme.typography.bodySmall, color = Svan.Lapis)
         return
     }
     val rows = listOf(

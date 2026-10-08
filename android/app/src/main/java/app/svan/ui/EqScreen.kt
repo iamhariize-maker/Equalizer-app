@@ -228,12 +228,11 @@ private fun Header(enabled: Boolean, preset: String, quality: String, onPower: (
             BrandLine()
             Spacer(Modifier.height(4.dp))
             Exten9edTitle()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(preset, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Spacer(Modifier.width(8.dp))
-                EngineStatus(quality, enabled)
-            }
+            // Stacked, so the preset name keeps its full width on narrow phones instead of being cut to "Svaresa · A…".
+            Text(preset, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(4.dp))
+            EngineStatus(quality, enabled)
         }
         val ring = if (enabled) Svan.Gold else Svan.Outline
         Box(contentAlignment = Alignment.Center) {

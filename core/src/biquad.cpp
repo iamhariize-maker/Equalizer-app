@@ -22,13 +22,16 @@ bool isIdentityBand(const BandParams& p) {
 }
 
 BiquadCoeffs designBiquad(const BandParams& p, double fs) {
-  const double f = std::clamp(p.freqHz, 1e-3, 0.499 * fs);
-  const double q = std::max(p.q, 0.01);
+  // Every input is sanitised: presets, imports and automation must never put a
+  // non-finite or extreme value into the audio path.
+  const double f = std::clamp(std::isfinite(p.freqHz) ? p.freqHz : 1000.0, 1e-3, 0.499 * fs);
+  const double q = std::isfinite(p.q) ? std::max(p.q, 0.01) : 0.7071;
+  const double gainDb = std::isfinite(p.gainDb) ? std::clamp(p.gainDb, -kMaxBandGainDb, kMaxBandGainDb) : 0.0;
   const double w0 = 2.0 * kPi * f / fs;
   const double cw = std::cos(w0);
   const double sw = std::sin(w0);
   const double alpha = sw / (2.0 * q);
-  const double A = std::pow(10.0, p.gainDb / 40.0);
+  const double A = std::pow(10.0, gainDb / 40.0);
 
   double b0, b1, b2, a0, a1, a2;
   switch (p.type) {

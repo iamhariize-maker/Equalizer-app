@@ -54,4 +54,11 @@ class SessionContinuityTest {
         assertFalse(SessionAnnouncement.valid(7, "apple", -1, 99))
         assertFalse(SessionAnnouncement.valid(7, "svan", 99, 99))
     }
+    @Test fun claimedOwnerMustMatchTheAudioServiceWhenItNamesAnotherApp() {
+        assertTrue(SessionAnnouncement.consistent(10_123, null))      // no report: cannot judge
+        assertTrue(SessionAnnouncement.consistent(10_123, 10_123))    // matches
+        assertTrue(SessionAnnouncement.consistent(10_123, 1_013))     // media server renders for players
+        assertTrue(SessionAnnouncement.consistent(-1, 10_456))        // no claim to check
+        assertFalse(SessionAnnouncement.consistent(10_123, 10_456))   // another app claims this session
+    }
 }

@@ -277,3 +277,40 @@ no `secrets.` or `pull_request_target` in any workflow; DUMP is granted only aft
   file list confirms what is present. Check both before removing either.
 
 **Added to the fix pass** (in order of risk): S1, S3, then S2 with the owner's decision, S5, S6, S8, S7, S9, S10, S4.
+
+## 9. Status after the fix pass (8 October 2026)
+
+Probe result (CI #213, API 34 emulator, `47849e3`, all 11 jobs green): during playback the longest DSP block was about 1.2 ms
+against a 5.33 ms budget, with no block over budget; capture arrives in bursts of about 20 ms. When the tone stopped,
+underruns went 0 to 17 while the longest read wait reached 46 ms and DSP was idle; afterwards writes never blocked (the
+output was never full again) and the queue sat at 7 to 38 ms with occasional further underruns. CPU is ruled out on the
+emulator: the thread waits for capture and nothing refills the cushion, which A1(a) and A2 below address.
+
+Done in this pass (verified locally: core tests, Kotlin compile, JVM unit tests; emulator checks run in CI):
+- **A1(a)** With no admitted source, the loop feeds paced silence instead of waiting on a recorder that can only match Svan's
+  own opted-out output. **A2** During digital silence, the loop tops the output back up to the 80 ms cushion
+  (`cushionTopUps` in the `capture timing` line). A1(b), a blocking read while an admitted source is paused, waits for the
+  probe numbers.
+- **A4** A write error restarts once in Fast at 48 kHz with a message, instead of ending the session.
+- **A5** The audio thread no longer takes `engineLock` on underrun recovery (native setters are atomics; the watcher records
+  the epoch). Reconfiguration builds the new engine outside the lock; the lock covers only the swap.
+- **A6** A conflicting route now falls back to Engine A for that source only; capture continues for everyone else.
+- **A7** The per-block source check compares identity first, so steady state never runs `Set.equals`.
+- **L1** `nativeProcess` ignores a closed (zero) handle. Core now sanitises every band (non-finite values replaced, gain
+  clamped to ±48 dB, `kMaxBandGainDb`), with the test `hostile_band_parameters_are_sanitised`.
+- **S1** Automation commands are accepted only through the `.Command` activity alias, which requires DUMP (the adb shell
+  has it; ordinary apps cannot get it). The launcher ignores `cmd` extras; an invalid `quality` no longer crashes. Test
+  scripts use `.Command`; `production_release.sh` still checks that the launcher rejects commands.
+- **S3** A session claim is ignored when the audio service attributes that session to a different app uid
+  (`SessionAnnouncement.consistent`, unit-tested). Media-server owners are still accepted.
+- **S5** Diagnostic reports mask hardware addresses to their last byte (unit-tested). **S7** The taste doc no longer
+  contradicts itself. **S9** CI has a read-only token and a per-branch concurrency group.
+- **U1** Plain copy for the Shizuku status and the Hi-Fi working card. **U2** `labelSmall` uses tabular figures instead of
+  monospace. **U3** The EQ header stacks the preset name and the engine status. **U5** Svaramanas plans on one background
+  thread; EQ state writes and the curve engine stay on Main.
+- **Design (owner decision):** jewel accents with fixed meanings and drawn illustrations (`ui/Illustrations.kt`); see
+  AGENTS.md rule 4. **Bubble:** drag it onto the close target at the bottom of the screen to switch it off.
+- **D1** AGENTS.md no longer names a stale working branch.
+
+Still open: A1(b) and A3 (need probe numbers and a phone), T1 to T3 (new CI scenarios and a capture seam), Q1 and Q2
+(listening decisions), S2/L3 (owner decision on the preview key), S6, S8, S10, X1, D2.

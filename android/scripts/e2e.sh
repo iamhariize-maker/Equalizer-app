@@ -28,7 +28,7 @@ BLK=app.svan.testsource.blocked
 QUALITY=${QUALITY:-EFFICIENT}
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
-eq() { $A shell am start -n $EQ/.MainActivity --es cmd "$@" >/dev/null; }
+eq() { $A shell am start -n $EQ/.Command --es cmd "$@" >/dev/null; }
 tone() { $A shell am start -n "$1"/app.svan.testsource.ToneActivity "${@:2}" >/dev/null; }
 # Wait for a logcat line matching $1 (tag EqSpike), print it.
 wait_for() {

@@ -3,7 +3,7 @@ set -euo pipefail
 S=${1:-emulator-5554}; OUT=${2:-/tmp/svan-continuity}; A=(adb -s "$S")
 mkdir -p "$OUT"
 "${A[@]}" logcat -c
-"${A[@]}" shell am start -W -n app.svan/.MainActivity --es cmd continuity_lab > "$OUT/start.txt"
+"${A[@]}" shell am start -W -n app.svan/.Command --es cmd continuity_lab > "$OUT/start.txt"
 ready=""
 for ((attempt=0;attempt<90;attempt++)); do
   ready=$("${A[@]}" logcat -d -s EqSpike:I | sed -n 's/^.*CONTINUITY_LAB_READY //p' | tail -1)

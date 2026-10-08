@@ -153,6 +153,7 @@ fun SoundScreen() {
                 Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(20.dp)).background(Svan.Surface)
                     .border(1.dp, Svan.Grid, RoundedCornerShape(20.dp)),
             ) {
+                SoundLandscape(curve, Modifier.fillMaxSize(), live = eq.enabled)
                 ResponseGraph(emptyList(), curve, -1, eq.enabled, editable = false,
                     onSelect = {}, onMove = { _, _, _ -> }, onAdd = { _, _ -> }, onDelete = {}, modifier = Modifier.fillMaxSize())
             }

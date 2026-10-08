@@ -8,7 +8,7 @@ mkdir -p "$OUT"
 $A logcat -s EqSpike:I GlobalEqEngine:I EqTestSource:I > "$OUT/logcat-full.txt" 2>&1 &
 LOG_PID=$!
 trap 'kill "$LOG_PID" 2>/dev/null || true' EXIT
-eq() { $A shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
+eq() { $A shell am start -n app.svan/.Command --es cmd "$@" >/dev/null; }
 tap() {
   $A shell uiautomator dump /sdcard/eq-workspace.xml >/dev/null 2>&1
   local point
@@ -55,7 +55,7 @@ sleep 4; state graphic; measure graphic
 eq eq_personal_gain --ei index 17 --ef gain -2
 sleep 4; state preference; measure preference
 $A shell am force-stop app.svan
-$A shell am start -n app.svan/.MainActivity >/dev/null
+$A shell am start -n app.svan/.Command >/dev/null
 sleep 8; state restart
 tap EQ; tap 'Your EQ'
 sleep 4; state restored; measure restored

@@ -63,3 +63,10 @@
   about 2%, and 0 to 12 later while DSP was 0.8%. The output queue fell from about 70 ms to 16 to 35 ms and did not
   return to the 80 ms cushion. The timing line should show whether the thread is waiting for capture (read wait) or
   working (DSP).
+
+## Fix pass on the Opus brief (Claude, 8 Oct 2026, Kotlin lane)
+
+Kotlin files changed: `CaptureService.kt` (A1a, A2, A4, A5, A7), `SessionRouter.kt` (A6, S3), `SessionContinuity.kt`
+(S3 helper), `MainActivity.kt` and the manifest (S1 `.Command` alias), `DiagnosticReport.kt` (S5),
+`svaramanas/Svaramanas.kt` (U5), `svaramanas/SvaramanasBubbleService.kt` (drag to close), UI files for copy, theme and
+illustrations. Test scripts now send commands to `app.svan/.Command`. Details and reasons: `docs/OPUS_ISSUE_BRIEF.md` §9.

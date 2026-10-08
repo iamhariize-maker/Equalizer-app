@@ -145,6 +145,9 @@ class CaptureService : Service() {
         }
         val spatialCapable = settings.spatialMode != SpatialMode.FAST
         val spatialLimited = java.util.concurrent.atomic.AtomicBoolean(false)
+        // Set by the audio thread when recovery changes the spatial limit; the watcher records it
+        // in the epoch under the lock, so the audio thread never waits for the lock on that path.
+        val spatialEpochDirty = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
             var allowed: Set<Int> = SessionRouter.captureUids
             val manager = getSystemService(AudioManager::class.java)
@@ -199,6 +202,12 @@ class CaptureService : Service() {
                 while (running && epochRunning.get()) {
                     val eq = SvanRepository.eq.value
                     val audioSettings=SvanRepository.settings.value
+                    if (spatialEpochDirty.getAndSet(false)) synchronized(engineLock) {
+                        val limited = spatialLimited.get()
+                        epoch = epoch?.let { active -> active.copy(appliedSettings = active.appliedSettings.copy(
+                            spatialMode = if (limited) SpatialMode.FAST else audioSettings.spatialMode)) }
+                        app.svan.listening.ClipRecorder.captureChanged(epoch)
+                    }
                     if (eq !== last || audioSettings != lastSettings) {
                         synchronized(engineLock) { current?.let {
                             applyProtection(it,eq,audioSettings)
@@ -250,6 +259,7 @@ class CaptureService : Service() {
             var dspMaxNs = 0L
             var writeWaitMaxNs = 0L
             var overBudgetBlocks = 0
+            var cushionTopUps = 0
             var processedFrames = 0L
             // Frames of exact digital silence in a row (a capture-blocked or paused source).
             var silentRun = 0L
@@ -260,9 +270,15 @@ class CaptureService : Service() {
                 // Fade the final block before reopening the recorder. Settings that change
                 // filter latency apply at the next capture start. Source changes reset the
                 // native analysis at this explicit, faded boundary, keeping latency unchanged.
-                val sourceChanged = next != allowed
+                // Identity first: SessionRouter publishes a new set only when its contents change, so the
+                // steady state never runs Set.equals (which allocates) on the audio thread.
+                val sourceChanged = next !== allowed && next != allowed
                 val readBegin = System.nanoTime()
-                val n = input.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                // With no admitted source the recorder only matches Svan's own output, which opts out of capture,
+                // so a blocking read can wait indefinitely while the output runs dry (CI #210: underruns with DSP
+                // idle). Feed silence instead; the blocking write below paces it at real time and keeps the cushion.
+                val n = if (allowed.isEmpty()) { java.util.Arrays.fill(buf, 0f); buf.size }
+                    else input.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
                 readWaitMaxNs = maxOf(readWaitMaxNs, System.nanoTime() - readBegin)
                 if (n < 0) {
                     if (running) EqController.log("capture: read failed ($n)")
@@ -306,17 +322,42 @@ class CaptureService : Service() {
                 }
                 fade.apply(buf, n, fadeOut = sourceChanged)
                 app.svan.listening.ProofRecorder.commitWet(buf, n) // exactly what the AudioTrack receives
-                for (i in 0 until n) outputPeak = maxOf(outputPeak, kotlin.math.abs(buf[i]))
+                var blockOut = 0f
+                for (i in 0 until n) blockOut = maxOf(blockOut, kotlin.math.abs(buf[i]))
+                outputPeak = maxOf(outputPeak, blockOut)
                 processedFrames += n / 2
                 var written = 0
+                var writeError: Int? = null
                 val writeBegin = System.nanoTime()
                 while (running && written < n) {
                     val count = output.write(buf, written, n - written, AudioTrack.WRITE_BLOCKING)
-                    if (count <= 0) { running = false; break }
+                    if (count <= 0) { writeError = count; break }
                     written += count
                     writtenFrames += count / 2
                 }
                 writeWaitMaxNs = maxOf(writeWaitMaxNs, System.nanoTime() - writeBegin)
+                // Rebuild the cushion during digital silence. A stall spends the primed cushion and nothing else
+                // refills it (the loop writes only what capture delivers), so the next hiccup would underrun.
+                // Extra silence here adds latency only while nothing is playing, where it cannot be heard.
+                if (writeError == null && running && blockPeak == 0f && blockOut == 0f) {
+                    val queuedNow = writtenFrames - headClock.unwrap(output.playbackHeadPosition)
+                    if (queuedNow < cushion - frames) {
+                        java.util.Arrays.fill(buf, 0, n, 0f)
+                        val topUp = output.write(buf, 0, n, AudioTrack.WRITE_NON_BLOCKING)
+                        if (topUp > 0) { writtenFrames += topUp / 2; cushionTopUps++ }
+                    }
+                }
+                if (writeError != null && running) {
+                    // A dead or invalidated output (audio server restart, route teardown) is recoverable:
+                    // rebuild once in Fast at 48 kHz like a read failure, instead of ending the session.
+                    EqController.log("capture: output write failed ($writeError)")
+                    if (!safeFallback) {
+                        recoveryMessage.value = "Playback output was interrupted; restarting capture in Fast at safe 48 kHz."
+                        return true
+                    }
+                    recoveryMessage.value = "Playback output failed again. Svan returned to system effects."
+                    break
+                }
                 if (sourceChanged && running) {
                     input.stop(); input.release(); record = null; activeRecord = null
                     allowed = next
@@ -324,12 +365,14 @@ class CaptureService : Service() {
                     input = openRecord(mp, allowed, rate)
                     record = input; activeRecord = input
                     input.startRecording()
+                    // Build the replacement before taking the lock; the lock only covers the swap.
+                    // Retain live protection/experimental choices, but not pending format changes.
+                    val replacement = buildEngine(epoch?.appliedSettings ?: settings, rate, spatialCapable)
+                    replacement.setSpatialLoadLimited(spatialLimited.get())
                     synchronized(engineLock) {
                         current = null
                         dsp.close()
-                        // Retain live protection/experimental choices, but not pending format changes.
-                        dsp = buildEngine(epoch?.appliedSettings ?: settings, rate, spatialCapable)
-                        dsp.setSpatialLoadLimited(spatialLimited.get())
+                        dsp = replacement
                         engine = dsp
                         current = dsp
                         epoch = epoch?.copy(id = nextEpoch.incrementAndGet())
@@ -347,14 +390,12 @@ class CaptureService : Service() {
                         output.bufferCapacityInFrames, frames, windowMs)
                     val limited = spatialRecovery.observe(output.underrunCount, windowMs)
                     if (spatialCapable && limited != spatialLimited.get()) {
-                        synchronized(engineLock) {
-                            spatialLimited.set(limited)
-                            dsp.setSpatialMode(SvanRepository.settings.value.spatialMode)
-                            dsp.setSpatialLoadLimited(limited)
-                            epoch = epoch?.let { active -> active.copy(appliedSettings = active.appliedSettings.copy(
-                                spatialMode = if (limited) SpatialMode.FAST else SvanRepository.settings.value.spatialMode)) }
-                            app.svan.listening.ClipRecorder.captureChanged(epoch)
-                        }
+                        // Native setters are atomics: no lock on the audio thread (a normal-priority
+                        // watcher holding it would otherwise stall playback during recovery).
+                        spatialLimited.set(limited)
+                        dsp.setSpatialMode(SvanRepository.settings.value.spatialMode)
+                        dsp.setSpatialLoadLimited(limited)
+                        spatialEpochDirty.set(true)
                         recoveryMessage.value = if (limited)
                             "Playback buffer ran short. Spatial processing is fading to Fast while capture keeps running; it can recover after ten seconds without new underruns."
                         else "Playback recovered. Your selected spatial mode is resuming smoothly."
@@ -388,9 +429,9 @@ class CaptureService : Service() {
                     unmaskSnapshot = dsp.bassUnmaskDiagnostics() // audio-thread snapshot; UI never races DSP getters
                     val muted = SessionRouter.snapshot.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.joinToString { it.pkg }
                     EqController.log("capture level: peak=%.4f over %d frames; output queued=%.1f ms, underruns=%d, DSP=%.1f%%, muted=[%s], otherPlayers=%d".format(levelPeak, levelFrames, stats!!.queuedMs, stats!!.underruns, stats!!.dspPercent, muted, otherActivePlayers))
-                    EqController.log("capture timing: readWaitMaxMs=%.1f dspMaxMs=%.2f writeWaitMaxMs=%.1f overBudgetBlocks=%d blockMs=%.2f".format(readWaitMaxNs / 1e6, dspMaxNs / 1e6, writeWaitMaxNs / 1e6, overBudgetBlocks, frames * 1000.0 / rate))
+                    EqController.log("capture timing: readWaitMaxMs=%.1f dspMaxMs=%.2f writeWaitMaxMs=%.1f overBudgetBlocks=%d blockMs=%.2f cushionTopUps=%d".format(readWaitMaxNs / 1e6, dspMaxNs / 1e6, writeWaitMaxNs / 1e6, overBudgetBlocks, frames * 1000.0 / rate, cushionTopUps))
                     levelPeak = 0f; outputPeak = 0f; levelFrames = 0; dspNanos = 0; processedFrames = 0
-                    readWaitMaxNs = 0L; dspMaxNs = 0L; writeWaitMaxNs = 0L; overBudgetBlocks = 0
+                    readWaitMaxNs = 0L; dspMaxNs = 0L; writeWaitMaxNs = 0L; overBudgetBlocks = 0; cushionTopUps = 0
                 }
             }
         } catch (e: Exception) {

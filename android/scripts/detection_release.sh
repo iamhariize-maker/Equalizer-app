@@ -12,7 +12,7 @@ $A logcat -c
 $A logcat -v threadtime > "$OUT/logcat-full.txt" 2>&1 &   # whole run, never cleared
 LOGPID=$!
 trap 'kill $LOGPID 2>/dev/null; $A logcat -d > "$OUT/logcat.txt"; exit $FAILED' EXIT
-eq() { $A shell am start -n app.svan/.MainActivity --es cmd "$@" >/dev/null; }
+eq() { $A shell am start -n app.svan/.Command --es cmd "$@" >/dev/null; }
 tone() { $A shell am start -n "$CAP"/app.svan.testsource.ToneActivity "$@" >/dev/null; }
 wait_log() {
   for ((i=0;i<60;i++)); do

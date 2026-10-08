@@ -9,7 +9,7 @@ A="adb -s $S"
 EQ=app.svan
 CAP=app.svan.testsource.capturable
 mkdir -p "$OUT"
-eq() { $A shell am start -n $EQ/.MainActivity --es cmd "$@" >/dev/null 2>&1; }
+eq() { $A shell am start -n $EQ/.Command --es cmd "$@" >/dev/null 2>&1; }
 tone() { $A shell am start -n "$1"/app.svan.testsource.ToneActivity "${@:2}" >/dev/null 2>&1; }
 wait_for() { # pattern timeout — searches the full log file
   local t=0; while [ $t -lt "${2:-90}" ]; do grep -qE "$1" "$OUT/eqspike.log" && return 0; sleep 2; t=$((t + 2)); done

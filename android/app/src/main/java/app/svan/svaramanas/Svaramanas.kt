@@ -172,6 +172,15 @@ data class SmartPlan(
  */
 object Svaramanas {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // Planning (native plan, graphic fit, loudness match) runs on one background thread, in order, so a
+    // slider drag never waits for it. Writes to the shared EQ state and the curve engine go back to Main.
+    private val planner = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+        Thread(r, "svaramanas-planner").apply { isDaemon = true }
+    }
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    private fun requestRecompute(immediate: Boolean) = planner.execute {
+        runCatching { recompute(immediate) }.onFailure { EqController.log("svaramanas: plan failed: $it") }
+    }
     private lateinit var prefs: android.content.SharedPreferences
     @Volatile private var initialized = false
 
@@ -226,7 +235,7 @@ object Svaramanas {
         if (initialized) prefs.edit().putString("taste", JSONArray().apply { next.forEach { put(it) } }.toString()).apply()
         EqController.log("svaramanas taste: learned tracks=%d tilt=%.2f bass=%.2f sharp=%.3f side=%.1f plr=%.1f"
             .format(next[1].toInt(), next[2], next[3], next[4], next[5], next[6]))
-        recompute(immediate = true)
+        requestRecompute(immediate = true)
         return if (before == 0) "Learned. Svaresa now aims for this sound instead of its house voicing."
         else "Learned. Your sound now blends ${next[1].toInt()} reference tracks."
     }
@@ -235,7 +244,7 @@ object Svaramanas {
     fun forgetTaste() {
         setTaste(null)
         if (initialized) prefs.edit().remove("taste").apply()
-        recompute(immediate = true)
+        requestRecompute(immediate = true)
     }
 
     fun setBubble(context: Context, on: Boolean) {
@@ -262,10 +271,10 @@ object Svaramanas {
             initialized = true
         }
         scope.launch {
-            recompute(immediate = true)
+            requestRecompute(immediate = true)
             while (true) {
                 delay(UPDATE_MS)
-                if (_request.value.enabled) recompute(immediate = false)
+                if (_request.value.enabled) requestRecompute(immediate = false)
             }
         }
     }
@@ -277,7 +286,7 @@ object Svaramanas {
             SvanRepository.update { it.copy(smartEqControl=true) }
         _request.value = next
         if (initialized) prefs.edit().putString("request", next.toJson().toString()).apply()
-        recompute(immediate = true)
+        requestRecompute(immediate = true)
     }
 
     /** Hold-to-compare / bubble long-press: hear the music without the smart layer. UI thread. */
@@ -285,23 +294,25 @@ object Svaramanas {
         if (SvanRepository.eq.value.smartBypass != on) SvanRepository.update { it.copy(smartBypass = on) }
     }
 
-    fun refreshEq() { if (initialized) recompute(immediate = true) }
+    fun refreshEq() { if (initialized) requestRecompute(immediate = true) }
     private var fitInput: List<Band>? = null
     private var fitCount = 0
     private var cachedFit: NativeEngine.Companion.Fit? = null
     private var guardInput: List<Band>? = null
     private var guardScale = 1.0
 
-    /** Main thread. */
+    /** Planner thread only (see [requestRecompute]). */
     private fun recompute(immediate: Boolean) {
         val r = _request.value
         if (!r.enabled) {
             _plan.value = null
             _context.value = null
             _listening.value = CaptureService.isRunning
-            if (SvanRepository.eq.value.smart != null || SvanRepository.eq.value.smartEqControl) SvanRepository.update { it.copy(smart = null, smartBypass = false, smartEqControl=false) }
-            if (immediate) EqController.curveEngine.responseDb(doubleArrayOf(63.0, 1000.0)).let { c ->
-                EqController.log("svaramanas: resting response@63Hz=%.2f dB response@1kHz=%.2f dB".format(c[0], c[1]))
+            main.post {
+                if (SvanRepository.eq.value.smart != null || SvanRepository.eq.value.smartEqControl) SvanRepository.update { it.copy(smart = null, smartBypass = false, smartEqControl=false) }
+                if (immediate) EqController.curveEngine.responseDb(doubleArrayOf(63.0, 1000.0)).let { c ->
+                    EqController.log("svaramanas: resting response@63Hz=%.2f dB response@1kHz=%.2f dB".format(c[0], c[1]))
+                }
             }
             return
         }
@@ -359,8 +370,11 @@ object Svaramanas {
         val applied = p.copy(bands = if (!eq.smartEqControl || eq.smartEqMode == app.svan.model.EqMode.PARAMETRIC) next.bands.take(p.bands.size) else p.bands, preampDb = next.preampDb, predictedDeltaDb = delta,
             notes = if (abs(delta) > 0.05 && 30 !in p.notes) p.notes + 30 else p.notes)
         _plan.value = applied
-        if (next != prev) SvanRepository.update { it.copy(smart = next) }
-        if (immediate) logPlan(applied, heard)
+        // Apply and log on Main: SvanRepository.update and the curve engine belong to the UI thread.
+        main.post {
+            if (next != prev) SvanRepository.update { it.copy(smart = next) }
+            if (immediate) logPlan(applied, heard)
+        }
     }
 
     private var heardLogs = 0

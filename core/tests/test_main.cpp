@@ -186,6 +186,24 @@ TEST(any_user_input_designs_a_stable_filter) {
   CHECK(unstable == 0);
 }
 
+TEST(hostile_band_parameters_are_sanitised) {
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  const BandParams cases[] = {
+      {FilterType::Peak, 1000, 1e6, 1.0, true},  {FilterType::Peak, 1000, -1e6, 1.0, true},
+      {FilterType::Peak, nan, 6, 1.0, true},     {FilterType::Peak, 1000, nan, 1.0, true},
+      {FilterType::Peak, 1000, 6, nan, true},    {FilterType::LowShelf, inf, inf, -inf, true},
+      {FilterType::HighShelf, -inf, -inf, inf, true}};
+  for (const auto& p : cases) {
+    auto c = designBiquad(p, 48000);
+    CHECK(std::isfinite(c.b0 + c.b1 + c.b2 + c.a1 + c.a2));
+    CHECK(std::fabs(c.a2) < 1.0 && std::fabs(c.a1) < 1.0 + c.a2);
+  }
+  // A huge boost request is clamped to the documented ceiling, measured at the centre.
+  auto c = designBiquad({FilterType::Peak, 1000, 500, 1.0, true}, 48000);
+  CHECK(std::fabs(magnitudeDb(c, 1000, 48000) - kMaxBandGainDb) < 0.01);
+}
+
 // ------------------------------------------------------------ parametric EQ
 
 TEST(eq_80_bands_measured_response_matches_prediction) {

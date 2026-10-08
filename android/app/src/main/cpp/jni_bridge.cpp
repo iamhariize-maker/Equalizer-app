@@ -105,6 +105,7 @@ JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeDetailedMix(JNIEnv*, 
 
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeProcess(
     JNIEnv* env, jclass, jlong h, jfloatArray in, jfloatArray out, jint frames) {
+  if (h == 0 || frames <= 0) return;  // closed engine: leave the buffer untouched rather than crash
   // Critical access avoids copies on the audio thread. No JNI calls in between.
   auto* src = static_cast<float*>(env->GetPrimitiveArrayCritical(in, nullptr));
   auto* dst = static_cast<float*>(env->GetPrimitiveArrayCritical(out, nullptr));

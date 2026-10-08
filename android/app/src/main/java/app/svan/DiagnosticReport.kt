@@ -12,10 +12,18 @@ import java.util.Locale
 /**
  * One text report that answers "why isn't my player processed?" without guessing: what the phone
  * is, what Svan may do, what each Android report contained, and what Svan decided. It stays on the
- * device until the user chooses to copy or share it, and contains no audio and no account data.
+ * device until the user chooses to copy or share it. It names player apps and output devices, but
+ * contains no audio, no track titles, no account data and no full hardware addresses (masked below).
  */
 object DiagnosticReport {
-    fun build(context: Context): String = buildString {
+    /** Hardware addresses (for example Bluetooth MACs) keep only their last byte. */
+    private val hardwareAddress = Regex("""\b(?:[0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})\b""")
+    fun maskHardwareAddresses(text: String): String =
+        hardwareAddress.replace(text) { "**:**:**:**:**:${it.groupValues[1]}" }
+
+    fun build(context: Context): String = maskHardwareAddresses(buildRaw(context))
+
+    private fun buildRaw(context: Context): String = buildString {
         val st = DetectionMonitor.status.value
         val eq = SvanRepository.eq.value
         val settings = SvanRepository.settings.value

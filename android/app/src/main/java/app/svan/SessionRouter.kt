@@ -58,9 +58,20 @@ object SessionRouter {
         if (routingBatch) return
         val next = CapturePolicy.eligibleUids(routes.values, Process.myUid(), evidence.values.map { it.session })
         if (captureUids != next) captureUids = next
-        if (projection != null && routes.values.any { it.owner == Owner.ENGINE_B_MUTED && it.uid !in next }) {
-            EqController.log("capture: conflicting UID routes; stopping safely")
-            appContext.stopService(android.content.Intent(appContext, CaptureService::class.java))
+        if (projection != null) {
+            // A muted source whose UID is no longer capturable (for example, the same app started a second,
+            // not-yet-routed media session) would go silent. Hand just that source back to Engine A instead
+            // of stopping capture for every app; the other sources keep the audiophile engine.
+            val conflicting = routes.values.filter { it.owner == Owner.ENGINE_B_MUTED && it.uid !in next }
+            if (conflicting.isNotEmpty()) worker.execute {
+                conflicting.forEach { r ->
+                    val live = routes[r.sessionId]
+                    if (live != null && live.owner == Owner.ENGINE_B_MUTED && live.uid !in captureUids) {
+                        EqController.log("capture: ${r.pkg} (session ${r.sessionId}) no longer capturable alone → Engine A; other sources continue")
+                        toEngineA(live.sessionId, live.pkg, live.uid, live.playing)
+                    }
+                }
+            }
         }
     }
 
@@ -223,6 +234,12 @@ object SessionRouter {
             val observed = if (PlaybackSessions.hasReportAccess(appContext))
                 PlaybackSessions.query(appContext)?.firstOrNull { it.sessionId == sessionId } else null
             if (observed != null && MusicSourcePolicy.exclusion(observed) != null) return@execute
+            if (!SessionAnnouncement.consistent(uid, observed?.uid)) {
+                // Any app can broadcast the standard open-session action naming another app. When the audio
+                // service attributes this session to a different app, the claim is not trusted.
+                EqController.log("route: ignored $pkg (session $sessionId): audio service reports uid ${observed?.uid}, claim $uid")
+                return@execute
+            }
             if (uid < 0) {
                 val fromDump = observed?.uid
 

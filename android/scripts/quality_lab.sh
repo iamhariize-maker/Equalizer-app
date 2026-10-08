@@ -8,7 +8,7 @@ mkdir -p "$OUT"
 trap '"${A[@]}" logcat -d > "$OUT/logcat-full.txt" 2>&1 || true' EXIT
 "${A[@]}" shell am force-stop app.svan
 "${A[@]}" logcat -c
-"${A[@]}" shell am start -W -n app.svan/.MainActivity --es cmd quality_lab > "$OUT/start.txt"
+"${A[@]}" shell am start -W -n app.svan/.Command --es cmd quality_lab > "$OUT/start.txt"
 ready=""
 for ((attempt=0;attempt<120;attempt++)); do
     ready=$("${A[@]}" logcat -d -s EqSpike:I | sed -n 's/^.*QUALITY_LAB_READY //p' | tail -1)
@@ -29,7 +29,7 @@ text='\n'.join(('PASS' if valid else 'FAIL')+' '+label for label,valid in checks
 (out/'results.txt').write_text(text);print(text,end='');print(json.dumps(d,indent=2))
 assert all(valid for _,valid in checks)
 PY
-"${A[@]}" shell am start -n app.svan/.MainActivity --es cmd blind_lab >/dev/null
+"${A[@]}" shell am start -n app.svan/.Command --es cmd blind_lab >/dev/null
 sleep 3
 "${A[@]}" exec-out screencap -p > "$OUT/blind-listening-release.png"
 "${A[@]}" shell input keyevent KEYCODE_BACK

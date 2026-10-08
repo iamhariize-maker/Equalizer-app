@@ -69,8 +69,9 @@ and phasey stereo that stays wide, aggressive material that is dense without sou
 recordings that keep their warmth and top-end grain.
 
 ### What Svan can and cannot do with a list of names
-* It cannot learn from names. Audio is never uploaded and nothing here is training data in the machine-learning sense.
-  "Learn this sound" measures features of what the owner plays on the phone, and only that.
+* It cannot learn from names, and nothing here is training data in the machine-learning sense. The app never uploads
+  audio: "Learn this sound" measures features of what the owner plays on the phone, and only that. (Separately, the
+  owner may choose to share excerpts with a working session for the same-master test above; the app is not involved.)
 * Daft Punk's Atmos / 360 Reality Audio mixes are object-based. Svan only ever sees the two-channel stream the phone
   outputs, so it treats them like any stereo source. The wide, rendered image must survive, which is the existing
   "never narrow the stereo" rule.

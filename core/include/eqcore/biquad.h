@@ -30,6 +30,9 @@ struct BiquadCoeffs {
 
 // Frequency is clamped to (0, 0.499 * sampleRate) and Q to >= 0.01 so that any
 // user input yields a stable filter.
+/// Largest boost or cut one band may apply; larger requests are clamped.
+inline constexpr double kMaxBandGainDb = 48.0;
+
 BiquadCoeffs designBiquad(const BandParams& p, double sampleRate);
 
 std::complex<double> responseAt(const BiquadCoeffs& c, double freqHz, double sampleRate);

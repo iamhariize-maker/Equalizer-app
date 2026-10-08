@@ -61,10 +61,14 @@ missing. Artifacts `e2e-results-api33` / `e2e-results-api34` have the log and sc
 screenshots** — layout bugs only show there.
 
 ## Rules that matter
-1. **Don't push to `main`/other branches.** Work on the branch your session instructs (this recording-mode session: `ccr-c220a1e1-hikg7s`; older briefs name earlier branches). No new PR unless the user asks.
+1. **Don't push to `main`/other branches.** Work on the branch your session instructs. Branch names in older briefs and docs are history, not instructions. No new PR unless the user asks.
 2. **Never claim sound quality you haven't measured.** Every number in the UI/docs comes from a test. The owner reports successful listening on TECNO/IM4 with 0.5.2; this does not establish a complete device/player matrix.
 3. **Tests first for DSP.** New processors need a measured test (see existing ones: expected vs measured dB). Keep the audio thread allocation-free and wait-free (see `ParametricEq`, `StereoTuner`).
-4. **Design:** one gold hue on warm charcoal (`Theme.kt` tokens: Gold/Molten/Bronze; Ember ONLY for warnings; Ash for "negative" sides). Serif titles. Polished, not colourful. Don't introduce new hues.
+4. **Design:** gold leads on warm charcoal (`Theme.kt` tokens: Gold/Molten/Bronze; Ember ONLY for warnings; Ash for "negative" sides). Serif titles. Polished, not colourful.
+   Owner decision (8 October 2026): add elegance with jewel accents and drawn illustrations. Each accent has one meaning and
+   is used only for it: Lapis/Indigo = air, treble, sky, listening; Peacock = space and width; Lotus = the voice; Tulsi = your
+   learned sound and confirmations. Illustrations are drawn in code (`ui/Illustrations.kt`: the EQ landscape, the lotus mandala,
+   the sound-style glyphs), sit behind content as decoration and never change a layout. Don't add hues outside this set.
 5. **Brand:** app name "Svan"; full name "Svanam Shreshtham: Ultimate Sound"; EQ screen title is "EQ exten9ed" (the first "d" is a vertically flipped d = a 9; screen readers say "EQ Extended"). Every screen carries the SVANAM SHRESHTHAM brand line.
 6. **Licences:** do NOT copy GPL code (RootlessJamesDSP/JamesDSP are GPL — read-only reference only). AutoEq data/targets are MIT; icon glyphs are SIL OFL (attribution in README). Owner decision (6 October 2026): original Svan code is **All rights reserved**; retain third-party notices. See LICENSE.
 7. **Git:** commit messages end with the Co-Authored-By/Claude-Session lines used in `git log`. Use `git -c user.name=iamhariize-maker -c user.email=iamhariize@gmail.com`.

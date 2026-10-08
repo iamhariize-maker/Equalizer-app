@@ -83,8 +83,11 @@ class MainActivity : ComponentActivity() {
      */
     private fun handleCommand(intent: Intent?) {
         if (!BuildConfig.PHONE_PREVIEW) return
-        val cmd = intent?.getStringExtra("cmd") ?: return
-        intent.getStringExtra("quality")?.let { pendingQuality = QualityMode.valueOf(it) }
+        // Only the DUMP-protected `.Command` alias carries automation: any installed app can start the
+        // exported launcher entry, so commands arriving there are ignored.
+        if (intent?.component?.className != "$packageName.Command") return
+        val cmd = intent.getStringExtra("cmd") ?: return
+        intent.getStringExtra("quality")?.let { q -> runCatching { QualityMode.valueOf(q) }.getOrNull()?.let { pendingQuality = it } }
         EqController.log("CMD $cmd")
         when (cmd) {
             "shared_output" -> if (BuildConfig.DEBUG) SessionRouter.setSharedOutput(intent.getBooleanExtra("on", false))

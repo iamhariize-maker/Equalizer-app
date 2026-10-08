@@ -34,6 +34,16 @@ internal class SessionConnectionHistory(private val maxClosed: Int = 32, private
 internal object SessionAnnouncement {
     fun valid(sid: Int, pkg: String, uid: Int, ownUid: Int): Boolean =
         sid > 0 && pkg.isNotBlank() && uid >= 0 && uid != ownUid
+
+    /**
+     * A claimed owner is inconsistent only when the audio service attributes the session to a different
+     * *app* uid. Unknown reports and system owners (media server, below the first app uid) are accepted,
+     * because some players render through platform services.
+     */
+    fun consistent(claimedUid: Int, observedUid: Int?): Boolean =
+        claimedUid < 0 || observedUid == null || observedUid < FIRST_APP_UID || observedUid == claimedUid
+
+    private const val FIRST_APP_UID = 10_000
 }
 
 internal object SharedOutputPolicy {

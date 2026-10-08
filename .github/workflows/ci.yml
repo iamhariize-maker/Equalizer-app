@@ -3,6 +3,15 @@ on:
   push:
   pull_request:
 
+# Read-only token: CI only builds, tests and uploads artifacts.
+permissions:
+  contents: read
+
+# A newer push to the same branch supersedes an older run instead of queueing behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   core:
     runs-on: ubuntu-latest
