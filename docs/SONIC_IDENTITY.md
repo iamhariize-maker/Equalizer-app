@@ -1,5 +1,13 @@
 # Svan sonic identity — "Grounded" (owner brief, 8 October 2026)
 
+> **STATUS: PROVISIONAL (8 Oct 2026).** Research done after the first build
+> ([RESEARCH_GROUNDED_SOUND.md](RESEARCH_GROUNDED_SOUND.md)) found that (1) harmonic "body" has weak, partly negative
+> evidence (even-order distortion is the least liked kind), (2) body/fullness is mainly a linear low-mid balance
+> matter, and (3) the cause of "airy hi-res" must be diagnosed per album before any fix. The first-pass baselines
+> below (body 0.25, restraint 0.15, always on in Svaresa) are therefore **not recommended defaults** until the
+> listening protocol passes. Planned changes are listed in section 10 of the research note.
+
+
 ## The owner's words, condensed
 High-resolution playback exposes weak masters. The top end gets too airy, the transients stand taller than the
 music under them, and the result feels thin and nervous instead of present. Well-mastered tracks do not have this
