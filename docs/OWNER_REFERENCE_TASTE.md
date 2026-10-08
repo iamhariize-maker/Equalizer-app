@@ -14,11 +14,15 @@ How this is used:
 * They are the **reference tier** for building personal targets (`tools/mastering/analyze_corpus.py` on a folder of the
   owner's own files, features only). Nothing from the audio is stored or shared.
 * The Metro Boomin material is a deliberate stress case: very strong low end and heavy limiting. The voicing must not
-  push fullness on top of that (fullness already backs off with measured boom/mud).
+  push bass on top of that (the foundation lifts only what a track lacks and backs off with measured boom).
 * Do not claim that any of this music "defines" a correct sound. It anchors the owner's preference, which is the point.
 
-How to get these measured without a PC: upload 30 to 90 second excerpts (or whole files) to the working session and the
-features can be extracted there.
+Owner's refinement (8 Oct 2026): **bass mastering like A. R. Rahman and Massive Attack; transients and atmosphere
+like Wilco.** These drive the foundation, punch and atmosphere parts of the house voicing (SONIC_IDENTITY.md).
+
+How to teach Svan these references with no PC and no uploads: in Svaresa mode, play one of these tracks with Hi-Fi on
+and tap **Learn this sound** after 20 seconds or more. Do it for a handful of tracks from different artists. The phone
+keeps only the measured balance (no audio), and Svaresa aims other tracks toward it.
 
 ## Listening setup
 * **realme Buds Air 8** (in-ear, Bluetooth 5.4). Retailer pages list AAC, SBC and LDAC; one also lists LHDC 5.0. These

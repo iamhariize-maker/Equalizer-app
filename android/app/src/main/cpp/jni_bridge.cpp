@@ -178,6 +178,30 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetStereoTuner(
   fromHandle(h)->setStereoTuner({intimacy, warmth, smoothness, space, instruments});
 }
 
+// Adds the features just heard to the learned taste. prev may be null. Returns the packed TasteTarget
+// (unchanged when the features are not valid or too short).
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeTasteLearn(JNIEnv* env, jclass, jdoubleArray prev,
+                                                                           jdoubleArray features) {
+  svaramanas::TasteTarget t;
+  if (prev) {
+    const jsize n = env->GetArrayLength(prev);
+    std::vector<jdouble> v(static_cast<size_t>(n));
+    if (n) env->GetDoubleArrayRegion(prev, 0, n, v.data());
+    t = svaramanas::TasteTarget::unpack(v.data(), n);
+  }
+  if (features) {
+    const jsize n = env->GetArrayLength(features);
+    std::vector<jdouble> v(static_cast<size_t>(n));
+    if (n) env->GetDoubleArrayRegion(features, 0, n, v.data());
+    t = svaramanas::learnTaste(t, SourceFeatures::unpack(v.data(), n));
+  }
+  double out[svaramanas::TasteTarget::kPacked];
+  t.pack(out);
+  jdoubleArray res = env->NewDoubleArray(svaramanas::TasteTarget::kPacked);
+  env->SetDoubleArrayRegion(res, 0, svaramanas::TasteTarget::kPacked, out);
+  return res;
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetGrounding(JNIEnv*, jclass, jlong h, jdouble restraint, jdouble body) {
   fromHandle(h)->setGrounding({restraint, body});
 }
@@ -267,7 +291,7 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeAnalysis(JNIEnv*
 //          accepted, rejected, conflictWith, nNotes, notes..., nBands, (type, freq, gain, q)...].
 JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
     JNIEnv* env, jclass, jdoubleArray features, jint feel, jintArray order, jdouble strength, jboolean stereoEngine,
-    jboolean svaresaMode) {
+    jboolean svaresaMode, jboolean speakerRoute, jdoubleArray taste) {
   svaramanas::Request r;
   r.feel = static_cast<svaramanas::Feel>(feel < 0 || feel > 5 ? 0 : feel);
   const jsize n = order ? env->GetArrayLength(order) : 0;
@@ -280,6 +304,15 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeSvaramanasPlan(
   r.strength = strength;
   r.stereoEngine = stereoEngine == JNI_TRUE;
   r.svaresaMode = svaresaMode == JNI_TRUE;
+  r.speakerRoute = speakerRoute == JNI_TRUE;
+  svaramanas::TasteTarget learned;
+  if (taste) {
+    const jsize tn = env->GetArrayLength(taste);
+    std::vector<jdouble> tv(static_cast<size_t>(tn));
+    if (tn) env->GetDoubleArrayRegion(taste, 0, tn, tv.data());
+    learned = svaramanas::TasteTarget::unpack(tv.data(), tn);
+    if (learned.valid) r.taste = &learned;
+  }
   SourceFeatures f;
   bool have = false;
   if (features) {

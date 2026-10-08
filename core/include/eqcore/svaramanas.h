@@ -54,12 +54,31 @@ enum Note : int {
   kNoteBright = 17,         // Svaresa: mix thinner/brighter than a healthy balance, eased
   kNoteDark = 18,           // Svaresa: mix darker/heavier than a healthy balance, opened
   kNoteGrounded = 19,       // Svaresa: top-end spikes restrained / body added to ground the mix
-  kNoteVoicing = 24,        // Svaresa: house voicing (low-mid fullness, softened top) applied
+  kNoteVoicing = 24,        // Svaresa: house voicing (deep foundation, warm body, softened top) applied
+  kNotePunch = 25,          // Svaresa: limited master, a little bass punch restored
+  kNoteAtmosphere = 26,     // Svaresa: narrow mix, a little side ambience opened
+  kNoteTaste = 27,          // Svaresa: voicing targets come from the listener's learned reference tracks
   kNoteBudget = 20,         // emphasis scaled to fit the budget
   kNoteConflictDropped = 21,
   kNoteOverlapSoftened = 22,
   kNoteLoudnessMatched = 30,
   kNoteListening = 31,      // not enough audio heard yet: static plan
+};
+
+// The listener's learned "this is how I want it to sound": a running average of what Svaramanas measured on
+// reference tracks the listener chose ("Learn this sound"). Features only, never audio; stored on the phone.
+// When valid, Svaresa uses these as its targets instead of the built-in house values.
+struct TasteTarget {
+  bool valid = false;
+  int tracks = 0;
+  double tiltDbPerOct = -2.5;   // overall third-octave slope
+  double bassToMidsDb = 0.0;    // bassToMidsDb(): 40-100 Hz vs 200 Hz-2 kHz band levels
+  double sharpness = 1.0;       // relativeSharpness()
+  double sideToMidDb = -12.0;   // stereo side energy vs mid
+  double plrDb = 0.0;           // peak-to-loudness ratio
+  static constexpr int kPacked = 7;
+  void pack(double* out) const;
+  static TasteTarget unpack(const double* in, int n);
 };
 
 struct Request {
@@ -75,8 +94,12 @@ struct Request {
   // authority: wider correction limits, a tonal-balance (tilt) correction and
   // a harshness-driven smoothing suggestion that guided mode does not have.
   // On top of the measured corrections it applies the owner's "grounded" house
-  // voicing (kHouseFullnessDb / kHouseSoftnessDb and Plan::grounding).
+  // voicing (foundation, body, softness, punch, atmosphere and Plan::grounding).
   bool svaresaMode = false;
+  // Output is the phone's own speaker: no foundation lift (a small driver cannot reproduce it).
+  bool speakerRoute = false;
+  // Optional learned targets (Svaresa only); null = the built-in house voicing.
+  const TasteTarget* taste = nullptr;
 };
 
 struct CategoryCheck {
@@ -112,11 +135,25 @@ constexpr double kSvaresaMaxTiltDb = 2.5;          // largest tilt shelf pair mo
 constexpr double kGroundingBaseBody = 0.7;
 constexpr double kGroundingBaseRestraint = 0.25;
 constexpr double kGroundingMaxBody = 1.0;
-// House voicing: a clearly audible, owner-chosen linear shape that Svaresa applies on top of its measured
-// corrections (docs/SONIC_IDENTITY.md). Fullness is a wide bell at 170 Hz that backs off when the track already
-// has measured boom or mud; softness is a high shelf at 8.5 kHz that deepens with measured sharpness excess.
-constexpr double kHouseFullnessDb = 1.5;
+// House voicing: a clearly audible, owner-chosen shape that Svaresa applies on top of its measured corrections
+// (docs/SONIC_IDENTITY.md). Owner's targets: deep, clean bass like A. R. Rahman / Massive Attack; natural
+// transients and atmosphere like Wilco.
+//  * Foundation: a low shelf at 65 Hz that lifts only what the track lacks against the target bass-to-mids
+//    balance (a healthy balance plus kHouseDeepBassDb, or the learned taste). A bass-heavy track gets nothing.
+//  * Body: a small warm bell at 180 Hz (voice chest, guitar body), backing off with measured mud/boom.
+//  * Softness: a high shelf at 8.5 kHz that deepens with measured sharpness excess.
+//  * Punch: a little bass-envelope punch (BassShaper) on limited masters, which lose their kick first.
+//  * Atmosphere: a little side ambience (StereoTuner space) when a mix is narrower than the target.
+constexpr double kHouseDeepBassDb = 2.0;      // house target: this much more bass-to-mids than a healthy balance
+constexpr double kFoundationMaxDb = 3.0;      // most the foundation shelf will lift
+constexpr double kFoundationStaticDb = 1.0;   // before anything has been heard
+constexpr double kHouseBodyDb = 0.75;
 constexpr double kHouseSoftnessDb = -0.8;
+constexpr double kPunchOnLimited = 0.12;      // bass character at fully limited (PLR <= 6 dB)
+constexpr double kAtmosphereMax = 0.2;        // StereoTuner space (+1.2 dB side level)
+constexpr double kHouseSideToMidDb = -12.0;   // target side-to-mid energy when no taste is learned
+constexpr int kTasteMaxWeight = 12;           // a new reference always moves the learned target by >= 1/13
+constexpr double kTasteMinSeconds = 20.0;     // seconds of music heard before a track can be learned
 constexpr double kSoftnessMaxDb = -2.0;     // most the measured-sharpness term may add (on top of the house shelf)
 constexpr double kSoftnessSlopeDb = 5.0;    // dB of extra softening per unit of sharpness excess over the healthy balance
 constexpr double kSharpnessDeadband = 0.05; // fraction over the healthy-balance sharpness that is left alone
@@ -127,6 +164,16 @@ constexpr double kEmphasisBudgetDb = 6.0;  // sum of positive request gains
 // 1.0 = as sharp as a healthy balance; 1.3 = 30% sharper. An approximation from the analyser's band levels,
 // not a calibrated acum value: use it relatively (docs/RESEARCH_GROUNDED_SOUND.md section 2).
 double relativeSharpness(const SourceFeatures& f);
+
+// Bass weight against the mids: mean band level 40-100 Hz minus mean band level 200 Hz-2 kHz (dB).
+double bassToMidsDb(const SourceFeatures& f);
+// bassToMidsDb() of a healthy-balance spectrum (tilt kSvaresaTiltTargetDbPerOct): about +8.3 dB.
+double healthyBassToMidsDb();
+
+// Adds one reference track to the learned taste (running mean, weight capped at kTasteMaxWeight). Returns `prev`
+// unchanged when the features are not valid or less than kTasteMinSeconds of music was heard. A lossy source does
+// not update the sharpness (its missing top would teach the wrong thing).
+TasteTarget learnTaste(const TasteTarget& prev, const SourceFeatures& heard);
 
 // features may be null (Engine A / nothing heard yet): a static plan matched
 // against a pink reference spectrum.

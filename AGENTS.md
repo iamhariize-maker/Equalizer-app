@@ -95,3 +95,9 @@ Second pass (8 Oct 2026): Svaresa now carries an owner-chosen, clearly audible h
 softened top driven by `relativeSharpness()`), odd-order-only body saturation with a level knee, and
 `tools/mastering/ab_compare.py` (same-master test). Core has 108 tests; the owner has no PC, so analysis of audio
 files happens in the working session on uploaded excerpts.
+
+Third pass (8 Oct 2026, re-planned): the 170 Hz fullness bell became a 65 Hz *foundation* that lifts only what a
+track lacks (owner's target: deep bass like A. R. Rahman / Massive Attack), plus a small 180 Hz body, punch on
+limited masters and atmosphere on narrow mixes (target: Wilco), all gated off the phone speaker for the bass. New
+"Learn this sound" (`TasteTarget`, `learnTaste`, `nativeTasteLearn`): Svaresa learns targets from reference tracks
+the owner plays, features only, stored on the phone. Core has 111 tests.

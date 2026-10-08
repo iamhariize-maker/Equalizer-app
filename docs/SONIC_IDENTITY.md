@@ -15,50 +15,54 @@ when the music has body under them.
 compromising quality. "No cheap" means: no gritty distortion, no dulling, no loudness tricks, no stereo narrowing, no
 claim that is not measured.
 
-## How the research shaped it
-The evidence (see the research note) says the audible body and softness should come mostly from **linear tonal
-shaping** (fullness, softer top), which is strongly supported, with the harmonic "analog" layer kept **bounded and
-odd-order only** (even-order was the less pleasant kind), because its effect on preference is not established. So the
-house sound is built from five parts, in this order of importance:
+## Owner's targets (8 October 2026, second answer)
+* **Bass** mastered like A. R. Rahman and Massive Attack: deep, weighty and clean. Not mid-bass boom.
+* **Transients and atmosphere** like Wilco: natural attacks, audible room and space.
+* Listening is on bass-heavy Bluetooth earbuds (realme Buds Air 8), mostly away from a computer.
 
-| # | Part | What it does | Where | Evidence |
-|---|---|---|---|---|
-| 1 | **Fullness** | wide +1.5 dB bell at 170 Hz (Q 0.8); backs off linearly to 0 as measured boom/mud reach 4 dB; halved on crushed masters | `svaramanas.cpp` house voicing | strong (fullness / bass + lower-mid are the main perceptual dimensions) |
-| 2 | **Softness** | -0.8 dB high shelf at 8.5 kHz, deepening by up to a further 2.0 dB as measured *sharpness* exceeds a healthy balance; zero for lossy streams ending below 12 kHz | same | moderate (sharpness is a standard psychoacoustic measure) |
-| 3 | **Existing Svaresa corrections** | measured boom, mud, harshness, tilt, air | unchanged | existing tests |
-| 4 | **Restraint** | stereo-linked, downward-only restrainer on the >3.5 kHz band; reacts to that band's crest only; max 4 dB; first ~0.5 ms of a spike passes, so the click stays and only the overshoot is eased | `grounding.cpp` | weak (low risk, benefit unproven) |
-| 5 | **Body** | level-dependent odd-order saturation of 100 Hz-1 kHz with a level knee | `grounding.cpp` | weak (owner-chosen; A/B required) |
+## How it is built (third pass, reviewed and re-planned)
+The second pass put a fixed bell at 170 Hz. That is mid-bass, the wrong lever for "deep and clean" on earbuds that
+are already heavy there, and it ignored the output route. The third pass replaces it with parts that each follow
+the evidence (linear shaping first, research note sections 2 and 6) and the owner's targets:
 
-Parts 1 and 2 are the main audible character. Parts 4 and 5 are subtle, bounded refinements.
+| # | Part | What it does | Target it serves |
+|---|---|---|---|
+| 1 | **Foundation** | 65 Hz low shelf that lifts only what the track *lacks* against the target bass-to-mids balance (healthy balance + 2 dB, or the learned taste), max +3 dB; none if a boom is measured, none on the phone speaker, halved on crushed masters | Rahman / Massive Attack depth without boom |
+| 2 | **Body** | +0.75 dB bell at 180 Hz (voice chest, guitar body), backing off with measured mud/boom | warm, present voice |
+| 3 | **Softness** | -0.8 dB high shelf at 8.5 kHz, deepening by up to 2 dB with measured sharpness above the target | the airy, spiky hi-res complaint |
+| 4 | **Punch** | bass-envelope punch (the existing tested BassShaper) on limited masters: 0 at PLR >= 10 dB, rising to 0.12 at PLR <= 6 dB | "hi-res versions sound less dynamic"; Wilco-like attack |
+| 5 | **Atmosphere** | side ambience (StereoTuner space) when a mix is narrower than the target width, up to +1.2 dB side level; never on mono files or system effects | Wilco-like space |
+| 6 | **Grounding** | odd-order body saturation with a level knee (baseline 0.7) and top-band spike restraint (baseline 0.25) | analog weight, calmer top |
+| 7 | **Your sound** | "Learn this sound": Svaramanas measures a reference track you love and the targets of parts 1, 3, 5 and the tilt correction come from your references instead of the house values | the original vision: train Svaresa on the masters you love |
 
-### Measured behaviour (from the tests; full depth = 1.0)
-* Body (part 5), 300 Hz tone: 3rd harmonic -63 dBc at -30 dBFS, -44 dBc at -20 dBFS, -32 dBc at -12 dBFS, -31 dBc at
-  -6 dBFS (the knee stops it climbing); fundamental compression 0.7 dB at -12 dBFS and 1.0 dB at -6 dBFS; **no 2nd
-  harmonic** (even-order is off). The shipped baseline depth is 0.7, which lowers these harmonic levels by about 3 dB.
-  The old plain-tanh version measured 18.6 dBc harmonics and 3.3 dB squash at -6 dBFS; the knee is what makes it
-  musical rather than gritty.
-* Restraint (part 4): a 6 kHz burst 30 dB over its bed is eased by 3.1 dB in energy over the burst, never more than
-  4 dB, recovering within 100 ms; sustained air and 200 Hz content are unchanged within 0.1 dB.
-* Softness (part 2) uses `relativeSharpness()`: a ratio to the sharpness of a healthy-balance spectrum (1.0 = healthy).
-  It is monotonic in tilt (0.60 at -6 dB/oct, 1.00 at -2.5, 1.14 at -1.5, 1.71 at +2.0), independent of level, and
-  lower for a 16 kHz lossy file (0.80). It is blind to a mid-range 2-5 kHz bump by design (sharpness is a high-frequency
-  centroid); shrillness there is the existing harshness correction's job.
-* Everything is loudness matched: the preamp offsets the predicted K-weighted change, so the voicing never wins by being
-  louder.
+### Measured response of the voicing (EQ parts only, after loudness matching, 48 kHz)
+| Track as heard | 30 Hz | 65 Hz | 180 Hz | 1 kHz | 8.5 kHz | 14 kHz | punch | space |
+|---|---|---|---|---|---|---|---|---|
+| healthy balance | +1.1 | +0.3 | 0.0 | -0.8 | -1.2 | -1.6 | 0 | 0 |
+| thin bass | +2.0 | +0.7 | -0.1 | -0.9 | -1.3 | -1.7 | 0 | 0 |
+| bass-heavy (Metro-like) | -0.2 | -0.1 | +0.6 | -0.2 | -0.6 | -1.0 | 0 | 0 |
+| airy / bright master | +3.2 | +1.9 | +1.1 | +0.3 | -0.9 | -2.0 | 0 | 0 |
+| limited and narrow | +0.6 | +0.2 | 0.0 | -0.4 | -0.8 | -1.2 | 0.12 | 0.20 |
+| phone speaker | -0.2 | -0.1 | +0.5 | -0.2 | -0.6 | -1.0 | 0 | 0 |
 
-### How Svaresa sets the depths
-* Fullness and softness: the house values above, scaled by Svaresa strength, modified by the measured evidence.
-* Grounding: baseline body 0.7 and restraint 0.25; restraint rises with measured air, harshness and bright tilt, and
-  body rises with bright tilt (cap 1.0); body is halved on crushed masters. Guided (non-Svaresa) mode has none of it.
-* The plan carries two notes for the UI (`kNoteVoicing`, `kNoteGrounded`) and the blind-listening render includes all of
-  it, so A/B tests judge the real chain.
-* Engine A (system effects / DynamicsProcessing) can apply the linear voicing (it is only band gains) but cannot run the
-  Grounding processor; that is a capture-engine feature.
+Read the shape, not the absolute level (the preamp keeps loudness equal): on a healthy track the bass rises about
+2 dB against the mids and the top above 8 kHz eases about 0.5 to 1 dB; an airy master gets the strongest grounding;
+a track that already has deep bass is left alone.
 
-### The dials (one place each)
-`kHouseFullnessDb`, `kHouseSoftnessDb`, `kSoftnessMaxDb`, `kSoftnessSlopeDb`, `kSharpnessDeadband`,
-`kGroundingBaseBody`, `kGroundingBaseRestraint`, `kGroundingMaxBody` in `svaramanas.h`; `kDrive`, `kBodyKnee`,
-`kCrestThresholdDb`, `kMaxRestraintDb` in `grounding.cpp`. Tune these by ear first.
+### Grounding behaviour (from the tests; full depth = 1.0)
+* Body: 3rd harmonic -63 dBc at -30 dBFS, -44 at -20, -32 at -12, -31 at -6 (the knee stops it climbing); no 2nd
+  harmonic; fundamental compression at most 1 dB. The baseline 0.7 lowers these by about 3 dB.
+* Restraint: a 6 kHz burst 30 dB over its bed is eased by 3.1 dB, never more than 4 dB, recovering within 100 ms.
+
+### "Learn this sound" (Your sound)
+* In the Svaramanas panel, Svaresa mode, with Hi-Fi on and a capturable player: play a reference track for at least
+  20 seconds and tap **Learn this sound**. Repeat for several references (Rahman, Massive Attack, Wilco...).
+* What is kept: overall tilt, bass-to-mids balance, relative sharpness, side-to-mid width and PLR, as a running mean
+  (each new reference moves it by at least 1/13). Lossy references do not teach sharpness. Nothing else is stored,
+  and it never leaves the phone.
+* What it changes: the foundation target, the softness reference, the atmosphere width target and the tilt target
+  (bounded to -4..-1 dB/oct). Every hard bound above still applies.
+* **Use house voicing** forgets it.
 
 ## What "grounded" means in measurable terms
 | Term | Quantity | Reading |
@@ -74,9 +78,9 @@ Parts 1 and 2 are the main audible character. Parts 4 and 5 are subtle, bounded 
 * **Not established:** that you will prefer it. The depths and constants are a first voicing from the owner's
   description and the literature. Qualification on the realme Buds Air 8 and the LG V60 is pending.
 * Known interaction: the realme Buds Air 8 are reported to tune bass-heavy by default and Svan's headphone-correction
-  index has no entry for them (it has the Air 3, and the matcher deliberately refuses to match 3 for 8). Added fullness
-  on top of an already bass-heavy earbud may be too much; the voicing scales with Svaresa strength, and a measured
-  correction for the Air 8 would be the proper fix.
+  index has no entry for them (it has the Air 3, and the matcher deliberately refuses to match 3 for 8). The
+  foundation only lifts below about 100 Hz and only what a track lacks, which is safer than a mid-bass lift on such
+  earbuds; if it is still too much, lower Svaresa strength or teach it your references.
 * A closed-form claim is not a hearing test. Treat every number here as engineering evidence, not a promise.
 
 ## Listening protocol (before enabling for everyone)

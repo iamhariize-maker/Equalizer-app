@@ -132,10 +132,15 @@ data class SmartPlan(
     )
 
     companion object {
-        fun compute(r: SmartRequest, features: DoubleArray?, stereoEngine: Boolean): SmartPlan {
+        /**
+         * [speakerRoute]: output is the phone's own speaker (Svaresa then skips the deep-bass foundation).
+         * [taste]: the listener's learned reference targets (packed TasteTarget) or null for the house voicing.
+         */
+        fun compute(r: SmartRequest, features: DoubleArray?, stereoEngine: Boolean,
+                    speakerRoute: Boolean = false, taste: DoubleArray? = null): SmartPlan {
             val raw = NativeEngine.nativeSvaramanasPlan(
                 features, r.feel.ordinal, IntArray(r.picks.size) { r.picks[it].bit }, r.strength, stereoEngine,
-                r.mode == SmartMode.SVARESA,
+                r.mode == SmartMode.SVARESA, speakerRoute, taste,
             )
             var i = 12
             val nNotes = raw[11].toInt()
@@ -193,6 +198,46 @@ object Svaramanas {
     /** The floating bubble over other apps (needs "Display over other apps"). */
     val bubble: StateFlow<Boolean> = _bubble.asStateFlow()
 
+    private val _taste = MutableStateFlow<DoubleArray?>(null)
+    private val _tasteTracks = MutableStateFlow(0)
+    /** How many reference tracks Svaresa has learned the listener's sound from (0 = house voicing). */
+    val tasteTracks: StateFlow<Int> = _tasteTracks.asStateFlow()
+
+    /** The learned taste for renderers that must match the live plan (e.g. blind listening). */
+    fun currentTaste(): DoubleArray? = _taste.value
+
+    private fun setTaste(packed: DoubleArray?) {
+        _taste.value = packed?.takeIf { it.size >= TASTE_PACKED && it[0] != 0.0 && it[1] >= 1.0 }
+        _tasteTracks.value = _taste.value?.get(1)?.toInt() ?: 0
+    }
+
+    /**
+     * "Learn this sound": adds the music Svaramanas is hearing right now to the listener's reference taste.
+     * Only measured features are kept (on this phone), never audio. Returns a line for the UI.
+     */
+    fun learnFromCurrent(): String {
+        val h = _heard.value
+        if (!_listening.value || h == null || !h.valid) return "I need to hear the music first: play it with Hi-Fi on."
+        if (h.seconds < TASTE_MIN_SECONDS) return "Let it play a little longer (%.0f of %.0f s heard).".format(h.seconds, TASTE_MIN_SECONDS)
+        val before = _tasteTracks.value
+        val next = NativeEngine.nativeTasteLearn(_taste.value, h.packed)
+        if (next.size < TASTE_PACKED || next[1].toInt() <= before) return "That did not teach me anything new; try again in a few seconds."
+        setTaste(next)
+        if (initialized) prefs.edit().putString("taste", JSONArray().apply { next.forEach { put(it) } }.toString()).apply()
+        EqController.log("svaramanas taste: learned tracks=%d tilt=%.2f bass=%.2f sharp=%.3f side=%.1f plr=%.1f"
+            .format(next[1].toInt(), next[2], next[3], next[4], next[5], next[6]))
+        recompute(immediate = true)
+        return if (before == 0) "Learned. Svaresa now aims for this sound instead of its house voicing."
+        else "Learned. Your sound now blends ${next[1].toInt()} reference tracks."
+    }
+
+    /** Back to the built-in house voicing. UI thread. */
+    fun forgetTaste() {
+        setTaste(null)
+        if (initialized) prefs.edit().remove("taste").apply()
+        recompute(immediate = true)
+    }
+
     fun setBubble(context: Context, on: Boolean) {
         _bubble.value = on
         if (initialized) prefs.edit().putBoolean("bubble", on).apply()
@@ -200,6 +245,8 @@ object Svaramanas {
     }
 
     const val UPDATE_MS = 3000L
+    private const val TASTE_PACKED = 7
+    private const val TASTE_MIN_SECONDS = 20.0
     private const val SLEW_DB = 0.5
     private const val CONTEXT_SLEW_DB = 2.0
 
@@ -211,6 +258,7 @@ object Svaramanas {
             prefs = context.applicationContext.getSharedPreferences("svaramanas", Context.MODE_PRIVATE)
             prefs.getString("request", null)?.let { s -> runCatching { _request.value = SmartRequest.fromJson(JSONObject(s)) } }
             _bubble.value = prefs.getBoolean("bubble", false)
+            prefs.getString("taste", null)?.let { s -> runCatching { JSONArray(s).let { a -> setTaste(DoubleArray(a.length()) { a.getDouble(it) }) } } }
             initialized = true
         }
         scope.launch {
@@ -267,9 +315,12 @@ object Svaramanas {
         _heard.value = heard
         _listening.value = engineB
         // Features only count once enough music was heard; before that the plan is static.
-        val p = SmartPlan.compute(r, packed?.takeIf { heard?.valid == true }, engineB)
+        val sensors = if (r.mode == SmartMode.SVARESA) SvaresaSensors.read(appContext, r) else null
+        val speaker = sensors != null && sensors.routeAware && sensors.route == RouteKind.SPEAKER
+        val p = SmartPlan.compute(r, packed?.takeIf { heard?.valid == true }, engineB, speaker,
+            if (r.mode == SmartMode.SVARESA) _taste.value else null)
         if (r.mode == SmartMode.SVARESA) AutoHeadphone.check(appContext, r)
-        val ctx = if (r.mode == SmartMode.SVARESA) SvaresaBrain.layer(SvaresaSensors.read(appContext, r)) else null
+        val ctx = sensors?.let(SvaresaBrain::layer)
         _context.value = ctx
         val eq = SvanRepository.eq.value
         var target = p.toLayer(ctx).copy(protectEngine=r.mode==SmartMode.SVARESA,dynamicEq=if(r.mode==SmartMode.SVARESA&&r.selectiveEq) r.strength.coerceIn(0.0,1.0) else 0.0)
@@ -367,7 +418,10 @@ object Svaramanas {
             17 -> out += "The mix is thinner/brighter than a healthy balance: eased the top and restored body."
             18 -> out += "The mix is darker/heavier than a healthy balance: opened the top and relieved the low-mid body."
             19 -> out += "Grounding: easing top-end spikes (%.0f%%) and adding low-mid weight (%.0f%%) so the voice and rhythm keep their body.".format(p.groundingRestraint * 100, p.groundingBody * 100)
-            24 -> out += "House voicing: %+.1f dB of fullness around 170 Hz and %+.1f dB at the top above 8.5 kHz, trimmed for loudness.".format(gainAt(170.0), gainAt(8500.0))
+            24 -> out += "House voicing: foundation %+.1f dB below 65 Hz, warmth %+.1f dB at 180 Hz, top %+.1f dB above 8.5 kHz, level-matched.".format(gainAt(65.0), gainAt(180.0), gainAt(8500.0))
+            25 -> out += "This master is heavily limited, so I gave the bass a little of its punch back."
+            26 -> out += "The mix is narrow, so I opened a little side ambience for atmosphere (mono files are never widened)."
+            27 -> out += "Aiming for your learned sound (${tasteTracks.value} reference track${if (tasteTracks.value == 1) "" else "s"}) instead of the house voicing."
             14 -> out += "This stream stops near %.1f kHz (lossy). I won't lift anything near that ceiling; it would only amplify codec artefacts.".format((h?.cutoffHz ?: 0.0) / 1000)
             15 -> out += "This master is heavily limited or clipping, so I halved every lift. More would only distort."
             16 -> out += "This track has no real stereo, so I skipped widening."

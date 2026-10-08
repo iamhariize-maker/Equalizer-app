@@ -198,7 +198,9 @@ class NativeEngine(
         ): Double
         @JvmStatic external fun nativeSvaramanasPlan(
             features: DoubleArray?, feel: Int, order: IntArray, strength: Double, stereoEngine: Boolean,
-            svaresaMode: Boolean,
+            svaresaMode: Boolean, speakerRoute: Boolean, taste: DoubleArray?,
         ): DoubleArray
+        /** Adds the features just heard to the learned taste (packed eqcore::svaramanas::TasteTarget, 7 values). */
+        @JvmStatic external fun nativeTasteLearn(prev: DoubleArray?, features: DoubleArray): DoubleArray
     }
 }
