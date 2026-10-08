@@ -1,75 +1,89 @@
-# Svan sonic identity — "Grounded" (owner brief, 8 October 2026)
+# Svan sonic identity: "Grounded"
 
-> **STATUS: PROVISIONAL (8 Oct 2026).** Research done after the first build
-> ([RESEARCH_GROUNDED_SOUND.md](RESEARCH_GROUNDED_SOUND.md)) found that (1) harmonic "body" has weak, partly negative
-> evidence (even-order distortion is the least liked kind), (2) body/fullness is mainly a linear low-mid balance
-> matter, and (3) the cause of "airy hi-res" must be diagnosed per album before any fix. The first-pass baselines
-> below (body 0.25, restraint 0.15, always on in Svaresa) are therefore **not recommended defaults** until the
-> listening protocol passes. Planned changes are listed in section 10 of the research note.
+Owner brief, 8 October 2026. Read with [RESEARCH_GROUNDED_SOUND.md](RESEARCH_GROUNDED_SOUND.md) (the evidence) and
+[OWNER_REFERENCE_TASTE.md](OWNER_REFERENCE_TASTE.md) (the target taste).
 
-
-## The owner's words, condensed
-High-resolution playback exposes weak masters. The top end gets too airy, the transients stand taller than the
+## The brief
+High-resolution playback exposes weak masters. The top end gets airy and spiky, the transients stand taller than the
 music under them, and the result feels thin and nervous instead of present. Well-mastered tracks do not have this
-problem. Svan should make *every* track feel **organic and grounded**: the voice sounds like a real person sitting
-in the room, the guitar and bass have a spine, the whole spectrum feels a little analog and earthy. This is **not**
-a request for dull or narrow sound. The owner loves transients, atmosphere, wide studio stereo and binaural effects;
-those only sound good when the music has body under them. Body first, so detail and space can fly without
-overwhelming the spine of the song.
+problem. Svan should make every track feel **organic and grounded**: the voice sounds like a real person sitting in the
+room, the guitar and bass have a spine, the whole spectrum feels a little analog and earthy. This is **not** a request
+for dull or narrow sound: transients, atmosphere, wide studio stereo and binaural effects are loved, and only sound good
+when the music has body under them.
+
+**Owner decision (8 Oct 2026):** Svan should have a *clearly audible* house sound with an organic, analog tone, without
+compromising quality. "No cheap" means: no gritty distortion, no dulling, no loudness tricks, no stereo narrowing, no
+claim that is not measured.
+
+## How the research shaped it
+The evidence (see the research note) says the audible body and softness should come mostly from **linear tonal
+shaping** (fullness, softer top), which is strongly supported, with the harmonic "analog" layer kept **bounded and
+odd-order only** (even-order was the less pleasant kind), because its effect on preference is not established. So the
+house sound is built from five parts, in this order of importance:
+
+| # | Part | What it does | Where | Evidence |
+|---|---|---|---|---|
+| 1 | **Fullness** | wide +1.5 dB bell at 170 Hz (Q 0.8); backs off linearly to 0 as measured boom/mud reach 4 dB; halved on crushed masters | `svaramanas.cpp` house voicing | strong (fullness / bass + lower-mid are the main perceptual dimensions) |
+| 2 | **Softness** | -0.8 dB high shelf at 8.5 kHz, deepening by up to a further 2.0 dB as measured *sharpness* exceeds a healthy balance; zero for lossy streams ending below 12 kHz | same | moderate (sharpness is a standard psychoacoustic measure) |
+| 3 | **Existing Svaresa corrections** | measured boom, mud, harshness, tilt, air | unchanged | existing tests |
+| 4 | **Restraint** | stereo-linked, downward-only restrainer on the >3.5 kHz band; reacts to that band's crest only; max 4 dB; first ~0.5 ms of a spike passes, so the click stays and only the overshoot is eased | `grounding.cpp` | weak (low risk, benefit unproven) |
+| 5 | **Body** | level-dependent odd-order saturation of 100 Hz-1 kHz with a level knee | `grounding.cpp` | weak (owner-chosen; A/B required) |
+
+Parts 1 and 2 are the main audible character. Parts 4 and 5 are subtle, bounded refinements.
+
+### Measured behaviour (from the tests; full depth = 1.0)
+* Body (part 5), 300 Hz tone: 3rd harmonic -63 dBc at -30 dBFS, -44 dBc at -20 dBFS, -32 dBc at -12 dBFS, -31 dBc at
+  -6 dBFS (the knee stops it climbing); fundamental compression 0.7 dB at -12 dBFS and 1.0 dB at -6 dBFS; **no 2nd
+  harmonic** (even-order is off). The shipped baseline depth is 0.7, which lowers these harmonic levels by about 3 dB.
+  The old plain-tanh version measured 18.6 dBc harmonics and 3.3 dB squash at -6 dBFS; the knee is what makes it
+  musical rather than gritty.
+* Restraint (part 4): a 6 kHz burst 30 dB over its bed is eased by 3.1 dB in energy over the burst, never more than
+  4 dB, recovering within 100 ms; sustained air and 200 Hz content are unchanged within 0.1 dB.
+* Softness (part 2) uses `relativeSharpness()`: a ratio to the sharpness of a healthy-balance spectrum (1.0 = healthy).
+  It is monotonic in tilt (0.60 at -6 dB/oct, 1.00 at -2.5, 1.14 at -1.5, 1.71 at +2.0), independent of level, and
+  lower for a 16 kHz lossy file (0.80). It is blind to a mid-range 2-5 kHz bump by design (sharpness is a high-frequency
+  centroid); shrillness there is the existing harshness correction's job.
+* Everything is loudness matched: the preamp offsets the predicted K-weighted change, so the voicing never wins by being
+  louder.
+
+### How Svaresa sets the depths
+* Fullness and softness: the house values above, scaled by Svaresa strength, modified by the measured evidence.
+* Grounding: baseline body 0.7 and restraint 0.25; restraint rises with measured air, harshness and bright tilt, and
+  body rises with bright tilt (cap 1.0); body is halved on crushed masters. Guided (non-Svaresa) mode has none of it.
+* The plan carries two notes for the UI (`kNoteVoicing`, `kNoteGrounded`) and the blind-listening render includes all of
+  it, so A/B tests judge the real chain.
+* Engine A (system effects / DynamicsProcessing) can apply the linear voicing (it is only band gains) but cannot run the
+  Grounding processor; that is a capture-engine feature.
+
+### The dials (one place each)
+`kHouseFullnessDb`, `kHouseSoftnessDb`, `kSoftnessMaxDb`, `kSoftnessSlopeDb`, `kSharpnessDeadband`,
+`kGroundingBaseBody`, `kGroundingBaseRestraint`, `kGroundingMaxBody` in `svaramanas.h`; `kDrive`, `kBodyKnee`,
+`kCrestThresholdDb`, `kMaxRestraintDb` in `grounding.cpp`. Tune these by ear first.
 
 ## What "grounded" means in measurable terms
-Nothing here is a claim about taste. These are the quantities Svan can measure on any track, and the ones the
-grounding stage moves. Definitions live in `tools/mastering/features.py` and `core/src/grounding.cpp`.
-
 | Term | Quantity | Reading |
 |---|---|---|
-| **Spine** | `spineDb` = power in 100 Hz-1 kHz minus power above 3.5 kHz | Higher = more body relative to the top. Airy or thin masters score low. |
-| **Spikiness** | `hfSpikeFrac`, `hfSpikeDb` = how often, and by how much, the >3.5 kHz band's fast level exceeds its own slow level by more than 5 dB | Spiky, nervous top end scores high. |
-| **Tilt / air** | `tiltDbPerOct`, `airDb`, `harshDb` (analyser.h) | Bright or shrill balance. |
-| **Space** | `correlation`, `sideToMidDb`, `lowSideToMidDb` | Must be preserved, never narrowed. |
-| **Punch** | `plrDb`, crest of the body band | Must be preserved, never squashed. |
-
-A track is **grounded** when its spine is healthy and its top-end spikes sit inside a band of the music's own
-weight. The healthy range per genre is learned from well-mastered reference tracks, not guessed
-(`docs/MASTERING_TRAINING.md`).
-
-## How the signal path delivers it (core/include/eqcore/grounding.h)
-Two small, bounded stages, plus what Svaresa already does.
-
-| Owner's complaint | Mechanism | Hard bounds | Measured by |
-|---|---|---|---|
-| "Transients are too much, too airy" | **Restraint**: stereo-linked, downward-only restrainer on the >3.5 kHz band. It reacts to that band's *crest* only, with a soft ratio. Sustained air and ordinary transients pass untouched. The first ~0.5 ms of a spike passes, so the click stays and the overshoot is eased. | max 4 dB, 0.5 ms attack, 15 ms release, bypass is bit-exact | `grounding_restraint_*`, `grounding_gain_is_stereo_linked_*` |
-| "Needs a body, a little analog" | **Body**: level-dependent low-order harmonics on the 100 Hz-1 kHz band (voice fundamentals, guitar, bass body, snare shell). Clean when quiet, weightier when louder, like a console or tape path. | about -33 dB THD at a -12 dBFS band level, about 0.5 dB fundamental compression, quiet-level THD below -75 dB | `grounding_body_*` |
-| Overall airy / bright balance | Svaresa's existing measured tilt, harshness and air corrections (`svaramanas.cpp`) | unchanged limits | existing Svaresa tests |
-| "Voice should be there" | Svaresa suggests grounding depth; the existing vocal tuner (`intimacy`, `warmth`, `smoothness`) remains the manual voice control | unchanged | existing tuner tests |
-
-**What grounding never does:** it does not low-pass or roll off the top, it does not reduce stereo width, space or
-binaural cues, it does not compress the body band, and it does not touch material that has no spikes (on a calm,
-well-mastered track the restraint sits at its small baseline and the body at its quiet-level linear behaviour).
-Gain protection and the true-peak limiter still run after it.
-
-## How Svaresa sets the depth (svaramanas.cpp, Request.svaresaMode only)
-* Baseline voicing, always on in Svaresa: body 0.25, restraint 0.15 (the owner-chosen signature).
-* Raised by *measured* evidence only: restraint grows with `airDb` above +1, `harshDb` above +1 and tilt more than
-  0.5 dB/oct brighter than the -2.5 target; body grows with the same tilt excess, capped at 0.7.
-* Halved body on crushed masters (PLR below 8 dB or clipping): they are already dense.
-* The Plan carries a note (`kNoteGrounded`) so the UI can say why. Guided (non-Svaresa) mode never grounds.
-* Depth ramps over 20 ms in the engine; the plan itself moves slowly because the analyser averages over seconds.
-* The blind-listening render includes grounding, so matched-loudness A/B tests judge the real chain.
+| **Fullness / spine** | `spineDb` (100 Hz-1 kHz power vs >3.5 kHz power) | higher = more body relative to the top |
+| **Sharpness** | `relativeSharpness()` (DIN 45692-style, ratio) | higher = airier / brighter |
+| **Spikiness** | `hfSpikeFrac`, `hfSpikeDb` | spiky top end |
+| **Dynamics** | `plrDb`, `drTT` | low = more limited |
+| **Space** | `correlation`, `sideToMidDb` | must be preserved |
 
 ## Honest state
-* Measured and tested: bounds, linearity, harmonic levels, spike easing, stereo linking, bit-exact bypass, plan
-  scaling, sanitizer-clean (core tests).
-* **Not yet established: that listeners prefer it.** The depths and the 5 dB / 3.5 kHz / 100 Hz-1 kHz constants are
-  a first voicing, set from the owner's description, and must be tuned by ear. Qualification is pending on the
-  TECNO LH7n and LG V60 (`docs/PHONE_VALIDATION.md`).
-* Engine A (system effects / DynamicsProcessing) cannot run this processor. Grounding is a capture-engine feature.
+* Tested: all bounds above, bit-exact bypass, stereo linking, ramping, plan scaling, sanitizer-clean core.
+* **Not established:** that you will prefer it. The depths and constants are a first voicing from the owner's
+  description and the literature. Qualification on the realme Buds Air 8 and the LG V60 is pending.
+* Known interaction: the realme Buds Air 8 are reported to tune bass-heavy by default and Svan's headphone-correction
+  index has no entry for them (it has the Air 3, and the matcher deliberately refuses to match 3 for 8). Added fullness
+  on top of an already bass-heavy earbud may be too much; the voicing scales with Svaresa strength, and a measured
+  correction for the Air 8 would be the proper fix.
+* A closed-form claim is not a hearing test. Treat every number here as engineering evidence, not a promise.
 
-## Listening protocol (do this before enabling by default)
-1. Pick 12 tracks: 6 well mastered (must be transparent: restraint average under 0.5 dB, no audible change at
-   matched loudness) and 6 spiky hi-res masters (should improve).
-2. Use Lab blind listening at matched loudness: original vs Svaresa with grounding, then Svaresa without.
-3. Record, per track: preferred / equal / worse, and what changed (voice presence, rhythm weight, fatigue).
-4. Ship by default only if no well-mastered track is judged worse and the spiky ones are preferred or equal.
-5. Tune three numbers first if it fails: `kCrestThresholdDb`, `kMaxRestraintDb`, `kDrive`.
-6. Feed the A/B results into the taste learner (`MASTERING_TRAINING.md`, phase 5) so the depth adapts to the listener.
+## Listening protocol (before enabling for everyone)
+1. 12 tracks: 6 well mastered from the owner's reference list, 6 that currently sound airy or fatiguing.
+2. Lab blind listening at matched loudness, randomised order, a hidden reference and an anchor (e.g. a version with the
+   voicing at 3x depth), at least 3 trials per track.
+3. Record preferred / equal / worse and what changed (voice presence, rhythm weight, fatigue, harshness).
+4. Ship by default only if no well-mastered track is judged worse and the others are preferred or equal. If a part
+   fails, switch it off: parts 4 and 5 first, then 2, then 1.
+5. Feed the results into the taste learner so depths adapt per listener.

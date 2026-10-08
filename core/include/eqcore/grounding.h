@@ -12,14 +12,18 @@
 //              spike beyond a soft threshold. Sustained air is untouched,
 //              typical transients pass unchanged, and the largest reduction is
 //              4 dB at full depth (soft ratio, 0.5 ms attack, 15 ms release).
-//   body       Gentle level-dependent saturation of the 100 Hz - 1 kHz band
-//              (voice fundamentals, guitar and bass bodies, snare shell).
-//              Harmonics grow with level, as analog distortion does (3rd
-//              rises ~40 dB/decade, 2nd ~20 dB/decade), so quiet passages stay
-//              clean and loud ones gain weight. At a -12 dBFS band level, full
-//              depth measures about -33 dB total harmonic distortion and a
-//              0.5 dB fundamental compression. Tanh-capped, no hash above the
-//              6th harmonic.
+//   body       Level-dependent SYMMETRIC (odd-order) saturation of the
+//              100 Hz - 1 kHz band (voice fundamentals, guitar and bass bodies,
+//              snare shell). Harmonics grow with level (3rd rises ~40 dB per
+//              decade), so quiet passages stay clean and loud ones gain weight.
+//              At a -12 dBFS band level, full depth measures about -26 dB
+//              3rd-harmonic content and 1.1 dB of fundamental compression; at
+//              -20 dBFS about -42 dB. Tanh-capped, with a level knee (see
+//              kBodyKnee) that backs the saturation off on loud peaks so it
+//              adds weight but never grit. Even-order harmonics are
+//              OFF by default: the one controlled study found asymmetric
+//              distortion the less pleasant kind (docs/RESEARCH_GROUNDED_SOUND.md
+//              section 3). `evenMix` exists only so blind tests can A/B it.
 //
 // Both are parallel add-ins (y = x + wet), so depth 0 is bit-exact bypass,
 // and depth changes ramp over 20 ms. process() is allocation-free and
@@ -34,6 +38,7 @@ namespace eqcore {
 struct GroundingParams {
   double restraint = 0.0;  // 0..1 depth of the HF transient restrainer
   double body = 0.0;       // 0..1 depth of the low-mid harmonic body
+  double evenMix = 0.0;    // 0..1 experimental even-order share (default off; blind-test knob)
   bool isOff() const { return restraint == 0.0 && body == 0.0; }
 };
 
@@ -61,11 +66,12 @@ class Grounding {
     double evenDc = 0.0;     // slow mean of band^2 (removed from the even term)
   };
   double fs_;
-  std::atomic<double> restraintTarget_{0}, bodyTarget_{0};
-  double restraintMix_ = 0, bodyMix_ = 0, mixStep_;
+  std::atomic<double> restraintTarget_{0}, bodyTarget_{0}, evenTarget_{0};
+  double restraintMix_ = 0, bodyMix_ = 0, evenMix_ = 0, mixStep_;
   Chan ch_[2];
   double fast_ = 0, slow_ = 0, gain_ = 1;
-  double aFast_, aSlow_, aAttack_, aRelease_, aDc_;
+  double aFast_, aSlow_, aAttack_, aRelease_, aDc_, aEnv_;
+  double bodyEnv_ = 0;
   std::atomic<double> restraintDb_{0};
 };
 

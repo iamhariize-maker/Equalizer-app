@@ -194,6 +194,20 @@ aggregate curves, and only tracks whose individual licences are checked and perm
 | Dataset list | licences mostly research-only | corrected in `MASTERING_TRAINING.md` |
 | A/B method | listener bias is real | matched loudness, randomised order, hidden reference and an anchor, several trials per track |
 
+## 10b. Owner decision and what was built (8 October 2026, second pass)
+The owner answered section 11 (see [OWNER_REFERENCE_TASTE.md](OWNER_REFERENCE_TASTE.md)): listening is on realme Buds
+Air 8 earbuds over Bluetooth; the effect also occurs without Svan but less, and the hi-res versions "sound much less
+dynamic"; the aim is a **clearly audible** organic/analog house sound without compromising quality. That overrides the
+"default off" recommendation above for the *linear* parts and, with bounds, for the harmonic part. What was built:
+* **Linear house voicing** (strongest evidence): fullness bell at 170 Hz and a softened top, the latter driven by a
+  new `relativeSharpness()` measure. Loudness matched.
+* **Body saturation retuned**: odd-order only (even-order available only as a blind-test knob), a level knee so it is
+  never gritty, baseline depth 0.7.
+* **`tools/mastering/ab_compare.py`**: the same-master test, with a null residual, PLR, DR and spectrum comparison.
+* The blind A/B protocol stays the gate for shipping any of it by default.
+Because the owner listens over Bluetooth, the file format difference between CD-quality and hi-res is largely moot;
+the "less dynamic" observation points to master differences, which `ab_compare.py` can confirm.
+
 ## 11. Open questions for the owner
 1. Which 3 to 5 albums sound worst in hi-res, and do you have the CD-quality or standard version of the same album?
 2. Does the airy, spiky sound also happen **without Svan** in Amazon Music HD, Apple Music and Neutron? (It should if

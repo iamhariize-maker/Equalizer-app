@@ -1638,12 +1638,19 @@ TEST(svaresa_asks_for_harshness_smoothing_on_both_engines_when_the_mix_is_shrill
   sv::Request guided;
   guided.stereoEngine = false;
   CHECK(sv::plan(guided, &shrill).stereo.smoothness == 0.0);  // guided mode keeps its own rules
-  // Nothing heard: Svaresa changes nothing by itself (context layers are added by the app).
+  // Nothing heard: no MEASURED correction, only the owner's house voicing at its fixed values
+  // (context layers are added by the app).
   sv::Request none;
   none.svaresaMode = true;
   none.stereoEngine = false;
   const auto idle = sv::plan(none, nullptr);
-  for (const auto& b : idle.bands) CHECK(b.gainDb == 0.0);
+  int voicing = 0;
+  for (const auto& b : idle.bands) {
+    if (b.freqHz == 170.0 && b.type == FilterType::Peak) { CHECK_NEAR(b.gainDb, sv::kHouseFullnessDb, 1e-9); ++voicing; }
+    else if (b.freqHz == 8500.0 && b.type == FilterType::HighShelf) { CHECK_NEAR(b.gainDb, sv::kHouseSoftnessDb, 1e-9); ++voicing; }
+    else CHECK(b.gainDb == 0.0);
+  }
+  CHECK(voicing == 2);
 }
 
 TEST(svaramanas_respects_lossy_sources_mono_files_and_crushed_masters) {
@@ -1957,28 +1964,39 @@ TEST(grounding_off_is_bit_exact_bypass) {
   CHECK(r == r0);
 }
 
-TEST(grounding_body_is_linear_when_quiet_and_adds_bounded_low_order_harmonics_when_loud) {
+TEST(grounding_body_is_clean_when_quiet_odd_order_only_and_never_gritty_when_loud) {
   const double fs = 48000;
   const int n = 48000;
   const size_t a = 24000, b = 48000;
-  // Quiet: -50 dBFS. Harmonics (dominated by the 2nd, which rises with level like analog gear) stay
-  // below -75 dB, and gain is unity within 0.1 dB.
+  // Quiet: -50 dBFS. Essentially linear: harmonics below -90 dBc, gain unity within 0.1 dB.
   auto quiet = groundTone({0, 1}, 300, 0.00316, fs, n);
   const double quietThd = thdDb(quiet, 300, fs, a, b);
-  CHECK(quietThd < -75.0);
+  CHECK(quietThd < -90.0);
   CHECK_NEAR(toDb(sineAmplitude(quiet, 300, fs, a, b) / 0.00316), 0.0, 0.1);
-  // Loud: -12 dBFS. Audible but small (a console-like few tenths of a percent to a couple of percent).
+  // Moderate level: -20 dBFS adds a touch of weight (3rd harmonic about -44 dBc), not yet audible as distortion.
+  auto mid = groundTone({0, 1}, 300, 0.1, fs, n);
+  const double midThd = thdDb(mid, 300, fs, a, b);
+  CHECK(midThd > -50.0 && midThd < -38.0);
+  // Loud: -12 dBFS band level is audible weight (about -32 dBc), well short of grit.
   auto loud = groundTone({0, 1}, 300, 0.25, fs, n);
   const double thd = thdDb(loud, 300, fs, a, b);
-  CHECK(thd > -45.0);
-  CHECK(thd < -30.0);
-  CHECK(thd > quietThd + 30.0);  // distortion is level dependent: clean when quiet, weighty when loud
-  CHECK_NEAR(toDb(sineAmplitude(loud, 300, fs, a, b) / 0.25), 0.0, 0.7);  // ~0.5 dB fundamental compression
-  // Nothing is created far above the order-6 harmonics (aliasing / hash stays low).
-  CHECK(toDb(sineAmplitude(loud, 300 * 12, fs, a, b)) < -80.0);
+  CHECK(thd > -40.0 && thd < -28.0);
+  CHECK_NEAR(toDb(sineAmplitude(loud, 300, fs, a, b) / 0.25), 0.0, 1.0);  // < 1 dB fundamental compression
+  // The knee keeps even a -6 dBFS band peak from turning gritty: harmonics stay below -26 dBc, squash under 1.5 dB.
+  auto peak = groundTone({0, 1}, 300, 0.5, fs, n);
+  CHECK(thdDb(peak, 300, fs, a, b) < -26.0);
+  CHECK_NEAR(toDb(sineAmplitude(peak, 300, fs, a, b) / 0.5), 0.0, 1.5);
+  CHECK(thd > quietThd + 50.0);  // clean when quiet, weighty when loud
+  // Symmetric (odd-order) only by default: no 2nd harmonic at all.
+  CHECK(toDb(sineAmplitude(loud, 600, fs, a, b) / sineAmplitude(loud, 300, fs, a, b)) < -120.0);
+  // The even-order knob is for blind tests only; when raised it does create a 2nd harmonic.
+  auto even = groundTone({0, 1, 1}, 300, 0.25, fs, n);
+  CHECK(toDb(sineAmplitude(even, 600, fs, a, b) / sineAmplitude(even, 300, fs, a, b)) > -50.0);
   // Depth scales it monotonically.
   auto half = groundTone({0, 0.5}, 300, 0.25, fs, n);
   CHECK(thdDb(half, 300, fs, a, b) < thd);
+  // Nothing is created far above the order-6 harmonics.
+  CHECK(toDb(sineAmplitude(loud, 300 * 12, fs, a, b)) < -80.0);
 }
 
 TEST(grounding_restraint_leaves_sustained_air_and_the_body_alone) {
@@ -2103,6 +2121,87 @@ TEST(svaresa_grounded_voicing_scales_with_measured_top_end_excess_within_bounds)
   CHECK_NEAR(unheard.grounding.body, kGroundingBaseBody, 1e-9);
   Request guided; guided.feel = Feel::Warm;
   CHECK(plan(guided, &f).grounding.isOff());
+}
+
+// ---- Svaresa house voicing: fullness + softened top ---------------------------------------
+namespace {
+// Hand-built features for a spectrum with the given band-level tilt: exact, no analyser noise.
+SourceFeatures tiltFeatures(double tiltDbPerOct) {
+  SourceFeatures f;
+  f.valid = true; f.seconds = 20; f.loudnessLufs = -14; f.plrDb = 12; f.cutoffHz = 22000;
+  f.tiltDbPerOct = tiltDbPerOct;
+  for (int i = 0; i < SourceFeatures::kBands; ++i)
+    f.bandDb[i] = tiltDbPerOct * std::log2(SourceFeatures::bandCentreHz(i) / 1000.0);
+  return f;
+}
+double voicingGain(const svaramanas::Plan& p, double hz, FilterType t) {
+  for (const auto& b : p.bands) if (b.freqHz == hz && b.type == t) return b.gainDb;
+  return 1e9;
+}
+}  // namespace
+
+TEST(relative_sharpness_follows_tilt_ignores_level_and_drops_for_lossy_files) {
+  namespace sv = svaramanas;
+  CHECK_NEAR(sv::relativeSharpness(tiltFeatures(sv::kSvaresaTiltTargetDbPerOct)), 1.0, 1e-9);
+  double prev = 0;
+  for (double tilt : {-6.0, -4.0, -2.5, -1.5, -0.5, 0.5, 2.0}) {
+    const double s = sv::relativeSharpness(tiltFeatures(tilt));
+    CHECK(s > prev);  // brighter balance is always sharper
+    prev = s;
+  }
+  const double s15 = sv::relativeSharpness(tiltFeatures(-1.5));
+  CHECK(s15 > 1.10 && s15 < 1.18);  // measured 1.142 for +1 dB/oct brighter than the healthy balance
+  auto loud = tiltFeatures(-2.5);
+  for (auto& v : loud.bandDb) v += 20.0;
+  CHECK_NEAR(sv::relativeSharpness(loud), 1.0, 1e-9);  // a ratio: independent of level
+  auto lossy = tiltFeatures(-2.5);
+  for (int i = 0; i < SourceFeatures::kBands; ++i) if (SourceFeatures::bandCentreHz(i) > 16000) lossy.bandDb[i] = -90;
+  CHECK(sv::relativeSharpness(lossy) < 0.85);
+}
+
+TEST(svaresa_house_voicing_is_audible_bounded_and_backs_off_on_evidence) {
+  namespace sv = svaramanas;
+  sv::Request r;
+  r.svaresaMode = true;
+  // Healthy balance: the house values exactly, and a note for the UI.
+  auto healthy = sv::plan(r, nullptr);
+  const auto f0 = tiltFeatures(sv::kSvaresaTiltTargetDbPerOct);
+  auto pHealthy = sv::plan(r, &f0);
+  CHECK_NEAR(voicingGain(pHealthy, 170.0, FilterType::Peak), sv::kHouseFullnessDb, 1e-9);
+  CHECK_NEAR(voicingGain(pHealthy, 8500.0, FilterType::HighShelf), sv::kHouseSoftnessDb, 1e-9);
+  CHECK(std::find(pHealthy.notes.begin(), pHealthy.notes.end(), sv::kNoteVoicing) != pHealthy.notes.end());
+  // It is loudness matched like every plan (a +1.5 dB bell at 170 Hz costs a little trim).
+  CHECK(pHealthy.preampDb < 0.0);
+  CHECK(std::fabs(pHealthy.preampDb + pHealthy.predictedDeltaDb) < 1e-6);
+  // Fullness backs off as measured boom/mud appear and is gone at 4 dB of crowding.
+  auto muddy = f0; muddy.mudDb = 2.0;
+  CHECK_NEAR(voicingGain(sv::plan(r, &muddy), 170.0, FilterType::Peak), 0.5 * sv::kHouseFullnessDb, 1e-9);
+  muddy.mudDb = 4.0;
+  CHECK_NEAR(voicingGain(sv::plan(r, &muddy), 170.0, FilterType::Peak), 0.0, 1e-9);
+  // Softness deepens with measured sharpness, never beyond the house shelf plus kSoftnessMaxDb.
+  double prev = sv::kHouseSoftnessDb + 1e-9;
+  for (double tilt : {-2.0, -1.0, 0.0, 1.0, 3.0}) {
+    const auto f = tiltFeatures(tilt);
+    const double g = voicingGain(sv::plan(r, &f), 8500.0, FilterType::HighShelf);
+    CHECK(g <= prev + 1e-9);
+    CHECK(g >= sv::kHouseSoftnessDb + sv::kSoftnessMaxDb - 1e-9);
+    prev = g;
+  }
+  CHECK(prev < sv::kHouseSoftnessDb - 1.0);
+  // A dark mix is not made darker: the house shelf alone remains.
+  const auto dark = tiltFeatures(-5.0);
+  CHECK_NEAR(voicingGain(sv::plan(r, &dark), 8500.0, FilterType::HighShelf), sv::kHouseSoftnessDb, 1e-9);
+  // Lossy stream ending below 12 kHz: nothing to soften. Crushed master: fullness halved.
+  auto lossy = f0; lossy.cutoffHz = 11000;
+  CHECK_NEAR(voicingGain(sv::plan(r, &lossy), 8500.0, FilterType::HighShelf), 0.0, 1e-9);
+  auto crushed = f0; crushed.plrDb = 6;
+  CHECK_NEAR(voicingGain(sv::plan(r, &crushed), 170.0, FilterType::Peak), 0.5 * sv::kHouseFullnessDb, 1e-9);
+  // Strength scales it; guided mode has no voicing bands at all.
+  r.strength = 0.5;
+  CHECK_NEAR(voicingGain(sv::plan(r, &f0), 170.0, FilterType::Peak), 0.5 * sv::kHouseFullnessDb, 1e-9);
+  sv::Request guided;
+  CHECK(voicingGain(sv::plan(guided, &f0), 170.0, FilterType::Peak) > 1e8);
+  CHECK(healthy.bands.size() == pHealthy.bands.size());  // one skeleton whether or not anything was heard
 }
 
 int main(int argc, char** argv) {

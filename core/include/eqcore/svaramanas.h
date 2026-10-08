@@ -54,6 +54,7 @@ enum Note : int {
   kNoteBright = 17,         // Svaresa: mix thinner/brighter than a healthy balance, eased
   kNoteDark = 18,           // Svaresa: mix darker/heavier than a healthy balance, opened
   kNoteGrounded = 19,       // Svaresa: top-end spikes restrained / body added to ground the mix
+  kNoteVoicing = 24,        // Svaresa: house voicing (low-mid fullness, softened top) applied
   kNoteBudget = 20,         // emphasis scaled to fit the budget
   kNoteConflictDropped = 21,
   kNoteOverlapSoftened = 22,
@@ -70,9 +71,11 @@ struct Request {
   double strength = 1.0;    // 0..1.5
   bool stereoEngine = true; // Engine B (mid/side tuners available)
   // Svaresa is the automatic master mode. It ignores guided taste/category
-  // lifts and acts only on source evidence that was measured, but with real
+  // lifts and acts on source evidence that was measured, but with real
   // authority: wider correction limits, a tonal-balance (tilt) correction and
   // a harshness-driven smoothing suggestion that guided mode does not have.
+  // On top of the measured corrections it applies the owner's "grounded" house
+  // voicing (kHouseFullnessDb / kHouseSoftnessDb and Plan::grounding).
   bool svaresaMode = false;
 };
 
@@ -106,10 +109,24 @@ constexpr double kSvaresaTiltDeadbandDbPerOct = 1.5; // no tilt move inside +-1.
 constexpr double kSvaresaMaxTiltDb = 2.5;          // largest tilt shelf pair move
 // Svaresa's "grounded" voicing (owner-chosen identity, docs/SONIC_IDENTITY.md): a small constant
 // body and restraint, raised only by measured top-end excess. Depth is 0..1 of Grounding's own caps.
-constexpr double kGroundingBaseBody = 0.25;
-constexpr double kGroundingBaseRestraint = 0.15;
-constexpr double kGroundingMaxBody = 0.7;
+constexpr double kGroundingBaseBody = 0.7;
+constexpr double kGroundingBaseRestraint = 0.25;
+constexpr double kGroundingMaxBody = 1.0;
+// House voicing: a clearly audible, owner-chosen linear shape that Svaresa applies on top of its measured
+// corrections (docs/SONIC_IDENTITY.md). Fullness is a wide bell at 170 Hz that backs off when the track already
+// has measured boom or mud; softness is a high shelf at 8.5 kHz that deepens with measured sharpness excess.
+constexpr double kHouseFullnessDb = 1.5;
+constexpr double kHouseSoftnessDb = -0.8;
+constexpr double kSoftnessMaxDb = -2.0;     // most the measured-sharpness term may add (on top of the house shelf)
+constexpr double kSoftnessSlopeDb = 5.0;    // dB of extra softening per unit of sharpness excess over the healthy balance
+constexpr double kSharpnessDeadband = 0.05; // fraction over the healthy-balance sharpness that is left alone
 constexpr double kEmphasisBudgetDb = 6.0;  // sum of positive request gains
+
+// Sharpness of a third-octave spectrum (von Bismarck / DIN 45692 style: specific loudness weighted toward the
+// top Bark bands), as a RATIO to the sharpness of a healthy-balance spectrum (tilt kSvaresaTiltTargetDbPerOct).
+// 1.0 = as sharp as a healthy balance; 1.3 = 30% sharper. An approximation from the analyser's band levels,
+// not a calibrated acum value: use it relatively (docs/RESEARCH_GROUNDED_SOUND.md section 2).
+double relativeSharpness(const SourceFeatures& f);
 
 // features may be null (Engine A / nothing heard yet): a static plan matched
 // against a pink reference spectrum.

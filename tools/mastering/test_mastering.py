@@ -9,6 +9,7 @@ import unittest
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ab_compare  # noqa: E402
 import features  # noqa: E402
 
 RATE = 48000
@@ -92,6 +93,57 @@ class FeatureTests(unittest.TestCase):
             self.assertEqual(len(t["genres"]["calm"]["shapeDb"]), 30)
             self.assertIn("hfSpikeFrac", t["weakVsReference"])
             self.assertNotIn("file", open(jl).readline())  # no paths leak into the dataset
+
+
+def music_like(seconds=24, seed=11):
+    """Pink-ish noise with a beat envelope and occasional loud hits: transients and dynamics for the A/B tests."""
+    x = colored(seconds, -3.0, seed)
+    t = np.arange(x.shape[0]) / RATE
+    env = 0.25 + 0.75 * np.exp(-8.0 * ((t * 2.0) % 1.0))        # 2 hits per second
+    env *= 1.0 + 0.8 * (np.sin(2 * np.pi * t / 6.0) > 0.7)       # louder phrases
+    y = x * env[:, None]
+    return y / np.max(np.abs(y)) * 0.8
+
+
+class CompareTests(unittest.TestCase):
+    def test_dr_meter_orders_dynamic_above_limited(self):
+        x = music_like()
+        limited = np.clip(x * 4.0, -1.0, 1.0)
+        self.assertGreater(features.dr_tt(x, RATE), features.dr_tt(limited, RATE) + 3.0)
+
+    def test_same_master_at_another_level_offset_and_rate(self):
+        a = music_like()
+        b = 0.7 * np.roll(a, 123, axis=0)                  # quieter and 123 samples late
+        d = ab_compare.compare(a, RATE, b, RATE)
+        self.assertEqual(d["lagSamples"], 123)
+        self.assertEqual(d["verdict"], "SAME MASTER", d)
+        up = features.resample_fft(a, RATE, 2 * RATE)      # same content stored at 96 kHz
+        d2 = ab_compare.compare(a, RATE, up, 2 * RATE)
+        self.assertEqual(d2["verdict"], "SAME MASTER", d2)
+
+    def test_more_limited_version_is_a_different_master(self):
+        a = music_like()
+        b = np.clip(a * 2.5, -0.9, 0.9)
+        d = ab_compare.compare(a, RATE, b, RATE)
+        self.assertEqual(d["verdict"], "DIFFERENT MASTERS", d)
+        self.assertLess(d["plrDb"][1], d["plrDb"][0] - 1.0)
+
+    def test_brighter_version_is_a_different_master_by_spectrum_only(self):
+        a = music_like()
+        spec = np.fft.rfft(a, axis=0)
+        f = np.fft.rfftfreq(a.shape[0], 1 / RATE)
+        tilt = (np.maximum(f, 100.0) / 1000.0) ** 0.5          # about +3 dB/oct brighter
+        b = np.fft.irfft(spec * tilt[:, None], a.shape[0], axis=0)
+        d = ab_compare.compare(a, RATE, b, RATE)
+        self.assertEqual(d["verdict"], "DIFFERENT MASTERS", d)
+        self.assertGreater(d["tiltDbPerOct"][1], d["tiltDbPerOct"][0] + 1.5)
+        self.assertGreater(d["spectrumShapeRmsDb"], 1.0)
+
+    def test_report_text_and_json_are_printable(self):
+        a = music_like(18)
+        d = ab_compare.compare(a, RATE, 0.9 * a, RATE)
+        self.assertIn("VERDICT", ab_compare.render(d))
+        json.dumps(d)
 
 
 if __name__ == "__main__":

@@ -83,6 +83,41 @@ def _boxcar(x, n):
     return y
 
 
+def dr_tt(x, rate, block_s=3.0):
+    """Approximate TT / DR-meter style dynamic range (dB), mean over channels.
+
+    Per channel: 3 s blocks; DR = second-highest block peak over the RMS of the loudest 20% of blocks
+    (power-summed). Higher = more dynamic; heavily limited masters score about 4-8, dynamic ones 12-20.
+    Approximation of the Pleasurize Music Foundation procedure, not a certified meter."""
+    x = np.atleast_2d(x.T).T if x.ndim == 1 else x
+    n = int(block_s * rate)
+    nb = x.shape[0] // n
+    if nb < 3:
+        return float("nan")
+    out = []
+    for ch in range(x.shape[1]):
+        blocks = x[: nb * n, ch].reshape(nb, n)
+        peaks = np.sort(np.max(np.abs(blocks), axis=1))
+        rms = np.sqrt(np.mean(blocks ** 2, axis=1))
+        top = np.sort(rms)[::-1][: max(1, int(round(0.2 * nb)))]
+        loud = np.sqrt(np.mean(top ** 2))
+        out.append(20 * np.log10(max(peaks[-2], 1e-9) / max(loud, 1e-9)))
+    return float(np.mean(out))
+
+
+def resample_fft(x, rate_in, rate_out):
+    """Band-limited FFT resampling of x[n, ch] (good enough for diagnostics, not for playback)."""
+    if rate_in == rate_out:
+        return x
+    n_out = int(round(x.shape[0] * rate_out / rate_in))
+    spec = np.fft.rfft(x, axis=0)
+    m = n_out // 2 + 1
+    out = np.zeros((m, x.shape[1]), dtype=complex)
+    k = min(m, spec.shape[0])
+    out[:k] = spec[:k]
+    return np.fft.irfft(out, n_out, axis=0) * (n_out / x.shape[0])
+
+
 def analyse(x, rate):
     """Feature dict for one excerpt (samples [n, ch])."""
     x = np.asarray(x, dtype=np.float64)
@@ -124,6 +159,7 @@ def analyse(x, rate):
     out["peakDbfs"] = 20 * np.log10(peak + 1e-30)
     out["plrDb"] = out["peakDbfs"] - out["loudnessLufs"]
     out["clipsPerSecond"] = float(np.sum(np.abs(x) >= 0.9999) / (n / rate))
+    out["drTT"] = dr_tt(x, rate)
 
     # --- stereo ---
     out["correlation"] = float(np.corrcoef(L, R)[0, 1]) if np.std(L) > 0 and np.std(R) > 0 else 1.0

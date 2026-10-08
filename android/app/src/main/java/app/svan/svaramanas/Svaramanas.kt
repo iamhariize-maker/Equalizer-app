@@ -366,6 +366,8 @@ object Svaramanas {
             13 -> out += "The top end was dull for a full-range file, so I opened the air a little."
             17 -> out += "The mix is thinner/brighter than a healthy balance: eased the top and restored body."
             18 -> out += "The mix is darker/heavier than a healthy balance: opened the top and relieved the low-mid body."
+            19 -> out += "Grounding: easing top-end spikes (%.0f%%) and adding low-mid weight (%.0f%%) so the voice and rhythm keep their body.".format(p.groundingRestraint * 100, p.groundingBody * 100)
+            24 -> out += "House voicing: %+.1f dB of fullness around 170 Hz and %+.1f dB at the top above 8.5 kHz, trimmed for loudness.".format(gainAt(170.0), gainAt(8500.0))
             14 -> out += "This stream stops near %.1f kHz (lossy). I won't lift anything near that ceiling; it would only amplify codec artefacts.".format((h?.cutoffHz ?: 0.0) / 1000)
             15 -> out += "This master is heavily limited or clipping, so I halved every lift. More would only distort."
             16 -> out += "This track has no real stereo, so I skipped widening."

@@ -87,5 +87,11 @@ export/restore and the production Activity's rejection of scripted command extra
 
 0.5.6 (in progress) adds the owner's **Grounded** sonic identity: a bounded HF-transient restrainer and a
 low-mid harmonic body stage (`core/.../grounding.*`, driven by Svaresa), plus offline mastering-reference tools
-(`tools/mastering/`). Read docs/SONIC_IDENTITY.md and docs/MASTERING_TRAINING.md. Listening qualification is
+(`tools/mastering/`). Read docs/SONIC_IDENTITY.md, docs/RESEARCH_GROUNDED_SOUND.md, docs/OWNER_REFERENCE_TASTE.md and
+docs/MASTERING_TRAINING.md. Listening qualification is
 pending: do not claim listeners prefer it until the protocol in SONIC_IDENTITY.md has been run.
+
+Second pass (8 Oct 2026): Svaresa now carries an owner-chosen, clearly audible house voicing (fullness 170 Hz,
+softened top driven by `relativeSharpness()`), odd-order-only body saturation with a level knee, and
+`tools/mastering/ab_compare.py` (same-master test). Core has 108 tests; the owner has no PC, so analysis of audio
+files happens in the working session on uploaded excerpts.

@@ -195,6 +195,37 @@ double predictedGuideLoudnessDeltaDb(const std::vector<BandParams>& bands, const
   return den > 0 && num > 0 ? 10 * std::log10(num / den) : 0;
 }
 
+namespace {
+double bark(double f) { return 13.0 * std::atan(0.00076 * f) + 3.5 * std::atan((f / 7500.0) * (f / 7500.0)); }
+
+// von Bismarck sharpness of third-octave band levels (dB). Band powers are converted to per-Bark intensity
+// (the bands are not equally wide in Bark), then to specific loudness with the 0.23 power law.
+double sharpnessOf(const double* bandDb) {
+  double num = 0.0, den = 0.0;
+  for (int i = 0; i < SourceFeatures::kBands; ++i) {
+    const double fc = SourceFeatures::bandCentreHz(i);
+    const double dz = bark(fc * std::pow(2.0, 1.0 / 6.0)) - bark(fc * std::pow(2.0, -1.0 / 6.0));
+    const double z = bark(fc);
+    const double inten = std::pow(10.0, bandDb[i] / 10.0) / std::max(dz, 1e-6);
+    const double n = std::pow(inten, 0.23) * dz;
+    const double g = z < 15.8 ? 1.0 : 0.15 * std::exp(0.42 * (z - 15.8)) + 0.85;
+    num += n * g * z;
+    den += n;
+  }
+  return den > 0.0 ? 0.11 * num / den : 0.0;
+}
+}  // namespace
+
+double relativeSharpness(const SourceFeatures& f) {
+  static const double ref = [] {
+    double ref[SourceFeatures::kBands];
+    for (int i = 0; i < SourceFeatures::kBands; ++i)
+      ref[i] = kSvaresaTiltTargetDbPerOct * std::log2(SourceFeatures::bandCentreHz(i) / 1000.0);
+    return sharpnessOf(ref);
+  }();
+  return ref > 0.0 ? sharpnessOf(f.bandDb.data()) / ref : 1.0;
+}
+
 Plan plan(const Request& r, const SourceFeatures* features) {
   Plan p;
   // Svaresa does not infer taste or instruments: it corrects what was measured
@@ -275,12 +306,16 @@ Plan plan(const Request& r, const SourceFeatures* features) {
   slots.push_back({{FilterType::Peak, 3500, 0.0, 1.2, true}, false});
   const size_t airIdx = slots.size();
   slots.push_back({{FilterType::HighShelf, 11000, 0.0, 0.71, true}, false});
-  size_t tiltLowIdx = 0, tiltHighIdx = 0;
+  size_t tiltLowIdx = 0, tiltHighIdx = 0, fullIdx = 0, softIdx = 0;
   if (r.svaresaMode) {
     tiltLowIdx = slots.size();
     slots.push_back({{FilterType::LowShelf, 200, 0.0, 0.71, true}, false});
     tiltHighIdx = slots.size();
     slots.push_back({{FilterType::HighShelf, 4000, 0.0, 0.71, true}, false});
+    fullIdx = slots.size();
+    slots.push_back({{FilterType::Peak, 170, 0.0, 0.8, true}, false});
+    softIdx = slots.size();
+    slots.push_back({{FilterType::HighShelf, 8500, 0.0, 0.71, true}, false});
   }
   double svaresaSmooth = 0.0;
 
@@ -348,6 +383,26 @@ Plan plan(const Request& r, const SourceFeatures* features) {
       st.instruments = 0;
       addNote(p, kNoteMono);
     }
+  }
+
+  if (r.svaresaMode) {
+    // House voicing (owner decision, docs/SONIC_IDENTITY.md): fullness backs off when the track already has
+    // measured boom/mud; softness is the house shelf plus a term that grows with measured sharpness excess.
+    const double cs = std::min(strength, 1.0);
+    double fullness = kHouseFullnessDb, soft = kHouseSoftnessDb;
+    if (heard) {
+      const double crowd = std::max(std::max(features->boomDb, features->mudDb), 0.0);
+      fullness *= 1.0 - std::clamp(crowd / 4.0, 0.0, 1.0);
+      const double excess = relativeSharpness(*features) - 1.0 - kSharpnessDeadband;
+      if (excess > 0.0) soft += std::max(kSoftnessMaxDb, -kSoftnessSlopeDb * excess);
+      // A lossy stream has nothing above its ceiling to soften: do not tilt what is not there.
+      if (features->cutoffHz > 0 && features->cutoffHz < 12000.0) soft = 0.0;
+    }
+    // Respect: never stack a full-band lift on a crushed master (same rule as the other lifts).
+    if (heard && features->plrDb > 0 && (features->plrDb < 8.0 || features->clipsPerSecond > 1.0)) fullness *= 0.5;
+    slots[fullIdx].band.gainDb = fullness * cs;
+    slots[softIdx].band.gainDb = soft * cs;
+    if (fullness != 0.0 || soft != 0.0) addNote(p, kNoteVoicing);
   }
 
   const double bandCap = r.svaresaMode ? kSvaresaMaxCorrectionDb : kMaxBandDb;

@@ -8,8 +8,9 @@ namespace {
 constexpr double kButterQ1 = 0.5411961001461970, kButterQ2 = 1.3065629648763766;
 constexpr double kCrestThresholdDb = 5.0;  // HF spike must exceed its own slow level by this
 constexpr double kRatioSlope = 0.5;        // dB reduced per dB of excess (soft 2:1 beyond the threshold)
-constexpr double kDrive = 2.0;             // saturation drive on the band (peak ~ 0.5 = -6 dBFS band level)
-constexpr double kOddWeight = 1.0, kEvenWeight = 0.08;
+constexpr double kDrive = 3.0;             // saturation drive on the band
+constexpr double kOddWeight = 1.0, kEvenWeight = 0.08;  // even weight is scaled by evenMix (0 by default)
+constexpr double kBodyKnee = 0.35;         // band peak level (linear) above which the saturation backs off
 constexpr double kActivePower = 1e-8;      // below ~ -80 dBFS rms nothing is restrained
 double coef(double seconds, double fs) { return std::exp(-1.0 / (seconds * fs)); }
 }  // namespace
@@ -21,7 +22,8 @@ Grounding::Grounding(double fs)
       aSlow_(coef(0.040, fs)),
       aAttack_(coef(0.0005, fs)),
       aRelease_(coef(0.015, fs)),
-      aDc_(coef(0.050, fs)) {
+      aDc_(coef(0.050, fs)),
+      aEnv_(coef(0.020, fs)) {
   const double hz = std::min(kHfCornerHz, 0.35 * fs);
   for (auto& c : ch_) {
     c.hf[0].setCoeffs(designBiquad({FilterType::LowPass, hz, 0, kButterQ1, true}, fs));
@@ -35,6 +37,7 @@ void Grounding::setParams(const GroundingParams& p) {
   auto clean = [](double v) { return std::isfinite(v) ? std::clamp(v, 0.0, 1.0) : 0.0; };
   restraintTarget_.store(clean(p.restraint), std::memory_order_relaxed);
   bodyTarget_.store(clean(p.body), std::memory_order_relaxed);
+  evenTarget_.store(clean(p.evenMix), std::memory_order_relaxed);
 }
 
 void Grounding::reset() {
@@ -45,17 +48,19 @@ void Grounding::reset() {
     c.evenDc = 0;
   }
   fast_ = slow_ = 0;
+  bodyEnv_ = 0;
   gain_ = 1;
-  restraintMix_ = bodyMix_ = 0;
+  restraintMix_ = bodyMix_ = evenMix_ = 0;
   restraintDb_.store(0, std::memory_order_relaxed);
 }
 
 void Grounding::process(double* left, double* right, int frames) {
   const double rt = restraintTarget_.load(std::memory_order_relaxed);
   const double bt = bodyTarget_.load(std::memory_order_relaxed);
-  if (rt == 0 && bt == 0 && restraintMix_ == 0 && bodyMix_ == 0) {
+  const double et = evenTarget_.load(std::memory_order_relaxed);
+  if (rt == 0 && bt == 0 && restraintMix_ == 0 && bodyMix_ == 0 && evenMix_ == 0) {
     // Fully off and settled: exact bypass, forget state so re-enabling is click-free.
-    if (gain_ != 1 || fast_ != 0 || slow_ != 0) reset();
+    if (gain_ != 1 || fast_ != 0 || slow_ != 0 || bodyEnv_ != 0) reset();
     return;
   }
   const int C = right ? 2 : 1;
@@ -63,8 +68,9 @@ void Grounding::process(double* left, double* right, int frames) {
   for (int i = 0; i < frames; ++i) {
     restraintMix_ += std::clamp(rt - restraintMix_, -mixStep_, mixStep_);
     bodyMix_ += std::clamp(bt - bodyMix_, -mixStep_, mixStep_);
+    evenMix_ += std::clamp(et - evenMix_, -mixStep_, mixStep_);
     double hf[2] = {0, 0}, warm[2] = {0, 0};
-    double power = 0;
+    double power = 0, bandPeak = 0;
     for (int c = 0; c < C; ++c) {
       Chan& k = ch_[c];
       const double x = io[c][i];
@@ -73,14 +79,20 @@ void Grounding::process(double* left, double* right, int frames) {
       hf[c] = h;
       power += h * h;
       const double b = k.bodyLp.process(k.bodyHp.process(x));
+      bandPeak = std::max(bandPeak, std::fabs(b));
       // Odd part: saturated band minus linear band (unity small-signal gain).
       const double odd = std::tanh(kDrive * b) / kDrive - b;
       // Even part: b^2 with its mean removed; grows with level squared.
       const double sq = b * b;
       k.evenDc = sq + aDc_ * (k.evenDc - sq);
       const double even = sq - k.evenDc;
-      warm[c] = kOddWeight * odd + kEvenWeight * even;
+      warm[c] = kOddWeight * odd + kEvenWeight * evenMix_ * even;
     }
+    // Linked peak follower of the body band: loud peaks get less saturation, so the stage adds
+    // weight to moderate levels but never turns gritty on a loud master.
+    bodyEnv_ = std::max(bandPeak, bodyEnv_ * aEnv_);
+    const double knee = 1.0 / (1.0 + (bodyEnv_ / kBodyKnee) * (bodyEnv_ / kBodyKnee));
+    for (int c = 0; c < C; ++c) warm[c] *= knee;
     power /= C;
     fast_ = power + aFast_ * (fast_ - power);
     slow_ = power + aSlow_ * (slow_ - power);
