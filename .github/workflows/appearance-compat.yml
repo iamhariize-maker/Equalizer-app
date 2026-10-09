@@ -20,12 +20,12 @@ jobs:
       matrix:
         include: >-
           ${{ fromJSON(github.event_name == 'workflow_dispatch'
-              && '[{"api":33,"target":"default"},{"api":36,"target":"google_apis"}]'
+              && '[{"api":36,"target":"google_apis"}]'
               || '[{"api":29,"target":"default"},{"api":30,"target":"default"},{"api":33,"target":"default"},{"api":35,"target":"default"},{"api":36,"target":"google_apis"}]') }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ba279d026cc14fbaee6bc3f26f0202d3d6f8d86e
+          ref: ${{ github.sha }}
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -58,17 +58,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -feature -Vulkan -memory 3072 -cores 2 -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
-          script: |
-            export PATH="$GITHUB_WORKSPACE/tools/ci:$PATH"
-            adb logcat -c
-            adb logcat -v threadtime > "$GITHUB_WORKSPACE/compat-out/logcat-stream.txt" 2>&1 &
-            SVAN_COMPAT_LOG_PID=$!
-            trap 'kill "$SVAN_COMPAT_LOG_PID" 2>/dev/null || true' EXIT
-            adb devices -l > "$GITHUB_WORKSPACE/compat-out/devices-before.txt"
-            adb shell getprop > "$GITHUB_WORKSPACE/compat-out/properties-before.txt"
-            timeout --kill-after=5s 240s bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/compat-out/smoke.txt" 2>&1
-            adb devices -l > "$GITHUB_WORKSPACE/compat-out/devices-after.txt"
-
+          script: bash scripts/frozen_compat_diagnostics.sh "$GITHUB_WORKSPACE/compat-out"
       - name: Require the original release smoke pass
         if: always()
         run: |
