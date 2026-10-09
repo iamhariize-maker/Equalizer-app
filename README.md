@@ -113,3 +113,17 @@ The launcher mark is a modern **स्व** (sva, as in स्वनम् — "
 `tools/brand/make_icon.py` from **Poppins SemiBold** glyph outlines
 (Indian Type Foundry, [SIL Open Font License 1.1](https://openfontlicense.org)),
 shaped with HarfBuzz, with a continuous brass shirorekha inside the yantra ring.
+
+Appearance is available from the palette button above every main screen. **Svan
+Original** preserves the gold and charcoal identity and the existing desert EQ.
+**Midnight Raga**, **Sandstone Atelier**, and **Indigo Loom** provide complete
+alternative palettes, landscape artwork, restrained Indian botanical or geometric
+prints, and matching typography. Appearance changes retain the current music,
+engine, EQ, and tuning-signature settings.
+
+The three additional themes use **Cormorant Garamond** (Christian Thalmann) and
+**Noto Sans** (the Noto Project), both under the SIL Open Font License 1.1. Full
+notices ship in `assets/licenses/CormorantGaramond-OFL.txt` and
+`assets/licenses/NotoSans-OFL.txt`. New landscape and print images were generated
+for this owner-authorized design; the original Svan mark and functional EQ
+drawing remain app code. See [the appearance implementation](docs/APPEARANCE_0.5.9.md).

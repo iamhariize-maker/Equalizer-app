@@ -78,29 +78,22 @@ fun SvaramanasPanel(
     var tasteMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tasteMessage) { if (tasteMessage != null) { delay(5000); tasteMessage = null } }
 
-    // The lotus around the स्व mark; it turns slowly while Svaramanas is listening.
-    val lotusSpin = androidx.compose.animation.core.rememberInfiniteTransition(label = "lotus")
-    val lotusAngle by lotusSpin.animateFloat(0f, 360f, androidx.compose.animation.core.infiniteRepeatable(
-        androidx.compose.animation.core.tween(60_000, easing = androidx.compose.animation.core.LinearEasing)), label = "turn")
-    val turning = listening && request.enabled
     Column(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
             .background(Svan.Surface)
-            .drawBehind {
-                drawLotusMandala(androidx.compose.ui.geometry.Offset(42.dp.toPx(), 40.dp.toPx()), 58.dp.toPx(),
-                    if (turning) lotusAngle else 0f, strength = 0.4f)
-            }
             .border(1.dp, Svan.Bronze.copy(alpha = 0.6f), RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 18.dp),
     ) {
+        BrandLine()
+        ThemePrint(Modifier.padding(bottom = 16.dp), alpha = 0.65f)
         Row(verticalAlignment = Alignment.CenterVertically) {
             SvaramanasMark(44.dp, listening = listening && request.enabled, resting = !request.enabled)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("SVARAMANAS", style = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium, fontSize = 11.sp, letterSpacing = 3.sp), color = Svan.Gold)
+                Text("SVARAMANAS", style = TextStyle(fontFamily = Svan.DisplayFont, fontWeight = FontWeight.Medium, fontSize = 11.sp, letterSpacing = 3.sp), color = Svan.Gold)
                 Text("What kind of sound do you want?", style = MaterialTheme.typography.titleLarge, color = Svan.Text)
             }
             Switch(
@@ -322,7 +315,7 @@ private fun ModeCard(mode: SmartMode, selected: Boolean, listening: Boolean, mod
             Text(mode.plainName, style = MaterialTheme.typography.titleSmall, color = if (selected) Svan.Gold else Svan.Text)
             Text(
                 mode.sanskritName,
-                style = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium, fontSize = 13.sp),
+                style = TextStyle(fontFamily = Svan.DisplayFont, fontWeight = FontWeight.Medium, fontSize = 13.sp),
                 color = Svan.Molten,
                 maxLines = 1,
             )

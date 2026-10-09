@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -38,10 +39,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 
-const val BRAND_FULL = "Svanam Shreshtham"
+const val BRAND_FULL = "Svanam Shreshtam"
 const val BRAND_TAGLINE = "Ultimate Sound"
 
 /**
@@ -50,25 +59,34 @@ const val BRAND_TAGLINE = "Ultimate Sound"
  */
 @Composable
 fun BrandLine(modifier: Modifier = Modifier) {
-    Row(modifier.semantics { contentDescription = "$BRAND_FULL: $BRAND_TAGLINE" }, verticalAlignment = Alignment.CenterVertically) {
+    var appearanceOpen by remember { mutableStateOf(false) }
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             BRAND_FULL.uppercase(),
-            style = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium, fontSize = 10.sp, letterSpacing = 3.sp),
-            color = Svan.Gold.copy(alpha = 0.85f),
+            style = TextStyle(fontFamily = Svan.DisplayFont, fontWeight = FontWeight.Medium, fontSize = 10.sp, letterSpacing = 2.sp),
+            color = Svan.Gold,
+            modifier = Modifier.weight(1f).semantics { contentDescription = "$BRAND_FULL: $BRAND_TAGLINE" },
         )
-        Spacer(Modifier.width(10.dp))
-        Box(Modifier.width(28.dp).height(1.dp).background(Svan.Bronze.copy(alpha = 0.7f)))
+        IconButton(onClick = { appearanceOpen = true }) {
+            Icon(Icons.Outlined.Palette, contentDescription = "Appearance", tint = Svan.TextMuted, modifier = Modifier.size(20.dp))
+        }
     }
+    if (appearanceOpen) AppearanceSheet { appearanceOpen = false }
 }
 
 /** Screen title under the brand line. */
 @Composable
-fun ScreenTitle(title: String, subtitle: String? = null) {
+fun ScreenTitle(title: String, subtitle: String? = null, ornament: Boolean = true) {
     Column {
         BrandLine()
         Spacer(Modifier.height(4.dp))
-        Text(title, style = MaterialTheme.typography.headlineMedium.copy(brush = Svan.AccentBrush))
+        if (SvanAppearance.current == AppearanceTheme.ORIGINAL) {
+            Text(title, style = MaterialTheme.typography.headlineMedium.copy(brush = Svan.AccentBrush))
+        } else {
+            Text(title, style = MaterialTheme.typography.headlineMedium, color = Svan.Text)
+        }
         if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        if (ornament) ThemePrint(Modifier.padding(top = 16.dp, bottom = 8.dp))
     }
 }
 
@@ -78,13 +96,8 @@ fun ScreenTitle(title: String, subtitle: String? = null) {
 @Composable
 fun Exten9edTitle(modifier: Modifier = Modifier) {
     val style = MaterialTheme.typography.headlineMedium.copy(brush = Svan.AccentBrush)
-    Row(modifier.clearAndSetSemantics { contentDescription = "EQ Extended" }, verticalAlignment = Alignment.Bottom) {
-        Text("EQ exten", style = style)
-        // CI's serif flipped d still read as q. A real 9 keeps the intended
-        // 3-6-9 branding clear at small screen sizes, with the same baseline.
-        Text("9", style = style)
-        Text("ed", style = style)
-    }
+    Text("EQ exten9ed", style = style,
+        modifier = modifier.clearAndSetSemantics { contentDescription = "EQ Extended" })
 }
 
 /**
@@ -136,10 +149,10 @@ fun BootAnimation(onDone: () -> Unit) {
         }
         BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         // Fit "Svanam Shreshtham" (17 serif glyphs) on one line on any screen width.
-        val fitSp = (maxWidth.value / 12.8f).coerceIn(18f, 34f) // ~12% side margins
+        val fitSp = (maxWidth.value / 12.8f).coerceIn(18f, 34f) / LocalDensity.current.fontScale
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Box(contentAlignment = Alignment.Center) {
-                val big = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = (fitSp * 1.35f).sp, brush = Svan.AccentBrush)
+                val big = TextStyle(fontFamily = Svan.DisplayFont, fontWeight = FontWeight.SemiBold, fontSize = (fitSp * 1.35f).sp, brush = Svan.AccentBrush)
                 Text("Svan", style = big, maxLines = 1, modifier = Modifier.alpha(shortIn.value * (1f - morph.value))
                     .graphicsLayer { val s = 0.92f + 0.08f * shortIn.value; scaleX = s; scaleY = s })
                 Text(
@@ -154,7 +167,7 @@ fun BootAnimation(onDone: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             Text(
                 BRAND_TAGLINE.uppercase(),
-                style = TextStyle(fontFamily = FontFamily.Serif, fontSize = 13.sp, letterSpacing = (6 + 2 * (1 - tagline.value)).sp),
+                style = TextStyle(fontFamily = Svan.DisplayFont, fontSize = 13.sp, letterSpacing = (6 + 2 * (1 - tagline.value)).sp),
                 color = Svan.Molten,
                 modifier = Modifier.alpha(tagline.value).padding(start = 6.dp),
             )

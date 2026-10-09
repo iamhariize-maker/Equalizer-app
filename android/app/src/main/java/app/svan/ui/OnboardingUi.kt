@@ -251,23 +251,20 @@ fun ContextualSetupPrompt(state: WorkingState) {
 }
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun FirstRunWelcome() {
     val context = LocalContext.current
     var show by remember { mutableStateOf(!OnboardingAndroid.prefs(context).getBoolean("welcome_seen", false)) }
     if (!show) return
     SvanCard {
-        Box {
-            // A faint lotus at the card's edge: decoration only, it never changes the layout.
-            androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
-                drawLotusMandala(androidx.compose.ui.geometry.Offset(size.width - 18.dp.toPx(), 26.dp.toPx()), 46.dp.toPx(), strength = 0.45f)
-            }
         Column {
             Text("Start with your music", style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
-            Text("System effects starts with Flat on a new install. Play your music; optional detection help appears only when Svan cannot reach it.",
+            Text("Play a song. New installs start with Flat system effects. Hi-Fi shows the actual music connection.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            TextButton(onClick = { OnboardingUi.panel.value = HelpPanel.BATTERY }) { Text("Background audio help") }
-            TextButton(onClick = { OnboardingAndroid.prefs(context).edit().putBoolean("welcome_seen", true).apply(); show = false }) { Text("Got it") }
-        }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { OnboardingUi.panel.value = HelpPanel.BATTERY }) { Text("Background audio help") }
+                TextButton(onClick = { OnboardingAndroid.prefs(context).edit().putBoolean("welcome_seen", true).apply(); show = false }) { Text("Got it") }
+            }
         }
     }
 }

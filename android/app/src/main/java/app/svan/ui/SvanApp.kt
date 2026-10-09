@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +23,7 @@ import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.LibraryMusic
 import androidx.compose.material.icons.outlined.Science
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -48,6 +51,18 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 
 /** Dedicated shortcut dock: it never overlays a slider, dial or numeric readout. */
 @Composable
@@ -74,14 +89,17 @@ private fun SvaramanasDock(modifier: Modifier = Modifier) {
                 role=Role.Button
                 contentDescription = "${request.mode.plainName}. Tap to open, hold to compare."
                 onClick(label="Open ${request.mode.plainName}") { app.svan.svaramanas.SvaramanasActivity.open(context); true }
+                customActions = listOf(CustomAccessibilityAction(if (eq.smartBypass) "Return to smart processing" else "Compare without smart adjustments") {
+                    app.svan.svaramanas.Svaramanas.setBypass(!eq.smartBypass); true
+                })
             }
             .padding(horizontal=16.dp, vertical=8.dp),
         verticalAlignment=Alignment.CenterVertically,
     ) {
         if (request.mode == app.svan.svaramanas.SmartMode.SVARESA) {
-            SvaresaMark(36.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
+            SvaresaMark(32.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
         } else {
-            SvaramanasMark(36.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
+            SvaramanasMark(32.dp, listening = listening && request.enabled, resting = !request.enabled || eq.smartBypass)
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -103,6 +121,7 @@ private val TABS = listOf(
 )
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun SvanApp(
     onStartCapture: () -> Unit,
     onStopCapture: () -> Unit,
@@ -112,6 +131,8 @@ fun SvanApp(
     val helpPanel by OnboardingUi.panel.collectAsState()
     if(blindOpen) BlindListening()
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var sectionsOpen by rememberSaveable { mutableStateOf(false) }
+    val largeNavigation = LocalDensity.current.fontScale > 1.5f && LocalConfiguration.current.screenWidthDp < 420
     val context = androidx.compose.ui.platform.LocalContext.current
     var working by androidx.compose.runtime.remember { mutableStateOf(app.svan.OnboardingAndroid.working(context)) }
     ObserveWhileVisible { working = app.svan.OnboardingAndroid.working(context) }
@@ -124,6 +145,13 @@ fun SvanApp(
         bottomBar = {
             Column {
             SvaramanasDock()
+            if (largeNavigation) Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).background(Svan.Surface).padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(TABS[tab].icon, null, tint = Svan.Gold)
+                Spacer(Modifier.width(12.dp))
+                Text(TABS[tab].label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                IconButton(onClick = { sectionsOpen = true }) { Icon(Icons.Outlined.Menu, "All sections", tint = Svan.Gold) }
+            } else
             NavigationBar(containerColor = Svan.Surface, tonalElevation = androidx.compose.ui.unit.Dp(0f)) {
                 TABS.forEachIndexed { i, t ->
                     NavigationBarItem(
@@ -161,6 +189,22 @@ fun SvanApp(
         }
     }
     if (!booted) BootAnimation(onDone = { booted = true })
+    if (sectionsOpen) ModalBottomSheet(onDismissRequest = { sectionsOpen = false }, containerColor = Svan.Surface,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 12.dp)) {
+            Text("Sections", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(16.dp))
+            TABS.forEachIndexed { index, destination ->
+                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                    .selectable(tab == index, role = Role.Tab, onClick = { tab = index; sectionsOpen = false })
+                    .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(destination.icon, null, tint = if (tab == index) Svan.Gold else Svan.TextMuted)
+                    Spacer(Modifier.width(16.dp))
+                    Text(destination.label, style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+    }
     SetupHelpHost()
     ProofRecordingOverlay()
     }

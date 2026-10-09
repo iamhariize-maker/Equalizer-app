@@ -1,0 +1,24 @@
+{
+  "source_commit": "4ec51ee68f415617d454a51a75ce0cc98f5e3ebb",
+  "ci_run": 37881530559,
+  "ci_artifact": 11595080967,
+  "uploaded_apk_sha256": "2561786c12b349d80ca87037bcb8d017654b34c8b0e38c29236674f3aebfe0f8",
+  "baseline_ci_apk_sha256": "4f0d1c1f6e4f1fdf7c5de3188a16b90b598909a7e07c8f87d67a93b167665127",
+  "same_apk": false,
+  "same_zip_payload": false,
+  "different_entries": [
+    "kotlin-tooling-metadata.json",
+    "lib/arm64-v8a/libeqjni.so",
+    "lib/x86_64/libeqjni.so"
+  ],
+  "same_compiled_app_and_resources": true,
+  "native_section_differences": {
+    "arm64-v8a": [
+      ".note.gnu.build-id"
+    ],
+    "x86_64": [
+      ".note.gnu.build-id"
+    ]
+  },
+  "tooling_difference": "Uploaded APK used Gradle 8.14.3; repository CI used 8.11.1. Kotlin plugin 1.9.24 and NDK Clang 18.0.1 match."
+}

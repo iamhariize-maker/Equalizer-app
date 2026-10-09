@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -51,6 +53,7 @@ import app.svan.RatePolicy
 import kotlinx.coroutines.delay
 
 /** Svan processing controls and observed routing status. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     val context = LocalContext.current
@@ -65,6 +68,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     var running by remember { mutableStateOf(CaptureService.isRunning) }
     var routes by remember { mutableStateOf(SessionRouter.snapshot.toList()) }
     var showRules by remember { mutableStateOf(false) }
+    var showPlaybackDetails by remember { mutableStateOf(false) }
     if (showRules) PolicyRulesScreen { showRules = false }
     val detection by DetectionMonitor.status.collectAsState()
     val captureStartup by CaptureService.startupMessage.collectAsState()
@@ -86,24 +90,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
     }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 16.dp else 24.dp)) {
         ScreenTitle("Hi-Fi", "Choose processing, then check what each app actually uses.")
-        OutlinedButton(onClick = { showRules = true }, modifier = Modifier.fillMaxWidth()) { Text("How Svaresa decides") }
-
-        DetectionCard(captureStats = stats)
-
-        SectionLabel("Background equalizer")
-        SvanCard {
-            Column {
-                Text(if (systemRunning) "Background service running" else "System equalizer stopped", style = MaterialTheme.typography.titleMedium)
-                Text("Keeps effects available when you leave Svan. Check Is it working? for an actual player connection; Android may stop background audio.",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                OutlinedButton(onClick = { if (systemRunning) SystemEqService.stop(context) else SystemEqService.start(context) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (systemRunning) "Stop all processing" else "Start system equalizer")
-                }
-            }
-        }
-
         SectionLabel("Engine")
         SvanCard {
             Column {
@@ -133,37 +121,11 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                 }
             }
         }
-        if (captureRecovery.isNotBlank()) Text(captureRecovery, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-        if (running) {
-            SvanCard {
-                Column {
-                    app.svan.HiFiStatus.idleNote(running,
-                        routes.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.map { it.pkg }.distinct().size,
-                        routes.filter { it.owner == SessionRouter.Owner.ENGINE_A }.map { it.pkg }.distinct().size)?.let { note ->
-                        Text(note, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-                    }
-                    stats?.let { st ->
-                        Text("Signal peak · in %.1f dBFS · out %.1f dBFS".format(st.inputPeakDb, st.outputPeakDb), style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
-                        Text("Output queue %.1f ms · buffer %.1f ms".format(st.queuedMs, st.bufferMs), style = MaterialTheme.typography.bodySmall)
-                        Text("DSP %.1f ms · load %.1f%% · underruns %d".format(st.dspLatencyMs, st.dspPercent, st.underruns), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                        Text("Spatial blend: %.0f%% Detailed".format(st.detailedMix * 100), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                        Text("Spatial mode applied: ${CaptureService.epoch?.appliedSettings?.spatialMode?.title ?: "—"}", style = MaterialTheme.typography.bodySmall)
-                        CaptureService.rateFacts?.let { Text(it.summary(), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
-                        Text("Applied gain %.1f dB · protection %.1f dB".format(st.gainDb, st.protectionDb), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                    }
-                    Text("These readings exclude capture, Android mixing and Bluetooth delay. Svan increases buffering after underruns and returns to system effects if capture repeatedly cannot keep up.",
-                        style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
-                }
-            }
+        androidx.compose.material3.TextButton(onClick = { OnboardingUi.panel.value = HelpPanel.DETECTION }, modifier = Modifier.fillMaxWidth()) {
+            Text("Music detection help")
         }
-        ProofRecorderCard(running)
-        EngineMode.entries.forEach { m ->
-            ChoiceRow(m.title, m.detail, s.engineMode == m, onClick = { SvanRepository.updateSettings { it.copy(engineMode = m) } },
-                badge = if (m == EngineMode.SYSTEM_ONLY) "Recommended" else null)
-        }
-
         SectionLabel("Apps & engines")
-        Text("Notifications, interface effects and known utility sounds are left outside Svan processing. Unknown players must show sustained playback. Their alerts remain audible normally. Try Spotify, Amazon Music, YouTube Music, Apple Music, or another player. Svan lists it when Android exposes a playback session, then shows the engine available on this phone. Engine B needs capture permission; direct/bit-perfect modes may bypass system effects and capture. Restart capture after changing an app's engine.",
+        Text("Play music in Spotify, Amazon Music, YouTube Music or another player. Connections appear when Android exposes a music session. Capture needs permission; direct or bit-perfect output may bypass both engines. Restart capture after changing an app’s engine.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         if (knownApps.isEmpty()) Text("No audio apps detected yet.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
         val livePkgs = routes.map { it.pkg }.toSet() + detection.sessions.map { it.session.packageName }
@@ -207,10 +169,58 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         else -> "Capture compatibility not checked yet."
                     }, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Pill("Auto", pkg !in systemApps, { prefs.setSystemOnly(pkg, false); systemApps = prefs.systemOnlyPackages() })
                         Pill("System effects", pkg in systemApps, { prefs.setSystemOnly(pkg, true); systemApps = prefs.systemOnlyPackages() })
                     }
+                }
+            }
+        }
+
+        if (captureRecovery.isNotBlank()) Text(captureRecovery, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+        if (running) {
+            SvanCard {
+                Column {
+                    app.svan.HiFiStatus.idleNote(running,
+                        routes.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.map { it.pkg }.distinct().size,
+                        routes.filter { it.owner == SessionRouter.Owner.ENGINE_A }.map { it.pkg }.distinct().size)?.let { note ->
+                        Text(note, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+                    }
+                    OutlinedButton(onClick = { showPlaybackDetails = !showPlaybackDetails }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (showPlaybackDetails) "Hide playback details" else "Playback details")
+                    }
+                    if (showPlaybackDetails) stats?.let { st ->
+                        Text("Signal peak · in %.1f dBFS · out %.1f dBFS".format(st.inputPeakDb, st.outputPeakDb), style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+                        Text("Output queue %.1f ms · buffer %.1f ms".format(st.queuedMs, st.bufferMs), style = MaterialTheme.typography.bodySmall)
+                        Text("DSP %.1f ms · load %.1f%% · underruns %d".format(st.dspLatencyMs, st.dspPercent, st.underruns), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                        Text("Spatial blend: %.0f%% Detailed".format(st.detailedMix * 100), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                        Text("Spatial mode applied: ${CaptureService.epoch?.appliedSettings?.spatialMode?.title ?: "—"}", style = MaterialTheme.typography.bodySmall)
+                        CaptureService.rateFacts?.let { Text(it.summary(), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
+                        Text("Applied gain %.1f dB · protection %.1f dB".format(st.gainDb, st.protectionDb), style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                    }
+                    if (showPlaybackDetails) Text("These readings exclude capture, Android mixing and Bluetooth delay. Svan increases buffering after underruns and returns to system effects if capture repeatedly cannot keep up.",
+                        style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
+                }
+            }
+        }
+        ProofRecorderCard(running)
+        EngineMode.entries.forEach { m ->
+            ChoiceRow(m.title, m.detail, s.engineMode == m, onClick = { SvanRepository.updateSettings { it.copy(engineMode = m) } },
+                badge = if (m == EngineMode.SYSTEM_ONLY) "Recommended" else null)
+        }
+
+        OutlinedButton(onClick = { showRules = true }, modifier = Modifier.fillMaxWidth()) { Text("How Svaresa decides") }
+
+        DetectionCard(captureStats = stats)
+
+        SectionLabel("Background equalizer")
+        SvanCard {
+            Column {
+                Text(if (systemRunning) "Background service running" else "System equalizer stopped", style = MaterialTheme.typography.titleMedium)
+                Text("Keeps effects available when you leave Svan. Check Is it working? for an actual player connection; Android may stop background audio.",
+                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                OutlinedButton(onClick = { if (systemRunning) SystemEqService.stop(context) else SystemEqService.start(context) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (systemRunning) "Stop all processing" else "Start system equalizer")
                 }
             }
         }

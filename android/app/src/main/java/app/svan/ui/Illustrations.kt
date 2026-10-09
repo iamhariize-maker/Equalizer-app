@@ -6,10 +6,14 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
@@ -37,21 +41,25 @@ private fun polar(c: Offset, r: Float, a: Double) = Offset(c.x + r * cos(a).toFl
 /**
  * The EQ curve as a night landscape, drawn behind the Sound screen's response graph. The near hills rise
  * and fall with the bass end of the curve, a golden river runs through the mids, and the lapis sky with
- * slowly breathing stars holds the air. Low contrast by design: the graph on top stays the subject.
+ * quiet stars holds the air. Low contrast by design: the graph on top stays the subject.
  */
 @Composable
 fun SoundLandscape(curve: DoubleArray, modifier: Modifier = Modifier, live: Boolean = true) {
+    val theme = SvanAppearance.current
+    if (theme.landscape != null) {
+        Image(painterResource(theme.landscape), contentDescription = null, modifier = modifier,
+            contentScale = ContentScale.Crop, alignment = Alignment.BottomEnd)
+        return
+    }
     val stars = remember { starField(46) }
-    val breath = rememberInfiniteTransition(label = "stars")
-    val phase by breath.animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(9000, easing = LinearEasing)), label = "phase")
     Canvas(modifier) {
         val w = size.width
         val h = size.height
         // Sky: night indigo at the top, warming to the card's surface at the horizon.
         drawRect(Brush.verticalGradient(0f to Svan.Indigo, 0.58f to Color(0xFF1E1C24), 1f to Svan.Surface))
-        // Stars, breathing at their own pace; a few carry the cool lapis.
+        // Static decoration avoids continuous animation during music playback.
         stars.forEach { s ->
-            val twinkle = if (live) 0.5f + 0.5f * sin(phase * s.speed + s.offset) else 0.6f
+            val twinkle = if (live) 0.6f else 0.4f
             val a = (0.18f + 0.5f * twinkle) * s.bright
             drawCircle((if (s.cool) Svan.Lapis else Svan.Molten).copy(alpha = a), s.r * density, Offset(s.x * w, s.y * h * 0.55f))
         }
@@ -153,12 +161,11 @@ private fun DrawScope.petalRing(c: Offset, n: Int, tip: Float, base: Float, widt
     }
 }
 
-/** The lotus as a composable; [turning] makes it rotate very slowly (one turn a minute). */
+/** Static lotus decoration; the legacy turning argument remains source-compatible. */
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun LotusMandala(modifier: Modifier = Modifier, turning: Boolean = false, strength: Float = 1f) {
-    val spin = rememberInfiniteTransition(label = "lotus")
-    val angle by spin.animateFloat(0f, 360f, infiniteRepeatable(tween(60_000, easing = LinearEasing)), label = "turn")
-    Canvas(modifier) { drawLotusMandala(center, size.minDimension / 2f, if (turning) angle else 0f, strength = strength) }
+    Canvas(modifier) { drawLotusMandala(center, size.minDimension / 2f, strength = strength) }
 }
 
 /** The colour that carries each sound style's meaning. */

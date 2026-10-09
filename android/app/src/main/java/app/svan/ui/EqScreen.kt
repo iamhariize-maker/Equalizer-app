@@ -11,6 +11,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -73,6 +75,7 @@ import kotlin.math.pow
 private const val MAX_BANDS = 128
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun EqScreen(onOpenDetection: () -> Unit = {}) {
     val eq by SvanRepository.eq.collectAsState()
     val settings by SvanRepository.settings.collectAsState()
@@ -103,10 +106,9 @@ fun EqScreen(onOpenDetection: () -> Unit = {}) {
             TextButton(onClick = onOpenDetection, modifier = Modifier.fillMaxWidth()) { Text("Music not detected? Set up in Hi-Fi") }
         }
 
-        Row(Modifier.fillMaxWidth().padding(horizontal=12.dp), horizontalArrangement=Arrangement.spacedBy(8.dp), verticalAlignment=Alignment.CenterVertically) {
+        FlowRow(Modifier.fillMaxWidth().padding(horizontal=12.dp), horizontalArrangement=Arrangement.spacedBy(8.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
             Pill(if (eq.smartEqControl && request.mode == app.svan.svaramanas.SmartMode.GUIDED) "Guide EQ" else "Svaresa EQ", eq.smartEqControl, { SvanRepository.setSmartEqControl(true); conversion=null })
             Pill("Your EQ", !eq.smartEqControl, { SvanRepository.setSmartEqControl(false); conversion=null })
-            Spacer(Modifier.weight(1f))
             IconButton(onClick={SvanRepository.undoEq(); conversion=null}, enabled=undo.isNotEmpty() && !eq.smartEqControl) {
                 Icon(Icons.AutoMirrored.Outlined.Undo,"Undo EQ edit",tint=if(undo.isNotEmpty() && !eq.smartEqControl) Svan.Gold else Svan.TextFaint)
             }
@@ -124,11 +126,12 @@ fun EqScreen(onOpenDetection: () -> Unit = {}) {
             Modifier
                 .padding(horizontal = 12.dp)
                 .fillMaxWidth()
-                .height(if (LocalConfiguration.current.screenHeightDp < 700) 185.dp else 220.dp)
+                .height(if (LocalConfiguration.current.screenHeightDp < 700) 208.dp else 248.dp)
                 .clip(RoundedCornerShape(22.dp))
                 .background(Brush.verticalGradient(listOf(Svan.Surface, Svan.Black)))
                 .border(1.dp, Svan.Grid, RoundedCornerShape(22.dp)),
         ) {
+            SoundLandscape(curve, Modifier.fillMaxSize(), live = eq.enabled)
             ResponseGraph(
                 bands = displayBands,
                 curveDb = curve,
@@ -164,11 +167,11 @@ fun EqScreen(onOpenDetection: () -> Unit = {}) {
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         ) {
+            ThemePrint(Modifier.padding(top = 12.dp, bottom = 4.dp))
             Spacer(Modifier.height(12.dp))
             Text("Graph: combined EQ response · includes headphone and bass layers · excludes preamp",style=MaterialTheme.typography.bodySmall,color=Svan.TextFaint)
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Pill("Parametric", eq.workspaceMode == EqMode.PARAMETRIC, { changeMode(EqMode.PARAMETRIC) })
-                Spacer(Modifier.width(8.dp))
                 Pill("Graphic", eq.workspaceMode == EqMode.GRAPHIC, { changeMode(EqMode.GRAPHIC) })
             }
 

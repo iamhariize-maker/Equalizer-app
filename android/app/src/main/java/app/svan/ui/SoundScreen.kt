@@ -144,25 +144,20 @@ fun SoundScreen() {
 
     val curve = remember(eq) { EqController.curveEngine.curveDb(CURVE_FREQS) }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
-        item {
-            ScreenTitle("Sound", "Make your headphones sound their best.")
+    val landscapeFirst = SvanAppearance.current == AppearanceTheme.ORIGINAL || SvanAppearance.current == AppearanceTheme.SANDSTONE_ATELIER
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 16.dp else 24.dp)) {
+        item(key = "sound-introduction") {
+            ScreenTitle("Sound", "Make your headphones sound their best.", ornament = false)
+            Spacer(Modifier.height(12.dp))
             FirstRunWelcome()
             Spacer(Modifier.height(12.dp))
-            Box(
-                Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(20.dp)).background(Svan.Surface)
-                    .border(1.dp, Svan.Grid, RoundedCornerShape(20.dp)),
-            ) {
-                SoundLandscape(curve, Modifier.fillMaxSize(), live = eq.enabled)
-                ResponseGraph(emptyList(), curve, -1, eq.enabled, editable = false,
-                    onSelect = {}, onMove = { _, _, _ -> }, onAdd = { _, _ -> }, onDelete = {}, modifier = Modifier.fillMaxSize())
-            }
+            if (landscapeFirst) SoundResponsePreview(curve, eq.enabled)
             SectionLabel("Your headphones")
         }
 
         // ---- headphones ----
         if (!picking && entry != null) {
-            item {
+            item(key = "selected-headphones") {
                 SvanCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Headphones, contentDescription = null, tint = Svan.Gold)
@@ -183,10 +178,10 @@ fun SoundScreen() {
                 TextButton(onClick = { picking = true }) { Text("Change headphones") }
             }
         } else {
-            item {
+            item(key = "headphone-search") {
                 OutlinedTextField(
                     value = query, onValueChange = { query = it },
-                    placeholder = { Text("Search ~9,000 headphones & IEMs", color = Svan.TextFaint) },
+                    placeholder = { Text("Search headphones & IEMs", color = Svan.TextFaint) },
                     leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null, tint = Svan.TextMuted) },
                     trailingIcon = { if (searching) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = Svan.Gold) },
                     singleLine = true,
@@ -217,6 +212,11 @@ fun SoundScreen() {
                     }
                 }
             }
+        }
+
+        if (!landscapeFirst) item(key = "sound-response") {
+            Spacer(Modifier.height(16.dp))
+            SoundResponsePreview(curve, eq.enabled)
         }
 
         // ---- signature & taste ----
@@ -281,6 +281,18 @@ fun SoundScreen() {
         item { InstrumentTunerCard(eq.instrument) }
         item { Spacer(Modifier.height(24.dp)) }
     }
+}
+
+@Composable
+private fun SoundResponsePreview(curve: DoubleArray, enabled: Boolean) {
+    Box(Modifier.fillMaxWidth().height(if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 172.dp else 208.dp)
+        .clip(RoundedCornerShape(20.dp)).background(Svan.Surface)
+        .border(1.dp, Svan.Grid, RoundedCornerShape(20.dp))) {
+        SoundLandscape(curve, Modifier.fillMaxSize(), live = enabled)
+        ResponseGraph(emptyList(), curve, -1, enabled, editable = false,
+            onSelect = {}, onMove = { _, _, _ -> }, onAdd = { _, _ -> }, onDelete = {}, modifier = Modifier.fillMaxSize())
+    }
+    ThemePrint(Modifier.padding(top = 12.dp, bottom = 4.dp))
 }
 
 @Composable

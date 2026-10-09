@@ -8,6 +8,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +50,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import app.svan.SvanRepository
 import app.svan.SettingsBackup
@@ -61,6 +65,7 @@ import kotlin.math.pow
 import kotlin.math.sqrt
 
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun PresetsScreen() {
     val context = LocalContext.current
     val eq by SvanRepository.eq.collectAsState()
@@ -96,15 +101,16 @@ fun PresetsScreen() {
         message = if (n > 0) "Imported \"$name\" · $n bands" else "No ParametricEQ filters found in that file"
     }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 16.dp else 24.dp)) {
         item {
-            ScreenTitle("Presets", "Now: ${eq.presetName}")
+            ScreenTitle("Presets", if (eq.smartEqControl) "Svaresa controls the curve. Choose a preset to use your EQ." else "Now: ${eq.presetName}")
             TextButton(onClick = {
                 SvanRepository.resetSound()
                 message = "All sound layers reset: EQ, headphone correction, bass, vocals and stereo."
             }, modifier = Modifier.fillMaxWidth()) { Text("Reset all sound to Flat") }
             Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+                maxItemsInEachRow = if (LocalDensity.current.fontScale > 1.3f) 1 else 3) {
                 ActionTile("Import AutoEq", "ParametricEQ.txt", Icons.Outlined.FileOpen, Modifier.weight(1f)) {
                     picker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
                 }
@@ -127,13 +133,13 @@ fun PresetsScreen() {
         if (user.isNotEmpty()) {
             item { SectionLabel("Your presets") }
             items(user, key = { "u-" + it.name }) { p ->
-                PresetRow(p, selected = p.name == eq.presetName, onApply = { SvanRepository.applyPreset(p) },
+                PresetRow(p, selected = !eq.smartEqControl && p.name == eq.presetName, onApply = { SvanRepository.applyPreset(p) },
                     onDelete = { SvanRepository.deleteUserPreset(p.name) })
             }
         }
         item { SectionLabel("Built in") }
         items(Preset.BUILT_IN, key = { "b-" + it.name }) { p ->
-            PresetRow(p, selected = p.name == eq.presetName, onApply = { SvanRepository.applyPreset(p) }, onDelete = null)
+            PresetRow(p, selected = !eq.smartEqControl && p.name == eq.presetName, onApply = { SvanRepository.applyPreset(p) }, onDelete = null)
         }
     }
 
@@ -196,6 +202,11 @@ private fun PresetRow(p: Preset, selected: Boolean, onApply: () -> Unit, onDelet
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(p.name, style = MaterialTheme.typography.titleMedium)
+            if (selected) Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.CheckCircle, null, tint = Svan.Gold, modifier = Modifier.size(14.dp))
+                Spacer(Modifier.width(5.dp))
+                Text("Applied", style = MaterialTheme.typography.labelSmall, color = Svan.Gold)
+            }
             Text("${p.bands.size} bands" + if (p.preampDb != 0.0) " · preamp ${formatDb(p.preampDb)}" else "",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         }

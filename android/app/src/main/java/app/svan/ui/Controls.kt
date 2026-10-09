@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,6 +44,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -56,13 +58,14 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun SvanCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val radius = if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 20.dp else 16.dp
     Box(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(radius))
             .background(Svan.Surface)
-            .border(1.dp, Svan.Grid, RoundedCornerShape(20.dp))
-            .padding(16.dp),
+            .border(1.dp, Svan.Grid, RoundedCornerShape(radius))
+            .padding(if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 16.dp else 20.dp),
     ) { content() }
 }
 
@@ -87,6 +90,8 @@ fun Pill(
     val fg by animateColorAsState(if (selected) accent else if (enabled) Svan.Text else Svan.TextFaint, label = "pillFg")
     Box(
         modifier
+            .heightIn(min = 48.dp)
+            .semantics { this.selected = selected }
             .clip(RoundedCornerShape(50))
             .background(bg)
             .border(1.dp, border, RoundedCornerShape(50))

@@ -30,9 +30,17 @@ import app.svan.ui.SvaramanasPanel
 class SvaramanasActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        app.svan.ui.SvanAppearance.initialize(this)
         SvanRepository.init(this)
         setContent {
             SvanTheme {
+                val light = app.svan.ui.SvanAppearance.current.isLight
+                androidx.compose.runtime.DisposableEffect(light) {
+                    val bars = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                    bars.isAppearanceLightStatusBars = light
+                    bars.isAppearanceLightNavigationBars = light
+                    onDispose { }
+                }
                 val bubble by Svaramanas.bubble.collectAsState()
                 Box(
                     Modifier
@@ -52,6 +60,16 @@ class SvaramanasActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        SvaramanasBubbleService.appScreenStarted()
+    }
+
+    override fun onStop() {
+        SvaramanasBubbleService.appScreenStopped()
+        super.onStop()
     }
 
     override fun onResume() {

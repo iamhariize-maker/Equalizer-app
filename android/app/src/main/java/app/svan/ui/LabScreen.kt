@@ -38,13 +38,14 @@ fun LabScreen(actions: List<Pair<String, () -> Unit>>) {
             delay(800)
         }
     }
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(Modifier.fillMaxSize().padding(if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 16.dp else 24.dp)) {
         ScreenTitle("Lab", "Device probes and the engine log.")
         Spacer(Modifier.height(12.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             actions.forEach { (label, action) -> Pill(label, false, action) }
         }
         Spacer(Modifier.height(12.dp))
+        SectionLabel("Observed on this device")
         SelectionContainer(
             Modifier
                 .fillMaxWidth()
@@ -54,7 +55,8 @@ fun LabScreen(actions: List<Pair<String, () -> Unit>>) {
                 .padding(12.dp)
                 .verticalScroll(rememberScrollState()),
         ) {
-            Text(log.ifEmpty { "No log yet." }, style = MaterialTheme.typography.labelSmall, color = Svan.TextMuted)
+            Text(log.ifEmpty { "No observations yet. Run a probe above to inspect this device." },
+                style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"), color = Svan.TextMuted)
         }
     }
 }

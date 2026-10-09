@@ -3,13 +3,16 @@ package app.svan.ui
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import app.svan.R
 import app.svan.NativeEngine.FilterType
 
 /**
@@ -24,41 +27,32 @@ import app.svan.NativeEngine.FilterType
  * - Tulsi (a living contrast): your own learned sound and confirmations.
  */
 object Svan {
-    // Grounds: charred wood and dark bronze, never pure black.
-    val Black = Color(0xFF0C0A08)
-    val Surface = Color(0xFF15120E)
-    val SurfaceHigh = Color(0xFF1C1813)
-    val SurfaceHigher = Color(0xFF262019)
-    val Outline = Color(0xFF3A3024)
-    val Grid = Color(0xFF221D16)
-
-    // Parchment text.
-    val Text = Color(0xFFEEE6D8)
-    val TextMuted = Color(0xFFA79D8D)
-    val TextFaint = Color(0xFF6E6558)
-
-    // The gold spectrum.
-    val Gold = Color(0xFFD9A84E)    // polished brass — the accent
-    val Molten = Color(0xFFF3D58F)  // molten highlight
-    val Bronze = Color(0xFF9A6B2A)  // depth
-    val Ember = Color(0xFFB4552E)   // glowing coal: warnings and clipping only
-    val Ash = Color(0xFFA39A8B)     // cool counterweight: cuts, sustain, "negative" sides
-    val Glow = Color(0xFFE9C46A)    // live indicators
-
-    // Jewel accents (see the note above).
-    val Lapis = Color(0xFF6A8BC9)   // lapis lazuli: air, treble, listening
-    val Indigo = Color(0xFF1A2138)  // night sky: illustration grounds only
-    val Peacock = Color(0xFF34968C) // peacock feather: space and width
-    val Lotus = Color(0xFFDA97A1)   // lotus: the voice
-    val Tulsi = Color(0xFF8DB077)   // tulsi leaf: your learned sound, confirmations
-
-    val OnGold = Color(0xFF1A1206)
-
-    /** Molten-metal gradient: bronze depth to a bright gold crest. */
-    val AccentBrush = Brush.horizontalGradient(listOf(Bronze, Gold, Molten, Gold))
-    // Earth to sky across the spectrum: bronze bass, golden mids, molten presence, lapis air.
-    val CurveBrush = Brush.horizontalGradient(0f to Bronze, 0.42f to Gold, 0.78f to Molten, 1f to Lapis)
-    val SpectrumFill = Brush.horizontalGradient(0f to Bronze, 0.45f to Gold, 0.8f to Molten, 1f to Lapis)
+    private val palette get() = SvanAppearance.current.palette
+    val Black get() = palette.background
+    val Surface get() = palette.surface
+    val SurfaceHigh get() = palette.raised
+    val SurfaceHigher get() = palette.tonal
+    val Outline get() = palette.border
+    val Grid get() = palette.grid
+    val Text get() = palette.text
+    val TextMuted get() = palette.secondary
+    val TextFaint get() = palette.muted
+    val Gold get() = palette.accent
+    val Molten get() = palette.highlight
+    val Bronze get() = palette.depth
+    val Ember get() = palette.warning
+    val Ash get() = palette.neutral
+    val Glow get() = palette.live
+    val Lapis get() = palette.air
+    val Indigo get() = palette.sky
+    val Peacock get() = palette.space
+    val Lotus get() = palette.voice
+    val Tulsi get() = palette.learned
+    val OnGold get() = palette.onAccent
+    val AccentBrush get() = palette.accentBrush
+    val CurveBrush get() = palette.curveBrush
+    val SpectrumFill get() = palette.spectrumFill
+    val DisplayFont get() = if (SvanAppearance.current == AppearanceTheme.ORIGINAL) FontFamily.Serif else AtelierDisplay
 
     // Filter types stay within the gold family, told apart by value, not hue.
     fun typeColor(t: FilterType): Color = when (t) {
@@ -66,7 +60,7 @@ object Svan {
         FilterType.LOW_SHELF, FilterType.HIGH_SHELF -> Molten
         FilterType.LOW_PASS, FilterType.HIGH_PASS -> Bronze
         FilterType.BAND_PASS -> Glow
-        FilterType.NOTCH -> Ember
+        FilterType.NOTCH -> Ash
         FilterType.ALL_PASS -> Ash
     }
 
@@ -101,7 +95,7 @@ fun formatHz(f: Double): String = when {
 
 fun formatDb(g: Double): String = "%+.1f dB".format(g).replace("+0.0", "0.0").replace("-0.0", "0.0")
 
-private val SvanType = Typography(
+private val OriginalType = Typography(
     // Serif display type for titles and the wordmark: the ancient-world gravitas.
     headlineMedium = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 28.sp, letterSpacing = 0.2.sp),
     titleLarge = TextStyle(fontFamily = FontFamily.Serif, fontWeight = FontWeight.Medium, fontSize = 21.sp),
@@ -114,15 +108,52 @@ private val SvanType = Typography(
     labelSmall = TextStyle(fontSize = 11.sp, letterSpacing = 0.2.sp, fontFeatureSettings = "tnum"),
 )
 
+private val AtelierDisplay = FontFamily(Font(R.font.cormorant_semibold, FontWeight.SemiBold))
+private val AtelierUi = FontFamily(
+    Font(R.font.noto_regular, FontWeight.Normal),
+    Font(R.font.noto_medium, FontWeight.Medium),
+    Font(R.font.noto_semibold, FontWeight.SemiBold),
+)
+private val AtelierType = Typography(
+    displayLarge = TextStyle(fontFamily = AtelierDisplay, fontWeight = FontWeight.SemiBold, fontSize = 48.sp, lineHeight = 54.sp),
+    displayMedium = TextStyle(fontFamily = AtelierDisplay, fontWeight = FontWeight.SemiBold, fontSize = 44.sp, lineHeight = 50.sp),
+    displaySmall = TextStyle(fontFamily = AtelierDisplay, fontWeight = FontWeight.SemiBold, fontSize = 40.sp, lineHeight = 46.sp),
+    headlineLarge = TextStyle(fontFamily = AtelierDisplay, fontWeight = FontWeight.SemiBold, fontSize = 40.sp, lineHeight = 46.sp),
+    headlineMedium = TextStyle(fontFamily = AtelierDisplay, fontWeight = FontWeight.SemiBold, fontSize = 36.sp, lineHeight = 42.sp),
+    headlineSmall = TextStyle(fontFamily = AtelierDisplay, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, lineHeight = 36.sp),
+    titleLarge = TextStyle(fontFamily = AtelierDisplay, fontWeight = FontWeight.SemiBold, fontSize = 23.sp, lineHeight = 29.sp),
+    titleMedium = TextStyle(fontFamily = AtelierUi, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 24.sp),
+    titleSmall = TextStyle(fontFamily = AtelierUi, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 20.sp),
+    bodyLarge = TextStyle(fontFamily = AtelierUi, fontSize = 16.sp, lineHeight = 24.sp),
+    bodyMedium = TextStyle(fontFamily = AtelierUi, fontSize = 15.sp, lineHeight = 22.sp),
+    bodySmall = TextStyle(fontFamily = AtelierUi, fontSize = 13.sp, lineHeight = 18.sp),
+    labelLarge = TextStyle(fontFamily = AtelierUi, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, lineHeight = 20.sp),
+    labelMedium = TextStyle(fontFamily = AtelierUi, fontWeight = FontWeight.Medium, fontSize = 11.sp, lineHeight = 16.sp, letterSpacing = 1.2.sp),
+    labelSmall = TextStyle(fontFamily = AtelierUi, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 17.sp, fontFeatureSettings = "tnum"),
+)
+
 @Composable
 fun SvanTheme(content: @Composable () -> Unit) {
+    val theme = SvanAppearance.current
+    val base = if (theme.isLight) lightColorScheme() else darkColorScheme()
     MaterialTheme(
-        colorScheme = darkColorScheme(
+        colorScheme = base.copy(
             primary = Svan.Gold,
             onPrimary = Svan.OnGold,
+            primaryContainer = Svan.SurfaceHigher,
+            onPrimaryContainer = Svan.Text,
             secondary = Svan.Molten,
+            onSecondary = Svan.OnGold,
+            secondaryContainer = Svan.SurfaceHigher,
+            onSecondaryContainer = Svan.Text,
             tertiary = Svan.Bronze,
+            onTertiary = Svan.OnGold,
+            tertiaryContainer = Svan.SurfaceHigher,
+            onTertiaryContainer = Svan.Text,
             error = Svan.Ember,
+            onError = if (theme.isLight) Svan.OnGold else Svan.Black,
+            errorContainer = Svan.SurfaceHigh,
+            onErrorContainer = Svan.Ember,
             background = Svan.Black,
             onBackground = Svan.Text,
             surface = Svan.Surface,
@@ -130,12 +161,19 @@ fun SvanTheme(content: @Composable () -> Unit) {
             surfaceVariant = Svan.SurfaceHigh,
             onSurfaceVariant = Svan.TextMuted,
             surfaceContainer = Svan.Surface,
+            surfaceContainerLow = Svan.Surface,
+            surfaceContainerLowest = Svan.Black,
             surfaceContainerHigh = Svan.SurfaceHigh,
             surfaceContainerHighest = Svan.SurfaceHigher,
+            surfaceBright = Svan.SurfaceHigher,
+            surfaceDim = Svan.Black,
+            inverseSurface = Svan.Text,
+            inverseOnSurface = Svan.Black,
+            inversePrimary = Svan.OnGold,
             outline = Svan.Outline,
             outlineVariant = Svan.Grid,
         ),
-        typography = SvanType,
+        typography = if (theme == AppearanceTheme.ORIGINAL) OriginalType else AtelierType,
         content = content,
     )
 }

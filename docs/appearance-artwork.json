@@ -1,0 +1,61 @@
+{
+  "source_commit": "4ec51ee68f415617d454a51a75ce0cc98f5e3ebb",
+  "assets": [
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/landscape_indigo.png",
+      "sha256": "f632dc18502c27046bbc847d6d09d5f95d57288fe3b7049d5d8745abdafa31a4",
+      "bytes": 2341815,
+      "origin": "Generated for the owner-authorized Svan design; original pixels preserved."
+    },
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/landscape_raga.png",
+      "sha256": "54355c4776901361d19d28123c52c010910b43d76f1bc9a7860eca0418cbd1c6",
+      "bytes": 2479374,
+      "origin": "Generated for the owner-authorized Svan design; original pixels preserved."
+    },
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/landscape_sandstone.png",
+      "sha256": "052f936f793dcefc2805f8227cf57b8d13ff48f70fad49b2ce0d0b977572395e",
+      "bytes": 2424353,
+      "origin": "Generated for the owner-authorized Svan design; original pixels preserved."
+    },
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/print_indigo.png",
+      "sha256": "0a00a7b388a1cceec3793699d0d0a29fce27604f605681917f568198537b3cbe",
+      "bytes": 737014,
+      "origin": "Generated for the owner-authorized Svan design; original pixels preserved."
+    },
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/print_original.png",
+      "sha256": "0cf7588b6c05db41b7c3332f1d8871d3e2554e5a9fcffbd184983751740dede2",
+      "bytes": 500044,
+      "origin": "Generated for the owner-authorized Svan design; original pixels preserved."
+    },
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/print_raga.png",
+      "sha256": "5770c8ff5dd8d86387836467a9026c34e3890197eaaa59073ddb44ab2660257d",
+      "bytes": 668175,
+      "origin": "Generated for the owner-authorized Svan design; original pixels preserved."
+    },
+    {
+      "path": "android/app/src/main/res/drawable-nodpi/print_sandstone.png",
+      "sha256": "dc50e6f7e52728dca41605662aab79d7e6f8a431d6e7fa5066d519a59e9a3e8c",
+      "bytes": 644950,
+      "origin": "Generated for the owner-authorized Svan design; original pixels preserved."
+    }
+  ],
+  "font_origins": [
+    {
+      "family": "Cormorant Garamond",
+      "source": "https://github.com/google/fonts/tree/main/ofl/cormorantgaramond",
+      "license": "SIL Open Font License 1.1",
+      "usage": "Locally instantiated semibold display font in the three additional themes."
+    },
+    {
+      "family": "Noto Sans",
+      "source": "https://github.com/google/fonts/tree/main/ofl/notosans",
+      "license": "SIL Open Font License 1.1",
+      "usage": "Locally instantiated regular, medium and semibold control fonts in the three additional themes."
+    }
+  ]
+}

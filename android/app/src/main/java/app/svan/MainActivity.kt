@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(0xFF0C0A08.toInt()), // Svan.Black: warm charcoal
         )
         super.onCreate(savedInstanceState)
+        app.svan.ui.SvanAppearance.initialize(this)
         val priorSound = getSharedPreferences("svan", MODE_PRIVATE)
         val onboarding = OnboardingAndroid.prefs(this)
         val freshDefaults = FirstRunPolicy.needsFlatDefault(onboarding.getBoolean("defaults_checked", false),
@@ -46,6 +47,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             SvanTheme {
+                val light = app.svan.ui.SvanAppearance.current.isLight
+                androidx.compose.runtime.DisposableEffect(light) {
+                    val bars = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                    bars.isAppearanceLightStatusBars = light
+                    bars.isAppearanceLightNavigationBars = light
+                    window.navigationBarColor = Color.TRANSPARENT
+                    onDispose { }
+                }
                 SvanApp(
                     onStartCapture = { pendingQuality = null; startCapture() },
                     onStopCapture = ::stopCapture,
@@ -66,6 +75,16 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleCommand(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        app.svan.svaramanas.SvaramanasBubbleService.appScreenStarted()
+    }
+
+    override fun onStop() {
+        app.svan.svaramanas.SvaramanasBubbleService.appScreenStopped()
+        super.onStop()
     }
 
     override fun onResume() {

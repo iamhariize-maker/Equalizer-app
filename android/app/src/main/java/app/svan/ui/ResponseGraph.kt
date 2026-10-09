@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.flow.first
@@ -83,10 +85,11 @@ fun ResponseGraph(
     val dim by animateFloatAsState(if (enabled) 1f else 0.35f, label = "dim")
 
     // Reused every frame: allocating Paints while dragging causes GC stutter.
-    val gridPaint = remember(density) {
+    val gridColor = Svan.TextMuted
+    val gridPaint = remember(density, gridColor) {
         android.graphics.Paint().apply {
-            color = android.graphics.Color.argb(255, 110, 101, 88) // Svan.TextFaint
-            textSize = 10f * density.density
+            color = gridColor.toArgb()
+            textSize = 11f * density.density * density.fontScale
             isAntiAlias = true
         }
     }
@@ -190,20 +193,25 @@ fun ResponseGraph(
 private fun DrawScope.drawGrid(range: Float, paint: android.graphics.Paint) {
     val w = size.width
     val h = size.height
+    val labelBand = paint.textSize + 10f * density
+    // A quiet strip keeps actual tick labels readable over every landscape.
+    drawRect(Svan.Black.copy(alpha = 0.94f), topLeft = Offset(0f, h - labelBand), size = Size(w, labelBand))
     // dB lines every 6 dB (every 12 when zoomed out)
     val step = if (range > 18) 12 else 6
     var db = -range.toInt() / step * step
     while (db <= range) {
         val y = dbToY(db.toDouble(), h, range)
         drawLine(if (db == 0) Svan.Outline else Svan.Grid, Offset(0f, y), Offset(w, y), strokeWidth = if (db == 0) 2f else 1f)
-        if (db != 0) drawContext.canvas.nativeCanvas.drawText("%+d".format(db), 6f * density, y - 3f * density, paint)
+        if (db != 0 && y < h - labelBand) drawContext.canvas.nativeCanvas.drawText("%+d".format(db), 6f * density,
+            (y - 3f * density).coerceAtLeast(paint.textSize + 3f * density), paint)
         db += step
     }
-    GRID_HZ.forEach { f ->
+    GRID_HZ.forEachIndexed { index, f ->
         val x = freqToX(f, w)
         drawLine(Svan.Grid, Offset(x, 0f), Offset(x, h), strokeWidth = 1f)
         val label = if (f >= 1000) "${(f / 1000).toInt()}k" else f.toInt().toString()
-        if (f > F_MIN && f < F_MAX) drawContext.canvas.nativeCanvas.drawText(label, x + 3f * density, h - 5f * density, paint)
+        if (f > F_MIN && f < F_MAX && (paint.textSize <= 18f * density || index % 2 == 0))
+            drawContext.canvas.nativeCanvas.drawText(label, x + 3f * density, h - 5f * density, paint)
     }
 }
 

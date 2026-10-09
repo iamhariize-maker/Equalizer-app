@@ -20,6 +20,7 @@ import android.view.WindowManager
 import app.svan.EqController
 import app.svan.SvanRepository
 import app.svan.ui.SvaraMark
+import java.lang.ref.WeakReference
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.min
@@ -43,6 +44,7 @@ class SvaramanasBubbleService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeService = WeakReference(this)
         SvanRepository.init(this)
         wm = getSystemService(WindowManager::class.java)
         if (!Settings.canDrawOverlays(this)) { stopSelf(); return }
@@ -72,6 +74,7 @@ class SvaramanasBubbleService : Service() {
             runCatching { wm.addView(t, lp) }.onFailure { target = null }
         }
         view = BubbleView(this).also {
+            it.visibility = if (visibleAppScreens > 0) View.GONE else View.VISIBLE
             runCatching { wm.addView(it, params) }.onFailure { e ->
                 EqController.log("svaramanas bubble: overlay refused: $e")
                 stopSelf()
@@ -80,13 +83,24 @@ class SvaramanasBubbleService : Service() {
         EqController.log("svaramanas bubble: shown")
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        updateAppVisibility()
+        return START_STICKY
+    }
+
+    private fun updateAppVisibility() {
+        // The in-app dock already provides Svaresa. Keep the external overlay out
+        // of search fields, charts and dialogs while either Svan screen is open.
+        view?.visibility = if (visibleAppScreens > 0) View.GONE else View.VISIBLE
+        if (visibleAppScreens > 0) target?.visibility = View.GONE
+    }
 
     override fun onDestroy() {
         view?.let { runCatching { wm.removeView(it) } }
         target?.let { runCatching { wm.removeView(it) } }
         view = null
         target = null
+        if (activeService?.get() === this) activeService = null
         super.onDestroy()
     }
 
@@ -286,6 +300,19 @@ class SvaramanasBubbleService : Service() {
     }
 
     companion object {
+        private var visibleAppScreens = 0
+        private var activeService: WeakReference<SvaramanasBubbleService>? = null
+
+        fun appScreenStarted() {
+            visibleAppScreens++
+            activeService?.get()?.updateAppVisibility()
+        }
+
+        fun appScreenStopped() {
+            visibleAppScreens = (visibleAppScreens - 1).coerceAtLeast(0)
+            activeService?.get()?.updateAppVisibility()
+        }
+
         fun start(context: Context) {
             if (Settings.canDrawOverlays(context)) context.startService(Intent(context, SvaramanasBubbleService::class.java))
         }
