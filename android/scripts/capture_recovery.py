@@ -211,14 +211,21 @@ def main():
         check("same app and session recover from silence without update or global reset", route(recovered)["sid"] == old_sid and heard_both(recovered) and recovered["storedBlocks"] == 0 and abs(level("recovered-cut") - flat + 6) <= .75)
 
         stop()
+        # Android also folds the UID policy into the reported player flags. Hide
+        # those two discovery reports so the independent UID-policy table must
+        # explain the refusal for this explicitly announced source.
+        eq("test_blind_reports", "--ez", "players", "true", "--ez", "server", "true")
+        time.sleep(2)
         loud(cap, "--ei", "uid_capture_policy", "3")
         wait("uid-policy-connected", lambda d: route(d).get("owner") == "ENGINE_A")
+        (out / "uid-policy-server.txt").write_text(adb("shell", "dumpsys", "media.audio_policy"))
         start()
         uid_block = wait("uid-policy-blocked", lambda d: route(d).get("reason") == "UID_CAPTURE_DISABLED")
         r = route(uid_block)
-        check("UID policy explains an opt-out absent from the player's flags", r["manifestAllowed"] is True and r["streamOptOut"] is False and "UID capture policy disabled (flag_mask=0x1400)" in r["report"] and not uid_block["admitted"] and "phase=muted" not in r["report"])
+        check("UID policy explains an opt-out when player flags are unavailable", r["manifestAllowed"] is True and r["streamOptOut"] is None and "UID capture policy disabled (flag_mask=0x1400)" in r["report"] and not uid_block["admitted"] and "phase=muted" not in r["report"])
         check("UID-policy-blocked music remains audible through measured system EQ", abs(level("uid-policy-cut") - flat + 6) <= .75)
         screen("uid-policy", "audio server reports")
+        eq("test_blind_reports", "--ez", "players", "false", "--ez", "server", "false")
         loud()  # Same installed version, new stream, default ALLOW_CAPTURE_BY_ALL.
         policy_recovered = wait("uid-policy-recovered", full)
         time.sleep(2)
