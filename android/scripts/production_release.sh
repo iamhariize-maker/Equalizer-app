@@ -3,6 +3,15 @@
 set -euo pipefail
 S=${1:-emulator-5554}; APK=${2:?production APK required}; OUT=${3:?output directory required}
 A=(adb -s "$S"); mkdir -p "$OUT"; : > "$OUT/results.txt"
+diagnostics() {
+    local result=$?
+    "${A[@]}" logcat -d > "$OUT/logcat.txt" 2>&1 || true
+    "${A[@]}" shell uiautomator dump /sdcard/svan-production.xml >/dev/null 2>&1 || true
+    "${A[@]}" shell cat /sdcard/svan-production.xml > "$OUT/final-ui.xml" 2>/dev/null || true
+    "${A[@]}" exec-out screencap -p > "$OUT/final-ui.png" 2>/dev/null || true
+    exit "$result"
+}
+trap diagnostics EXIT
 "${A[@]}" uninstall app.svan >/dev/null 2>&1 || true
 "${A[@]}" install "$APK" >/dev/null
 "${A[@]}" shell pm grant app.svan android.permission.POST_NOTIFICATIONS
@@ -63,9 +72,14 @@ visible() {
     "${A[@]}" shell cat /sdcard/svan-production.xml | python3 -c 'import sys,xml.etree.ElementTree as E;sys.exit(not any(sys.argv[1] in n.attrib.get("text","") for n in E.fromstring(sys.stdin.read()).iter("node")))' "$1"
 }
 scroll_to() {
-    for ((i=0;i<7;i++)); do
+    for ((i=0;i<12;i++)); do
         visible "$1" && return 0
-        "${A[@]}" shell input swipe 160 480 160 190 350; sleep 1
+        if [[ ${2:-down} == up ]]; then
+            "${A[@]}" shell input swipe 160 190 160 480 350
+        else
+            "${A[@]}" shell input swipe 160 480 160 190 350
+        fi
+        sleep 1
     done
     echo "FAIL production capture UI text missing: $1" >> "$OUT/results.txt"; exit 1
 }
@@ -73,7 +87,11 @@ tone "$CAP" --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez component true
 sleep 4
 measure capture-flat
 tap Hi-Fi
-scroll_to 'Start audiophile engine'; tap 'Start audiophile engine'
+# Fresh installs use System effects only. Select the GLOBAL Auto row by its
+# unique description, rather than one of the per-app Auto buttons.
+scroll_to 'Audiophile engine for apps that allow capture, system effects for the rest.'
+tap 'Audiophile engine for apps that allow capture, system effects for the rest.'
+scroll_to 'Start audiophile engine' up; tap 'Start audiophile engine'
 for ((attempt=0;attempt<45;attempt++)); do
     visible 'Audiophile engine connected' && break
     sleep 1
@@ -98,12 +116,12 @@ a,b=map(lambda p:float(open(p).read()),sys.argv[1:])
 assert abs(b-a)<=.75,(a,b)
 PY
 echo 'PASS production native capture replays one measured audio copy' >> "$OUT/results.txt"
-scroll_to 'Stop audiophile engine'; tap 'Stop audiophile engine'
+scroll_to 'Stop audiophile engine' up; tap 'Stop audiophile engine'
 tone "$CAP" --ez stop true
 sleep 3
 tone "$BLK" --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez component true
 sleep 4
-scroll_to 'Start audiophile engine'; tap 'Start audiophile engine'
+scroll_to 'Start audiophile engine' up; tap 'Start audiophile engine'
 scroll_to "This installed app's Android settings disable playback capture"
 "${A[@]}" exec-out screencap -p > "$OUT/manifest-opt-out.png"
 echo 'PASS production proves installed manifest opt-out without a silence verdict' >> "$OUT/results.txt"
