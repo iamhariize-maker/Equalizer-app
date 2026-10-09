@@ -1,0 +1,73 @@
+name: Frozen appearance compatibility
+on:
+  push:
+    paths:
+      - '.github/workflows/appearance-compat.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+# Fast, independent infrastructure retest of the already-built release. The
+# full pipeline retains every audio, quality, control and production assertion.
+jobs:
+  compat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { api: 29, target: default }
+          - { api: 30, target: default }
+          - { api: 33, target: default }
+          - { api: 35, target: default }
+          - { api: 36, target: google_apis }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ba279d026cc14fbaee6bc3f26f0202d3d6f8d86e
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/download-artifact@v4
+        with:
+          name: Svan-preview
+          path: tested-preview
+          run-id: 37906917761
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Prepare the exact frozen APK
+        run: |
+          mkdir -p android/app/build/outputs/apk/release compat-out
+          cp tested-preview/Svan-preview.apk android/app/build/outputs/apk/release/app-release.apk
+          sha256sum tested-preview/Svan-preview.apk > compat-out/apk-sha256.txt
+      - name: Install and exercise unchanged smoke assertions
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          QEMU_AUDIO_DRV: wav
+          QEMU_WAV_PATH: /tmp/svan-compat-output.wav
+          QEMU_WAV_FREQUENCY: '48000'
+          QEMU_WAV_DAC_FIXED_CHANNELS: '2'
+          QEMU_WAV_FORMAT: s16
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
+          arch: x86_64
+          emulator-build: '16428233'
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader -feature -Vulkan -memory 3072 -cores 2 -no-snapshot -no-boot-anim -camera-back none
+          working-directory: android
+          script: export PATH="$GITHUB_WORKSPACE/tools/ci:$PATH" ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/compat-out/smoke.txt" 2>&1 ; adb logcat -d > "$GITHUB_WORKSPACE/compat-out/logcat.txt" ; adb shell getprop ro.build.version.release > "$GITHUB_WORKSPACE/compat-out/android.txt"
+      - name: Require the original release smoke pass
+        if: always()
+        run: |
+          cat compat-out/smoke.txt
+          grep -q '^PASS release smoke test' compat-out/smoke.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frozen-appearance-compat-api${{ matrix.api }}
+          path: compat-out/

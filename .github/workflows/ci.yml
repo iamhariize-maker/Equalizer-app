@@ -372,6 +372,14 @@ jobs:
           cp tested-preview/Svan-preview.apk android/app/build/outputs/apk/release/app-release.apk
       - name: Install and smoke test on API ${{ matrix.api }}
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # The hosted runner has no PulseAudio server. Use the same working
+          # backend as routing checks instead of an uninitialised host device.
+          QEMU_AUDIO_DRV: wav
+          QEMU_WAV_PATH: /tmp/svan-compat-output.wav
+          QEMU_WAV_FREQUENCY: '48000'
+          QEMU_WAV_DAC_FIXED_CHANNELS: '2'
+          QEMU_WAV_FORMAT: s16
         with:
           api-level: ${{ matrix.api }}
           target: ${{ matrix.target }}
