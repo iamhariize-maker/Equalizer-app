@@ -1,7 +1,7 @@
 # Native appearance design QA
 
 Status: **passed** for the native appearance implementation at
-`9334cedab365e2fec589f3b31e3726312dcaf51a`. Independent audio and Android
+`ba279d026cc14fbaee6bc3f26f0202d3d6f8d86e`. Independent audio and Android
 compatibility release gates are recorded separately in the release evidence.
 
 ## References and comparison conditions
@@ -27,18 +27,22 @@ Provenance and font licences are in `docs/appearance-artwork.json`.
 
 ## Final evidence
 
-- CI run: https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37901352746
-- Appearance job: `113728176215`, **success**.
-- Capture artifact: `11603517122`, `appearance-ui-api34`.
+- CI run: https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37906917761
+- Appearance job: `113745003220`, **success**.
+- Capture artifact: `11605168882`, `appearance-ui-api34`.
 - 68 native captures: 34 debug and 34 exact-production captures.
 - 74 automated checks: 39 debug and 35 production checks, zero failures.
 - Tested production APK SHA-256:
-  `b7037f79be5465a875becffdb9ed976c276c04858f4e0b1c479a2886b749c5c7`.
-- Capture root: `/workspace/svan-ui-device/verified-appearance-9334/`.
+  `c9062843852aeb01be1ff732469edb0ab803a1e053ad49b85fdf86985488e7e7`.
+- Capture root: `/workspace/svan-ui-device/verified-appearance-ba279/`.
 - Reviewed production contact sheets: `review/sound.jpg`, `eq.jpg`,
   `presets.jpg`, `hi-fi.jpg`, `lab.jpg`, `svaresa.jpg`, `large-0.jpg`
   and `large-1.jpg`.
 - Focused final crops: `review/chart-200.png` and `review/dock-200.png`.
+
+The owner-signed APK preserves all 86 ZIP-entry digests of this tested
+production payload. Signing and Android 14 audio/production results are
+in `docs/appearance-release-0.5.9.json`.
 
 ## Results
 

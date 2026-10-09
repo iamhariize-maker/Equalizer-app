@@ -1,0 +1,222 @@
+{
+  "status": "Owner-signed artifact verified; native appearance and full Android 14 suites passed; full Android 13 and Android 16 qualification incomplete",
+  "source_repository": "https://github.com/iamhariize-maker/Equalizer-app",
+  "isolated_branch": "codex/svan-artistic-themes",
+  "release_source_commit": "ba279d026cc14fbaee6bc3f26f0202d3d6f8d86e",
+  "ci_run": 37906917761,
+  "baseline": {
+    "source_commit": "4ec51ee68f415617d454a51a75ce0cc98f5e3ebb",
+    "ci_run": 37881530559,
+    "ci_artifact": 11595080967,
+    "uploaded_apk_sha256": "2561786c12b349d80ca87037bcb8d017654b34c8b0e38c29236674f3aebfe0f8",
+    "baseline_ci_apk_sha256": "4f0d1c1f6e4f1fdf7c5de3188a16b90b598909a7e07c8f87d67a93b167665127",
+    "same_apk": false,
+    "same_zip_payload": false,
+    "different_entries": [
+      "kotlin-tooling-metadata.json",
+      "lib/arm64-v8a/libeqjni.so",
+      "lib/x86_64/libeqjni.so"
+    ],
+    "same_compiled_app_and_resources": true,
+    "native_section_differences": {
+      "arm64-v8a": [
+        ".note.gnu.build-id"
+      ],
+      "x86_64": [
+        ".note.gnu.build-id"
+      ]
+    },
+    "tooling_difference": "Uploaded APK used Gradle 8.14.3; repository CI used 8.11.1. Kotlin plugin 1.9.24 and NDK Clang 18.0.1 match."
+  },
+  "release": {
+    "package": "app.svan",
+    "version_name": "0.5.9",
+    "version_code": 16,
+    "themes": [
+      "Svan Original",
+      "Midnight Raga",
+      "Sandstone Atelier",
+      "Indigo Loom"
+    ],
+    "default_theme": "Svan Original"
+  },
+  "local_checks": {
+    "android_build": "PASS debug and release",
+    "lint": "PASS",
+    "android_unit_tests": 267,
+    "native_unit_tests": 179,
+    "tooling_unit_tests": 17,
+    "contrast_pairs": 248,
+    "manifest_policy": "PASS",
+    "zip_alignment_16k": "PASS"
+  },
+  "limits": [
+    "Physical-phone Spotify, Amazon Music and YouTube Music capture permission and Bluetooth routing remain unverified. This design release retains the supplied routing-fix implementation.",
+    "The full CI matrix is not green: the Android 13 full suite is incomplete and Android 16 smoke failed. Android 14 full audio/production suite and appearance checks passed.",
+    "The supplied preview uses a different signing certificate. Export settings before replacing the preview; owner-signed installations can update normally."
+  ],
+  "owner_key_in_source_or_ci": false,
+  "private_signing": {
+    "existing_owner_certificate_sha256": "9cb9daca3b49fbdd17683d45dfb069fa9c6d05e3733934795f92546fef696b0f",
+    "existing_owner_key_reused": true,
+    "credential_location": "Temporary private directory outside source and CI",
+    "temporary_private_files_removed": true,
+    "key_material_in_delivery": false
+  },
+  "appearance_review": {
+    "status": "PASS",
+    "source_commit": "ba279d026cc14fbaee6bc3f26f0202d3d6f8d86e",
+    "ci_run": 37906917761,
+    "job_id": 113745003220,
+    "capture_artifact_id": 11605168882,
+    "captured_screens": 68,
+    "automated_checks": 74,
+    "automated_failures": 0,
+    "manual_review": "All four themes, five tabs, Svaresa, Appearance, large text sections, focused chart and dock crops reviewed",
+    "logical_viewport": [
+      390,
+      844
+    ],
+    "physical_viewport": [
+      780,
+      1688
+    ],
+    "text_scales": [
+      1,
+      2
+    ],
+    "remaining_P0_P1_P2_findings": 0
+  },
+  "tested_production_candidate": {
+    "artifact_id": 11605600469,
+    "apk_sha256": "c9062843852aeb01be1ff732469edb0ab803a1e053ad49b85fdf86985488e7e7",
+    "apk_bytes": 15432932,
+    "signed_delivery_payload_identical": true
+  },
+  "verification_harness_commit": "ba279d026cc14fbaee6bc3f26f0202d3d6f8d86e",
+  "verification_retry_run": 37906917761,
+  "application_changes_after_frozen_build": [],
+  "last_application_change_commit": "9334cedab365e2fec589f3b31e3726312dcaf51a",
+  "final_signing_verification": {
+    "status": "PASS",
+    "package": "app.svan",
+    "version_name": "0.5.9",
+    "version_code": 16,
+    "apk_file": "Svan-0.5.9-owner-signed.apk",
+    "apk_sha256": "d58b22cc4c9cc997603d9776a554e9a94a0a095cd23edcca228217b71c445a37",
+    "apk_bytes": 15432700,
+    "certificate_sha256": "9cb9daca3b49fbdd17683d45dfb069fa9c6d05e3733934795f92546fef696b0f",
+    "owner_key_reused": true,
+    "signer_count": 1,
+    "signature_schemes": {
+      "v1": false,
+      "v2": true,
+      "v3": false,
+      "v3.1": false,
+      "v4": false
+    },
+    "tested_production_apk_sha256": "c9062843852aeb01be1ff732469edb0ab803a1e053ad49b85fdf86985488e7e7",
+    "unchanged_zip_entries": 86,
+    "all_zip_entry_digests_identical": true,
+    "private_key_in_apk": false,
+    "private_key_in_source_or_ci": false,
+    "temporary_signing_files_removed": true,
+    "release_verifier": "PASS",
+    "manifest_permission_allowlist": "PASS",
+    "non_debuggable_production": "PASS",
+    "native_elf_and_apk_zip_16k_alignment": "PASS; all four native libraries"
+  },
+  "android14_audio_production": {
+    "status": "PASS",
+    "ci_run": 37906917761,
+    "job_id": 113745003445,
+    "artifact_id": 11607411370,
+    "reported_pass_checks": 125,
+    "reported_fail_checks": 0,
+    "results": [
+      {
+        "file": "basic-detection/results.txt",
+        "pass": 14,
+        "fail": 0
+      },
+      {
+        "file": "detection/detection.txt",
+        "pass": 13,
+        "fail": 0
+      },
+      {
+        "file": "e2e_results.txt",
+        "pass": 41,
+        "fail": 0
+      },
+      {
+        "file": "onboarding/fallbacks/results.txt",
+        "pass": 3,
+        "fail": 0
+      },
+      {
+        "file": "onboarding/results.txt",
+        "pass": 8,
+        "fail": 0
+      },
+      {
+        "file": "precision/results.txt",
+        "pass": 8,
+        "fail": 0
+      },
+      {
+        "file": "production/results.txt",
+        "pass": 4,
+        "fail": 0
+      },
+      {
+        "file": "quality/continuity/results.txt",
+        "pass": 4,
+        "fail": 0
+      },
+      {
+        "file": "quality/results.txt",
+        "pass": 4,
+        "fail": 0
+      },
+      {
+        "file": "recording/results.txt",
+        "pass": 7,
+        "fail": 0
+      },
+      {
+        "file": "screens/audio-quality/results.txt",
+        "pass": 7,
+        "fail": 0
+      },
+      {
+        "file": "source-filter/results.txt",
+        "pass": 3,
+        "fail": 0
+      },
+      {
+        "file": "workspace/results.txt",
+        "pass": 9,
+        "fail": 0
+      }
+    ],
+    "manual_screenshot_review": [
+      "Graphic EQ/faders",
+      "Live Audiophile capture status",
+      "Production settings export/restore"
+    ],
+    "scope": "Synthetic capturable/blocked test players; production R8/native/audio and UI checks"
+  },
+  "compatibility": {
+    "full_pipeline_all_jobs_passed": false,
+    "basic_detection_api33": "PASS 14 checks; job 113745003357",
+    "basic_detection_api34": "PASS 14 checks; job 113745003432",
+    "api29_smoke": "PASS; job 113745003343",
+    "api30_smoke": "PASS; job 113745003418",
+    "api33_smoke": "PASS frozen-payload retry; run 37910829873 / job 113755293817",
+    "api35_smoke": "PASS frozen-payload retry; run 37909184335 / job 113749921437",
+    "full_api33_suite": "INCOMPLETE; job 113745003453 cancelled after simulator connection problems",
+    "api36_smoke": "NOT QUALIFIED; latest run 37912315105 / job 113760147814 failed after emulator connection stopped",
+    "retry_application_payload_changed": false
+  }
+}
