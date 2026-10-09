@@ -1,5 +1,6 @@
 package app.svan.diag
 
+import app.svan.DynamicsBandGrid
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,17 +18,41 @@ class EffectsLabTest {
 
     @Test fun programHasTheSegmentsTheAnalysisExpects() {
         val runs = EffectsLab.program()
-        assertEquals(11, runs.size)
-        assertEquals(50, runs.sumOf { it.segs.size })
+        assertEquals(15, runs.size)
+        assertEquals(86, runs.sumOf { it.segs.size })
         // Every bass comparison is a flat reference followed by its +6 dB boost at the same frequency.
-        val bass = runs.filter { it.label.startsWith("bass_block_") }
-        assertEquals(4, bass.size)
+        val bass = runs.filter { it.label.startsWith("bass_block_") || it.label.startsWith("bass_bin_") }
+        assertEquals(7, bass.size)
         bass.forEach { run ->
             run.segs.chunked(2).forEach { (flat, boost) ->
                 assertTrue(flat.label.startsWith("flat_"))
                 assertEquals(flat.label.removePrefix("flat_"), boost.label.substringAfter("boost_").substringBefore("_"))
-                assertEquals(setOf(EffectsLab.bandFor(flat.tone.hz)), boost.bands.keys)
             }
+        }
+    }
+
+    @Test fun logRunsBoostTheLogBandAndBinRunsBoostTheBinBand() {
+        for (run in EffectsLab.program().filter { it.label.startsWith("bass_block_") }) {
+            assertEquals("log", run.layout)
+            run.segs.filter { it.label.startsWith("boost_") }.forEach { seg ->
+                assertEquals(setOf(EffectsLab.bandFor(seg.tone.hz)), seg.bands.keys)
+            }
+        }
+        for (run in EffectsLab.program().filter { it.label.startsWith("bass_bin_") }) {
+            assertEquals("bin", run.layout)
+            val block = run.label.removePrefix("bass_bin_").toInt()
+            run.segs.filter { it.label.startsWith("boost_") }.forEach { seg ->
+                assertEquals(setOf(DynamicsBandGrid.bandFor(seg.tone.hz, EffectsLab.BANDS, EffectsLab.RATE, block)), seg.bands.keys)
+            }
+        }
+    }
+
+    @Test fun equalizerRunBoostsOnlyItsFirstBandAgainstFlat() {
+        val lvm = EffectsLab.program().single { it.label == "equalizer_lvm" }
+        assertEquals("lvm", lvm.engine)
+        lvm.segs.chunked(2).forEach { (flat, boost) ->
+            assertTrue(flat.bands.isEmpty())
+            assertEquals(mapOf(0 to 6.0), boost.bands)
         }
     }
 

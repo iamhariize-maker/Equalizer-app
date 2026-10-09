@@ -5,8 +5,11 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.media.audiofx.AudioEffect
 import android.media.audiofx.DynamicsProcessing
+import android.media.audiofx.Equalizer
 import android.media.audiofx.Visualizer
+import app.svan.DynamicsBandGrid
 import app.svan.EqController
 import app.svan.GlobalEqEngine
 import java.io.File
@@ -22,11 +25,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Debug-only measurement of what Android's DynamicsProcessing and Visualizer do on this device. CI runs it on the
- * emulator (`am start ... --es cmd effects_lab`). It plays known signals on its own audio session with a
- * DynamicsProcessing attached, and records the Visualizer's readings. android/scripts/system_effects_lab.py measures
- * the emulator's host capture of the output and compares it with what the framework's source predicts.
- * Nothing here ships to users, and the probe changes nothing outside its own session.
+ * Debug-only measurement of what Android's audio effects do on this device. CI runs it on the emulator (`am start ...
+ * --es cmd effects_lab`). It plays known signals on its own audio session and records the Visualizer's readings. The
+ * runs compare DynamicsProcessing with Svan's current band edges against edges laid on whole FFT bins
+ * ([DynamicsBandGrid]), and AOSP's own 5-band Equalizer. android/scripts/system_effects_lab.py measures the host
+ * capture of the output and compares it with what the framework's source predicts. Nothing here ships to users, and
+ * the probe changes nothing outside its own session.
  */
 object EffectsLab {
     const val RATE = 48_000
@@ -56,6 +60,10 @@ object EffectsLab {
         val mbcAttackMs: Double? = null,
         val visualizer: Boolean = false,
         val segs: List<Seg>,
+        /** "log": Svan's current band edges. "bin": edges on whole bins of the 4096-sample grid. */
+        val layout: String = "log",
+        /** "dp": DynamicsProcessing with [layout]. "lvm": AOSP's 5-band Equalizer alone, for comparison. */
+        val engine: String = "dp",
     )
 
     /** The fixed program. Block sizes are written as samples / 48, and the engine rounds them to a power of two. */
@@ -74,6 +82,23 @@ object EffectsLab {
             }
             runs += Run("bass_block_$block", blockMs = block / 48.0, segs = segs)
         }
+        // The same bass comparison with Svan's edges laid on whole bins. The boost goes on the band that owns the bin nearest the tone.
+        for (block in listOf(4096, 8192, 16384)) {
+            val segs = mutableListOf<Seg>()
+            for (hz in listOf(25.0, 40.0, 63.0, 100.0, 160.0)) {
+                segs += Seg("flat_${hz.toInt()}", Tone(hz, 0.1, 1.6))
+                segs += Seg("boost_${hz.toInt()}_6db", Tone(hz, 0.1, 1.6),
+                    bands = mapOf(DynamicsBandGrid.bandFor(hz, BANDS, RATE, block) to 6.0))
+            }
+            runs += Run("bass_bin_$block", blockMs = block / 48.0, segs = segs, layout = "bin")
+        }
+        // AOSP's own 5-band Equalizer (time-domain biquads, centre 60 Hz, Q 0.96): +6 dB on band 0 against flat.
+        val lvm = mutableListOf<Seg>()
+        for (hz in listOf(40.0, 60.0, 100.0)) {
+            lvm += Seg("flat_${hz.toInt()}", Tone(hz, 0.1, 1.6))
+            lvm += Seg("boost_${hz.toInt()}_6db", Tone(hz, 0.1, 1.6), bands = mapOf(0 to 6.0))
+        }
+        runs += Run("equalizer_lvm", blockMs = 0.0, segs = lvm, engine = "lvm")
         // A 0.9 sine (-0.9 dBFS) with +12 dB at 1 kHz reaches about +11 dBFS before the limiter.
         val boost12 = mapOf(k1k to 12.0)
         runs += Run("clip_limiter_on", blockMs = 4096 / 48.0, limiter = true,
@@ -115,6 +140,10 @@ object EffectsLab {
         DynamicsProcessing.MbcBand(true, 200f, attackMs.toFloat(), 80f, 1f, 0f, 0f, -90f, 1f, 0f, 0f)
     }
 
+    /** Upper edge of each band for [layout]: Svan's log edges, or the bin-aligned grid. */
+    private fun cutoffsFor(layout: String): DoubleArray =
+        if (layout == "bin") DynamicsBandGrid.cutoffsHz(BANDS, RATE) else DoubleArray(BANDS) { cutoff(it) }
+
     /** Runs the whole program and writes files/effects-lab.json. Blocking: call from a worker thread. */
     fun run(context: Context): File {
         val out = File(context.filesDir, "effects-lab.json")
@@ -130,7 +159,7 @@ object EffectsLab {
             }
         }
         out.writeText(JSONObject()
-            .put("format", 1).put("rate", RATE).put("leadS", LEAD_S).put("tailS", TAIL_S)
+            .put("format", 2).put("rate", RATE).put("leadS", LEAD_S).put("tailS", TAIL_S)
             .put("runs", runs).put("errors", errors).put("done", true).toString(2))
         EqController.log("FXLAB_DONE")
         return out
@@ -146,38 +175,50 @@ object EffectsLab {
             .setSessionId(session)
             .build()
         val mbc = run.mbcAttackMs != null
-        var fx: DynamicsProcessing? = null
+        var fx: AudioEffect? = null
         var meter: Visualizer? = null
         try {
-            val cfg = DynamicsProcessing.Config.Builder(
-                DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2,
-                true, BANDS, mbc, if (mbc) 2 else 0, false, 0, run.limiter,
-            ).setPreferredFrameDuration(run.blockMs.toFloat()).build()
-            val dp = DynamicsProcessing(0, session, cfg)
-            fx = dp
-            val current = DoubleArray(BANDS)
-            for (i in 0 until BANDS) dp.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, cutoff(i).toFloat(), 0f))
-            dp.setInputGainAllChannelsTo(run.inputGainDb.toFloat())
-            if (run.limiter) dp.setLimiterAllChannelsTo(DynamicsProcessing.Limiter(true, true, 0, 1f, 60f, 10f, -0.5f, 0f))
-            if (mbc) dp.setMbcBandAllChannelsTo(1, DynamicsProcessing.MbcBand(true, 20_000f, 1f, 80f, 1f, 0f, 0f, -90f, 1f, 0f, 0f))
-            dp.enabled = true
+            val cutoffs = cutoffsFor(run.layout)
+            val dp = if (run.engine == "dp") {
+                val cfg = DynamicsProcessing.Config.Builder(
+                    DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION, 2,
+                    true, BANDS, mbc, if (mbc) 2 else 0, false, 0, run.limiter,
+                ).setPreferredFrameDuration(run.blockMs.toFloat()).build()
+                DynamicsProcessing(0, session, cfg).also { fx = it }
+            } else null
+            if (dp != null) {
+                for (i in 0 until BANDS) dp.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, cutoffs[i].toFloat(), 0f))
+                dp.setInputGainAllChannelsTo(run.inputGainDb.toFloat())
+                if (run.limiter) dp.setLimiterAllChannelsTo(DynamicsProcessing.Limiter(true, true, 0, 1f, 60f, 10f, -0.5f, 0f))
+                if (mbc) dp.setMbcBandAllChannelsTo(1, DynamicsProcessing.MbcBand(true, 20_000f, 1f, 80f, 1f, 0f, 0f, -90f, 1f, 0f, 0f))
+                dp.enabled = true
+            }
+            val eq = if (run.engine == "lvm") Equalizer(0, session).also { fx = it; it.enabled = true } else null
             if (run.visualizer) {
                 meter = Visualizer(session).also {
                     it.measurementMode = Visualizer.MEASUREMENT_MODE_PEAK_RMS
                     it.enabled = true
                 }
             }
+            val current = DoubleArray(BANDS)
             track.play()
             val segments = JSONArray()
             for (seg in run.segs) {
-                for (i in 0 until BANDS) {
-                    val want = seg.bands[i] ?: 0.0
-                    if (abs(want - current[i]) > 1e-9) {
-                        dp.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, cutoff(i).toFloat(), want.toFloat()))
-                        current[i] = want
+                if (dp != null) {
+                    for (i in 0 until BANDS) {
+                        val want = seg.bands[i] ?: 0.0
+                        if (abs(want - current[i]) > 1e-9) {
+                            dp.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, cutoffs[i].toFloat(), want.toFloat()))
+                            current[i] = want
+                        }
+                    }
+                    if (mbc) dp.setMbcBandAllChannelsTo(0, mbcBand(run.mbcAttackMs ?: 1.0, seg.mbcCompress))
+                }
+                if (eq != null) {
+                    for (b in 0 until eq.numberOfBands.toInt()) {
+                        eq.setBandLevel(b.toShort(), ((seg.bands[b] ?: 0.0) * 100).roundToInt().toShort())
                     }
                 }
-                if (mbc) dp.setMbcBandAllChannelsTo(0, mbcBand(run.mbcAttackMs ?: 1.0, seg.mbcCompress))
                 val readings = mutableListOf<Pair<Long, Double>>()
                 val keep = AtomicBoolean(true)
                 val began = System.currentTimeMillis()
@@ -204,10 +245,13 @@ object EffectsLab {
                     .put("visualizer", JSONArray().apply { synchronized(readings) { readings.forEach { put(JSONArray(listOf(it.first, it.second))) } } }))
             }
             track.stop()
+            val centre: Any = eq?.let { it.getCenterFreq(0) / 1000.0 } ?: JSONObject.NULL
             return JSONObject()
                 .put("label", run.label).put("blockMs", run.blockMs).put("limiter", run.limiter)
                 .put("inputGainDb", run.inputGainDb).put("mbcAttackMs", run.mbcAttackMs ?: JSONObject.NULL)
-                .put("visualizer", run.visualizer).put("segments", segments)
+                .put("visualizer", run.visualizer).put("layout", run.layout).put("engine", run.engine)
+                .put("bands", eq?.numberOfBands?.toInt() ?: (if (dp != null) BANDS else JSONObject.NULL))
+                .put("centreHz", centre).put("segments", segments)
         } finally {
             runCatching { meter?.release() }
             runCatching { fx?.release() }

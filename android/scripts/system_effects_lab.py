@@ -28,8 +28,11 @@ CUTOFFS = [math.sqrt(CENTERS[i] * CENTERS[i + 1]) if i + 1 < BANDS else 22000.0 
 WIN = 480                 # 10 ms silence/activity windows
 STEADY = (0.45, 0.8)      # fraction of a segment used for its steady level
 VISUALIZER_MS = (1100, 2300)  # steady part of a 2 s tone that starts after the 0.6 s lead-in
-EXPECTED_RUNS = 11
-EXPECTED_SEGMENTS = 50
+EXPECTED_RUNS = 15
+EXPECTED_SEGMENTS = 86
+GRID = 4096                   # bin grid of app.svan.DynamicsBandGrid (a 4096-sample block)
+TOP_HZ = 22000.0
+LVM_Q = 0.96                  # AOSP Equalizer band 0: centre 60 Hz, Q 96/100 (EQNB_5BandPresetsQFactors)
 LEAD_S = 0.6
 TAIL_S = 0.6
 
@@ -43,20 +46,44 @@ def band_for(hz):
     return min(BANDS - 1, max(0, int(math.floor(127.0 * math.log10(hz / 20.0) / 3.0 + 0.5))))
 
 
-def aosp_bin_gains(block, boosted_band, boost_db):
+def bin_stops(bands=BANDS, rate=RATE):
+    """DynamicsBandGrid.stops: the last bin each band reaches. Strictly increasing, so every band fills a bin."""
+    width = rate / GRID
+    centres = [20.0 * (20000.0 / 20.0) ** (i / (bands - 1)) for i in range(bands)]
+    stops = []
+    for i in range(bands):
+        edge = math.sqrt(centres[i] * centres[i + 1]) if i + 1 < bands else TOP_HZ
+        floor = 0 if i == 0 else stops[i - 1] + 1
+        stops.append(max(int(edge / width + 0.5), floor))
+    top = int(TOP_HZ / width + 0.5)
+    if stops[-1] > top:
+        stops[-1] = top
+        for i in range(bands - 2, -1, -1):
+            stops[i] = min(stops[i], stops[i + 1] - 1)
+    assert stops[0] >= 0 and all(stops[i] > stops[i - 1] for i in range(1, bands)), "layout does not fit the grid"
+    return stops
+
+
+def bin_cutoffs(bands=BANDS, rate=RATE):
+    width = rate / GRID
+    return [stop * width for stop in bin_stops(bands, rate)]
+
+
+def aosp_bin_gains(block, boosted_band, boost_db, cuts=None):
     """Per-bin gain the framework applies to one boosted pre-EQ band.
 
     DPFrequency::ChannelBuffer::computeBinStartStop sets binStop = (int)(0.5 + cutoff * block / rate), and each band
     fills the bins from the previous band's binStop + 1 up to its own binStop. A band whose binStop does not pass the
     previous one fills no bin, so its gain is never applied. Bins that no band reaches keep unity here (an assumption:
     the source leaves them as they were)."""
+    cuts = CUTOFFS if cuts is None else cuts
     half = block // 2 + 1
     factor = [1.0] * half
     boost = 10.0 ** (boost_db / 20.0)
     next_bin = 0
     dropped = []
     for band in range(BANDS):
-        stop = int(0.5 + CUTOFFS[band] * block / RATE)
+        stop = int(0.5 + cuts[band] * block / RATE)
         if stop < next_bin:
             dropped.append(band)
         gain = boost if band == boosted_band else 1.0
@@ -75,12 +102,12 @@ def hann_power_kernel(d):
     return (math.sin(math.pi * d) / (math.pi * d * (1.0 - d * d))) ** 2
 
 
-def predicted_tone_db(block, hz, boosted_band, boost_db):
+def predicted_tone_db(block, hz, boosted_band, boost_db, cuts=None):
     """Framework-model gain for a steady tone at hz: (nearest-bin dB, Hann-weighted dB, bands that get no bins).
 
     The Hann-weighted value averages the bin gains by the power kernel a steady sinusoid leaks into each bin; the
     nearest-bin value is the crude upper bound on how sharp the bin mapping can be."""
-    factor, dropped = aosp_bin_gains(block, boosted_band, boost_db)
+    factor, dropped = aosp_bin_gains(block, boosted_band, boost_db, cuts)
     centre = hz * block / RATE
     nearest = min(len(factor) - 1, int(math.floor(centre + 0.5)))
     weights = []
@@ -110,6 +137,20 @@ def predicted_limited_amp(amp, threshold_db=-0.5, ratio=10.0):
     if env <= threshold_db:
         return amp
     return amp * 10.0 ** (((1.0 / ratio) - 1.0) * (env - threshold_db) / 20.0)
+
+
+def rbj_peaking_db(f, f0, gain_db, q, rate=RATE):
+    """Magnitude of a peaking biquad (RBJ cookbook) at f. A model of one Equalizer band; the LVM kernel is not run here."""
+    a = 10.0 ** (gain_db / 40.0)
+    w0 = 2.0 * math.pi * f0 / rate
+    alpha = math.sin(w0) / (2.0 * q)
+    num = (1.0 + alpha * a, -2.0 * math.cos(w0), 1.0 - alpha * a)
+    den = (1.0 + alpha / a, -2.0 * math.cos(w0), 1.0 - alpha / a)
+    w = 2.0 * math.pi * f / rate
+
+    def response(c):
+        return sum(c[k] * complex(math.cos(k * w), -math.sin(k * w)) for k in range(3))
+    return 20.0 * math.log10(abs(response(num) / response(den)))
 
 
 def read_host_mono(path, first_frame):
@@ -259,21 +300,35 @@ def analyse(data, mono, out_dir):
                  f"an output tap predicts {host:+.2f} dB)")
             check("Visualizer answered during the tap run", vis_delta is not None)
             summary["runs"][label] = {"host_delta_db": host, "visualizer_delta_db": vis_delta, "model_db": pred}
-        elif label.startswith("bass_block_"):
+        elif label.startswith("bass_block_") or label.startswith("bass_bin_"):
+            cuts = bin_cutoffs() if run.get("layout") == "bin" else CUTOFFS
             per_band = []
             for (flat, fs), (boost, bs) in zip(mapped[0::2], mapped[1::2]):
                 hz = boost["hz"]
                 measured = steady_db(mono, bs) - steady_db(mono, fs)
-                boosted = band_for(hz)
-                pred, pred_weighted, dropped = predicted_tone_db(block, hz, boosted, 6.0)
+                boosted = int(next(iter(boost["bands"])))
+                pred, pred_weighted, dropped = predicted_tone_db(block, hz, boosted, 6.0, cuts)
                 lost = boosted in dropped
                 per_band.append({"hz": hz, "measured_db": measured, "model_nearest_db": pred,
                                  "model_hann_db": pred_weighted, "band_dropped": lost})
-                info(f"block {block} {hz:.0f} Hz: measured {measured:+.2f} dB, framework model {pred_weighted:+.2f} dB "
-                     f"(nearest bin {pred:+.2f}), band {boosted} {'gets no bins (its gain is lost)' if lost else 'applied'}")
-            below = [b for b in range(BANDS) if CUTOFFS[b] < 200.0]
-            _, dropped_all = aosp_bin_gains(block, -1, 0.0)
-            info(f"block {block}: {len([b for b in dropped_all if b in below])} of {len(below)} bands below 200 Hz get no bins")
+                info(f"{label} block {block} {hz:.0f} Hz ({run.get('layout', 'log')} layout): measured {measured:+.2f} dB, "
+                     f"framework model {pred_weighted:+.2f} dB (nearest bin {pred:+.2f}), band {boosted} "
+                     f"{'gets no bins (its gain is lost)' if lost else 'applied'}")
+            below = [b for b in range(BANDS) if cuts[b] < 200.0]
+            _, dropped_all = aosp_bin_gains(block, -1, 0.0, cuts)
+            info(f"{label}: {len([b for b in dropped_all if b in below])} of {len(below)} bands below 200 Hz get no bins")
+            summary["runs"][label] = per_band
+        elif label == "equalizer_lvm":
+            centre = run.get("centreHz") or 60.0
+            per_band = []
+            for (flat, fs), (boost, bs) in zip(mapped[0::2], mapped[1::2]):
+                hz = boost["hz"]
+                measured = steady_db(mono, bs) - steady_db(mono, fs)
+                model = rbj_peaking_db(hz, centre, 6.0, LVM_Q)
+                per_band.append({"hz": hz, "measured_db": measured, "model_db": model})
+                info(f"equalizer_lvm {hz:.0f} Hz (band 0 centre {centre:.1f} Hz, +6 dB): measured {measured:+.2f} dB, "
+                     f"biquad peaking model {model:+.2f} dB")
+            info(f"equalizer_lvm: the framework reports {run.get('bands')} bands (AOSP reference: 5)")
             summary["runs"][label] = per_band
         elif label.startswith("clip_") or label.startswith("transient_"):
             (seg, span), = mapped
@@ -345,6 +400,15 @@ def selftest():
     assert abs(hann_power_kernel(1.0 - 1e-7) - 0.25) < 1e-3
     assert abs(predicted_static_gain_db(0.1, -30.0, 4.0, "block") + 3.94) < 0.05
     assert predicted_limited_amp(0.9) == 0.9 and predicted_limited_amp(3.58) < 3.58
+    stops = bin_stops()
+    assert stops[:4] == [2, 3, 4, 5] and stops[-1] == 1877, stops[:4] + [stops[-1]]
+    for block in (4096, 8192, 16384):
+        assert aosp_bin_gains(block, -1, 0.0, bin_cutoffs())[1] == [], f"bin layout loses bands at block {block}"
+    assert aosp_bin_gains(2048, -1, 0.0, bin_cutoffs())[1], "the bin layout does not claim block 2048"
+    assert len(aosp_bin_gains(4096, -1, 0.0)[1]) == 27, "the current layout loses 27 bands at block 4096"
+    assert abs(rbj_peaking_db(60.0, 60.0, 6.0, LVM_Q) - 6.0) < 1e-9
+    bin25 = predicted_tone_db(4096, 25.0, 0, 6.0, bin_cutoffs())
+    assert bin25[1] > 3.0 and 0 not in bin25[2], f"a 25 Hz boost on the bin layout should apply: {bin25}"
     print("selftest passed")
 
 
