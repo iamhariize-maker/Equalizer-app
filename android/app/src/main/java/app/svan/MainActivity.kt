@@ -157,6 +157,10 @@ class MainActivity : ComponentActivity() {
                     }.onFailure { EqController.log("DIAG_REPORT_FAILED $it") }
                 }, "svan-diag-cmd").start()
             }
+            "effects_lab" -> if (BuildConfig.DEBUG) {
+                // Known-signal measurement of DynamicsProcessing and Visualizer (CI; see android/scripts/system_effects_lab.py).
+                thread { runCatching { app.svan.diag.EffectsLab.run(this) }.onFailure { EqController.log("FXLAB_FAILED ${it.message}") } }
+            }
             "basic_status" -> if (BuildConfig.DEBUG) {
                 val d = org.json.JSONObject().put("dump", PlaybackSessions.hasDumpPermission(this))
                     .put("reportAccess", PlaybackSessions.hasReportAccess(this))
