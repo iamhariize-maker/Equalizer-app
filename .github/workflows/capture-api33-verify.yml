@@ -1,4 +1,4 @@
-# Test all API 33 gates with the official 35.2.10 emulator; application APKs remain frozen.
+# Test all API 33 gates with PMU disabled on the hosted AMD virtual CPU; application APKs remain frozen.
 name: Android 13 frozen capture verification
 'on':
   push:
@@ -95,7 +95,7 @@ jobs:
         arch: x86_64
         emulator-build: ${{ env.SVAN_EMULATOR_BUILD }}
         disable-animations: true
-        emulator-options: -no-window -gpu swiftshader_indirect -feature -Vulkan -memory 2048 -cores 2 -no-snapshot -no-boot-anim -camera-back none -show-kernel
+        emulator-options: -no-window -gpu swiftshader_indirect -feature -Vulkan -memory 2048 -cores 2 -no-snapshot -no-boot-anim -camera-back none -show-kernel -qemu -cpu host,pmu=off
         working-directory: android
         script: export PATH="$GITHUB_WORKSPACE/tools/ci:$PATH" ; adb -s emulator-5554 logcat -v threadtime > "$GITHUB_WORKSPACE/e2e-out/guest-full-log.txt" 2>&1 & adb -s emulator-5554 install -r app/build/outputs/apk/debug/app-debug.apk ; adb -s emulator-5554 install -r testsource/build/outputs/apk/capturable/debug/testsource-capturable-debug.apk ; adb -s emulator-5554 install -r testsource/build/outputs/apk/blocked/debug/testsource-blocked-debug.apk ; adb -s emulator-5554 shell wm size 320x640 ; adb -s emulator-5554 shell wm density 160 ; python3 scripts/capture_recovery.py emulator-5554 "$GITHUB_WORKSPACE/e2e-out/capture-recovery" || exit 1 ; bash scripts/production_release.sh emulator-5554 "$GITHUB_WORKSPACE/tested-production/Svan-production-test.apk" "$GITHUB_WORKSPACE/e2e-out/production" || exit 1 ; adb -s emulator-5554 shell am start -W -n app.svan.testsource.blocked/app.svan.testsource.ToneActivity --ez stop true ; adb -s emulator-5554 shell am start -W -n app.svan.testsource.capturable/app.svan.testsource.ToneActivity --ez stop true ; bash scripts/detection_release.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/detection" ; bash scripts/quality_lab.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/quality" || exit 1 ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/e2e-out/smoke.txt" 2>&1 ; bash scripts/diag.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/diag" ; bash scripts/precision_controls.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/precision" || exit 1 ; bash scripts/e2e.sh emulator-5554 ; bash scripts/source_filter.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/source-filter" || exit 1 ; bash scripts/eq_workspace.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/workspace" ; bash scripts/screens.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/screens" ; cp /tmp/e2e_results.txt /tmp/e2e_eqspike.log /tmp/e2e_eqspike_full.log "$GITHUB_WORKSPACE/e2e-out/" ; bash scripts/recording_mode.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/recording" || exit 1 ; bash scripts/basic_detection.sh emulator-5554 "$GITHUB_WORKSPACE/e2e-out/basic-detection" || exit 1
     - name: Preserve emulator host diagnostics
