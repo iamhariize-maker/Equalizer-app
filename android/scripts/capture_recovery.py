@@ -84,7 +84,11 @@ def main():
         time.sleep(3)
 
     def start():
+        # Each projection needs fresh consent. Do not let the singleTask status command
+        # clear Android's permission activity before its result reaches the app.
+        adb("shell", "appops", "set", "app.svan", "PROJECT_MEDIA", "allow")
         eq("start_capture", "--es", "quality", "EFFICIENT")
+        time.sleep(1)
 
     def loud(pkg=cap, *extras):
         tone(pkg, "--ef", "freq", "1000", "--ef", "amp", "0.25", "--ez", "broadcast", "true", "--ez", "component", "true", *extras)
@@ -169,7 +173,7 @@ def main():
         eq("forget_verdicts")
         adb("logcat", "-c")
         tone(cap, "--ef", "freq", "1000", "--ef", "amp", "0", "--ez", "broadcast", "true", "--ez", "component", "true")
-        wait("quiet-connected", lambda d: route(d).get("owner") == "ENGINE_A")
+        wait("quiet-connected", lambda d: route(d).get("owner") == "ENGINE_A" and route(d).get("playing") is True)
         start()
         wait("quiet-first", lambda d: route(d).get("reason") == "SILENT_RECENTLY")
         eq("retry_capture", "--es", "pkg", cap)
