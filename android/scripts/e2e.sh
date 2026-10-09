@@ -219,11 +219,13 @@ $A logcat -c
 eq svaramanas --ez on true --es mode SVARESA --es feel BRIGHT --es picks VOCALS
 wait_for "svaramanas plan: mode=SVARESA" 30 > "$TMP/e2e_t23_svaresa.txt"; cat "$TMP/e2e_t23_svaresa.txt"
 eq svaramanas --ez on false; sleep 3
-# Isolate the silence-watchdog fallback from the new proactive dump-flag guard.
-# A real phone can have broadcast discovery without enhanced DUMP permission.
+# Deliver real zero PCM on the SAME live, captured AudioTrack. Replacing it with
+# a nocapture track now correctly removes the old muted UID on CLOSE, so that
+# fixture no longer reaches the watchdog. Keep its audio and log assertions.
 $A shell pm revoke $EQ android.permission.DUMP
-tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez nocapture true; sleep 14
-measure "T20 capture-opt-out stream after Engine B muted it (expect T1, not silence)"
+tone $CAP --ef live_amp 0; sleep 14
+tone $CAP --ef live_amp 0.25; sleep 2
+measure "T20 captured stream after real silent PCM triggers fail-open (expect T1, not silence)"
 eq stop_capture; sleep 3
 $A shell pm grant $EQ android.permission.DUMP
 tone $CAP --ez stop true; sleep 3

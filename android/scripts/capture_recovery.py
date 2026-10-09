@@ -167,7 +167,7 @@ def main():
 
         stop()
         start()
-        idle = wait("idle-engine", lambda d: d["capture"] and not d["admitted"] and d["recorder"] is None)
+        idle = wait("idle-engine", lambda d: d["capture"] and not d["admitted"] and d["recorder"] is None and not d["routes"])
         check("idle engine releases its main recorder before late checks", not idle["routes"])
         loud()
         late = wait("late-captured", full)
