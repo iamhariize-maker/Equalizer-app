@@ -69,6 +69,8 @@ eq bypass --ez off true
 state protection_compare
 eq bypass --ez off false
 eq svaramanas --ez on false
+# Turning the planner off completes on its own thread; read the state only after it has settled (as for protection_auto).
+sleep 2
 state protection_restored
 python3 - "$OUT" <<'PY' | tee -a "$OUT/results.txt"
 import json,pathlib,sys
