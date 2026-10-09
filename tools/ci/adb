@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# CI only: an offline emulator must fail a command, not hang a release check.
+set -euo pipefail
+real_adb="${SVAN_REAL_ADB:-${ANDROID_HOME:?}/platform-tools/adb}"
+# Background logcat streams are deliberately stopped by the existing suites.
+for argument in "$@"; do
+  if [[ "$argument" == logcat && " $* " != *" -d "* ]]; then
+    exec "$real_adb" "$@"
+  fi
+done
+exec timeout --signal=TERM --kill-after=5s "${SVAN_ADB_TIMEOUT_SECONDS:-90}s" "$real_adb" "$@"

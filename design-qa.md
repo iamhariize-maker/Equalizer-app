@@ -1,89 +1,73 @@
 # Native appearance design QA
 
-Status: **blocked pending rendered-screen review**. This is an in-progress QA
-record, not a delivery pass.
+Status: **passed** for the native appearance implementation at
+`9334cedab365e2fec589f3b31e3726312dcaf51a`. Independent audio and Android
+compatibility release gates are recorded separately in the release evidence.
 
-Reference set: the owner's current Sound/Hi-Fi screenshots, the original
-response-driven desert design, and the approved direction to implement all
-three explorations as separate themes while keeping Original as the default.
-The preparation lookbook records Midnight Raga, Sandstone Atelier and Indigo
-Loom. New decorative source images are recorded in `docs/appearance-artwork.json`.
+## References and comparison conditions
 
-The native application retains its real data, controls, mark and audio behavior.
-Concept headphones, curves and route statuses are not copied as fabricated app
-state. Decorative references are adapted to the existing Android flows.
+The references are the owner's Sound and Hi-Fi screenshots, the original
+response-driven night desert, and the preparation lookbook's Midnight Raga,
+Sandstone Atelier and Indigo Loom directions. The owner requested all three
+as separate themes, retaining Original as the default. The brand line follows
+the owner's spelling, **Svanam Shreshtam**.
 
-## Verification already completed
+Native captures use 390 × 844 logical pixels, 780 × 1688 physical pixels at
+320 dpi, with normal text and 200% text. Full screens and focused chart/dock
+crops were inspected. Android status bars are retained and accounted for in
+the comparison. App state is an empty headphone selection, Flat/manual EQ
+and no connected music source. Concept headphones, curves and route statuses
+are not fabricated as application data.
 
-- Uploaded APK bytecode/resources match the source baseline; native section
-  differences are limited to build IDs. See `docs/appearance-baseline.json`.
-- All 248 native palette contrast pairs pass the stated 4.5:1 text / 3:1 control
-  limits; see `docs/appearance-contrast.json`.
-- Existing native audio tests: 179 tests, zero failed checks.
-- Existing Android JVM tests: 267 tests, no failures, errors or skips.
-- Existing screenshot/control tooling tests: 17 tests passed.
+Original retains its code-drawn desert and gold hierarchy; Raga adds a quiet
+miniature landscape and botanical brass; Sandstone uses parchment, ink, etched
+dunes and floral print; Indigo uses woven contours and a geometric border.
+Generated decorative pixels remain unchanged and are cropped at draw time.
+Provenance and font licences are in `docs/appearance-artwork.json`.
 
-## Required before delivery
+## Final evidence
 
-Capture the actual native app at 390 × 844 logical pixels (780 × 1688 physical,
-320 dpi), normal text and 200% text. Compare full screens and focused crops with
-the reference set, using equivalent app state and system-inset handling.
-Review all five tabs, Svaresa, Appearance, large-text navigation, chart labels,
-selection states, and light-theme system bars. Exercise cold-launch persistence
-and verify theme switching leaves saved sound unchanged.
+- CI run: https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37901352746
+- Appearance job: `113728176215`, **success**.
+- Capture artifact: `11603517122`, `appearance-ui-api34`.
+- 68 native captures: 34 debug and 34 exact-production captures.
+- 74 automated checks: 39 debug and 35 production checks, zero failures.
+- Tested production APK SHA-256:
+  `b7037f79be5465a875becffdb9ed976c276c04858f4e0b1c479a2886b749c5c7`.
+- Capture root: `/workspace/svan-ui-device/verified-appearance-9334/`.
+- Reviewed production contact sheets: `review/sound.jpg`, `eq.jpg`,
+  `presets.jpg`, `hi-fi.jpg`, `lab.jpg`, `svaresa.jpg`, `large-0.jpg`
+  and `large-1.jpg`.
+- Focused final crops: `review/chart-200.png` and `review/dock-200.png`.
 
-The `appearance-ui` CI job captures debug and the exact production artifact;
-the inherited API 33/34 routing and production gates remain required. Any
-P0/P1/P2 layout, contrast, state or usability finding must be fixed and recaptured
-before replacing this blocked status with a passed review.
+## Results
 
-## Findings from the first native render
+| Area | Evidence and result |
+| --- | --- |
+| Five tabs in four themes | All 20 production tab screens reviewed; type, spacing, artwork, selected navigation and real state agree with each theme. |
+| Svaresa | Four production theme screens reviewed; Done/compare remain pinned above system navigation. |
+| Appearance | All four selections exercised; checked Compose semantics and Sandstone cold-launch persistence pass. Original is the default. |
+| Saved sound | Debug assertions compare saved audio state before and after every theme change; it remains identical. |
+| 200% text | All five sections remain reachable; Appearance and Sections scroll; Done and compare remain visible. |
+| Chart labels | Extreme dB labels and the final 10k label remain inside the plot. Guidance is below the plot, clear of data and gestures. |
+| Presets | Equal-height normal import/paste/save tiles; single-column large-text actions; full filename in full-width guidance. |
+| Dock | Normal text has a gap before Open; large text has a complete tap/hold instruction without crowding. |
+| Light-theme chrome | Sandstone uses dark system-bar icons and visible selected/control states. |
+| Contrast | All 248 palette pairs pass 4.5:1 text / 3:1 controls in `docs/appearance-contrast.json`. |
+| Decorative restraint | Fine prints at deliberate transitions; actual graph and control content stays unobscured. |
 
-At 390 × 844 logical pixels, the production-independent debug capture of all
-five Original tabs retained the existing navigation, desert response view and
-real app state. The first Svaresa capture exposed a long panel with its Done
-and compare controls below the fold. The correction bounds the panel and
-scrolls its body above a pinned, wrapping footer. Recapture is still required.
-The response chart now places both extreme dB labels inside its drawing
-bounds; its coordinate mapping and gesture behavior are unchanged.
+## Findings closed by final recapture
 
-The baseline API 34 workspace artifact also exposed an existing asynchronous
-test race: the restored report was captured at 04:27:15.738, three milliseconds
-before the controller logged its resting state. The fixture now gives that
-transition the same two-second settling interval as activation. All original
-protection assertions remain intact, and no controller behavior was changed.
+Earlier native review found a below-fold Svaresa footer, chart guidance over
+the upper axis label, uneven preset action tiles, a clipped 10k label at 200%,
+and crowding in the large-text dock. Each was fixed; final production captures
+verify the resulting layout. The harness checks Compose's checked/checkable
+selection row instead of requiring a classic RadioButton widget class.
 
-## Full four-theme debug review
+No unresolved P0, P1 or P2 design finding remains in the reviewed states.
+The Lab probe row intentionally scrolls horizontally; other long content and
+large-text theme lists scroll above pinned actions.
 
-The 26 native captures from CI 37893893342 confirm all five tabs and pinned
-Svaresa actions in all four themes, unchanged saved sound, and Sandstone
-restoration on cold launch. The selector incorrectly required a classic
-RadioButton class; Compose exposes a checked, checkable View row. The
-assertion now checks that actual semantic state and its Sandstone child text.
-
-Focused chart review found the instructional text colliding with the upper
-dB label. It now sits below the chart, outside measured data and gestures.
-Preset import tiles now use a short caption, retaining the full filename in
-the full-width instructions; all three actions align to the tallest tile.
-These fixes still require production and large-text recapture.
-
-The API 36 compatibility attempt failed before boot when SDK Manager received
-an invalid emulator ZIP. No APK install or smoke test ran in that attempt.
-It needs a fresh infrastructure attempt rather than an application change.
-
-The next run pins emulator build 16428233 (37.2.12), whose direct Google
-archive returns HTTP 200 with application/zip and the expected package size.
-The local installed binary confirms this build/version. This changes test
-infrastructure only; all test assertions and API matrices remain required.
-
-## Production and large-text review
-
-CI 37897366134 captured 68 native debug/production screens and passed all
-74 automated appearance checks. Production confirms the aligned import
-actions and chart instructions outside the plot. All themes, persistence,
-saved sound and 200% navigation/Done/compare checks pass. Manual review
-found two remaining text-scale issues: the 10k label extends outside the
-chart at 200%, and the dock's Open label crowds its wrapping subtitle.
-The label now clamps to the canvas bounds; the large-text dock uses one
-complete tap/hold instruction without a separate trailing Open label.
-Normal text retains Open with an explicit gap. Final recapture is required.
+This appearance pass does not establish physical-phone capture permission or
+Bluetooth routing for Spotify, Amazon Music or YouTube Music. Those require
+the device/player qualification described in the existing audio documentation.
