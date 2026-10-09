@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.media.AudioManager
 import android.media.audiofx.AudioEffect
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -25,7 +26,7 @@ import kotlin.math.sin
  */
 class TonePlayerService : Service() {
 
-    private class ToneRun(val explicit: Boolean, val component: Boolean) {
+    private class ToneRun(val explicit: Boolean, val component: Boolean, @Volatile var amplitude: Float) {
         @Volatile var stopped = false
         @Volatile var paused = false
         @Volatile var track: AudioTrack? = null
@@ -61,6 +62,10 @@ class TonePlayerService : Service() {
     }
 
     private fun handle(intent: Intent) {
+        if (intent.hasExtra("live_amp")) {
+            activeRun?.amplitude = intent.getFloatExtra("live_amp", 0.25f)
+            return
+        }
         if (intent.hasExtra("pause")) {
             activeRun?.let {
                 it.paused = intent.getBooleanExtra("pause", false)
@@ -75,9 +80,12 @@ class TonePlayerService : Service() {
             return
         }
         val freq = intent.getFloatExtra("freq", 1000f).toDouble()
+        // Exercises a UID-wide opt-out while the new AudioTrack's own attributes still allow capture.
+        getSystemService(AudioManager::class.java).setAllowedCapturePolicy(
+            intent.getIntExtra("uid_capture_policy", AudioAttributes.ALLOW_CAPTURE_BY_ALL))
         val amp = intent.getFloatExtra("amp", 0.25f)
         val broadcast = intent.getBooleanExtra("broadcast", true)
-        val run = ToneRun(intent.getBooleanExtra("explicit", true), intent.getBooleanExtra("component", false))
+        val run = ToneRun(intent.getBooleanExtra("explicit", true), intent.getBooleanExtra("component", false), amp)
         // Simulates a stream that opts out of playback capture mid-session (DRM'd track, ad, ...).
         val noCapture = intent.getBooleanExtra("nocapture", false)
         activeRun = run
@@ -117,8 +125,9 @@ class TonePlayerService : Service() {
             while (!run.stopped) {
                 if (run.paused) { if (track.playState == AudioTrack.PLAYSTATE_PLAYING) track.pause(); Thread.sleep(20); continue }
                 if (track.playState != AudioTrack.PLAYSTATE_PLAYING) track.play()
+                val amplitude = run.amplitude
                 for (i in 0 until n) {
-                    val v = (amp * sin(phase)).toFloat()
+                    val v = (amplitude * sin(phase)).toFloat()
                     buf[2 * i] = v; buf[2 * i + 1] = v
                     phase += step
                     if (phase > 2 * PI) phase -= 2 * PI

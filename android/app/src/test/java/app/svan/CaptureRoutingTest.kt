@@ -114,9 +114,12 @@ class CaptureRoutingTest {
         assertTrue("another session is independent", s.tickReady(8, 1))
     }
 
-    @Test fun twoSilentChecksOfAPlayingAppSaveBlockedButOneDoesNot() {
-        assertFalse(SilentStrikes.blocks(1))
-        assertTrue(SilentStrikes.blocks(2))
+    @Test fun resumingPlaybackOrExplicitRetryResetsTheExhaustedSchedule() {
+        val s = LateProbeSchedule(maxChecks = 1)
+        s.started(spotify); s.silent(spotify, 0)
+        assertFalse(s.due(spotify, 1_000_000))
+        s.reset(spotify)
+        assertTrue(s.due(spotify, 1_000_001))
     }
 
     // ---- what the Hi-Fi screen says ----

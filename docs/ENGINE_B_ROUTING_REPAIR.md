@@ -1,3 +1,6 @@
+> Historical routing design. [0.5.10 capture recovery](CAPTURE_RECOVERY_0.5.10.md) supersedes the
+> second simultaneous recorder and silence-based persistent BLOCKED verdicts below.
+
 # Engine B routing repair and tuning signatures — after 0.5.8 / code 15
 
 Source basis: branch `ccr-9eafc6c2-mru90o` at `e4d2920` (the code the owner's 0.5.8 APK was built from, including the

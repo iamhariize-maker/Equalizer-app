@@ -4,8 +4,8 @@ plugins {
 }
 
 // Fake "music app" for automated Engine A/B tests on an emulator or device.
-// Flavor `capturable` allows playback capture (like most players);
-// flavor `blocked` opts out at app level (like Spotify).
+// Flavor `capturable` allows playback capture;
+// flavor `blocked` opts out at app level. Neither proves a commercial player's policy.
 android {
     namespace = "app.svan.testsource"
     compileSdk = 35

@@ -21,7 +21,8 @@ object CapturePolicy {
                 (route == null || route.owner != SessionRouter.Owner.ENGINE_B_MUTED || route.uid != s.uid)
         }.map { it.uid }.toSet()
         return routes.filter { it.uid >= 0 && it.uid != ownUid }.groupBy { it.uid }
-            .filterValues { sessions -> sessions.all { it.owner == SessionRouter.Owner.ENGINE_B_MUTED } }
+            .filterValues { sessions -> sessions.all { it.owner == SessionRouter.Owner.ENGINE_B_MUTED } &&
+                sessions.any { it.playing != false } }
             .keys.toSet() - excluded
     }
 }

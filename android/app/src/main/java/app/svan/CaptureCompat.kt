@@ -7,33 +7,35 @@ import android.media.AudioFormat
 import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.projection.MediaProjection
+import java.util.concurrent.ConcurrentHashMap
+import org.xmlpull.v1.XmlPullParser
 
 /**
- * Decides, once per app, whether Engine B can process it.
- *
- * Apps can opt out of playback capture (reported: Spotify, Chrome, SoundCloud).
- * Muting such an app would silence it completely, because the capture would
- * never deliver its audio. A blocked capture delivers exact digital zeros, so we
- * mute the app, open a capture for only its UID, and listen briefly:
- *  - any non-zero sample → CAPTURABLE (stay muted; Engine B renders it)
- *  - only zeros while it is playing → BLOCKED (unmute; Engine A EQs it instead)
- * Decisions are cached per app version, so the brief silence happens once per version. A later
- * silent capture while the app plays is recorded as a strike; see [SilentStrikes].
+ * Records measured capture support and inspects the installed application's manifest.
+ * A silent read is inconclusive: it never establishes a permanent app-level opt-out.
+ * Before muting a source, the router measures it unmuted and then confirms the mute tap.
  */
 class CaptureCompat(context: Context) {
 
-    enum class Verdict { CAPTURABLE, BLOCKED }
+    private val app = context.applicationContext
+
+    // BLOCKED is retained only to recognise records made by older versions.
+    enum class Verdict { CAPTURABLE, INCONCLUSIVE, BLOCKED }
 
     private val prefs = context.getSharedPreferences("capture_compat", Context.MODE_PRIVATE)
-    private val strikes = context.getSharedPreferences("capture_silence", Context.MODE_PRIVATE)
     private val packages = context.packageManager
+    private val checks = ConcurrentHashMap<String, String>()
+    private val declarations = ConcurrentHashMap<String, AppDeclaration>()
+
+    data class AppDeclaration(val targetSdk: Int, val allowed: Boolean, val explicit: Boolean?) {
+        fun summary() = "manifest capture=${if (allowed) "allowed" else "disabled"}, targetSdk=$targetSdk, declaration=${explicit ?: "Android default"}"
+    }
 
     init {
-        // Drop records that can never be read again (see [CaptureRecords]); never touches a current verdict.
-        val stale = CaptureRecords.discardable(prefs.all, ::installedVersion) { CaptureRecords.verdict(it) != null }
+        // Migrate silence-based BLOCKED records, including the owner's 0.5.9 lock, without discarding positives.
+        val stale = CaptureRecords.discardable(prefs.all, ::installedVersion, CaptureEvidencePolicy::reusableStoredValue)
         if (stale.isNotEmpty()) prefs.edit().apply { stale.forEach(::remove) }.apply()
-        val staleStrikes = CaptureRecords.discardable(strikes.all, ::installedVersion) { it is Int && it > 0 }
-        if (staleStrikes.isNotEmpty()) strikes.edit().apply { staleStrikes.forEach(::remove) }.apply()
+        context.getSharedPreferences("capture_silence", Context.MODE_PRIVATE).edit().clear().apply()
     }
 
     /** The installed version, or null when the package is not installed or not visible to Svan (see the manifest's queries). */
@@ -49,105 +51,183 @@ class CaptureCompat(context: Context) {
         return CaptureVerdictKey.of(pkg, version?.code, version?.updatedMs)
     }
 
-    fun cached(pkg: String): Verdict? = CaptureRecords.verdict(prefs.getString(key(pkg), null))
+    fun cached(pkg: String): Verdict? = CaptureRecords.verdict(prefs.getString(key(pkg), null))?.takeIf { it == Verdict.CAPTURABLE }
 
-    fun remember(pkg: String, v: Verdict) = prefs.edit().putString(key(pkg), v.name).apply()
-
-    /** Records that [pkg] was playing (as the audio service reported) while its capture stayed silent. Returns the count for this version. */
-    fun recordSilentPlayback(pkg: String): Int {
-        val k = key(pkg)
-        val count = strikes.getInt(k, 0) + 1
-        strikes.edit().putInt(k, count).apply()
-        return count
+    fun remember(pkg: String, v: Verdict) {
+        if (v == Verdict.CAPTURABLE) prefs.edit().putString(key(pkg), v.name).apply()
     }
 
     /**
      * What the UI may show: one verdict per package, for its current version only. Storage keys such as
      * `com.spotify.music@146810608@1791220371629` never leave this class.
      */
-    fun all(): Map<String, String> = CaptureRecords.current(prefs.all, ::installedVersion)
+    fun all(): Map<String, String> = CaptureRecords.current(prefs.all.filterValues(CaptureEvidencePolicy::reusableStoredValue), ::installedVersion)
 
-    /** Forgets this app's verdict and silence strikes (every version). */
+    /** Uses public APIs and the verified base manifest, never a split manifest or another package's resources. */
+    fun declaration(pkg: String, uid: Int): AppDeclaration? {
+        val k = "${key(pkg)}:$uid"
+        declarations[k]?.let { return it }
+        return runCatching {
+            val info = packages.getApplicationInfo(pkg, 0)
+            if (info.uid != uid) return@runCatching null
+            val resources = packages.getResourcesForApplication(info)
+            for (cookie in 1..64) {
+                val found = runCatching {
+                    resources.assets.openXmlResourceParser(cookie, "AndroidManifest.xml").use { xml ->
+                        var correctBase = false
+                        while (xml.eventType != XmlPullParser.END_DOCUMENT) {
+                            if (xml.eventType == XmlPullParser.START_TAG) {
+                                if (xml.name == "manifest") {
+                                    correctBase = xml.getAttributeValue(null, "package") == pkg && xml.getAttributeValue(null, "split") == null
+                                    if (!correctBase) break
+                                } else if (correctBase && xml.name == "application") {
+                                    val ns = "http://schemas.android.com/apk/res/android"
+                                    val raw = xml.getAttributeValue(ns, "allowAudioPlaybackCapture")
+                                    val explicit = when (raw) {
+                                        null -> null
+                                        "true" -> true
+                                        "false" -> false
+                                        else -> resources.getBoolean(xml.getAttributeResourceValue(ns, "allowAudioPlaybackCapture", 0))
+                                    }
+                                    return@use AppDeclaration(info.targetSdkVersion, CaptureEvidencePolicy.manifestAllows(info.targetSdkVersion, explicit), explicit)
+                                }
+                            }
+                            xml.next()
+                        }
+                        null
+                    }
+                }.getOrNull()
+                if (found != null) { declarations[k] = found; return@runCatching found }
+            }
+            null
+        }.getOrNull()
+    }
+
+    fun diagnosticFor(pkg: String): String = checks.entries.filter { it.key.startsWith("$pkg|") }
+        .sortedBy { it.key }.joinToString("\n") { it.value }.ifEmpty { "No capture samples measured in this process yet." }
+
+    /** Forgets this app's positive history and current observations. */
     fun forget(pkg: String) {
         val own = { key: String -> CaptureVerdictKey.parse(key)?.pkg == pkg }
         prefs.edit().apply { prefs.all.keys.filter(own).forEach(::remove) }.apply()
-        strikes.edit().apply { strikes.all.keys.filter(own).forEach(::remove) }.apply()
+        checks.keys.filter { it.startsWith("$pkg|") }.forEach(checks::remove)
     }
 
     fun clear() {
         prefs.edit().clear().apply()
-        strikes.edit().clear().apply()
+        checks.clear()
     }
 
     /**
      * Blocking: listens to [uid]'s capture for up to [timeoutMs]. Returns
-     * CAPTURABLE as soon as real audio arrives, BLOCKED if only zeros came.
-     * Call off the main thread, after the app's session has been muted.
+     * CAPTURABLE as soon as finite audio arrives; silence is INCONCLUSIVE.
+     * Nonblocking reads make cancellation and the deadline real even if the recorder supplies no frames.
      */
     @SuppressLint("MissingPermission") // RECORD_AUDIO checked before Engine B starts
-    fun probe(projection: MediaProjection, uid: Int, timeoutMs: Long = 2500, stillActive: () -> Boolean = { true }): Verdict {
-        val config = playbackConfig(projection, listOf(uid))
+    fun probe(projection: MediaProjection, uid: Int, timeoutMs: Long = 2500, stillActive: () -> Boolean = { true },
+              pkg: String = "uid:$uid", sid: Int = 0, phase: String = "check"): Verdict {
+        if (phase == "unmuted") checks.remove("$pkg|muted") // a previous attempt's P2 is not this attempt's proof
+        var lease: CaptureRecorderGate.Lease? = null
         val rate = 48000
-        val record = AudioRecord.Builder()
-            .setAudioFormat(
-                AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build(),
-            )
-            .setAudioPlaybackCaptureConfig(config)
-            .build()
-        val buf = FloatArray(1024)
-        val deadline = System.nanoTime() + timeoutMs * 1_000_000
+        var record: AudioRecord? = null
+        var frames = 0L
+        var peak = 0f
+        var silenced: Boolean? = null
+        var outcome = "opening recorder"
+        val began = System.nanoTime()
         try {
-            check(record.state == AudioRecord.STATE_INITIALIZED) { "capture check recorder is not initialized" }
-            record.startRecording()
+            if (!stillActive()) throw ProbeCancelled()
+            val policy = CaptureUidPolicies.read(app, uid)
+            if (policy != null && policy and (PlaybackSession.FLAG_NO_MEDIA_PROJECTION or PlaybackSession.FLAG_NO_SYSTEM_CAPTURE) != 0) {
+                outcome = "UID capture policy disabled (flag_mask=0x${policy.toUInt().toString(16)})"
+                throw ProbePolicyDenied(policy)
+            }
+            lease = recorders.await("probe", active = stillActive)
+            val config = playbackConfig(projection, listOf(uid))
+            val input = AudioRecord.Builder()
+                .setAudioFormat(
+                    AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                        .setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build(),
+                )
+                .setAudioPlaybackCaptureConfig(config)
+                .build()
+            record = input
+            val buf = FloatArray(1024)
+            check(input.state == AudioRecord.STATE_INITIALIZED) { "capture check recorder is not initialized" }
+            input.startRecording()
+            check(input.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "capture check recorder did not start" }
+            val recordingBegan = System.nanoTime()
+            val deadline = recordingBegan + timeoutMs * 1_000_000
             while (System.nanoTime() < deadline) {
                 if (!stillActive()) throw ProbeCancelled()
-                val n = record.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                val n = input.read(buf, 0, buf.size, AudioRecord.READ_NON_BLOCKING)
                 if (n < 0) error("capture check read failed ($n)")
-                for (i in 0 until n) if (buf[i] != 0f) return Verdict.CAPTURABLE
+                frames += n / 2
+                silenced = input.activeRecordingConfiguration?.isClientSilenced
+                for (i in 0 until n) if (buf[i].isFinite()) peak = maxOf(peak, kotlin.math.abs(buf[i]))
+                if (silenced != true && CaptureEvidencePolicy.tapSettled(phase, System.nanoTime() - recordingBegan) &&
+                    CaptureEvidencePolicy.hasSignal(buf, n)) {
+                    outcome = "audio"
+                    return Verdict.CAPTURABLE
+                }
+                Thread.sleep(5)
             }
-            return Verdict.BLOCKED
+            outcome = if (silenced == true) "recorder silenced by Android" else if (frames == 0L) "no frames delivered" else "silent samples; policy unproven"
+            if (silenced == true || frames == 0L) throw ProbeUnavailable(silenced == true)
+            return Verdict.INCONCLUSIVE
+        } catch (e: Exception) {
+            if (outcome == "opening recorder") outcome = "${e.javaClass.simpleName}: recorder setup did not complete"
+            throw e
         } finally {
-            runCatching { record.stop() }
-            record.release()
+            val detail = "capture check: $pkg sid=$sid uid=$uid phase=$phase result=$outcome frames=$frames peak=$peak elapsedMs=${(System.nanoTime()-began)/1_000_000} clientSilenced=${silenced ?: "unknown"} rate=$rate recordState=${record?.recordingState ?: -1} source=${record?.audioSource ?: -1}"
+            checks["$pkg|$phase"] = detail
+            EqController.log(detail)
+            record?.let { runCatching { it.stop() }; runCatching { it.release() } }
+            lease?.close()
         }
     }
 
     /** Diagnostics: what one UID's capture actually delivers in [ms]. */
     @SuppressLint("MissingPermission")
     fun measure(projection: MediaProjection, uid: Int, ms: Long): String {
-        val record = AudioRecord.Builder()
-            .setAudioFormat(
-                AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
-                    .setSampleRate(48000).setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build(),
-            )
-            .setAudioPlaybackCaptureConfig(playbackConfig(projection, listOf(uid)))
-            .build()
-        val buf = FloatArray(1024)
-        var frames = 0L
-        var peak = 0f
-        var firstNonZeroMs = -1L
-        val t0 = System.nanoTime()
+        val lease = recorders.await("diagnostic", active = { true })
+        var opened: AudioRecord? = null
         try {
+            val record = AudioRecord.Builder()
+                .setAudioFormat(
+                    AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
+                        .setSampleRate(48000).setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build(),
+                )
+                .setAudioPlaybackCaptureConfig(playbackConfig(projection, listOf(uid)))
+                .build()
+            opened = record
+            val buf = FloatArray(1024)
+            var frames = 0L
+            var peak = 0f
+            var firstNonZeroMs = -1L
             record.startRecording()
+            val t0 = System.nanoTime()
             while ((System.nanoTime() - t0) / 1_000_000 < ms) {
-                val n = record.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                val n = record.read(buf, 0, buf.size, AudioRecord.READ_NON_BLOCKING)
                 if (n < 0) return "read error $n"
                 for (i in 0 until n) {
+                    if (!buf[i].isFinite()) continue
                     val a = kotlin.math.abs(buf[i])
                     if (a > peak) peak = a
                     if (a > 0f && firstNonZeroMs < 0) firstNonZeroMs = (System.nanoTime() - t0) / 1_000_000
                 }
                 frames += n / 2
+                Thread.sleep(5)
             }
+            return "frames=$frames peak=%.4f firstAudio=%s".format(peak, if (firstNonZeroMs < 0) "never" else "${firstNonZeroMs}ms")
         } finally {
-            runCatching { record.stop() }
-            record.release()
+            opened?.let { runCatching { it.stop() }; runCatching { it.release() } }
+            lease.close()
         }
-        return "frames=$frames peak=%.4f firstAudio=%s".format(peak, if (firstNonZeroMs < 0) "never" else "${firstNonZeroMs}ms")
     }
 
     companion object {
+        internal val recorders = CaptureRecorderGate()
         /** Usage list for the main (mixed) capture. */
         val MIX_USAGES = intArrayOf(AudioAttributes.USAGE_MEDIA)
 
@@ -162,6 +242,10 @@ class CaptureCompat(context: Context) {
             }.build()
     }
 }
+
+/** No data or Android explicitly silenced the recorder: this cannot become an app-policy verdict. */
+internal class ProbeUnavailable(val androidSilenced: Boolean) : IllegalStateException(
+    if (androidSilenced) "Android reports capture recorder silenced" else "capture recorder delivered no frames")
 
 /** A capture check that was stopped on purpose (capture ended, or the player went away); not a verdict. */
 internal class ProbeCancelled : IllegalStateException("capture check cancelled")
@@ -226,13 +310,4 @@ internal object CaptureRecords {
             val now = installed(parsed.pkg) ?: return@filterTo false
             parsed.version != now // plain (null) differs from a resolvable version; an older version differs too
         }
-}
-
-/**
- * Silent captures confirmed while the app plays. One can be a stream, an ad or a track; two on the same
- * app version mean Engine B cannot hear it on this phone, so Engine B stops muting it for that version.
- */
-internal object SilentStrikes {
-    const val LIMIT = 2
-    fun blocks(count: Int): Boolean = count >= LIMIT
 }

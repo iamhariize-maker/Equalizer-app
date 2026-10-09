@@ -24,6 +24,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -164,14 +165,23 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                             color = if (v == Verification.PROCESSING) Svan.Gold else Svan.Ember)
                     }
                     Text(when (verdicts[pkg]) {
-                        "BLOCKED" -> "Capture was silent on repeated checks for this app version; system effects remain available."
-                        "CAPTURABLE" -> "Capture worked on the last check for this app version."
-                        else -> "Capture compatibility not checked yet."
+                        "CAPTURABLE" -> "Capture worked on an earlier check for this app version. Each new capture session is checked again."
+                        else -> if (running && SessionRouter.reasonFor(pkg) != null) "" else "Capture compatibility not checked yet."
                     }, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     Spacer(Modifier.height(8.dp))
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Pill("Auto", pkg !in systemApps, { prefs.setSystemOnly(pkg, false); systemApps = prefs.systemOnlyPackages() })
                         Pill("System effects", pkg in systemApps, { prefs.setSystemOnly(pkg, true); systemApps = prefs.systemOnlyPackages() })
+                        if (running && pkg !in systemApps && appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_A && it.playing != false } &&
+                            SessionRouter.reasonFor(pkg) !in setOf(app.svan.RouteReason.APP_CAPTURE_DISABLED, app.svan.RouteReason.STREAM_NOT_CAPTURABLE)) {
+                            TextButton(onClick = { SessionRouter.retryCapture(pkg) }) { Text("Retry capture") }
+                        }
+                        if (running && appRoutes.isNotEmpty() && appRoutes.none { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }) {
+                            TextButton(onClick = {
+                                context.getSystemService(android.content.ClipboardManager::class.java)
+                                    .setPrimaryClip(android.content.ClipData.newPlainText("Svan capture report", SessionRouter.captureReport(pkg)))
+                            }) { Text("Copy capture report") }
+                        }
                     }
                 }
             }

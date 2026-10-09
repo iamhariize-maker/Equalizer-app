@@ -13,7 +13,8 @@ Owner's additional device priority: LG V60 on Android 13. Run the full routing/c
 suite on API 33 as well as API 34; emulators do not verify LG's Quad DAC or background policies.
 
 - **Engine A — system effects.** `DynamicsProcessing` attached to other apps' audio sessions
-  (Wavelet-style). Gain-per-band only; low latency; works on capture-blocked apps (Spotify).
+  (Wavelet-style). Gain-per-band only; low latency; the fallback when an installed app blocks capture.
+  Do not infer Spotify's installed capture policy from a package name or silent reads.
 - **Engine B — audiophile engine.** `AudioPlaybackCapture` → native 64-bit C++ chain → `AudioTrack`.
   The source app is muted by a top-priority `DynamicsProcessing` at -200 dB input gain
   (capture taps audio *before* session effects). Full DSP: oversampled parametric EQ, bass shaper,
@@ -86,9 +87,11 @@ Owner's engine follow-up: give Svaresa broader authority only where it improves 
 changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
-Latest (9 Oct 2026): Engine B routing repair and nine tuning-signature slots, see `docs/ENGINE_B_ROUTING_REPAIR.md`.
-Late capture checks use a second playback `AudioRecord` only while no source is captured; confirm on CI (`capture check:`
-log lines, emulator fixtures) and on a phone before relying on it. Spotify capture permission is unverified.
+Latest (9 Oct 2026): capture recovery 0.5.10/code 17, see `docs/CAPTURE_RECOVERY_0.5.10.md`.
+A single playback-recorder lease serializes main/probe/diagnostic records; the idle main record closes.
+Legacy silence-based blocks are migrated; a negative sample never becomes a persistent app-policy verdict.
+Installed manifest and UID-wide audio policy provide direct opt-out evidence. Preserve before/after-mute
+proof, fail-open and one-engine ownership. Commercial-player capture permission remains unverified.
 Latest 0.5.8 quality work responds to LG owner feedback: EQ/tuner bypass improves reported fog,
 Amazon remains hidden and its own EQ does not open Svan. Read `docs/QUALITY_RECOVERY_0.5.8.md`.
 Local native (164), ASan/UBSan (164), TSan publication (5), Android JVM (230), debug/release

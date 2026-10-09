@@ -49,4 +49,70 @@ tap 'Blind listening'
 "${A[@]}" exec-out screencap -p > "$OUT/blind-listening.png"
 ! "${A[@]}" logcat -d | grep -qE 'FATAL EXCEPTION|UnsatisfiedLinkError|NoSuchMethodError'
 echo 'PASS production blind listening dialog launches without crash' >> "$OUT/results.txt"
+# Exercise the delivered R8 routing code through public controls, with PHONE_PREVIEW=false.
+"${A[@]}" shell input keyevent KEYCODE_BACK
+"${A[@]}" shell pm grant app.svan android.permission.DUMP
+"${A[@]}" shell pm grant app.svan android.permission.RECORD_AUDIO
+"${A[@]}" shell appops set app.svan PROJECT_MEDIA allow
+CAP=app.svan.testsource.capturable
+BLK=app.svan.testsource.blocked
+tone() { "${A[@]}" shell am start -W -n "$1"/app.svan.testsource.ToneActivity "${@:2}" >/dev/null; }
+measure() { python3 "$(dirname "$0")/host_audio_level.py" --capture-wav "${QEMU_WAV_PATH:?host audio required}" "$OUT/$1.float32le" > "$OUT/$1.db"; }
+visible() {
+    "${A[@]}" shell uiautomator dump /sdcard/svan-production.xml >/dev/null 2>&1
+    "${A[@]}" shell cat /sdcard/svan-production.xml | python3 -c 'import sys,xml.etree.ElementTree as E;sys.exit(not any(sys.argv[1] in n.attrib.get("text","") for n in E.fromstring(sys.stdin.read()).iter("node")))' "$1"
+}
+scroll_to() {
+    for ((i=0;i<7;i++)); do
+        visible "$1" && return 0
+        "${A[@]}" shell input swipe 160 480 160 190 350; sleep 1
+    done
+    echo "FAIL production capture UI text missing: $1" >> "$OUT/results.txt"; exit 1
+}
+tone "$CAP" --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez component true
+sleep 4
+measure capture-flat
+tap Hi-Fi
+scroll_to 'Start audiophile engine'; tap 'Start audiophile engine'
+for ((attempt=0;attempt<45;attempt++)); do
+    visible 'Audiophile engine connected' && break
+    sleep 1
+done
+visible 'Audiophile engine connected'
+sleep 3
+"${A[@]}" logcat -d -s EqSpike:I > "$OUT/capture-log.txt"
+python3 - "$OUT/capture-log.txt" "$CAP" <<'PY'
+import re,sys
+s=open(sys.argv[1]).read();pkg=re.escape(sys.argv[2])
+assert re.search(rf'capture check: {pkg} .*phase=unmuted result=audio frames=[1-9]\d*',s)
+p=re.search(rf'capture check: {pkg} .*phase=muted result=audio frames=[1-9]\d* .*elapsedMs=(\d+)',s)
+assert p and int(p[1])>=200
+assert re.search(r'source=captured capturedFrames=[1-9]\d*',s)
+PY
+"${A[@]}" exec-out screencap -p > "$OUT/native-capture.png"
+echo 'PASS production public UI starts capture with settled mute proof and real frames' >> "$OUT/results.txt"
+measure capture-native
+python3 - "$OUT/capture-flat.db" "$OUT/capture-native.db" <<'PY'
+import sys
+a,b=map(lambda p:float(open(p).read()),sys.argv[1:])
+assert abs(b-a)<=.75,(a,b)
+PY
+echo 'PASS production native capture replays one measured audio copy' >> "$OUT/results.txt"
+scroll_to 'Stop audiophile engine'; tap 'Stop audiophile engine'
+tone "$CAP" --ez stop true
+sleep 3
+tone "$BLK" --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez component true
+sleep 4
+scroll_to 'Start audiophile engine'; tap 'Start audiophile engine'
+scroll_to "This installed app's Android settings disable playback capture"
+"${A[@]}" exec-out screencap -p > "$OUT/manifest-opt-out.png"
+echo 'PASS production proves installed manifest opt-out without a silence verdict' >> "$OUT/results.txt"
+measure capture-blocked
+python3 - "$OUT/capture-flat.db" "$OUT/capture-blocked.db" <<'PY'
+import sys
+a,b=map(lambda p:float(open(p).read()),sys.argv[1:])
+assert abs(b-a)<=.75,(a,b)
+PY
+! "${A[@]}" logcat -d | grep -qE 'FATAL EXCEPTION|UnsatisfiedLinkError|NoSuchMethodError'
+echo 'PASS production capture-blocked source remains audible on one system-effects path' >> "$OUT/results.txt"
 cat "$OUT/results.txt"

@@ -40,6 +40,19 @@ class CapturePolicyTest {
         assertEquals(emptySet<Int>(), CapturePolicy.eligibleUids(emptyList(), 99))
     }
 
+    @Test fun pausedCapturedAppsDoNotReserveTheRecorderAndBlockTheNextMusicApp() {
+        val paused = route(1, 10012, SessionRouter.Owner.ENGINE_B_MUTED).copy(playing = false)
+        assertEquals(emptySet<Int>(), CapturePolicy.eligibleUids(listOf(paused), 99))
+        val active = route(2, 10013, SessionRouter.Owner.ENGINE_B_MUTED).copy(playing = true)
+        assertEquals(setOf(10013), CapturePolicy.eligibleUids(listOf(paused, active), 99))
+    }
+
+    @Test fun aPausedSiblingCannotMakeAnUnmutedActiveUidSafeToCapture() {
+        val paused = route(1, 10012, SessionRouter.Owner.ENGINE_B_MUTED).copy(playing = false)
+        val active = route(2, 10012, SessionRouter.Owner.ENGINE_A).copy(playing = true)
+        assertEquals(emptySet<Int>(), CapturePolicy.eligibleUids(listOf(paused, active), 99))
+    }
+
     private fun observed(sid: Int, uid: Int, state: String = "started", usage: String = "USAGE_MEDIA") =
         PlaybackSession(sid, uid, usage, state, 0, "player")
 

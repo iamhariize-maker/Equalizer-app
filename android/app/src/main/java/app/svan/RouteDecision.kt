@@ -12,8 +12,12 @@ internal enum class RouteReason(val text: String) {
     STREAM_NOT_CAPTURABLE("Android marks this stream as not capturable, so it stays on system effects."),
     NOT_MUSIC_USAGE("Android labels this stream as something other than music, so it stays on system effects."),
     SILENT_RECENTLY("Capture returned silence a moment ago. Svan keeps system effects on and will check again."),
-    BLOCKED_THIS_VERSION("Capture returned silence on repeated checks while it played, so this app version stays on system effects. An app update, or Forget capture verdicts in Lab, checks again."),
-    RECORDER_BUSY("Android would not open a second capture while the engine was running. Svan will try again."),
+    APP_CAPTURE_DISABLED("This installed app's Android settings disable playback capture. System effects remain available, but this version cannot feed the audiophile engine through Android capture."),
+    UID_CAPTURE_DISABLED("Android's audio server reports that this app disabled playback capture. System effects remain available; the audiophile engine needs the app to permit capture."),
+    CAPTURE_SILENCED("Android reports that it silenced Svan's capture recorder. System effects stay audible; Retry capture checks again."),
+    NO_CAPTURE_DATA("The capture recorder started but delivered no audio frames. System effects stay audible; Retry capture checks again."),
+    SILENT_AFTER_MUTE("Capture heard audio before muting the source, then lost it. System effects were restored; this is not proof that the app forbids capture."),
+    RECORDER_BUSY("The playback recorder is unavailable or still finishing another check. System effects stay audible and Svan will try again."),
     INCONCLUSIVE("Svan could not confirm capture for this app, so it stays on system effects."),
     MUTE_UNAVAILABLE("Svan could not take over this app's volume (another effects app may hold it), so it stays on system effects."),
     UID_GROUP_UNSAFE("Another audio stream from this app is playing, so it cannot be captured alone yet. Svan will retry."),
@@ -21,7 +25,7 @@ internal enum class RouteReason(val text: String) {
 
 /**
  * When to run a capture check on a player found after the audiophile engine started, per package.
- * Worker-thread only. A check never counts as a verdict by itself: see [SilentStrikes].
+ * Worker-thread only. Silent checks are bounded observations, never a permanent application policy.
  */
 internal class LateProbeSchedule(
     private val maxChecks: Int = 6,
@@ -73,6 +77,8 @@ internal class LateProbeSchedule(
     }
 
     fun forgetSession(sessionId: Int) { lastTick.remove(sessionId) }
+
+    fun reset(pkg: String) { states.remove(pkg); lastTick.clear() }
 
     fun clear() { states.clear(); lastTick.clear() }
 }

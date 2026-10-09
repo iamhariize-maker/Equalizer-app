@@ -1,3 +1,13 @@
+## Capture recovery — 2026-10-09, 0.5.10/code 17
+
+The owner reports Spotify already detected/verified on system effects but locked out of native
+capture after two silent checks. See [CAPTURE_RECOVERY_0.5.10.md](CAPTURE_RECOVERY_0.5.10.md):
+legacy negative migration, one playback-recorder lease, bounded reads/no-data fail-open,
+paused-source handoff, per-app recovery/reporting, and installed-manifest/UID policy evidence.
+Silence no longer creates an app-version BLOCKED verdict. Local builds/lint, 282 JVM tests,
+179 native tests, 17 Python checks and 12 mastering tests pass. API 33/34 qualification is pending;
+commercial-player/physical-phone capture policy remains unproven. The artistic themes remain.
+
 ## Engine B routing repair and tuning signatures — 2026-10-09, after 0.5.8/code 15
 
 Owner asked for Spotify to be playable through the audiophile engine and for "Learn this sound" to save nine presets.

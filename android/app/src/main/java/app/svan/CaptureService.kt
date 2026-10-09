@@ -30,7 +30,7 @@ import app.svan.model.SpatialMode
  * EQ, Audiophile oversampling, dither), and play the result.
  *
  * The source apps' own output is muted by SessionRouter/SourceMuter (session
- * DynamicsProcessing at -200 dB; capture taps audio before session effects).
+ * DynamicsProcessing at -200 dB), only after capture is verified both before and after the mute.
  * Apps that opt out of capture are probed on the present setup and left
  * unmuted on Engine A instead; player names alone do not determine capability.
  */
@@ -135,6 +135,7 @@ class CaptureService : Service() {
         epoch = null
         app.svan.listening.ProofRecorder.stop() // finish the old file before any format renegotiation
         var record: AudioRecord? = null
+        var recorderLease: CaptureRecorderGate.Lease? = null
         var track: AudioTrack? = null
         var engine: NativeEngine? = null
         var eqWatcher: Thread? = null
@@ -165,15 +166,16 @@ class CaptureService : Service() {
                 }
             val negotiation = RateNegotiation.open(RatePolicy.candidates(mixerHint, deviceRates, settings.captureRateMode)) { candidate ->
                 val out = openTrack(candidate)
+                var lease: CaptureRecorderGate.Lease? = null
                 var rec: AudioRecord? = null
                 try {
-                    rec = openRecord(mp, allowed, candidate)
+                    lease = CaptureCompat.recorders.await("main", active = { running })
+                    rec = startRecord(mp, allowed, candidate, lease)
                     check(rec.sampleRate == candidate && out.sampleRate == candidate) { "client format differs from requested $candidate Hz" }
-                    rec.startRecording()
-                    check(rec.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "capture did not start" }
-                    rec to out
+                    Triple(rec, out, lease)
                 } catch (e: Exception) {
                     rec?.let { runCatching { it.stop() }; it.release() }
+                    lease?.close()
                     out.release()
                     EqController.log("capture: rate $candidate rejected: ${e.message}")
                     throw e
@@ -181,8 +183,9 @@ class CaptureService : Service() {
             }
             val rate = negotiation.rate
             val frames = maxOf(64, (rate * 256L / 48000).toInt())
-            var input = negotiation.value.first
+            var input: AudioRecord? = negotiation.value.first
             val output = negotiation.value.second
+            recorderLease = negotiation.value.third
             record = input; activeRecord = input
             track = output
             val minOut = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
@@ -240,11 +243,18 @@ class CaptureService : Service() {
             val spatialRecovery = CaptureSpatialRecovery(output.underrunCount)
             var recoveryFrames = 0L
             runCatching {
-                val facts = RateFacts(rate, input.sampleRate, output.sampleRate,
+                val facts = RateFacts(rate, input?.sampleRate, output.sampleRate,
                     mixerHint,
-                    output.routedDevice?.sampleRates?.toList().orEmpty(), input.activeRecordingConfiguration?.format?.sampleRate)
+                    output.routedDevice?.sampleRates?.toList().orEmpty(), input?.activeRecordingConfiguration?.format?.sampleRate)
                 rateFacts = facts
                 EqController.log("capture: ${facts.summary()}")
+            }
+            // An idle recorder serves no source and can silently starve a second recorder on OEMs.
+            // Close it before any late check. The output keeps its paced silence and standing cushion.
+            if (allowed.isEmpty()) {
+                input?.let { runCatching { it.stop() }; it.release() }
+                input = null; record = null; activeRecord = null
+                recorderLease?.close(); recorderLease = null
             }
             if (negotiation.failures.isNotEmpty()) recoveryMessage.value = "Rate candidates ${negotiation.failures.joinToString()} Hz failed; using $rate Hz. Source and DAC rates remain unknown."
             var levelPeak = 0f
@@ -266,9 +276,47 @@ class CaptureService : Service() {
             // Frames of exact digital silence in a row (a capture-blocked or paused source).
             var silentRun = 0L
             var watchdogFired = false
+            val noDataWatchdog = CaptureNoDataWatchdog()
+            fun changeSources(next: Set<Int>) {
+                input?.let { runCatching { it.stop() }; it.release() }
+                input = null; record = null; activeRecord = null
+                recorderLease?.close(); recorderLease = null
+                allowed = next
+                silentRun = 0; watchdogFired = false; noDataWatchdog.reset()
+                // A source boundary resets analysis, even when the old recorder returned no final block.
+                val replacement = buildEngine(epoch?.appliedSettings ?: settings, rate, spatialCapable)
+                replacement.setSpatialLoadLimited(spatialLimited.get())
+                synchronized(engineLock) {
+                    current = null
+                    dsp.close()
+                    dsp = replacement
+                    engine = dsp
+                    current = dsp
+                    epoch = epoch?.copy(id = nextEpoch.incrementAndGet())
+                }
+                fade.restart()
+                app.svan.listening.ClipRecorder.captureChanged(epoch)
+                EqController.log("capture filter: ${allowed.size} muted UID(s)")
+            }
             getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(playbackCallback, null)
             while (running) {
                 val next = SessionRouter.captureUids
+                // A finishing probe retains its lease until its AudioRecord has actually been released.
+                // Keep output paced rather than opening a competing recorder or blocking the audio thread.
+                if (input == null && allowed.isNotEmpty()) {
+                    CaptureCompat.recorders.tryAcquire("main")?.let { lease ->
+                        try {
+                            input = startRecord(mp, allowed, rate, lease)
+                            record = input; activeRecord = input; recorderLease = lease
+                        } catch (e: Exception) {
+                            if (!safeFallback && rate != RatePolicy.SAFE_HZ) {
+                                recoveryMessage.value = "Capture format was rejected for this source; retrying Fast at safe 48 kHz."
+                                return true
+                            }
+                            throw e
+                        }
+                    }
+                }
                 // Fade the final block before reopening the recorder. Settings that change
                 // filter latency apply at the next capture start. Source changes reset the
                 // native analysis at this explicit, faded boundary, keeping latency unchanged.
@@ -276,11 +324,12 @@ class CaptureService : Service() {
                 // steady state never runs Set.equals (which allocates) on the audio thread.
                 val sourceChanged = next !== allowed && next != allowed
                 val readBegin = System.nanoTime()
-                // With no admitted source the recorder only matches Svan's own output, which opts out of capture,
-                // so a blocking read can wait indefinitely while the output runs dry (CI #210: underruns with DSP
-                // idle). Feed silence instead; the blocking write below paces it at real time and keeps the cushion.
-                val n = if (allowed.isEmpty()) { java.util.Arrays.fill(buf, 0f); buf.size }
-                    else input.read(buf, 0, buf.size, AudioRecord.READ_BLOCKING)
+                // A blocking read can prevent a source change or fail-open from ever running if the HAL stops
+                // returning frames. Read what is available; empty reads have their own elapsed-time deadline.
+                // Without an admitted source, output silence is paced by the blocking write below.
+                val reading = input
+                val n = if (allowed.isEmpty() || reading == null) { java.util.Arrays.fill(buf, 0f); buf.size }
+                    else reading.read(buf, 0, buf.size, AudioRecord.READ_NON_BLOCKING)
                 readWaitMaxNs = maxOf(readWaitMaxNs, System.nanoTime() - readBegin)
                 if (n < 0) {
                     if (running) EqController.log("capture: read failed ($n)")
@@ -290,8 +339,22 @@ class CaptureService : Service() {
                     }
                     break
                 }
-                if (n == 0) continue
-                if (allowed.isEmpty()) generatedFrames += n / 2 else capturedFrames += n / 2
+                if (n == 0) {
+                    if (sourceChanged && running) changeSources(next)
+                    else if (!watchdogFired && noDataWatchdog.observe(n, System.nanoTime()) && otherActivePlayers > 0) {
+                        if (!safeFallback && rate != RatePolicy.SAFE_HZ) {
+                            recoveryMessage.value = "Capture stopped delivering frames; retrying Fast at safe 48 kHz."
+                            return true
+                        }
+                        watchdogFired = true
+                        EqController.log("capture: no frames for 2.5s while a muted source plays → failing open")
+                        SessionRouter.onCaptureSilent(noData = true)
+                    }
+                    Thread.sleep(2)
+                    continue
+                }
+                noDataWatchdog.reset()
+                if (allowed.isEmpty() || reading == null) generatedFrames += n / 2 else capturedFrames += n / 2
                 app.svan.listening.ClipRecorder.offer(buf,n,epoch)
                 app.svan.listening.ProofRecorder.offerDry(buf, n) // dry tap, before the DSP edits buf in place
                 var blockPeak = 0f
@@ -305,12 +368,16 @@ class CaptureService : Service() {
                 // DRM stream...). Silence forever is the worst outcome, so hand it back to
                 // Engine A. Paused sources are indistinguishable from blocked ones without
                 // another active player, hence the otherActivePlayers condition.
-                if (allowed.isNotEmpty() && !watchdogFired && silentRun >= rate * SILENCE_FAILOPEN_S && otherActivePlayers > 0) {
+                if (reading != null && allowed.isNotEmpty() && !watchdogFired && silentRun >= rate * SILENCE_FAILOPEN_S && otherActivePlayers > 0) {
+                    if (!safeFallback && rate != RatePolicy.SAFE_HZ) {
+                        recoveryMessage.value = "Capture returned silence at this rate; retrying Fast at safe 48 kHz."
+                        return true
+                    }
                     watchdogFired = true
                     EqController.log("capture: muted source delivers only silence for ${SILENCE_FAILOPEN_S}s while other media plays → failing open")
                     SessionRouter.onCaptureSilent()
                 }
-                if (allowed.isNotEmpty() && silentRun < rate) {
+                if (reading != null && allowed.isNotEmpty() && silentRun < rate) {
                     val begin = System.nanoTime()
                     dsp.process(buf, buf, n / 2)
                     val elapsed = System.nanoTime() - begin
@@ -362,27 +429,7 @@ class CaptureService : Service() {
                     break
                 }
                 if (sourceChanged && running) {
-                    input.stop(); input.release(); record = null; activeRecord = null
-                    allowed = next
-                    silentRun = 0; watchdogFired = false
-                    input = openRecord(mp, allowed, rate)
-                    record = input; activeRecord = input
-                    input.startRecording()
-                    // Build the replacement before taking the lock; the lock only covers the swap.
-                    // Retain live protection/experimental choices, but not pending format changes.
-                    val replacement = buildEngine(epoch?.appliedSettings ?: settings, rate, spatialCapable)
-                    replacement.setSpatialLoadLimited(spatialLimited.get())
-                    synchronized(engineLock) {
-                        current = null
-                        dsp.close()
-                        dsp = replacement
-                        engine = dsp
-                        current = dsp
-                        epoch = epoch?.copy(id = nextEpoch.incrementAndGet())
-                    }
-                    fade.restart()
-                    app.svan.listening.ClipRecorder.captureChanged(epoch)
-                    EqController.log("capture filter: ${allowed.size} muted UID(s)")
+                    changeSources(next)
                 }
                 recoveryFrames += n / 2
                 // Check recovery independently of the two-second diagnostic window. A
@@ -420,7 +467,8 @@ class CaptureService : Service() {
                 }
                 if (levelFrames >= rate * 2) {
                     rateFacts = rateFacts?.copy(deviceReportedHz = output.routedDevice?.sampleRates?.toList().orEmpty(),
-                        captureDeviceHz = runCatching { input.activeRecordingConfiguration?.format?.sampleRate }.getOrNull())
+                        captureClientHz = input?.sampleRate,
+                        captureDeviceHz = runCatching { input?.activeRecordingConfiguration?.format?.sampleRate }.getOrNull())
                     val played = headClock.unwrap(output.playbackHeadPosition)
                     val queued = (writtenFrames - played).coerceAtLeast(0)
                     stats = Stats(output.bufferSizeInFrames * 1000.0 / rate, queued * 1000.0 / rate,
@@ -432,7 +480,7 @@ class CaptureService : Service() {
                     unmaskSnapshot = dsp.bassUnmaskDiagnostics() // audio-thread snapshot; UI never races DSP getters
                     val muted = SessionRouter.snapshot.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.joinToString { it.pkg }
                     EqController.log("capture level: peak=%.4f over %d frames; output queued=%.1f ms, underruns=%d, DSP=%.1f%%, muted=[%s], otherPlayers=%d, source=%s capturedFrames=%d generatedSilenceFrames=%d".format(levelPeak, levelFrames, stats!!.queuedMs, stats!!.underruns, stats!!.dspPercent, muted, otherActivePlayers,
-                        if (allowed.isEmpty()) "none(no source admitted: output is generated silence)" else "captured", capturedFrames, generatedFrames))
+                        if (allowed.isEmpty()) "none(no source admitted: output is generated silence)" else if (input == null) "waiting for recorder lease" else "captured", capturedFrames, generatedFrames))
                     EqController.log("capture timing: readWaitMaxMs=%.1f dspMaxMs=%.2f writeWaitMaxMs=%.1f overBudgetBlocks=%d blockMs=%.2f cushionTopUps=%d".format(readWaitMaxNs / 1e6, dspMaxNs / 1e6, writeWaitMaxNs / 1e6, overBudgetBlocks, frames * 1000.0 / rate, cushionTopUps))
                     levelPeak = 0f; outputPeak = 0f; levelFrames = 0; capturedFrames = 0; generatedFrames = 0; dspNanos = 0; processedFrames = 0
                     readWaitMaxNs = 0L; dspMaxNs = 0L; writeWaitMaxNs = 0L; overBudgetBlocks = 0; cushionTopUps = 0
@@ -445,7 +493,8 @@ class CaptureService : Service() {
             app.svan.listening.ProofRecorder.stop()
             runCatching { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(playbackCallback) }
             activeRecord = null
-            record?.let { runCatching { it.stop() }; it.release() }
+            record?.let { runCatching { it.stop() }; runCatching { it.release() } }
+            recorderLease?.close()
             track?.let { runCatching { it.pause(); it.flush(); it.stop() }; it.release() }
             eqWatcher?.join(200)
             synchronized(engineLock) { current = null; engine?.close() }
@@ -467,6 +516,22 @@ class CaptureService : Service() {
             .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY).setTransferMode(AudioTrack.MODE_STREAM).build().also {
                 if (it.state != AudioTrack.STATE_INITIALIZED) { it.release(); error("output not initialized") }
             }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startRecord(mp: MediaProjection, allowed: Set<Int>, rate: Int, lease: CaptureRecorderGate.Lease): AudioRecord {
+        var opened: AudioRecord? = null
+        try {
+            opened = openRecord(mp, allowed, rate)
+            check(opened.sampleRate == rate) { "capture client format differs from requested $rate Hz" }
+            opened.startRecording()
+            check(opened.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "capture did not start" }
+            return opened
+        } catch (e: Exception) {
+            opened?.let { runCatching { it.stop() }; runCatching { it.release() } }
+            lease.close()
+            throw e
+        }
     }
 
     @SuppressLint("MissingPermission")

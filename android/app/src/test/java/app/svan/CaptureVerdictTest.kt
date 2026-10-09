@@ -19,9 +19,13 @@ class CaptureVerdictTest {
         assertEquals("com.spotify.music", CaptureVerdictKey.of("com.spotify.music", 890L, null))
     }
 
-    @Test fun oneSilentPlaybackIsTransientTwoAreNot() {
-        assertFalse(SilentStrikes.blocks(1))
-        assertTrue(SilentStrikes.blocks(2))
-        assertTrue(SilentStrikes.blocks(5))
+    @Test fun migratingOldSilenceBlocksPreservesPositiveMeasurements() {
+        val installed = InstalledVersion(890, 1_000)
+        val negative = CaptureVerdictKey.of("com.spotify.music", installed.code, installed.updatedMs)
+        val positive = CaptureVerdictKey.of("com.amazon.mp3", installed.code, installed.updatedMs)
+        val stored = mapOf(negative to "BLOCKED", positive to "CAPTURABLE")
+        val discarded = CaptureRecords.discardable(stored, { installed }, CaptureEvidencePolicy::reusableStoredValue)
+        assertEquals(setOf(negative), discarded)
+        assertEquals(mapOf("com.amazon.mp3" to "CAPTURABLE"), CaptureRecords.current(stored - discarded) { installed })
     }
 }

@@ -112,6 +112,36 @@ class MainActivity : ComponentActivity() {
             "shared_output" -> if (BuildConfig.DEBUG) SessionRouter.setSharedOutput(intent.getBooleanExtra("on", false))
             "switch_shared_output" -> if (BuildConfig.DEBUG) SessionRouter.switchToSharedOutput()
             "test_output_change" -> if (BuildConfig.DEBUG) SessionRouter.outputChanged()
+            "test_legacy_capture_block" -> if (BuildConfig.DEBUG) {
+                val pkg = intent.getStringExtra("pkg") ?: return
+                val key = SessionRouter.compat().key(pkg)
+                getSharedPreferences("capture_compat", MODE_PRIVATE).edit().putString(key, "BLOCKED").commit()
+                getSharedPreferences("capture_silence", MODE_PRIVATE).edit().putInt(key, 2).commit()
+                EqController.log("LEGACY_CAPTURE_BLOCK_SEEDED")
+            }
+            "retry_capture" -> if (BuildConfig.DEBUG) {
+                intent.getStringExtra("pkg")?.let(SessionRouter::retryCapture)
+            }
+            "capture_report" -> if (BuildConfig.DEBUG) {
+                val d = org.json.JSONObject().put("capture", CaptureService.isRunning)
+                    .put("recorder", CaptureCompat.recorders.currentPurpose ?: org.json.JSONObject.NULL)
+                    .put("admitted", org.json.JSONArray(SessionRouter.captureUids.toList()))
+                    .put("storedBlocks", getSharedPreferences("capture_compat", MODE_PRIVATE).all.values.count { it == "BLOCKED" })
+                    .put("storedStrikes", getSharedPreferences("capture_silence", MODE_PRIVATE).all.size)
+                    .put("gain", SvanRepository.eq.value.bands.firstOrNull()?.gainDb ?: org.json.JSONObject.NULL)
+                    .put("routes", org.json.JSONArray(SessionRouter.snapshot.map { r ->
+                        val declaration = SessionRouter.compat().declaration(r.pkg, r.uid)
+                        org.json.JSONObject().put("sid", r.sessionId).put("uid", r.uid).put("pkg", r.pkg)
+                            .put("owner", r.owner.name).put("playing", r.playing ?: org.json.JSONObject.NULL)
+                            .put("reason", SessionRouter.reasonFor(r.pkg)?.name ?: org.json.JSONObject.NULL)
+                            .put("manifestAllowed", declaration?.allowed ?: org.json.JSONObject.NULL)
+                            .put("manifestExplicit", declaration?.explicit ?: org.json.JSONObject.NULL)
+                            .put("streamOptOut", SessionRouter.evidence[r.sessionId]?.session?.flagsBlockCapture ?: org.json.JSONObject.NULL)
+                            .put("report", SessionRouter.captureReport(r.pkg))
+                    }))
+                java.io.File(filesDir, "capture-report.json").writeText(d.toString())
+                EqController.log("CAPTURE_REPORT_READY")
+            }
             "basic_status" -> if (BuildConfig.DEBUG) {
                 val d = org.json.JSONObject().put("dump", PlaybackSessions.hasDumpPermission(this))
                     .put("reportAccess", PlaybackSessions.hasReportAccess(this))

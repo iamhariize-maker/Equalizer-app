@@ -50,7 +50,7 @@ object ShizukuAudioReports {
         val app = context.applicationContext
         if (forceDirect || preferDirect) { startDirect(app, attempt, null); return }
         val spec = Shizuku.UserServiceArgs(ComponentName(app, AudioReportsService::class.java))
-            .daemon(false).processNameSuffix("audio_reports").debuggable(false).version(1)
+            .daemon(false).processNameSuffix("audio_reports").debuggable(false).version(2)
         val callback = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
                 if (attempt != generation || binder == null) return
@@ -144,7 +144,7 @@ object ShizukuAudioReports {
     }
 
     /**
-     * Same two reports without a helper process: Shizuku's shell-identity server makes the dump call for us.
+     * Fixed audio reports without a helper process: Shizuku's shell-identity server makes the dump call for us.
      * The wrapper's own dump() would run in this process, so the transaction is sent explicitly.
      */
     private class DirectReports : IAudioReports.Stub() {
@@ -153,6 +153,7 @@ object ShizukuAudioReports {
             val name = when (report) {
                 0 -> "audio"
                 1 -> "media.audio_flinger"
+                2 -> "media.audio_policy"
                 else -> throw IllegalArgumentException("Unsupported audio report")
             }
             val service = SystemServiceHelper.getSystemService(name) ?: error("Audio service unavailable")
@@ -180,7 +181,7 @@ object ShizukuAudioReports {
     private const val DUMP_TRANSACTION = ('_'.code shl 24) or ('D'.code shl 16) or ('M'.code shl 8) or 'P'.code
 
     fun readReport(name: String, timeoutMs: Long, maxBytes: Int, keepPartial: Boolean): PlaybackSessions.ServiceRead {
-        val id = when (name) { "audio" -> 0; "media.audio_flinger" -> 1; else -> return PlaybackSessions.ServiceRead(null, error = "Unsupported audio report") }
+        val id = when (name) { "audio" -> 0; "media.audio_flinger" -> 1; "media.audio_policy" -> 2; else -> return PlaybackSessions.ServiceRead(null, error = "Unsupported audio report") }
         val remote = if (ready) service else null
         if (remote == null) return PlaybackSessions.ServiceRead(null, error = "Shell helper unavailable")
         return reader.read(timeoutMs + 250) {

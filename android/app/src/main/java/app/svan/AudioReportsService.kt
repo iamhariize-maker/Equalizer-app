@@ -13,6 +13,7 @@ class AudioReportsService : IAudioReports.Stub() {
         val name = when (report) {
             0 -> "audio"
             1 -> "media.audio_flinger"
+            2 -> "media.audio_policy"
             else -> throw IllegalArgumentException("Unsupported audio report")
         }
         val binder = SystemServiceHelper.getSystemService(name) ?: error("Audio service unavailable")

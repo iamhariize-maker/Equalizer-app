@@ -55,6 +55,9 @@ object SessionRouter {
     private val probeWorker = Executors.newSingleThreadExecutor()
     private val lateProbes = LateProbeSchedule() // worker-only
     private var probeInFlight = false // worker-only
+    private var probeSerial = 0L
+    private val confirmedCapture = mutableSetOf<String>() // positive checks belong to this projection
+    private val muteCheckFailed = mutableSetOf<String>() // no repeated disruptive mute checks on the same stream
     private val reasons = ConcurrentHashMap<String, RouteReason>()
 
     /** Why this package is on system effects while the audiophile engine runs, for the Hi-Fi screen. */
@@ -76,8 +79,9 @@ object SessionRouter {
                 conflicting.forEach { r ->
                     val live = routes[r.sessionId]
                     if (live != null && live.owner == Owner.ENGINE_B_MUTED && live.uid !in captureUids) {
-                        EqController.log("capture: ${r.pkg} (session ${r.sessionId}) no longer capturable alone → Engine A; other sources continue")
-                        toEngineA(live.sessionId, live.pkg, live.uid, live.playing, RouteReason.UID_GROUP_UNSAFE)
+                        val reason = if (live.playing == false) RouteReason.WAITING_FOR_PLAYBACK else RouteReason.UID_GROUP_UNSAFE
+                        EqController.log("capture: ${r.pkg} (session ${r.sessionId}) → Engine A (${reason.name}); other sources continue")
+                        toEngineA(live.sessionId, live.pkg, live.uid, live.playing, reason)
                     }
                 }
             }
@@ -103,26 +107,19 @@ object SessionRouter {
      * Engine B muted sources but their capture stayed digital silence while other media played:
      * unmute them and give them to Engine A so the listener is never left in silence.
      * A single event may be transient (one stream, an ad, a track), so it only backs off within the capture
-     * session (see [FailOpenBackoff]). When the audio service confirms the source as playing, the event
-     * is also a strike against that app version; after [SilentStrikes.LIMIT] strikes the verdict is saved
-     * as BLOCKED, so the app is not muted and silenced again at every start. An app update resets it.
+     * session (see [FailOpenBackoff]). Silence does not establish a permanent app capture policy.
      */
-    fun onCaptureSilent() {
+    fun onCaptureSilent(noData: Boolean = false) {
         worker.execute {
             routes.values.filter { it.owner == Owner.ENGINE_B_MUTED && it.playing != false }.forEach {
                 val count = (failOpens[it.pkg] ?: 0) + 1
                 failOpens[it.pkg] = count
                 val blockMs = FailOpenBackoff.blockMs(count)
                 tempBlocked[it.pkg] = if (blockMs == Long.MAX_VALUE) Long.MAX_VALUE else System.currentTimeMillis() + blockMs
-                if (it.playing == true && !it.pkg.startsWith("uid:") && ::compatStore.isInitialized) {
-                    val strikes = compatStore.recordSilentPlayback(it.pkg)
-                    if (SilentStrikes.blocks(strikes)) {
-                        compatStore.remember(it.pkg, CaptureCompat.Verdict.BLOCKED)
-                        EqController.log("capture verdict: ${it.pkg} → Engine A for this app version (silent while playing $strikes times)")
-                    }
-                }
+                confirmedCapture.remove(it.pkg)
                 EqController.log("fail-open: ${it.pkg} (session ${it.sessionId}) → Engine A ${FailOpenBackoff.describe(count)}")
-                toEngineA(it.sessionId, it.pkg, it.uid, it.playing, RouteReason.SILENT_RECENTLY)
+                toEngineA(it.sessionId, it.pkg, it.uid, it.playing,
+                    if (noData) RouteReason.NO_CAPTURE_DATA else RouteReason.SILENT_RECENTLY)
             }
         }
     }
@@ -156,7 +153,38 @@ object SessionRouter {
     /** Forgets every stored capture verdict and silence strike, and the retry schedule, so each player is checked afresh. */
     fun forgetCaptureVerdicts() {
         compatStore.clear()
-        worker.execute { lateProbes.clear(); reasons.clear() }
+        CaptureUidPolicies.forget()
+        worker.execute { lateProbes.clear(); tempBlocked.clear(); failOpens.clear(); muteCheckFailed.clear(); reasons.clear() }
+    }
+
+    /** Explicit recovery needs no app update, reinstall, or global reset. */
+    fun retryCapture(pkg: String) {
+        CaptureUidPolicies.forget()
+        worker.execute {
+            if (routes.values.any { it.pkg == pkg && it.owner == Owner.PROBING }) return@execute
+            compatStore.forget(pkg)
+            confirmedCapture.remove(pkg)
+            muteCheckFailed.remove(pkg)
+            lateProbes.reset(pkg)
+            tempBlocked.remove(pkg)
+            failOpens.remove(pkg)
+            routes.values.filter { it.pkg == pkg && it.playing != false && it.owner == Owner.ENGINE_A }
+                .forEach { reroute(it.sessionId, it.pkg, it.uid, it.playing) }
+        }
+    }
+
+    fun captureReport(pkg: String): String = buildString {
+        appendLine("Svan ${BuildConfig.VERSION_NAME}; Android API ${android.os.Build.VERSION.SDK_INT}")
+        snapshot.filter { it.pkg == pkg }.forEach { r ->
+            appendLine("$pkg sid=${r.sessionId} uid=${r.uid} playing=${r.playing} owner=${r.owner}")
+            val installedUid = runCatching { appContext.packageManager.getApplicationInfo(pkg, 0).uid }.getOrNull()
+            appendLine("installedUid=${installedUid ?: "unknown"} captureUid=${Process.myUid()} sourceUser=${r.uid / 100_000} captureUser=${Process.myUid() / 100_000}")
+            appendLine("reason=${reasonFor(pkg)?.name ?: "none"}; ${compatStore.declaration(pkg, r.uid)?.summary() ?: "app manifest unavailable"}")
+            appendLine(CaptureUidPolicies.describe(r.uid))
+            evidence[r.sessionId]?.session?.let { appendLine("usage=${it.usage} flags=0x${it.flags.toUInt().toString(16)} captureOptOut=${it.flagsBlockCapture}") }
+        }
+        appendLine("admittedUIDs=${captureUids.size}; recorder=${CaptureCompat.recorders.currentPurpose ?: "none"}")
+        append(compatStore.diagnosticFor(pkg))
     }
     fun appPreferences(): AppEnginePreferences = appEngines
 
@@ -184,6 +212,9 @@ object SessionRouter {
             streamCaptureBlocked.clear()
             lateProbes.clear()
             probeInFlight = false
+            probeSerial++
+            confirmedCapture.clear()
+            muteCheckFailed.clear()
             reasons.clear()
             publishCaptureUids()
         }
@@ -196,22 +227,31 @@ object SessionRouter {
     fun diagnose(uid: Int, sessionId: Int) {
         val mp = projection ?: run { EqController.log("DIAG no projection"); return }
         worker.execute {
+            if (captureUids.isNotEmpty() || routes[sessionId]?.owner != Owner.ENGINE_A) {
+                EqController.log("DIAG requires an idle audiophile engine and a source on system effects")
+                return@execute
+            }
             muter.unmute(sessionId)
             EqController.globalEq.detach(sessionId)
-            EqController.log("DIAG unmuted:  " + compatStore.measure(mp, uid, 3000))
-            val ok = muter.mute(sessionId)
-            EqController.log("DIAG muted($ok): " + compatStore.measure(mp, uid, 3000))
-            muter.unmute(sessionId)
-            EqController.log("DIAG done (session $sessionId left unmuted)")
+            try {
+                EqController.log("DIAG unmuted:  " + compatStore.measure(mp, uid, 3000))
+                val ok = muter.mute(sessionId)
+                EqController.log("DIAG muted($ok): " + compatStore.measure(mp, uid, 3000))
+            } catch (e: Exception) { EqController.log("DIAG inconclusive: ${e.javaClass.simpleName}") }
+            finally {
+                toEngineA(sessionId, routes[sessionId]?.pkg ?: "uid:$uid", uid, routes[sessionId]?.playing)
+                EqController.log("DIAG done (system effects restored)")
+            }
         }
     }
 
     /**
      * Prepare Engine B's initial UID allowlist before it opens its main AudioRecord.
      * Android devices commonly refuse a second simultaneous playback-capture record;
-     * after this startup window, unknown apps fail over to Engine A until the next start.
+     * later checks share the recorder lease after the idle main recorder has closed.
      */
     fun onCaptureStarted(mp: MediaProjection, systemPackages: Set<String>): Boolean {
+        CaptureUidPolicies.forget()
         captureSystemPackages = systemPackages
         // The window opens before the projection is visible, so no late check can start in between.
         startupProbeWindow = true
@@ -221,6 +261,10 @@ object SessionRouter {
             routingBatch = true
             try {
                 lateProbes.clear()
+                probeSerial++
+                probeInFlight = false
+                confirmedCapture.clear()
+                muteCheckFailed.clear()
                 if (SharedOutput.status.value.requested) {
                     projection = null
                     EqController.log("capture: shared-output EQ must be stopped first")
@@ -257,6 +301,10 @@ object SessionRouter {
         failOpens.clear(); tempBlocked.clear(); reasons.clear()
         worker.execute {
             lateProbes.clear()
+            probeSerial++
+            probeInFlight = false
+            confirmedCapture.clear()
+            muteCheckFailed.clear()
             muter.releaseAll()
             if (sharedHandoff.captureStopped(enabled)) attachSharedOnWorker()
             else routes.values.toList().forEach { reroute(it.sessionId, it.pkg, it.uid, it.playing) }
@@ -299,6 +347,8 @@ object SessionRouter {
         if (existing != null && existing.uid >= 0 && uid >= 0 && existing.uid != uid) {
             // Retire the old owner's history before recording the replacement generation.
             closeOnWorker(sessionId)
+            confirmedCapture.remove(pkg)
+            CaptureUidPolicies.forget()
             history.opened(sessionId, pkg, uid, SystemClock.elapsedRealtime())
             refreshRecentConnections()
             reroute(sessionId, pkg, uid, playing)
@@ -308,12 +358,28 @@ object SessionRouter {
         val previousGeneration = history.active(sessionId)?.generation
         val nextGeneration = history.opened(sessionId, identityPkg, uid, SystemClock.elapsedRealtime())
         refreshRecentConnections()
-        if (previousGeneration != nextGeneration) healthRepair.forget(sessionId)
+        if (previousGeneration != nextGeneration) {
+            CaptureUidPolicies.forget()
+            confirmedCapture.remove(identityPkg)
+            healthRepair.forget(sessionId)
+            lateProbes.reset(identityPkg)
+            tempBlocked.remove(identityPkg)
+            failOpens.remove(identityPkg)
+            muteCheckFailed.remove(identityPkg)
+        }
         if (existing != null) {
             // Re-route a session that was parked on Engine A only because it
             // wasn't playing yet (can't run the capture check on silence).
             val parked = existing.owner == Owner.ENGINE_A && existing.playing == false &&
                 playing == true && projection != null
+            if (parked) {
+                CaptureUidPolicies.forget()
+                confirmedCapture.remove(identityPkg)
+                lateProbes.reset(identityPkg)
+                tempBlocked.remove(identityPkg)
+                failOpens.remove(identityPkg)
+                muteCheckFailed.remove(identityPkg)
+            }
             val next = existing.copy(pkg = if (pkg.startsWith("uid:") && !existing.pkg.startsWith("uid:")) existing.pkg else pkg,
                 uid = if (uid >= 0) uid else existing.uid, playing = playing ?: existing.playing)
             routes[sessionId] = next
@@ -439,6 +505,10 @@ object SessionRouter {
             if (SharedOutput.status.value.requested) disableSharedOnWorker(
                 "Audio device connections changed. Shared-output EQ stopped; test the output before enabling it.")
             healthRepair.clear()
+            // Connection changes may change an OEM capture path. Do not carry an inconclusive negative across them.
+            lateProbes.clear(); tempBlocked.clear(); failOpens.clear(); muteCheckFailed.clear()
+            CaptureUidPolicies.forget()
+            retryParkedPlayers()
         }
     }
 
@@ -535,8 +605,10 @@ object SessionRouter {
             uid < 0 -> RouteReason.PLAYER_UNIDENTIFIED
             pkg in captureSystemPackages -> RouteReason.SYSTEM_ONLY
             sid in streamCaptureBlocked -> RouteReason.STREAM_NOT_CAPTURABLE
+            pkg in muteCheckFailed -> RouteReason.SILENT_AFTER_MUTE
             tempBlockedNow(pkg) -> RouteReason.SILENT_RECENTLY
             evidence[sid]?.session?.usage?.let { it != "USAGE_MEDIA" } == true -> RouteReason.NOT_MUSIC_USAGE
+            compatStore.declaration(pkg, uid)?.allowed == false -> RouteReason.APP_CAPTURE_DISABLED
             else -> null
         }
         if (gate != null || evidence[sid]?.effectsPossible == false) {
@@ -544,10 +616,9 @@ object SessionRouter {
             toEngineA(sid, pkg, uid, playing, gate)
             return
         }
-        when (compatStore.cached(pkg)) {
-            CaptureCompat.Verdict.BLOCKED -> toEngineA(sid, pkg, uid, playing, RouteReason.BLOCKED_THIS_VERSION)
-            CaptureCompat.Verdict.CAPTURABLE -> toEngineB(sid, pkg, uid, playing)
-            null -> {
+        when {
+            pkg in confirmedCapture -> toEngineB(sid, pkg, uid, playing)
+            else -> {
                 if (playing == false) {
                     // Silence proves nothing; park on Engine A until it plays.
                     toEngineA(sid, pkg, uid, playing, RouteReason.WAITING_FOR_PLAYBACK)
@@ -564,11 +635,11 @@ object SessionRouter {
                 // silenced. Only audio that was heard is worth muting for, and the mute is confirmed below.
                 val active = { projection === mp && enabled }
                 val unmuted = try {
-                    compatStore.probe(mp, uid, stillActive = active)
+                    compatStore.probe(mp, uid, stillActive = active, pkg = pkg, sid = sid, phase = "unmuted")
                 } catch (e: Exception) {
                     // Inconclusive (e.g. a second capture refused): don't cache a guess.
                     EqController.log("capture check failed for $pkg: $e")
-                    toEngineA(sid, pkg, uid, playing, RouteReason.RECORDER_BUSY)
+                    toEngineA(sid, pkg, uid, playing, probeFailureReason(e))
                     return
                 }
                 if (!active()) { if (enabled) toEngineA(sid, pkg, uid, playing); return }
@@ -584,10 +655,10 @@ object SessionRouter {
                 routes[sid] = Route(sid, pkg, uid, Owner.PROBING, playing)
                 publishCaptureUids()
                 val muted = try {
-                    compatStore.probe(mp, uid, stillActive = active)
+                    compatStore.probe(mp, uid, stillActive = active, pkg = pkg, sid = sid, phase = "muted")
                 } catch (e: Exception) {
                     EqController.log("capture check failed for $pkg: $e")
-                    toEngineA(sid, pkg, uid, playing, RouteReason.RECORDER_BUSY)
+                    toEngineA(sid, pkg, uid, playing, probeFailureReason(e))
                     return
                 }
                 if (!active()) {
@@ -596,37 +667,25 @@ object SessionRouter {
                 }
                 if (muted == CaptureCompat.Verdict.CAPTURABLE) {
                     compatStore.remember(pkg, CaptureCompat.Verdict.CAPTURABLE)
+                    confirmedCapture.add(pkg)
                     lateProbes.settled(pkg)
                     EqController.log("capture check: $pkg → CAPTURABLE")
                     toEngineB(sid, pkg, uid, playing)
                 } else {
-                    silentCheck(sid, pkg, uid, playing, "audio was captured before the source was muted, but none after")
+                    silentCheck(sid, pkg, uid, playing, "audio was captured before the source was muted, but none after", RouteReason.SILENT_AFTER_MUTE)
                 }
             }
         }
     }
 
-    /** A capture check heard silence: count the strike, schedule another look, and keep the source on system effects. */
-    private fun silentCheck(sid: Int, pkg: String, uid: Int, playing: Boolean?, detail: String) {
-        val blocked = settleSilentCheck(pkg, playing)
-        EqController.log("capture check: $pkg → silent ($detail)${if (blocked) "; saved as BLOCKED for this app version" else "; not saved, will check again"}")
-        if (!blocked) lateProbes.silent(pkg, SystemClock.elapsedRealtime())
-        toEngineA(sid, pkg, uid, playing, if (blocked) RouteReason.BLOCKED_THIS_VERSION else RouteReason.SILENT_RECENTLY)
-    }
-
-    /**
-     * A capture check heard only zeros. Silence alone is not proof the app forbids capture (an intro, a buffering
-     * stream, an ad), so it is a strike: the verdict becomes BLOCKED for this app version only after [SilentStrikes.LIMIT]
-     * strikes, and only strikes against a source the audio service reports as playing count.
-     */
-    private fun settleSilentCheck(pkg: String, playing: Boolean?): Boolean {
-        if (playing != true || pkg.startsWith("uid:")) return false
-        val strikes = compatStore.recordSilentPlayback(pkg)
-        if (!SilentStrikes.blocks(strikes)) return false
-        compatStore.remember(pkg, CaptureCompat.Verdict.BLOCKED)
-        lateProbes.settled(pkg)
-        EqController.log("capture verdict: $pkg → Engine A for this app version (silent while playing $strikes times)")
-        return true
+    /** Silence retries within this capture session; no permanent or app-version BLOCKED verdict is written. */
+    private fun silentCheck(sid: Int, pkg: String, uid: Int, playing: Boolean?, detail: String,
+                            reason: RouteReason = RouteReason.SILENT_RECENTLY) {
+        confirmedCapture.remove(pkg)
+        if (reason == RouteReason.SILENT_AFTER_MUTE) muteCheckFailed.add(pkg)
+        EqController.log("capture check: $pkg → silent ($detail); not a permanent verdict")
+        lateProbes.silent(pkg, SystemClock.elapsedRealtime())
+        toEngineA(sid, pkg, uid, playing, reason)
     }
 
     /**
@@ -638,11 +697,9 @@ object SessionRouter {
         val now = SystemClock.elapsedRealtime()
         routes.values.toList().forEach { r ->
             if (r.owner != Owner.ENGINE_A || r.playing != true || r.uid < 0) return@forEach
-            val worthRetry = when (compatStore.cached(r.pkg)) {
-                CaptureCompat.Verdict.BLOCKED -> false
-                CaptureCompat.Verdict.CAPTURABLE -> !tempBlockedNow(r.pkg)
-                null -> !probeInFlight && captureUids.isEmpty() && lateProbes.due(r.pkg, now)
-            }
+            val worthRetry = !tempBlockedNow(r.pkg) && !probeInFlight && captureUids.isEmpty() &&
+                r.pkg !in muteCheckFailed && reasons[r.pkg] != RouteReason.APP_CAPTURE_DISABLED && reasons[r.pkg] != RouteReason.STREAM_NOT_CAPTURABLE &&
+                lateProbes.due(r.pkg, now)
             if (worthRetry && lateProbes.tickReady(r.sessionId, now)) reroute(r.sessionId, r.pkg, r.uid, r.playing)
         }
     }
@@ -666,12 +723,14 @@ object SessionRouter {
     private fun runLateProbe(mp: MediaProjection, sid: Int, pkg: String, uid: Int, expect: Owner,
                              settle: (Result<CaptureCompat.Verdict>) -> Unit) {
         val stillOurs = { projection === mp && enabled && captureUids.isEmpty() &&
-            routes[sid]?.let { it.uid == uid && it.owner == expect } == true }
+            routes[sid]?.let { it.uid == uid && it.owner == expect && it.playing != false } == true }
+        val serial = ++probeSerial
         try {
             probeWorker.execute {
-                val outcome = try { Result.success(compatStore.probe(mp, uid, stillActive = stillOurs)) }
+                val outcome = try { Result.success(compatStore.probe(mp, uid, stillActive = stillOurs,
+                    pkg = pkg, sid = sid, phase = if (expect == Owner.PROBING) "muted" else "unmuted")) }
                 catch (e: Exception) { Result.failure(e) }
-                worker.execute { settle(outcome) }
+                worker.execute { if (probeSerial == serial) settle(outcome) }
             }
         } catch (e: java.util.concurrent.RejectedExecutionException) {
             probeInFlight = false
@@ -698,21 +757,16 @@ object SessionRouter {
         if (failure != null) {
             lateProbes.refused(pkg, now)
             EqController.log("capture check failed for $pkg: $failure")
-            reasons[pkg] = if (lateProbes.gaveUp(pkg)) RouteReason.INCONCLUSIVE else RouteReason.RECORDER_BUSY
+            reasons[pkg] = probeFailureReason(failure, lateProbes.gaveUp(pkg))
             return
         }
         if (outcome.getOrNull() == CaptureCompat.Verdict.CAPTURABLE) {
             beginMutedCheck(mp, sid, live, generation)
             return
         }
-        val blocked = settleSilentCheck(pkg, live.playing)
-        EqController.log("capture check: $pkg → silent (no audio reached capture while it was audible)${if (blocked) "; saved as BLOCKED for this app version" else "; not saved, will check again"}")
-        if (!blocked) lateProbes.silent(pkg, now)
-        reasons[pkg] = when {
-            blocked -> RouteReason.BLOCKED_THIS_VERSION
-            lateProbes.gaveUp(pkg) -> RouteReason.INCONCLUSIVE
-            else -> RouteReason.CHECKING
-        }
+        EqController.log("capture check: $pkg → silent while unmuted; policy unproven, source remains audible")
+        lateProbes.silent(pkg, now)
+        reasons[pkg] = if (lateProbes.gaveUp(pkg)) RouteReason.INCONCLUSIVE else RouteReason.SILENT_RECENTLY
     }
 
     /** Phase 2: audio was heard, so mute the source and confirm capture still carries it before switching engines. */
@@ -740,7 +794,7 @@ object SessionRouter {
         if (live == null) {
             // A check that outlived its session or capture must never leave a source muted.
             lateProbes.cancelled(pkg)
-            routes[sid]?.takeIf { it.owner == Owner.PROBING }?.let {
+            routes[sid]?.takeIf { projection === mp && it.uid == uid && history.active(sid)?.generation == generation && it.owner == Owner.PROBING }?.let {
                 if (enabled) toEngineA(sid, it.pkg, it.uid, it.playing) else muter.unmute(sid)
             }
             return
@@ -750,15 +804,16 @@ object SessionRouter {
             failure != null -> {
                 lateProbes.refused(pkg, SystemClock.elapsedRealtime())
                 EqController.log("capture check failed for $pkg: $failure")
-                toEngineA(sid, pkg, uid, live.playing, if (lateProbes.gaveUp(pkg)) RouteReason.INCONCLUSIVE else RouteReason.RECORDER_BUSY)
+                toEngineA(sid, pkg, uid, live.playing, probeFailureReason(failure, lateProbes.gaveUp(pkg)))
             }
             outcome.getOrNull() == CaptureCompat.Verdict.CAPTURABLE -> {
                 compatStore.remember(pkg, CaptureCompat.Verdict.CAPTURABLE)
+                confirmedCapture.add(pkg)
                 lateProbes.settled(pkg)
                 EqController.log("capture check: $pkg → CAPTURABLE")
                 toEngineB(sid, pkg, uid, live.playing)
             }
-            else -> silentCheck(sid, pkg, uid, live.playing, "audio was captured before the source was muted, but none after")
+            else -> silentCheck(sid, pkg, uid, live.playing, "audio was captured before the source was muted, but none after", RouteReason.SILENT_AFTER_MUTE)
         }
     }
 
@@ -777,6 +832,14 @@ object SessionRouter {
         routes[sid] = Route(sid, pkg, uid, if (attached) Owner.ENGINE_A else Owner.UNPROCESSED, playing)
         publishCaptureUids()
         EqController.log("route: $pkg (session $sid) → ${if (attached) "Engine A" else "unprocessed (system effects unavailable)"}")
+    }
+
+    private fun probeFailureReason(failure: Throwable, gaveUp: Boolean = false): RouteReason = when {
+        failure is ProbePolicyDenied -> RouteReason.UID_CAPTURE_DISABLED
+        failure is ProbeUnavailable && failure.androidSilenced -> RouteReason.CAPTURE_SILENCED
+        failure is ProbeUnavailable -> RouteReason.NO_CAPTURE_DATA
+        gaveUp -> RouteReason.INCONCLUSIVE
+        else -> RouteReason.RECORDER_BUSY
     }
 
     private fun toEngineB(sid: Int, pkg: String, uid: Int, playing: Boolean?) {
