@@ -40,6 +40,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -81,190 +83,194 @@ fun SvaramanasPanel(
     Column(
         modifier
             .fillMaxWidth()
+            .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * 0.9f)
             .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
             .background(Svan.Surface)
             .border(1.dp, Svan.Bronze.copy(alpha = 0.6f), RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 18.dp),
     ) {
-        BrandLine()
-        ThemePrint(Modifier.padding(bottom = 16.dp), alpha = 0.65f)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            SvaramanasMark(44.dp, listening = listening && request.enabled, resting = !request.enabled)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("SVARAMANAS", style = TextStyle(fontFamily = Svan.DisplayFont, fontWeight = FontWeight.Medium, fontSize = 11.sp, letterSpacing = 3.sp), color = Svan.Gold)
-                Text("What kind of sound do you want?", style = MaterialTheme.typography.titleLarge, color = Svan.Text)
-            }
-            Switch(
-                checked = request.enabled,
-                onCheckedChange = { on -> Svaramanas.update { it.copy(enabled = on) } },
-                colors = SwitchDefaults.colors(checkedThumbColor = Svan.OnGold, checkedTrackColor = Svan.Gold, uncheckedTrackColor = Svan.SurfaceHigher),
-                modifier = Modifier.semantics { contentDescription = "${request.mode.plainName} on" },
-            )
-        }
-
-        Spacer(Modifier.height(14.dp))
-        SectionLabel("Choose your sound style")
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            ModeCard(SmartMode.GUIDED, request.mode == SmartMode.GUIDED, listening && request.enabled, modifier = Modifier.fillMaxWidth()) {
-                Svaramanas.update { it.copy(mode = SmartMode.GUIDED, enabled = true) }
-            }
-            ModeCard(SmartMode.SVARESA, request.mode == SmartMode.SVARESA, listening && request.enabled, modifier = Modifier.fillMaxWidth()) {
-                Svaramanas.update { it.copy(mode = SmartMode.SVARESA, enabled = true) }
-            }
-        }
-
-        AnimatedVisibility(request.mode == SmartMode.GUIDED) {
-            Column {
-                Spacer(Modifier.height(14.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Feel.entries.forEach { f ->
-                        FeelChip(f, selected = request.feel == f) { Svaramanas.update { it.copy(feel = f, enabled = true) } }
-                    }
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+            BrandLine()
+            ThemePrint(Modifier.padding(bottom = 16.dp), alpha = 0.65f)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SvaramanasMark(44.dp, listening = listening && request.enabled, resting = !request.enabled)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("SVARAMANAS", style = TextStyle(fontFamily = Svan.DisplayFont, fontWeight = FontWeight.Medium, fontSize = 11.sp, letterSpacing = 3.sp), color = Svan.Gold)
+                    Text("What kind of sound do you want?", style = MaterialTheme.typography.titleLarge, color = Svan.Text)
                 }
-
-                SectionLabel("Sounds to bring forward")
-                Text(
-                    "Pick up to ${Category.MAX}. If two compete for the same range, I keep your earlier choice.",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
+                Switch(
+                    checked = request.enabled,
+                    onCheckedChange = { on -> Svaramanas.update { it.copy(enabled = on) } },
+                    colors = SwitchDefaults.colors(checkedThumbColor = Svan.OnGold, checkedTrackColor = Svan.Gold, uncheckedTrackColor = Svan.SurfaceHigher),
+                    modifier = Modifier.semantics { contentDescription = "${request.mode.plainName} on" },
                 )
-                Spacer(Modifier.height(10.dp))
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Category.entries.forEach { c ->
-                        val index = request.picks.indexOf(c)
-                        Pill(
-                            text = if (index >= 0) "${index + 1} · ${c.title}" else c.title,
-                            selected = index >= 0,
-                            onClick = {
-                                if (index >= 0) {
-                                    Svaramanas.update { it.copy(picks = it.picks - c) }
-                                } else if (request.picks.size >= Category.MAX) {
-                                    message = "You can pick four. A shorter list keeps the changes focused."
-                                } else {
-                                    val trial = request.copy(picks = request.picks + c, enabled = true)
-                                    val check = SmartPlan.compute(trial, null, false)
-                                    if (check.rejected and c.bit != 0) {
-                                        message = "${c.title} competes with ${Category.fromMask(check.conflictWith).joinToString { it.title.lowercase() }}. Remove one first."
+            }
+
+            Spacer(Modifier.height(14.dp))
+            SectionLabel("Choose your sound style")
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ModeCard(SmartMode.GUIDED, request.mode == SmartMode.GUIDED, listening && request.enabled, modifier = Modifier.fillMaxWidth()) {
+                    Svaramanas.update { it.copy(mode = SmartMode.GUIDED, enabled = true) }
+                }
+                ModeCard(SmartMode.SVARESA, request.mode == SmartMode.SVARESA, listening && request.enabled, modifier = Modifier.fillMaxWidth()) {
+                    Svaramanas.update { it.copy(mode = SmartMode.SVARESA, enabled = true) }
+                }
+            }
+
+            AnimatedVisibility(request.mode == SmartMode.GUIDED) {
+                Column {
+                    Spacer(Modifier.height(14.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Feel.entries.forEach { f ->
+                            FeelChip(f, selected = request.feel == f) { Svaramanas.update { it.copy(feel = f, enabled = true) } }
+                        }
+                    }
+
+                    SectionLabel("Sounds to bring forward")
+                    Text(
+                        "Pick up to ${Category.MAX}. If two compete for the same range, I keep your earlier choice.",
+                        style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Category.entries.forEach { c ->
+                            val index = request.picks.indexOf(c)
+                            Pill(
+                                text = if (index >= 0) "${index + 1} · ${c.title}" else c.title,
+                                selected = index >= 0,
+                                onClick = {
+                                    if (index >= 0) {
+                                        Svaramanas.update { it.copy(picks = it.picks - c) }
+                                    } else if (request.picks.size >= Category.MAX) {
+                                        message = "You can pick four. A shorter list keeps the changes focused."
                                     } else {
-                                        Svaramanas.update { trial }
+                                        val trial = request.copy(picks = request.picks + c, enabled = true)
+                                        val check = SmartPlan.compute(trial, null, false)
+                                        if (check.rejected and c.bit != 0) {
+                                            message = "${c.title} competes with ${Category.fromMask(check.conflictWith).joinToString { it.title.lowercase() }}. Remove one first."
+                                        } else {
+                                            Svaramanas.update { trial }
+                                        }
                                     }
-                                }
-                            },
+                                },
+                            )
+                        }
+                    }
+                    AnimatedVisibility(message != null) {
+                        Text(message ?: "", style = MaterialTheme.typography.bodySmall, color = Svan.Ember, modifier = Modifier.padding(top = 8.dp))
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    ValueSlider(
+                        label = "Change amount",
+                        value = request.strength,
+                        display = { s -> (when { s < 0.75 -> "Gentle"; s < 1.25 -> "Natural"; else -> "Bold" }) + " · ${Math.round(s*100)}%" },
+                        toSlider = { ((it - 0.5) / 1.0).toFloat() },
+                        fromSlider = { Math.round((0.5 + it) * 100) / 100.0 },
+                        onChange = { v -> Svaramanas.update { it.copy(strength = v) } },
+                        enabled = request.enabled,
+                        step = 0.01,
+                    )
+                }
+            }
+
+            AnimatedVisibility(request.mode == SmartMode.SVARESA) {
+                Column {
+                    Spacer(Modifier.height(10.dp))
+                    SectionLabel("Your sound")
+                    Text(
+                        if (tasteTracks == 0)
+                            "Play a track you love, mastered the way you like it, and tap Learn. Svaresa keeps only its measured balance (bass depth, brightness, width, dynamics) on this phone, never the audio, and steers other tracks toward it. Until then it uses the house voicing: deep foundation, warm body, softened top."
+                        else
+                            "Learned from $tasteTracks reference track${if (tasteTracks == 1) "" else "s"}. Add more to refine it; each new one moves the target a little.",
+                        style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Pill(
+                            text = "Learn this sound",
+                            selected = false,
+                            onClick = { tasteMessage = Svaramanas.learnFromCurrent() },
+                            enabled = request.enabled && listening && heard?.valid == true,
+                        )
+                        if (tasteTracks > 0) Pill(
+                            text = "Use house voicing",
+                            selected = false,
+                            onClick = { Svaramanas.forgetTaste(); tasteMessage = "Back to the house voicing." },
+                        )
+                    }
+                    AnimatedVisibility(tasteMessage != null) {
+                        Text(tasteMessage ?: "", style = MaterialTheme.typography.bodySmall, color = Svan.Tulsi, modifier = Modifier.padding(top = 6.dp))
+                    }
+                    TuningSignaturesSection(onMessage = { tasteMessage = it })
+                    SectionLabel("Svaresa adapts to")
+                    SettingSwitchRow("Selective dynamic EQ","Capture engine only: reduces sustained local resonances without boosting. Up to 1.5 dB per band, 3 dB total; short transients are preserved. Upper-band centre cuts yield to your Smooth control; side correction remains available.",
+                        request.selectiveEq,{on->Svaramanas.update {it.copy(selectiveEq=on,enabled=true)}})
+                    SettingSwitchRow(
+                        "Quiet listening",
+                        "At low volume the ear loses bass and treble (ISO 226 equal-loudness). Svaresa restores them, a little more the quieter you listen.",
+                        request.volumeAware, { on -> Svaramanas.update { it.copy(volumeAware = on, enabled = true) } },
+                    )
+                    SettingSwitchRow(
+                        "Output protection",
+                        "Knows if the music is on the phone speaker, wired, USB or Bluetooth. A small speaker never gets a bass boost it cannot reproduce.",
+                        request.routeAware, { on -> Svaramanas.update { it.copy(routeAware = on, enabled = true) } },
+                    )
+                    SettingSwitchRow(
+                        "Recognise my headphones",
+                        "When earbuds or headphones are in the AutoEq database, Svaresa applies their published correction to the Harman target for you.",
+                        request.autoHeadphone, { on -> Svaramanas.update { it.copy(autoHeadphone = on, enabled = true) } },
+                    )
+                    if (headphoneNote.isNotEmpty() && request.autoHeadphone) Text(headphoneNote,
+                        style = MaterialTheme.typography.bodySmall, color = Svan.Gold, modifier = Modifier.padding(top = 4.dp))
+                    Text("Night comfort", style = MaterialTheme.typography.titleSmall, color = Svan.Text, modifier = Modifier.padding(top = 8.dp))
+                    Text("After dark: softer sub-bass and presence, and gently even levels so quiet details stay clear.",
+                        style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        app.svan.svaramanas.NightMode.entries.forEach { m ->
+                            Pill(m.label, request.night == m, { Svaramanas.update { it.copy(night = m, enabled = true) } })
+                        }
+                    }
+                    ctx?.let { c ->
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Right now: bass %+.1f dB · treble %+.1f dB · night %.0f%%".format(c.bassLiftDb, c.trebleLiftDb, c.nightAmount * 100),
+                            style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint,
                         )
                     }
                 }
-                AnimatedVisibility(message != null) {
-                    Text(message ?: "", style = MaterialTheme.typography.bodySmall, color = Svan.Ember, modifier = Modifier.padding(top = 8.dp))
-                }
-
-                Spacer(Modifier.height(8.dp))
-                ValueSlider(
-                    label = "Change amount",
-                    value = request.strength,
-                    display = { s -> (when { s < 0.75 -> "Gentle"; s < 1.25 -> "Natural"; else -> "Bold" }) + " · ${Math.round(s*100)}%" },
-                    toSlider = { ((it - 0.5) / 1.0).toFloat() },
-                    fromSlider = { Math.round((0.5 + it) * 100) / 100.0 },
-                    onChange = { v -> Svaramanas.update { it.copy(strength = v) } },
-                    enabled = request.enabled,
-                    step = 0.01,
-                )
             }
-        }
 
-        AnimatedVisibility(request.mode == SmartMode.SVARESA) {
-            Column {
-                Spacer(Modifier.height(10.dp))
-                SectionLabel("Your sound")
-                Text(
-                    if (tasteTracks == 0)
-                        "Play a track you love, mastered the way you like it, and tap Learn. Svaresa keeps only its measured balance (bass depth, brightness, width, dynamics) on this phone, never the audio, and steers other tracks toward it. Until then it uses the house voicing: deep foundation, warm body, softened top."
-                    else
-                        "Learned from $tasteTracks reference track${if (tasteTracks == 1) "" else "s"}. Add more to refine it; each new one moves the target a little.",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Pill(
-                        text = "Learn this sound",
-                        selected = false,
-                        onClick = { tasteMessage = Svaramanas.learnFromCurrent() },
-                        enabled = request.enabled && listening && heard?.valid == true,
-                    )
-                    if (tasteTracks > 0) Pill(
-                        text = "Use house voicing",
-                        selected = false,
-                        onClick = { Svaramanas.forgetTaste(); tasteMessage = "Back to the house voicing." },
-                    )
-                }
-                AnimatedVisibility(tasteMessage != null) {
-                    Text(tasteMessage ?: "", style = MaterialTheme.typography.bodySmall, color = Svan.Tulsi, modifier = Modifier.padding(top = 6.dp))
-                }
-                TuningSignaturesSection(onMessage = { tasteMessage = it })
-                SectionLabel("Svaresa adapts to")
-                SettingSwitchRow("Selective dynamic EQ","Capture engine only: reduces sustained local resonances without boosting. Up to 1.5 dB per band, 3 dB total; short transients are preserved. Upper-band centre cuts yield to your Smooth control; side correction remains available.",
-                    request.selectiveEq,{on->Svaramanas.update {it.copy(selectiveEq=on,enabled=true)}})
-                SettingSwitchRow(
-                    "Quiet listening",
-                    "At low volume the ear loses bass and treble (ISO 226 equal-loudness). Svaresa restores them, a little more the quieter you listen.",
-                    request.volumeAware, { on -> Svaramanas.update { it.copy(volumeAware = on, enabled = true) } },
-                )
-                SettingSwitchRow(
-                    "Output protection",
-                    "Knows if the music is on the phone speaker, wired, USB or Bluetooth. A small speaker never gets a bass boost it cannot reproduce.",
-                    request.routeAware, { on -> Svaramanas.update { it.copy(routeAware = on, enabled = true) } },
-                )
-                SettingSwitchRow(
-                    "Recognise my headphones",
-                    "When earbuds or headphones are in the AutoEq database, Svaresa applies their published correction to the Harman target for you.",
-                    request.autoHeadphone, { on -> Svaramanas.update { it.copy(autoHeadphone = on, enabled = true) } },
-                )
-                if (headphoneNote.isNotEmpty() && request.autoHeadphone) Text(headphoneNote,
-                    style = MaterialTheme.typography.bodySmall, color = Svan.Gold, modifier = Modifier.padding(top = 4.dp))
-                Text("Night comfort", style = MaterialTheme.typography.titleSmall, color = Svan.Text, modifier = Modifier.padding(top = 8.dp))
-                Text("After dark: softer sub-bass and presence, and gently even levels so quiet details stay clear.",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                Spacer(Modifier.height(6.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    app.svan.svaramanas.NightMode.entries.forEach { m ->
-                        Pill(m.label, request.night == m, { Svaramanas.update { it.copy(night = m, enabled = true) } })
-                    }
-                }
-                ctx?.let { c ->
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Right now: bass %+.1f dB · treble %+.1f dB · night %.0f%%".format(c.bassLiftDb, c.trebleLiftDb, c.nightAmount * 100),
-                        style = MaterialTheme.typography.labelSmall, color = Svan.TextFaint,
-                    )
+            SectionLabel("What I heard")
+            HeardBlock(heard, listening)
+
+            SectionLabel("What I did")
+            Svaramanas.explain(plan, heard, request, listening, ctx).forEach { line ->
+                Row(Modifier.padding(vertical = 3.dp)) {
+                    Box(Modifier.padding(top = 7.dp).size(5.dp).clip(CircleShape).background(Svan.Gold))
+                    Spacer(Modifier.width(10.dp))
+                    Text(line, style = MaterialTheme.typography.bodyMedium, color = Svan.Text)
                 }
             }
+
+            Spacer(Modifier.height(12.dp))
+            SettingSwitchRow(
+                "Show the sound bubble",
+                "Keep a small Svan bubble on screen in your player. Tap to open the sound controls; hold to compare with the original.",
+                bubbleOn, onBubbleChange,
+            )
+
         }
-
-        SectionLabel("What I heard")
-        HeardBlock(heard, listening)
-
-        SectionLabel("What I did")
-        Svaramanas.explain(plan, heard, request, listening, ctx).forEach { line ->
-            Row(Modifier.padding(vertical = 3.dp)) {
-                Box(Modifier.padding(top = 7.dp).size(5.dp).clip(CircleShape).background(Svan.Gold))
-                Spacer(Modifier.width(10.dp))
-                Text(line, style = MaterialTheme.typography.bodyMedium, color = Svan.Text)
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        SettingSwitchRow(
-            "Show the sound bubble",
-            "Keep a small Svan bubble on screen in your player. Tap to open the sound controls; hold to compare with the original.",
-            bubbleOn, onBubbleChange,
-        )
-
         Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+            maxItemsInEachRow = if (LocalDensity.current.fontScale > 1.3f) 1 else 2) {
             val comparing = eq.smartBypass
             Box(
                 Modifier
                     .weight(1f)
+                    .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(50))
                     .background(if (comparing) Svan.Ash.copy(alpha = 0.2f) else Svan.SurfaceHigh)
                     .border(1.dp, if (comparing) Svan.Ash else Svan.Outline, RoundedCornerShape(50))
@@ -283,6 +289,7 @@ fun SvaramanasPanel(
             Box(
                 Modifier
                     .weight(1f)
+                    .heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(50))
                     .background(Svan.Gold)
                     .clickable(onClick = onDone)

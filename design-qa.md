@@ -36,3 +36,19 @@ The `appearance-ui` CI job captures debug and the exact production artifact;
 the inherited API 33/34 routing and production gates remain required. Any
 P0/P1/P2 layout, contrast, state or usability finding must be fixed and recaptured
 before replacing this blocked status with a passed review.
+
+## Findings from the first native render
+
+At 390 × 844 logical pixels, the production-independent debug capture of all
+five Original tabs retained the existing navigation, desert response view and
+real app state. The first Svaresa capture exposed a long panel with its Done
+and compare controls below the fold. The correction bounds the panel and
+scrolls its body above a pinned, wrapping footer. Recapture is still required.
+The response chart now places both extreme dB labels inside its drawing
+bounds; its coordinate mapping and gesture behavior are unchanged.
+
+The baseline API 34 workspace artifact also exposed an existing asynchronous
+test race: the restored report was captured at 04:27:15.738, three milliseconds
+before the controller logged its resting state. The fixture now gives that
+transition the same two-second settling interval as activation. All original
+protection assertions remain intact, and no controller behavior was changed.

@@ -63,7 +63,12 @@ def tap_node(node):
 
 
 def tap(label, last=False):
-    found = nodes(tree(), label)
+    found = []
+    for attempt in range(5):
+        found = nodes(tree(), label)
+        if found:
+            break
+        time.sleep(0.5)
     if not found:
         raise AssertionError(f"Visible control missing: {label}")
     tap_node(found[-1] if last else found[0])
@@ -116,6 +121,7 @@ try:
     adb("shell", "wm", "size", "780x1688")
     adb("shell", "wm", "density", "320")
     adb("shell", "settings", "put", "system", "font_scale", "1.0")
+    adb("shell", "am", "force-stop", "app.svan")
     adb("shell", "am", "start", "-n", "app.svan/.MainActivity")
     time.sleep(5)
     # Dismiss the optional explanatory card through its ordinary control.
@@ -164,6 +170,13 @@ try:
     capture("sandstone-large-text-sections")
     tap("Sound", last=True)
     scroll_top()
+    dock = [node for node in tree().iter("node")
+            if "Tap to open, hold to compare." in node.get("content-desc", "")]
+    tap_node(dock[-1])
+    root = capture("sandstone-large-text-svaresa")
+    check(bool(nodes(root, "Done")) and bool(nodes(root, "Hold to hear the original")),
+          "Large text: Svaresa keeps Done and compare reachable")
+    tap("Done")
     tap("Appearance")
     capture("sandstone-large-text-appearance")
     tap("Done")

@@ -202,8 +202,8 @@ private fun DrawScope.drawGrid(range: Float, paint: android.graphics.Paint) {
     while (db <= range) {
         val y = dbToY(db.toDouble(), h, range)
         drawLine(if (db == 0) Svan.Outline else Svan.Grid, Offset(0f, y), Offset(w, y), strokeWidth = if (db == 0) 2f else 1f)
-        if (db != 0 && y < h - labelBand) drawContext.canvas.nativeCanvas.drawText("%+d".format(db), 6f * density,
-            (y - 3f * density).coerceAtLeast(paint.textSize + 3f * density), paint)
+        if (db != 0) drawContext.canvas.nativeCanvas.drawText("%+d".format(db), 6f * density,
+            (y - 3f * density).coerceIn(paint.textSize + 3f * density, h - 5f * density), paint)
         db += step
     }
     GRID_HZ.forEachIndexed { index, f ->
