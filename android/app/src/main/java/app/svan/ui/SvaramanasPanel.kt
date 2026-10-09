@@ -207,6 +207,7 @@ fun SvaramanasPanel(
                 AnimatedVisibility(tasteMessage != null) {
                     Text(tasteMessage ?: "", style = MaterialTheme.typography.bodySmall, color = Svan.Tulsi, modifier = Modifier.padding(top = 6.dp))
                 }
+                TuningSignaturesSection(onMessage = { tasteMessage = it })
                 SectionLabel("Svaresa adapts to")
                 SettingSwitchRow("Selective dynamic EQ","Capture engine only: reduces sustained local resonances without boosting. Up to 1.5 dB per band, 3 dB total; short transients are preserved. Upper-band centre cuts yield to your Smooth control; side correction remains available.",
                     request.selectiveEq,{on->Svaramanas.update {it.copy(selectiveEq=on,enabled=true)}})

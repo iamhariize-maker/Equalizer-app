@@ -4,6 +4,8 @@ import android.content.Context
 import app.svan.model.*
 import app.svan.svaramanas.SmartRequest
 import app.svan.svaramanas.Svaramanas
+import app.svan.svaramanas.TuningSignature
+import app.svan.svaramanas.TuningSignatures
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -12,12 +14,14 @@ import java.security.MessageDigest
 /** User-selected settings migration. Contains no recordings, credentials or Android grants. */
 object SettingsBackup {
     const val MAX_BYTES = 3_000_000
+    /** [signatures] is null for a backup made before tuning signatures existed: restoring it leaves them untouched. */
     data class Snapshot(val eq: EqState, val settings: AudioSettings, val request: SmartRequest,
-        val presets: List<Preset>, val curves: Map<String,String>) {
+        val presets: List<Preset>, val curves: Map<String,String>,
+        val signatures: List<TuningSignature?>? = null) {
         fun encode(): String = JSONObject().put("format","svan-settings").put("version",1)
             .put("eq",eq.toJson()).put("settings",settings.toJson()).put("request",request.toJson())
             .put("presets",JSONArray().apply { presets.forEach { put(it.toJson()) } })
-            .put("curves",JSONObject(curves)).toString()
+            .put("curves",JSONObject(curves)).also { o -> signatures?.let { o.put("signatures",TuningSignatures.toJson(it)) } }.toString()
     }
     fun hash(text: String) = MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
         .joinToString("") { "%02x".format(it) }
@@ -51,7 +55,8 @@ object SettingsBackup {
             require(key.matches(Regex("[0-9a-f]{64}"))) { "Invalid curve identity" }
             c.getString(key).also { require(it.length<=1_000_000 && hash(it)==key) { "Damaged calibration curve" } }
         }
-        return Snapshot(eq,settings,request,presets,curves)
+        val signatures=root.optJSONArray("signatures")?.let { TuningSignatures.fromJsonStrict(it) }
+        return Snapshot(eq,settings,request,presets,curves,signatures)
     }
     private fun validateJson(value: Any?, depth: Int=0) {
         require(depth<=12) { "Backup nesting is too deep" }
@@ -68,7 +73,8 @@ object SettingsBackup {
         val curves=hashes.distinct().filter {it.matches(Regex("[0-9a-f]{64}"))}.mapNotNull {h ->
             File(context.filesDir,"calibration/$h.txt").takeIf {it.isFile}?.readText()?.let {h to it}
         }.toMap()
-        val text=Snapshot(eq,SvanRepository.settings.value,Svaramanas.request.value,SvanRepository.userPresets.value,curves).encode()
+        val text=Snapshot(eq,SvanRepository.settings.value,Svaramanas.request.value,SvanRepository.userPresets.value,curves,
+            Svaramanas.signatures.value).encode()
         decode(text) // Never produce a backup that cannot be restored.
         return text
     }
@@ -80,6 +86,7 @@ object SettingsBackup {
         SvanRepository.update {s.eq.copy(smart=null,smartBypass=false)}
         SvanRepository.updateSettings {s.settings}
         SvanRepository.restoreUserPresets(s.presets)
+        s.signatures?.let { Svaramanas.restoreSignatures(it) }
         Svaramanas.update {s.request}
     }
 }

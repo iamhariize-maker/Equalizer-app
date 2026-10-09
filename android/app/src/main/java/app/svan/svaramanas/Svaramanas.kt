@@ -215,6 +215,13 @@ object Svaramanas {
     /** The learned taste for renderers that must match the live plan (e.g. blind listening). */
     fun currentTaste(): DoubleArray? = _taste.value
 
+    /** The live learned taste (packed), so the UI can tell which saved signature, if any, is in use. */
+    val taste: StateFlow<DoubleArray?> = _taste.asStateFlow()
+
+    private val _signatures = MutableStateFlow(TuningSignatures.empty())
+    /** The nine saved tuning signature slots; null = empty slot. */
+    val signatures: StateFlow<List<TuningSignature?>> = _signatures.asStateFlow()
+
     private fun setTaste(packed: DoubleArray?) {
         _taste.value = packed?.takeIf { it.size >= TASTE_PACKED && it[0] != 0.0 && it[1] >= 1.0 }
         _tasteTracks.value = _taste.value?.get(1)?.toInt() ?: 0
@@ -247,6 +254,55 @@ object Svaramanas {
         requestRecompute(immediate = true)
     }
 
+    private fun setSignatures(next: List<TuningSignature?>) {
+        _signatures.value = next
+        if (initialized) prefs.edit().putString("signatures", TuningSignatures.toJson(next).toString()).apply()
+    }
+
+    /**
+     * Saves the sound Svaresa currently aims for into [slot] (0..8), replacing what was there.
+     * Features only; nothing about the music itself is kept. UI thread. Returns a line for the UI.
+     */
+    fun saveSignature(slot: Int, name: String? = null): String {
+        if (slot !in 0 until TuningSignatures.SLOTS) return "Pick one of the nine slots."
+        val current = _taste.value
+        if (!TuningSignatures.isValid(current)) return "Nothing to save yet: tap Learn this sound while a reference track plays."
+        val previous = _signatures.value[slot]
+        val label = TuningSignatures.cleanName(name ?: previous?.name, slot)
+        setSignatures(TuningSignatures.put(_signatures.value, slot, TuningSignature(label, current!!, System.currentTimeMillis())))
+        EqController.log("svaramanas signature: saved slot ${slot + 1} \"$label\" tracks=${current[1].toInt()}")
+        return if (previous == null) "Saved as \"$label\"." else "Replaced \"${previous.name}\" with your current sound."
+    }
+
+    /** Makes a saved signature the sound Svaresa aims for. UI thread. */
+    fun useSignature(slot: Int): String {
+        val saved = _signatures.value.getOrNull(slot) ?: return "That slot is empty."
+        setTaste(saved.packed)
+        if (initialized) prefs.edit().putString("taste", JSONArray().apply { saved.packed.forEach { put(it) } }.toString()).apply()
+        EqController.log("svaramanas signature: using slot ${slot + 1} \"${saved.name}\" tracks=${saved.tracks}")
+        requestRecompute(immediate = true)
+        return "Using \"${saved.name}\", learned from ${saved.tracks} reference track${if (saved.tracks == 1) "" else "s"}."
+    }
+
+    /** UI thread. */
+    fun renameSignature(slot: Int, name: String): String {
+        val saved = _signatures.value.getOrNull(slot) ?: return "That slot is empty."
+        setSignatures(TuningSignatures.rename(_signatures.value, slot, name))
+        return "Renamed to \"${_signatures.value[slot]?.name ?: saved.name}\"."
+    }
+
+    /** Empties a slot. The sound currently in use is not changed. UI thread. */
+    fun deleteSignature(slot: Int): String {
+        val saved = _signatures.value.getOrNull(slot) ?: return "That slot is already empty."
+        setSignatures(TuningSignatures.remove(_signatures.value, slot))
+        return "Deleted \"${saved.name}\". The sound in use is unchanged."
+    }
+
+    /** Settings restore: replaces all nine slots with an already validated list. */
+    fun restoreSignatures(list: List<TuningSignature?>) {
+        setSignatures(List(TuningSignatures.SLOTS) { list.getOrNull(it) })
+    }
+
     fun setBubble(context: Context, on: Boolean) {
         _bubble.value = on
         if (initialized) prefs.edit().putBoolean("bubble", on).apply()
@@ -268,6 +324,7 @@ object Svaramanas {
             prefs.getString("request", null)?.let { s -> runCatching { _request.value = SmartRequest.fromJson(JSONObject(s)) } }
             _bubble.value = prefs.getBoolean("bubble", false)
             prefs.getString("taste", null)?.let { s -> runCatching { JSONArray(s).let { a -> setTaste(DoubleArray(a.length()) { a.getDouble(it) }) } } }
+            _signatures.value = TuningSignatures.fromJson(prefs.getString("signatures", null))
             initialized = true
         }
         scope.launch {

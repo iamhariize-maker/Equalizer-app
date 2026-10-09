@@ -86,6 +86,9 @@ Owner's engine follow-up: give Svaresa broader authority only where it improves 
 changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
+Latest (9 Oct 2026): Engine B routing repair and nine tuning-signature slots, see `docs/ENGINE_B_ROUTING_REPAIR.md`.
+Late capture checks use a second playback `AudioRecord` only while no source is captured; confirm on CI (`capture check:`
+log lines, emulator fixtures) and on a phone before relying on it. Spotify capture permission is unverified.
 Latest 0.5.8 quality work responds to LG owner feedback: EQ/tuner bypass improves reported fog,
 Amazon remains hidden and its own EQ does not open Svan. Read `docs/QUALITY_RECOVERY_0.5.8.md`.
 Local native (164), ASan/UBSan (164), TSan publication (5), Android JVM (230), debug/release

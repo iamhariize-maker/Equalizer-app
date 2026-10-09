@@ -55,7 +55,7 @@ class MainActivity : ComponentActivity() {
                         "Probe band limits" to { thread { EqController.log(DynamicsProbe.run(this)) } },
                         "Audible resolution" to ::runResolutionProbe,
                         "Sessions" to { thread { EqController.log(sessionReport()) } },
-                        "Forget capture verdicts" to { SessionRouter.compat().clear(); EqController.log("Capture verdicts cleared") },
+                        "Forget capture verdicts" to { SessionRouter.forgetCaptureVerdicts(); EqController.log("Capture verdicts cleared") },
                     ),
                 )
             }
@@ -249,7 +249,7 @@ class MainActivity : ComponentActivity() {
             "measure_mix" -> thread {
                 EqController.log(try { MixMeter.measure(intent.getFloatExtra("seconds", 3f).toDouble()) } catch (e: Exception) { "MIX error $e" })
             }
-            "forget_verdicts" -> SessionRouter.compat().clear()
+            "forget_verdicts" -> SessionRouter.forgetCaptureVerdicts()
             "diag_capture" -> {
                 // --es pkg <package>: capture that app unmuted vs muted (Engine B must be running)
                 val pkg = intent.getStringExtra("pkg") ?: return

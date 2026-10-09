@@ -12,7 +12,6 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioPlaybackConfiguration
-import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.projection.MediaProjection
@@ -251,6 +250,9 @@ class CaptureService : Service() {
             var levelPeak = 0f
             var outputPeak = 0f
             var levelFrames = 0L
+            // Frames the recorder really delivered vs. frames generated because no source is admitted.
+            var capturedFrames = 0L
+            var generatedFrames = 0L
             var writtenFrames = maxOf(primedWritten, 0) / 2L
             val headClock = PlaybackHeadClock()
             var dspNanos = 0L
@@ -289,6 +291,7 @@ class CaptureService : Service() {
                     break
                 }
                 if (n == 0) continue
+                if (allowed.isEmpty()) generatedFrames += n / 2 else capturedFrames += n / 2
                 app.svan.listening.ClipRecorder.offer(buf,n,epoch)
                 app.svan.listening.ProofRecorder.offerDry(buf, n) // dry tap, before the DSP edits buf in place
                 var blockPeak = 0f
@@ -428,9 +431,10 @@ class CaptureService : Service() {
                         20.0 * kotlin.math.log10(maxOf(outputPeak.toDouble(), 1e-6)), dsp.detailedMix)
                     unmaskSnapshot = dsp.bassUnmaskDiagnostics() // audio-thread snapshot; UI never races DSP getters
                     val muted = SessionRouter.snapshot.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.joinToString { it.pkg }
-                    EqController.log("capture level: peak=%.4f over %d frames; output queued=%.1f ms, underruns=%d, DSP=%.1f%%, muted=[%s], otherPlayers=%d".format(levelPeak, levelFrames, stats!!.queuedMs, stats!!.underruns, stats!!.dspPercent, muted, otherActivePlayers))
+                    EqController.log("capture level: peak=%.4f over %d frames; output queued=%.1f ms, underruns=%d, DSP=%.1f%%, muted=[%s], otherPlayers=%d, source=%s capturedFrames=%d generatedSilenceFrames=%d".format(levelPeak, levelFrames, stats!!.queuedMs, stats!!.underruns, stats!!.dspPercent, muted, otherActivePlayers,
+                        if (allowed.isEmpty()) "none(no source admitted: output is generated silence)" else "captured", capturedFrames, generatedFrames))
                     EqController.log("capture timing: readWaitMaxMs=%.1f dspMaxMs=%.2f writeWaitMaxMs=%.1f overBudgetBlocks=%d blockMs=%.2f cushionTopUps=%d".format(readWaitMaxNs / 1e6, dspMaxNs / 1e6, writeWaitMaxNs / 1e6, overBudgetBlocks, frames * 1000.0 / rate, cushionTopUps))
-                    levelPeak = 0f; outputPeak = 0f; levelFrames = 0; dspNanos = 0; processedFrames = 0
+                    levelPeak = 0f; outputPeak = 0f; levelFrames = 0; capturedFrames = 0; generatedFrames = 0; dspNanos = 0; processedFrames = 0
                     readWaitMaxNs = 0L; dspMaxNs = 0L; writeWaitMaxNs = 0L; overBudgetBlocks = 0; cushionTopUps = 0
                 }
             }
@@ -467,12 +471,9 @@ class CaptureService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun openRecord(mp: MediaProjection, allowed: Set<Int>, rate: Int): AudioRecord {
-        val builder = AudioPlaybackCaptureConfiguration.Builder(mp)
-        CaptureCompat.MIX_USAGES.forEach { builder.addMatchingUsage(it) }
         // An empty route list must yield silence, not an unrestricted capture.
         // Our own output opts out of capture in the manifest.
-        if (allowed.isEmpty()) builder.addMatchingUid(Process.myUid())
-        else allowed.forEach { builder.addMatchingUid(it) }
+        val config = CaptureCompat.playbackConfig(mp, if (allowed.isEmpty()) listOf(Process.myUid()) else allowed)
         val minIn = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_FLOAT)
         require(minIn > 0) { "unsupported capture format ($minIn)" }
         return AudioRecord.Builder()
@@ -480,7 +481,7 @@ class CaptureService : Service() {
                 .setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_IN_STEREO).build())
             // Capacity protects scheduling stalls; actual accumulated capture backlog is not yet measured.
             .setBufferSizeInBytes(maxOf(minIn, rate * CAPTURE_BACKLOG_MS / 1000 * 8))
-            .setAudioPlaybackCaptureConfig(builder.build()).build().also {
+            .setAudioPlaybackCaptureConfig(config).build().also {
                 if (it.state != AudioRecord.STATE_INITIALIZED) { it.release(); error("capture not initialized") }
             }
     }

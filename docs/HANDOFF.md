@@ -1,3 +1,11 @@
+## Engine B routing repair and tuning signatures — 2026-10-09, after 0.5.8/code 15
+
+Owner asked for Spotify to be playable through the audiophile engine and for "Learn this sound" to save nine presets.
+Read `docs/ENGINE_B_ROUTING_REPAIR.md`: late (post-startup) capture checks that listen unmuted first, strike-based
+`BLOCKED` verdicts, honest Hi-Fi status with a reason per app, the compat-key leak fix, and nine saved tuning signatures
+with backup/restore. JVM tests pass locally; **no phone run was possible**, and whether Spotify's installed build allows
+playback capture is still unknown. Version number unchanged.
+
 ## Quality and hidden-player recovery — 2026-10-08, 0.5.8/code 15
 
 Owner's LG V60 report on 0.5.7 shows Apple routed/captured without DUMP/Shizuku, but Amazon

@@ -113,13 +113,9 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                     Column(Modifier.weight(1f)) {
                         val b = routes.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.map { it.pkg }.distinct().size
                         val a = routes.filter { it.owner == SessionRouter.Owner.ENGINE_A }.map { it.pkg }.distinct().size
-                        Text(if (running && b > 0) "Audiophile engine connected" else if (running) "Waiting for a music connection" else "Audiophile engine off", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            if (running) "$b app(s) on the full 64-bit chain · $a on system effects"
-                            else if (systemRunning) "System effects available. Check app rows for actual processing."
-                            else "Processing is stopped. Start the system equalizer or audiophile engine.",
-                            style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
-                        )
+                        val headline = app.svan.HiFiStatus.engine(running, systemRunning, b, a)
+                        Text(headline.title, style = MaterialTheme.typography.titleMedium)
+                        Text(headline.detail, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -141,9 +137,10 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         if (running) {
             SvanCard {
                 Column {
-                    if (routes.none { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }) {
-                        Text("No music connected. Play a song; if it stays disconnected, try the optional Music detection options above. The DSP is idle until a player connects.",
-                            style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
+                    app.svan.HiFiStatus.idleNote(running,
+                        routes.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.map { it.pkg }.distinct().size,
+                        routes.filter { it.owner == SessionRouter.Owner.ENGINE_A }.map { it.pkg }.distinct().size)?.let { note ->
+                        Text(note, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
                     }
                     stats?.let { st ->
                         Text("Signal peak · in %.1f dBFS · out %.1f dBFS".format(st.inputPeakDb, st.outputPeakDb), style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
@@ -188,6 +185,9 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                         else -> "Not playing right now (remembered from earlier)"
                     }
                     Text(status, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+                    // Detected but not on the full chain while the engine runs: say exactly why.
+                    if (running && appRoutes.isNotEmpty() && appRoutes.none { it.owner == SessionRouter.Owner.ENGINE_B_MUTED })
+                        SessionRouter.reasonFor(pkg)?.let { Text(it.text, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
                     Text(when {
                         !eq.enabled -> "Processing off. Saved tuner values are retained."
                         appRoutes.any { it.owner == SessionRouter.Owner.ENGINE_B_MUTED } -> "Orchestral controls and Bass Resolve applied through native capture. ${if (CaptureService.epoch?.detailed == true) "Detailed" else "Fast"} spatial mode."
@@ -202,8 +202,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                             color = if (v == Verification.PROCESSING) Svan.Gold else Svan.Ember)
                     }
                     Text(when (verdicts[pkg]) {
-                        "BLOCKED" -> "Capture blocked by this app; system effects remain available."
-                        "CAPTURABLE" -> "Capture supported on the last check."
+                        "BLOCKED" -> "Capture was silent on repeated checks for this app version; system effects remain available."
+                        "CAPTURABLE" -> "Capture worked on the last check for this app version."
                         else -> "Capture compatibility not checked yet."
                     }, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
                     Spacer(Modifier.height(8.dp))
