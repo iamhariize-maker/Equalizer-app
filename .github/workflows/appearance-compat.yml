@@ -18,12 +18,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { api: 29, target: default }
-          - { api: 30, target: default }
-          - { api: 33, target: default }
-          - { api: 35, target: default }
-          - { api: 36, target: google_apis }
+        include: >-
+          ${{ fromJSON(github.event_name == 'workflow_dispatch'
+              && '[{"api":33,"target":"default"},{"api":36,"target":"google_apis"}]'
+              || '[{"api":29,"target":"default"},{"api":30,"target":"default"},{"api":33,"target":"default"},{"api":35,"target":"default"},{"api":36,"target":"google_apis"}]') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,7 +58,17 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -feature -Vulkan -memory 3072 -cores 2 -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
-          script: export PATH="$GITHUB_WORKSPACE/tools/ci:$PATH" ; bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/compat-out/smoke.txt" 2>&1 ; adb logcat -d > "$GITHUB_WORKSPACE/compat-out/logcat.txt" ; adb shell getprop ro.build.version.release > "$GITHUB_WORKSPACE/compat-out/android.txt"
+          script: |
+            export PATH="$GITHUB_WORKSPACE/tools/ci:$PATH"
+            adb logcat -c
+            adb logcat -v threadtime > "$GITHUB_WORKSPACE/compat-out/logcat-stream.txt" 2>&1 &
+            SVAN_COMPAT_LOG_PID=$!
+            trap 'kill "$SVAN_COMPAT_LOG_PID" 2>/dev/null || true' EXIT
+            adb devices -l > "$GITHUB_WORKSPACE/compat-out/devices-before.txt"
+            adb shell getprop > "$GITHUB_WORKSPACE/compat-out/properties-before.txt"
+            timeout --kill-after=5s 240s bash scripts/smoke_release.sh emulator-5554 > "$GITHUB_WORKSPACE/compat-out/smoke.txt" 2>&1
+            adb devices -l > "$GITHUB_WORKSPACE/compat-out/devices-after.txt"
+
       - name: Require the original release smoke pass
         if: always()
         run: |
