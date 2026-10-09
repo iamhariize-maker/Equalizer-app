@@ -19,12 +19,23 @@ dump() {
   "${A[@]}" shell cat /sdcard/svan-aq.xml > "$1"
 }
 tap() {
-  dump "$OUT/tap.xml"
   local point
-  point=$(python3 scripts/ui_control.py "$OUT/tap.xml" "$1" || true)
-  [[ -n "$point" ]] || { echo "FAIL missing tab/control: $1"; exit 1; }
-  "${A[@]}" shell input tap $point
-  sleep 1
+  for ((attempt=0;attempt<16;attempt++)); do
+    dump "$OUT/tap.xml"
+    point=$(python3 scripts/ui_control.py "$OUT/tap.xml" "$1" 2>/dev/null || true)
+    if [[ -n "$point" ]]; then
+      "${A[@]}" shell input tap $point
+      sleep 1; return
+    fi
+    # Engine and app connections now precede the rule explanation in Hi-Fi.
+    # Seek the real control through the scroll viewport, retaining its exact
+    # enabled/visible semantics and all six layout/JNI assertions below.
+    [[ "$1" == 'How Svaresa decides' ]] || break
+    "${A[@]}" shell input swipe 16 1040 16 448 350
+    sleep 1
+  done
+  "${A[@]}" exec-out screencap -p > "$OUT/missing-control.png"
+  echo "FAIL missing tab/control: $1"; exit 1
 }
 "${A[@]}" logcat -c
 "${A[@]}" shell am start -W -n app.svan/.Command --es cmd audio_quality_lab >/dev/null

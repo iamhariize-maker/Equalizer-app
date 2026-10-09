@@ -10,11 +10,23 @@ LOG_PID=$!
 trap 'kill "$LOG_PID" 2>/dev/null || true' EXIT
 eq() { $A shell am start -n app.svan/.Command --es cmd "$@" >/dev/null; }
 tap() {
-  $A shell uiautomator dump /sdcard/eq-workspace.xml >/dev/null 2>&1
-  local point
-  point=$($A shell cat /sdcard/eq-workspace.xml | python3 -c 'import re,sys,xml.etree.ElementTree as E; n=next((n for n in E.fromstring(sys.stdin.read()).iter("node") if n.attrib.get("text")==sys.argv[1]),None); b=list(map(int,re.findall(r"\d+",n.attrib["bounds"]))) if n is not None else []; print(f"{(b[0]+b[2])//2} {(b[1]+b[3])//2}" if b else "")' "$1")
-  [ -n "$point" ] || { echo "FAIL EQ UI control missing: $1" >> "$OUT/results.txt"; exit 1; }
-  $A shell input tap $point; sleep 2
+  local point width height
+  for ((attempt=0;attempt<6;attempt++)); do
+    $A shell uiautomator dump /sdcard/eq-workspace.xml >/dev/null 2>&1
+    $A shell cat /sdcard/eq-workspace.xml > "$OUT/tap.xml"
+    point=$(python3 scripts/ui_control.py "$OUT/tap.xml" "$1" 2>/dev/null || true)
+    if [ -n "$point" ]; then
+      $A shell input tap $point; sleep 2; return
+    fi
+    # The complete graph scrolls with its controls on compact displays. Use
+    # its outer gutter so seeking Graphic cannot edit a band or its gain.
+    [ "$1" = Graphic ] || break
+    read -r width height < <($A shell wm size | grep -oE '[0-9]+x[0-9]+' | tail -1 | tr 'x' ' ')
+    $A shell input swipe $((width / 50)) $((height * 3 / 4)) $((width / 50)) $((height / 4)) 350
+    sleep 1
+  done
+  $A exec-out screencap -p > "$OUT/missing-control.png"
+  echo "FAIL EQ UI control missing: $1" >> "$OUT/results.txt"; exit 1
 }
 state() {
   $A logcat -c; eq eq_workspace
