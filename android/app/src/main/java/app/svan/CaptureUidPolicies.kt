@@ -36,7 +36,8 @@ internal data class CaptureUidPolicyReport(val policies: Map<Int, Int>) {
 
 /** Fixed, bounded, read-only policy report through the existing DUMP/Shizuku route. No new grant. */
 internal object CaptureUidPolicies {
-    private data class Sample(val atMs: Long, val report: CaptureUidPolicyReport?, val detail: String)
+    private data class Sample(val atMs: Long, val report: CaptureUidPolicyReport?, val detail: String,
+                              val clients: List<app.svan.diag.PolicyDump.Client> = emptyList())
     @Volatile private var sample: Sample? = null
 
     @Synchronized fun read(context: Context, uid: Int): Int? {
@@ -48,11 +49,20 @@ internal object CaptureUidPolicies {
             val result = PlaybackSessions.readService("media.audio_policy", 1_500L, 2 * 1024 * 1024)
             val parsed = result.text?.let(CaptureUidPolicyReport::parse)
             Sample(SystemClock.elapsedRealtime(), parsed,
-                if (parsed != null) "current UID policy table" else result.error ?: "policy table not exposed by Android")
+                if (parsed != null) "current UID policy table" else result.error ?: "policy table not exposed by Android",
+                result.text?.let { app.svan.diag.PolicyDump.clients(it) }.orEmpty())
                 .also { sample = it }
         }
         return current.report?.policies?.get(uid)
     }
+
+    /**
+     * Capture-blocking bits the audio server holds for this player's own track, from the same recent policy read.
+     * Null when unreadable or when nothing blocks. Call after [read] so the sample is current.
+     */
+    @Synchronized fun streamMask(uid: Int, sessionId: Int): Int? =
+        sample?.takeIf { SystemClock.elapsedRealtime() - it.atMs < 10_000 }
+            ?.let { app.svan.diag.PolicyDump.blockingMask(it.clients, uid, sessionId) }
 
     fun forget() { sample = null }
 
@@ -60,7 +70,9 @@ internal object CaptureUidPolicies {
         val current = sample ?: return "UID capture policy: not read (enhanced report access may be unavailable)"
         val age = (SystemClock.elapsedRealtime() - current.atMs).coerceAtLeast(0)
         val mask = current.report?.policies?.get(uid)
-        return "UID capture policy: ${if (mask != null) "flag_mask=0x${mask.toUInt().toString(16)}" else if (current.report != null) "no UID override reported" else current.detail}; ageMs=$age"
+        val stream = app.svan.diag.PolicyDump.blockingMask(current.clients, uid, 0)
+        return "UID capture policy: ${if (mask != null) "flag_mask=0x${mask.toUInt().toString(16)}" else if (current.report != null) "no UID override reported" else current.detail}; ageMs=$age" +
+            (stream?.let { "; audio server stream flags block capture (0x${it.toString(16)})" } ?: "")
     }
 }
 

@@ -232,7 +232,7 @@ object Pipeline {
         }, buildList {
             if (route == null) add("no route for $pkg")
             else add("owner=${route.owner}" + (route.reason?.let { " reason=$it" } ?: ""))
-            mine.filter { it.cat == Cat.ROUTE || it.cat == Cat.FAILOPEN }.takeLast(3).forEach { add(it.text) }
+            mine.filter { it.cat == Cat.ROUTE || it.cat == Cat.FAILOPEN }.map { it.text }.distinct().takeLast(3).forEach { add(it) }
         }, code = "TARGET_NOT_ON_ENGINE_B",
             advice = listOf("The reason above is why Svan kept this player on system effects. Playing a different app, or pausing and restarting the track, triggers a new capture check."))
 
@@ -323,18 +323,22 @@ object Pipeline {
             code = "DSP_OVERLOADED",
             advice = listOf("Choose Efficient quality, or a lighter spatial mode; this phone's CPU cannot run the selected chain in real time."))
 
-        val underrunsGrow = recent.zipWithNext().count { (a, b) -> b.underruns > a.underruns }
+        // Output health matters whether or not a player is carried: an idle engine that underruns will not carry one.
+        val outWindows = windows.takeLast(RECENT_WINDOWS)
+        val underrunsGrow = outWindows.zipWithNext().count { (a, b) -> b.underruns > a.underruns }
         val writeFailed = inRun.any { it.text.contains("output write failed") }
         out += Stage("C13", "The output plays without gaps", when {
             writeFailed -> StageStatus.FAIL
-            !onB || recent.isEmpty() -> StageStatus.SKIPPED
+            outWindows.isEmpty() -> StageStatus.SKIPPED
             underrunsGrow >= 3 -> StageStatus.FAIL
             underrunsGrow > 0 -> StageStatus.WARN
             else -> StageStatus.PASS
-        }, listOf("underruns " + recent.joinToString { it.underruns.toString() } + " · queued ms " + recent.joinToString { "%.0f".format(it.queuedMs) }) +
-            inRun.filter { it.cat == Cat.OUTPUT }.takeLast(2).map { it.text },
+        }, listOf("underruns " + outWindows.joinToString { it.underruns.toString() } + " · queued ms " + outWindows.joinToString { "%.0f".format(it.queuedMs) }) +
+            (if (outWindows.lastOrNull()?.sourceState == "no source admitted") listOf("no player was being carried: the engine was only playing silence") else emptyList()) +
+            inRun.filter { it.cat == Cat.OUTPUT }.map { it.text }.distinct().takeLast(2),
             code = if (writeFailed) "OUTPUT_WRITE_FAILED" else "OUTPUT_UNDERRUNS",
-            advice = listOf("Gaps in the output: the audio thread is being starved. Svan raises its buffer first, then returns to system effects. Battery restrictions and background limits are the usual cause."))
+            advice = listOf("Gaps in the output: the audio thread is being starved. Svan raises its buffer first, then returns to system effects. Battery restrictions and background limits are the usual cause.",
+                "If this happens with nothing carried, the selected capture quality is more than this phone sustains: try Efficient quality."))
 
         val previous = e.previousRun
         val killed = previous != null && !previous.cleanStop && previous.events.any { it.cat == Cat.LIFECYCLE && it.text.startsWith("capture run") }

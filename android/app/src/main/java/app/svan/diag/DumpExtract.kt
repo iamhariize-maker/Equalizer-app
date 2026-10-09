@@ -116,6 +116,18 @@ object PolicyDump {
     fun mixSections(text: String): List<String> =
         Excerpt.around(text, Regex("""(?i)policy\s*mix"""), before = 0, after = 18, maxBlocks = 3, maxChars = 3_500)
 
+    /**
+     * The capture-blocking bits in the policy's *effective* attributes for [uid]'s track(s), or null when none block.
+     * The audio server merges native-set and UID-wide flags into these, so they can block capture while the Java
+     * player list still shows 0x0. [sessionId] 0 means any of the uid's tracks; otherwise only that session's.
+     */
+    fun blockingMask(clients: List<Client>, uid: Int, sessionId: Int): Int? {
+        val bits = FLAG_NO_MEDIA_PROJECTION or FLAG_NO_SYSTEM_CAPTURE
+        val mask = clients.filter { it.uid == uid && (sessionId == 0 || it.sessionId == sessionId) }
+            .fold(0) { acc, c -> acc or ((c.attributeFlags ?: 0) and bits) }
+        return mask.takeIf { it != 0 }
+    }
+
     /** The UID-wide capture policy table, raw. */
     fun capturePolicyTable(text: String): List<String> =
         Excerpt.around(text, Regex("""AllowedCapturePolicies"""), before = 0, after = 12, maxBlocks = 1, maxChars = 1_500)

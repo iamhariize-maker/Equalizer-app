@@ -153,8 +153,8 @@ object DiagnosticEngine {
         val now = System.currentTimeMillis()
         val engine = engineFacts(now)
         val stages = Pipeline.evaluate(facts, engine)
-        val findings = (DiagRules.evaluate(facts, now) + Pipeline.findings(stages))
-            .sortedWith(compareByDescending<Finding> { it.severity }.thenBy { it.code })
+        // Measured causes come before pipeline symptoms of the same severity: the verdict names the cause, not its echo.
+        val findings = DiagRules.combine(DiagRules.evaluate(facts, now), Pipeline.findings(stages))
         val extras = DiagExtras(
             generatedAtMs = now,
             svanVersion = BuildConfig.VERSION_NAME,

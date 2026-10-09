@@ -176,6 +176,20 @@ class PipelineTest {
         assertEquals(StageStatus.PASS, status(run(engine(previous = clean)), "C14"))
     }
 
+    @Test fun underrunsOnAnIdleEngineAreStillReported() {
+        val idle = windows(5) { window(NOW - 2_000L * (5 - it), captured = 0, inDb = -120.0, underruns = it + 3, muted = emptyList(), state = "no source admitted") }
+        val s = run(engine(samples = idle), facts())
+        assertEquals(StageStatus.FAIL, status(s, "C13"))
+        assertTrue(stage(s, "C13").evidence.any { it.contains("only playing silence") })
+    }
+
+    @Test fun repeatedRouteLinesAreShownOnce() {
+        val line = "route: $PKG (session 1) → Engine A"
+        val e = engine(events = listOf(ev(Cat.ROUTE, line, at = 1_000), ev(Cat.ROUTE, line, at = 40_000), ev(Cat.ROUTE, line, at = 80_000)))
+        val parked = facts(detection = DiagTestFacts.detection(routes = listOf(RouteFacts(1, "ENGINE_A", true, "INCONCLUSIVE"))))
+        assertEquals(1, stage(run(e, parked), "C5").evidence.count { it == line })
+    }
+
     // ---- detection chain
 
     @Test fun detectionStagesPassForAnAnnouncedAcceptedRoutedPlayer() {

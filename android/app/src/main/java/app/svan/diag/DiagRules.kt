@@ -28,10 +28,26 @@ object DiagRules {
         effects(f, out)
         staticCapture(f, out)
         lab(f, out)
-        return out.sortedWith(compareByDescending<Finding> { it.severity }.thenBy { it.code })
+        return mergeSameCode(out).sortedWith(compareByDescending<Finding> { it.severity }.thenBy { it.code })
     }
 
     /** One line a person can read first. */
+    /**
+     * The same fault can be seen twice (the audio server's table, then the live lab). One finding per code keeps the
+     * report honest about how many problems exist: the evidence and advice of each sighting are combined.
+     */
+    internal fun mergeSameCode(findings: List<Finding>): List<Finding> =
+        findings.groupBy { it.code }.values.map { group ->
+            val first = group.first()
+            if (group.size == 1) first else first.copy(
+                severity = group.maxOf { it.severity },
+                evidence = group.flatMap { it.evidence }.distinct(),
+                advice = group.flatMap { it.advice }.distinct())
+        }
+
+    /** Measured causes (rules) before pipeline symptoms of the same severity, so the verdict names the cause, not its echo. */
+    fun combine(rules: List<Finding>, pipeline: List<Finding>): List<Finding> = (rules + pipeline).sortedByDescending { it.severity }
+
     fun headline(findings: List<Finding>): String {
         val top = findings.firstOrNull { it.severity == Severity.FAIL } ?: findings.firstOrNull { it.severity == Severity.WARN }
         return top?.let { "${it.severity.name}: ${it.title}" } ?: "No fault found in what was measured."

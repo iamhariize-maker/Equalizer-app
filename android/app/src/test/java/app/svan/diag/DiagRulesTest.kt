@@ -212,4 +212,22 @@ class DiagRulesTest {
     @Test fun aCleanRunSaysNothingWasFound() {
         assertEquals("No fault found in what was measured.", DiagRules.headline(listOf(Finding(Severity.OK, "X", "fine"))))
     }
+
+    @Test fun twoSightingsOfTheSameFaultBecomeOneFindingWithAllEvidence() {
+        val a = Finding(Severity.FAIL, "X", "first", listOf("e1"), listOf("a1"))
+        val b = Finding(Severity.WARN, "X", "second", listOf("e1", "e2"), listOf("a1", "a2"))
+        val merged = DiagRules.mergeSameCode(listOf(a, b, Finding(Severity.OK, "Y", "y")))
+        assertEquals(2, merged.size)
+        val x = merged.first { it.code == "X" }
+        assertEquals("first", x.title); assertEquals(Severity.FAIL, x.severity)
+        assertEquals(listOf("e1", "e2"), x.evidence); assertEquals(listOf("a1", "a2"), x.advice)
+    }
+
+    @Test fun theVerdictNamesTheMeasuredCauseBeforeAPipelineSymptomOfTheSameSeverity() {
+        val cause = Finding(Severity.FAIL, "STREAM_OPTS_OUT", "The audio server marks this player's stream as not capturable")
+        val symptom = Finding(Severity.FAIL, "CAPTURE_CHECK_NEGATIVE", "C6 Capture check verdict for the player")
+        val combined = DiagRules.combine(listOf(cause), listOf(symptom))
+        assertTrue(DiagRules.headline(combined).contains("not capturable"))
+        assertEquals(Severity.FAIL, DiagRules.combine(listOf(Finding(Severity.WARN, "W", "w")), listOf(symptom)).first().severity)
+    }
 }

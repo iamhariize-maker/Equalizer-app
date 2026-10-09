@@ -106,4 +106,33 @@ Output thread 0x2, name AudioOut_2D, tid 13, type 1 (DIRECT):
         val lines = listOf("AudioPlaybackConfiguration piid:1 u/pid:10520/1234 state:started", "AudioPlaybackConfiguration piid:2 u/pid:10521/999 state:started")
         assertEquals(1, PlaybackRecords.forUid(lines, 10520).size)
     }
+
+    // The Spotify track seen on a TECNO LH7n (Android 14): the policy's effective flags differ from the Java player list.
+    private val spotify = """
+    Port ID: 53; Session ID: 1089; uid 10520; State: Active
+      AUDIO_FORMAT_PCM_16_BIT; 48000; Channel mask: 0x3
+      Attributes: { Content type: AUDIO_CONTENT_TYPE_MUSIC Usage: AUDIO_USAGE_MEDIA Source: AUDIO_SOURCE_DEFAULT Flags: 0x8600 Tags:  }
+      Stream: 3; Flags: 00000000; Refcount: 1
+""".trimIndent()
+
+    @Test fun effectiveFlagsOf0x8600IncludeNoMediaProjection() {
+        val c = PolicyDump.clients(spotify).single()
+        assertEquals(0x8600, c.attributeFlags)
+        assertTrue(c.blocksMediaProjection)
+        assertFalse(c.blocksSystemCapture)
+    }
+
+    @Test fun blockingMaskIsPerSessionAndNullWhenNothingBlocks() {
+        val all = PolicyDump.clients(dump) + PolicyDump.clients(spotify)
+        assertEquals(0x400, PolicyDump.blockingMask(all, 10520, 1089))
+        assertEquals(0x400, PolicyDump.blockingMask(all, 10520, 0))
+        assertNull(PolicyDump.blockingMask(all, 10520, 42225))
+        assertEquals(0x1400, PolicyDump.blockingMask(all, 10999, 99))
+        assertNull(PolicyDump.blockingMask(all, 55555, 0))
+    }
+
+    @Test fun unreadableFlagsNeverCountAsBlocking() {
+        val noFlags = PolicyDump.clients(spotify.replace("Flags: 0x8600", "Flags: zzz"))
+        assertNull(PolicyDump.blockingMask(noFlags, 10520, 1089))
+    }
 }

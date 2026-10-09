@@ -142,6 +142,11 @@ class CaptureCompat(context: Context) {
                 outcome = "UID capture policy disabled (flag_mask=0x${policy.toUInt().toString(16)})"
                 throw ProbePolicyDenied(policy)
             }
+            // The audio server's effective flags for this very track can forbid capture while the player list shows 0x0.
+            CaptureUidPolicies.streamMask(uid, sid)?.let { stream ->
+                outcome = "audio server stream flags disable capture (flag_mask=0x${stream.toString(16)})"
+                throw ProbePolicyDenied(stream)
+            }
             lease = recorders.await("probe", active = stillActive)
             val config = playbackConfig(projection, listOf(uid))
             val input = AudioRecord.Builder()
