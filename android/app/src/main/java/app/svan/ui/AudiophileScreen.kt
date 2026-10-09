@@ -222,6 +222,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         OutlinedButton(onClick = { showRules = true }, modifier = Modifier.fillMaxWidth()) { Text("How Svaresa decides") }
 
         DetectionCard(captureStats = stats)
+        CaptureStatusCard()
 
         SectionLabel("Background equalizer")
         SvanCard {

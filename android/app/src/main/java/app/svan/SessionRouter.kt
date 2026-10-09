@@ -61,6 +61,9 @@ object SessionRouter {
     private val muteCheckFailed = mutableSetOf<String>() // no repeated disruptive mute checks on the same stream
     private val reasons = ConcurrentHashMap<String, RouteReason>()
 
+    /** Reasons backed by direct evidence that the app (not silence) forbids capture. */
+    private val OPT_OUT_REASONS = setOf(RouteReason.STREAM_NOT_CAPTURABLE, RouteReason.UID_CAPTURE_DISABLED, RouteReason.APP_CAPTURE_DISABLED)
+
     /** Why this package is on system effects while the audiophile engine runs, for the Hi-Fi screen. */
     internal fun reasonFor(pkg: String): RouteReason? = reasons[pkg]
 
@@ -574,7 +577,10 @@ object SessionRouter {
                     lastSyncSummary = summary
                 }
                 seen.values.forEach { s ->
-                    if (s.flagsBlockCapture) streamCaptureBlocked.add(s.sessionId) else streamCaptureBlocked.remove(s.sessionId)
+                    if (s.flagsBlockCapture) {
+                        streamCaptureBlocked.add(s.sessionId)
+                        compatStore.noteOptOut(s.packageName, RouteReason.STREAM_NOT_CAPTURABLE.name)
+                    } else streamCaptureBlocked.remove(s.sessionId)
                     val playing = when (s.state) { "started" -> true; "paused", "stopped", "idle" -> false; else -> null }
                     if (s.flagsBlockCapture && routes[s.sessionId]?.owner == Owner.ENGINE_B_MUTED) {
                         toEngineA(s.sessionId, s.packageName, s.uid, playing, RouteReason.STREAM_NOT_CAPTURABLE)
@@ -820,7 +826,10 @@ object SessionRouter {
     }
 
     private fun toEngineA(sid: Int, pkg: String, uid: Int, playing: Boolean?, reason: RouteReason? = null) {
-        reason?.let { reasons[pkg] = it }
+        reason?.let {
+            reasons[pkg] = it
+            if (it in OPT_OUT_REASONS) compatStore.noteOptOut(pkg, it.name)
+        }
         muter.unmute(sid)
         if (!enabled) { routes.remove(sid); publishCaptureUids(); return }
         if (SharedOutput.status.value.attached && EqController.globalEq.isHealthy(0)) {

@@ -23,6 +23,8 @@ class CaptureCompat(context: Context) {
     enum class Verdict { CAPTURABLE, INCONCLUSIVE, BLOCKED }
 
     private val prefs = context.getSharedPreferences("capture_compat", Context.MODE_PRIVATE)
+    /** Direct opt-out evidence seen for an installed version. Display only: routing re-checks live and never reads this. */
+    private val observed = context.getSharedPreferences("capture_observed", Context.MODE_PRIVATE)
     private val packages = context.packageManager
     private val checks = ConcurrentHashMap<String, String>()
     private val declarations = ConcurrentHashMap<String, AppDeclaration>()
@@ -54,7 +56,27 @@ class CaptureCompat(context: Context) {
     fun cached(pkg: String): Verdict? = CaptureRecords.verdict(prefs.getString(key(pkg), null))?.takeIf { it == Verdict.CAPTURABLE }
 
     fun remember(pkg: String, v: Verdict) {
-        if (v == Verdict.CAPTURABLE) prefs.edit().putString(key(pkg), v.name).apply()
+        if (v == Verdict.CAPTURABLE) {
+            prefs.edit().putString(key(pkg), v.name).apply()
+            observed.edit().remove(key(pkg)).apply() // a heard stream outranks an older opt-out sighting
+        }
+    }
+
+    data class OptOut(val reason: String, val atMs: Long)
+
+    /**
+     * Records that the manifest, the UID policy or the audio server's stream flags forbade capture for this
+     * installed version. Never written for silence. Rewritten at most hourly while the same reason holds.
+     */
+    fun noteOptOut(pkg: String, reason: String, nowMs: Long = System.currentTimeMillis()) {
+        val previous = optOut(pkg)
+        if (previous != null && previous.reason == reason && nowMs - previous.atMs < 3_600_000) return
+        observed.edit().putString(key(pkg), "$reason|$nowMs").apply()
+    }
+
+    fun optOut(pkg: String): OptOut? = observed.getString(key(pkg), null)?.split('|', limit = 2)?.let {
+        val at = it.getOrNull(1)?.toLongOrNull() ?: return null
+        OptOut(it[0], at)
     }
 
     /**
@@ -110,11 +132,13 @@ class CaptureCompat(context: Context) {
     fun forget(pkg: String) {
         val own = { key: String -> CaptureVerdictKey.parse(key)?.pkg == pkg }
         prefs.edit().apply { prefs.all.keys.filter(own).forEach(::remove) }.apply()
+        observed.edit().apply { observed.all.keys.filter(own).forEach(::remove) }.apply()
         checks.keys.filter { it.startsWith("$pkg|") }.forEach(checks::remove)
     }
 
     fun clear() {
         prefs.edit().clear().apply()
+        observed.edit().clear().apply()
         checks.clear()
     }
 

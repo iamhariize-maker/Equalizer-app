@@ -123,6 +123,9 @@ object DiagnosticEngine {
                 PolicyFacts(true, null, PolicyDump.forUid(text, uid), CaptureUidPolicyReport.parse(text)?.policies?.get(uid))
             } else PolicyFacts(false, read?.error ?: "unreadable", emptyList(), null)
         } else PolicyFacts(false, if (uid < 0) "target uid unknown" else "enhanced reports are off", emptyList(), null)
+        // Direct evidence from the audio server also feeds the per-app capture status on the Hi-Fi screen.
+        if (PolicyDump.blockingMask(policy.clients, uid, 0) != null)
+            runCatching { SessionRouter.compat().noteOptOut(pkg, "STREAM_NOT_CAPTURABLE") }
         if (env.reportAccess && sid != null) {
             flingerStatic = runCatching {
                 PlaybackSessions.readService("media.audio_flinger", 3_500L, 3 * 1024 * 1024, keepPartial = true).text
