@@ -50,7 +50,7 @@ passed 12. The source/production APK is frozen at 3dabee6 (CI 37930206322).
 Android 14 measured startup/late capture and pause/resume at -6 dB, with no duplicate copy.
 The next quiet-case attempt was cancelled before capture: the harness reopened the singleTask
 activity while Android was resolving projection consent. The harness now permits consent to
-finish and waits for current playback. All audio assertions stay intact; a frozen-APK rerun
+finish and waits for current playback. Reports are deleted and awaited before each read, so an asynchronous onNewIntent cannot return a stale receipt. All audio assertions stay intact; a frozen-APK rerun
 retains every full suite gate on Android 13/14. Final emulator results remain pending. The added integration suite measures downstream host PCM, not merely route
 labels. It exercises version-keyed legacy migration, start-before-music, pause/resume, real zero samples,
 recovery on the same audio session, UID-wide policy, and an installed manifest opt-out.

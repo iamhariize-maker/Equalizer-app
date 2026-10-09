@@ -35,10 +35,24 @@ def main():
         adb("shell", "am", "start", "-W", "-n", f"{pkg}/app.svan.testsource.ToneActivity", *args)
 
     def status(name):
+        # am start -W can return before onNewIntent writes the report. Delete the
+        # previous receipt, then await a complete new one instead of reading stale state.
+        adb("shell", "run-as", "app.svan", "rm", "-f", "files/capture-report.json")
         eq("capture_report")
-        data = json.loads(adb("shell", "run-as", "app.svan", "cat", "files/capture-report.json"))
-        (out / f"{name}.json").write_text(json.dumps(data, indent=2))
-        return data
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            report = subprocess.run(["adb", "-s", serial, "shell", "run-as", "app.svan", "cat", "files/capture-report.json"],
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=100)
+            if report.returncode == 0:
+                try:
+                    data = json.loads(report.stdout)
+                except json.JSONDecodeError:
+                    pass  # A direct file write may still be in progress.
+                else:
+                    (out / f"{name}.json").write_text(json.dumps(data, indent=2))
+                    return data
+            time.sleep(.1)
+        raise AssertionError(f"Fresh capture report was not completed: {name}")
 
     def wait(name, predicate, limit=60):
         deadline = time.monotonic() + limit

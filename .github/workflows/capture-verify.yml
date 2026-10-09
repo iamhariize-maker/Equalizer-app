@@ -1,4 +1,4 @@
-# Test the exact 0.5.10 application built at 3dabee6; only the consent-safe harness changed.
+# Test the exact 0.5.10 application built at 3dabee6; the harness waits for fresh report receipts.
 name: Frozen capture recovery verification
 'on':
   push:
