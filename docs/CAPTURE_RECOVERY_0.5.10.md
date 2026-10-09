@@ -42,20 +42,75 @@ inspectable on the phone.
 * Retain all four artistic themes and the existing DSP, detection, recording, and controls.
   Work is isolated on codex/svan-capture-recovery; the other collaboration branch is untouched.
 
+The owner also asked to remove optional WAV recording if it causes this failure. ClipRecorder
+and ProofRecorder create no AudioRecord or MediaProjection: they copy existing dry/wet
+buffers only after an explicit recording action, and the inactive path returns immediately.
+The speaker sync cue is a capture-excluded SONIFICATION AudioTrack. No evidence connects
+these features to the reported admission failure. The engine input and compatibility/
+diagnostic recorders now share one lease; optional WAV export is retained.
+
 ## Evidence and limits
 
-Final local debug/release builds and lint passed with 282 JVM tests, zero failures/skips.
-Native DSP passed all 179 tests; Python tooling passed 17 checks and mastering tooling
-passed 12. The source/production APK is frozen at 3dabee6 (CI 37930206322).
-Android 14 measured startup/late capture and pause/resume at -6 dB, with no duplicate copy.
-The next quiet-case attempt was cancelled before capture: the harness reopened the singleTask
-activity while Android was resolving projection consent. The harness now permits consent to
-finish and waits for current playback. Reports are deleted and awaited before each read, so an asynchronous onNewIntent cannot return a stale receipt. Idle checks await session-removal grace. The existing watchdog fixture now delivers actual zero PCM on the same admitted AudioTrack instead of recreating a source that the fixed CLOSE handler already excludes. Its measured fallback and fail-open-log assertions are retained. All audio assertions stay intact; a frozen-APK rerun
-retains every full suite gate on Android 13/14. The focused Android 14 run now measures recovery after two real silent checks on the same session. The UID fixture separately blinds player reports, because Android also exposes its effective restriction in player flags and otherwise the existing stream guard correctly wins first. Android 13 emulator host diagnostics identify an unsupported AMD guest WRMSR; the isolated verifier enables KVM ignore_msrs for that virtual CPU. All 14 focused recovery assertions now pass on API 34. The production fixture now selects global Auto through the public UI (fresh installs intentionally start in System effects only). Full verifiers retain the same required assertion sets in separate API 33/34 workflows; API 33 also preserves guest kernel logs on an Ubuntu 22.04/legacy SwiftShader host. Final full/production emulator results remain pending. The added integration suite measures downstream host PCM, not merely route
-labels. It exercises version-keyed legacy migration, start-before-music, pause/resume, real zero samples,
-recovery on the same audio session, UID-wide policy, and an installed manifest opt-out.
-All existing test gates remain. Four additional production assertions use public UI actions
-with automation disabled and measure actual replayed audio plus manifest-blocked fallback.
+Final local debug/release builds and lint pass with 282 JVM tests, zero failures/skips.
+Native DSP passes all 179 tests; Python tooling passes 17 checks and mastering tooling
+passes 12. Application source is frozen at 3dabee6b3bc73bf6391c03b98bb8b0b5f62b2080
+(production build CI 37930206322). Later changes affect only validation scripts, workflows,
+and documentation, not the tested APK payload.
+
+[Full Android 14 validation](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37942817135)
+at harness 45123a0a5693307fe6322e966090b0631fd0a350 succeeds. Required result files contain:
+
+| Gate | Passed checks |
+| --- | ---: |
+| Capture recovery | 14 |
+| Production, automation disabled | 8 |
+| Audio routing | 41 |
+| Recording | 7 |
+| Basic detection | 14 |
+| EQ workspace / precision controls | 9 / 8 |
+| Source filtering | 3 |
+| Quality / continuity | 4 / 4 |
+| Enhanced detection / detection onboarding | 13 / 6 |
+| Onboarding / fallback setup | 8 / 3 |
+| Screens and scrolling | 16 |
+| Release smoke | Passed |
+
+Recovery uses real AudioRecord frames and downstream host PCM. System effects, startup/late
+capture, pause/resume, same-session recovery after two actual silent checks, and UID-policy
+recovery measure -5.9965 to -5.9966 dB against a flat baseline for the intended -6 dB cut.
+Production flat playback, native replay, and manifest-blocked fallback each measure
+-47.5725 dBFS, confirming one copy. Public UI actions start production capture and prove
+post-mute signal; production rejects scripted command extras. The elapsed digital-silence
+watchdog restores the source after four seconds in the same-session zero-PCM fixture.
+No existing assertion was removed or relaxed. These measurements are emulator output,
+not physical DAC or acoustic qualification.
+
+The independent UID-policy fixture blinds player reports, verifies the direct 0x1400
+policy mask, and confirms no muted probe or native admission. Restoring that policy on a
+new stream of the same app version recovers native capture. Legacy migration does not
+reset settings, and actual silence never creates a persistent negative verdict.
+
+All four themes retain the source build's 39 debug and 35 production appearance checks
+and 68 captured screenshots. Representative theme layouts and final production capture/
+restriction screens were inspected.
+
+The owner-signed APK reuses certificate SHA-256
+9cb9daca3b49fbdd17683d45dfb069fa9c6d05e3733934795f92546fef696b0f.
+All 86 ZIP payload entries match the tested production APK byte for byte. Package/version,
+permissions, signature, 16 KB ZIP alignment, and all four native ELF alignments pass.
+Private key material was handled outside Git/CI and removed from temporary storage.
+APK SHA-256: 5dce12adff4cec1a76a1d7231e386a001dda38b50cf5b59643f75c19ecde1778.
+
+Android 13 is unqualified for this update. Hardware-accelerated hosted attempts lost the
+emulator before completing the matrix; changing images, GPU modes, and KVM MSR handling
+did not resolve that failure. The software-CPU attempt
+[37947507926](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37947507926)
+records SystemUI, media-provider, and phone-service ANRs before Svan launches. Svan then
+misses its foreground-service deadline and the first report wait fails. SystemEqService
+already calls startForeground before repository, routing, or detection initialization;
+the logs show service-start completion delayed by roughly 32 seconds. This run establishes
+neither a passing Android 13 matrix nor the cause of the owner's Android 14 capture failure.
+The failed logs are retained; no deadline or audio assertion was waived.
 
 Emulator fixtures do not qualify Spotify, Amazon Music, YouTube Music, TECNO or LG hardware.
 If a player's installed manifest, UID-wide policy, or stream policy excludes MediaProjection,

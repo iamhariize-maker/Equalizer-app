@@ -5,8 +5,15 @@ capture after two silent checks. See [CAPTURE_RECOVERY_0.5.10.md](CAPTURE_RECOVE
 legacy negative migration, one playback-recorder lease, bounded reads/no-data fail-open,
 paused-source handoff, per-app recovery/reporting, and installed-manifest/UID policy evidence.
 Silence no longer creates an app-version BLOCKED verdict. Local builds/lint, 282 JVM tests,
-179 native tests, 17 Python checks and 12 mastering tests pass. API 33/34 qualification is pending;
-commercial-player/physical-phone capture policy remains unproven. The artistic themes remain.
+179 native tests, 17 Python checks and 12 mastering tests pass. Full API 34 validation
+[37942817135](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/37942817135)
+passes all 14 recovery, 8 production, 41 routing and every existing regression gate.
+The application payload is frozen at 3dabee6; subsequent commits update harnesses/docs only.
+The exact tested production payload is signed privately with the original owner certificate,
+with all 86 ZIP entries unchanged. Android 13 remains unqualified after emulator exits and
+a software-CPU run with system-wide ANRs and a Svan foreground-service deadline failure;
+see the evidence document. Commercial-player/physical-phone capture remains unproven.
+The four themes and optional WAV export remain; the latter creates no separate recorder.
 
 ## Engine B routing repair and tuning signatures — 2026-10-09, after 0.5.8/code 15
 

@@ -27,11 +27,14 @@ cd android
 ./gradlew -PsvanProduction=true :app:assembleRelease :app:bundleRelease
 ```
 
-Current production builds use version name `0.5.9` (code 16) and disable the exported Activity's scripted test
+Current production builds use version name `0.5.10` (code 17) and disable the exported Activity's scripted test
 commands. The launcher remains exported so Android can open the app normally. No permission
 or notification listener is added. CI exercises the production R8 APK with a disposable
 test key: launch, rejected command extras, settings migration UI, offline quality probes,
-and blind listening. That test key is not used for owner downloads.
+and blind listening. Four additional public-UI checks verify actual native capture, one-copy
+replay, installed manifest restriction, and audible fallback. All eight pass on Android 14;
+Android 13 remains unqualified for this update, as recorded in
+[CAPTURE_RECOVERY_0.5.10.md](CAPTURE_RECOVERY_0.5.10.md). That test key is not used for owner downloads.
 
 For artifact delivery, the exact tested production APK may be re-signed with the owner's
 private key, preserving every ZIP entry. The tested AAB is similarly signed after removing

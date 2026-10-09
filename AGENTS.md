@@ -92,6 +92,11 @@ A single playback-recorder lease serializes main/probe/diagnostic records; the i
 Legacy silence-based blocks are migrated; a negative sample never becomes a persistent app-policy verdict.
 Installed manifest and UID-wide audio policy provide direct opt-out evidence. Preserve before/after-mute
 proof, fail-open and one-engine ownership. Commercial-player capture permission remains unverified.
+Full API 34 run 37942817135 passes all 14 recovery, 8 production, 41 routing and existing gates.
+Source is frozen at 3dabee6; the exact production payload is owner-signed with all 86 entries unchanged.
+API 33 remains unqualified: hosted VM exits and software-CPU system-wide ANRs/service deadline
+failure prevented completion. Preserve failed evidence; do not describe this update as API 33 qualified.
+Optional WAV export opens no separate AudioRecord/MediaProjection and remains after the owner's review.
 Latest 0.5.8 quality work responds to LG owner feedback: EQ/tuner bypass improves reported fog,
 Amazon remains hidden and its own EQ does not open Svan. Read `docs/QUALITY_RECOVERY_0.5.8.md`.
 Local native (164), ASan/UBSan (164), TSan publication (5), Android JVM (230), debug/release
