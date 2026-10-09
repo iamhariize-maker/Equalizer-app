@@ -142,6 +142,21 @@ class MainActivity : ComponentActivity() {
                 java.io.File(filesDir, "capture-report.json").writeText(d.toString())
                 EqController.log("CAPTURE_REPORT_READY")
             }
+            "diagnostic" -> if (BuildConfig.DEBUG) {
+                // Scripted run of the full diagnostic engine (CI): writes files/diag-report.json and diag-report.txt.
+                val pkg = intent.getStringExtra("pkg") ?: return
+                val lab = intent.getBooleanExtra("lab", true)
+                val disruptive = intent.getBooleanExtra("disruptive", false)
+                Thread({
+                    runCatching {
+                        val r = app.svan.diag.DiagnosticEngine.collect(applicationContext,
+                            app.svan.diag.DiagnosticEngine.Request(pkg, lab, disruptive)) { }
+                        java.io.File(filesDir, "diag-report.json").writeText(r.json.toString())
+                        java.io.File(filesDir, "diag-report.txt").writeText(r.full)
+                        EqController.log("DIAG_REPORT_READY")
+                    }.onFailure { EqController.log("DIAG_REPORT_FAILED $it") }
+                }, "svan-diag-cmd").start()
+            }
             "basic_status" -> if (BuildConfig.DEBUG) {
                 val d = org.json.JSONObject().put("dump", PlaybackSessions.hasDumpPermission(this))
                     .put("reportAccess", PlaybackSessions.hasReportAccess(this))

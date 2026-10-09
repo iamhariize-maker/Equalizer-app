@@ -19,6 +19,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.content.ContextCompat
+import app.svan.diag.SignalLedger
 import java.util.concurrent.Executors
 
 /** Owns system effects and session discovery while the activity is backgrounded. */
@@ -29,10 +30,12 @@ class SystemEqService : Service() {
     private var callback: AudioManager.AudioPlaybackCallback? = null
     private val deviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) {
+            SignalLedger.record(SignalLedger.Kind.DEVICE, "output added: " + added.joinToString { "type ${it.type}" })
             if (SharedOutputHandoff.physicalOutputChanged(added.map { it.type })) SessionRouter.outputChanged()
             recover("output connected")
         }
         override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) {
+            SignalLedger.record(SignalLedger.Kind.DEVICE, "output removed: " + removed.joinToString { "type ${it.type}" })
             if (SharedOutputHandoff.physicalOutputChanged(removed.map { it.type })) SessionRouter.outputChanged()
             recover("output disconnected")
         }
@@ -54,6 +57,7 @@ class SystemEqService : Service() {
     /** Bluetooth route/session creation is asynchronous; check again after it settles. */
     private fun recover(reason: String) {
         if (!alive) return
+        SignalLedger.record(SignalLedger.Kind.DETECTION, reason)
         EqController.log("detection: $reason; checking now and after route settles")
         sync()
         main.removeCallbacks(recoveryScan)
@@ -87,6 +91,7 @@ class SystemEqService : Service() {
         alive = true
         isRunning = true
         instance = this
+        SignalLedger.serviceStarted()
         consumePanelRequest()
         // A start that finds this flag still "dirty" means Android (or the OEM's cleaner) killed the last run.
         prefs().edit().putBoolean(KEY_CLEAN, false).putLong(KEY_STARTED, System.currentTimeMillis()).apply()
@@ -97,7 +102,12 @@ class SystemEqService : Service() {
         // Register even before DUMP is granted: a grant while this service is
         // alive must take effect without a force-stop or an app reinstall.
         callback = object : AudioManager.AudioPlaybackCallback() {
-            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) { recover("playback changed") }
+            override fun onPlaybackConfigChanged(configs: MutableList<AudioPlaybackConfiguration>?) {
+                // Anonymised public view: usage counts only. It shows whether Android sees a player at all.
+                SignalLedger.record(SignalLedger.Kind.PLAYBACK, "active players=${configs?.size ?: 0} usages=" +
+                    (configs?.groupingBy { it.audioAttributes.usage }?.eachCount()?.entries?.joinToString { "${it.key}x${it.value}" } ?: "-"))
+                recover("playback changed")
+            }
         }.also { cb ->
             runCatching { getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(cb, main) }
                 .onFailure { EqController.log("detection: playback callback unavailable; periodic scans remain active: $it") }

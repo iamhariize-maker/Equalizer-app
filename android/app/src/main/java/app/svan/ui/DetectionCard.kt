@@ -58,6 +58,7 @@ fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
             DetailedReportButton()
         }
     }
+    DiagnosticCard()
     SharedOutputCard()
 }
 

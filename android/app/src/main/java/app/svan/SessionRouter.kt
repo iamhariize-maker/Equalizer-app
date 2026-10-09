@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.projection.MediaProjection
 import android.os.Process
 import android.os.SystemClock
+import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -693,7 +694,7 @@ object SessionRouter {
      * and one that failed open earlier is promoted again when its back-off ends. Worker thread; rate-limited per session.
      */
     private fun retryParkedPlayers() {
-        if (!enabled || projection == null || startupProbeWindow) return
+        if (!enabled || projection == null || startupProbeWindow || labActive) return
         val now = SystemClock.elapsedRealtime()
         routes.values.toList().forEach { r ->
             if (r.owner != Owner.ENGINE_A || r.playing != true || r.uid < 0) return@forEach
@@ -711,6 +712,7 @@ object SessionRouter {
      */
     private fun requestLateProbe(sid: Int, pkg: String, uid: Int) {
         val mp = projection ?: return
+        if (labActive) return // the diagnostic lab owns the playback recorder
         val now = SystemClock.elapsedRealtime()
         if (probeInFlight || captureUids.isNotEmpty() || !lateProbes.due(pkg, now)) return
         val generation = history.active(sid)?.generation
@@ -853,6 +855,47 @@ object SessionRouter {
             EqController.log("route: $pkg (session $sid) → Engine B (source muted)")
         } else {
             toEngineA(sid, pkg, uid, playing, RouteReason.MUTE_UNAVAILABLE)
+        }
+    }
+
+    // ---- diagnostic lab hooks (see app.svan.diag.CaptureLab). Read-only unless a disruptive trial is requested.
+
+    /** While true, Svan's own background capture checks stand down so they cannot take the recorder or retry. */
+    @Volatile internal var labActive = false
+
+    /** The capture permission token held by the running audiophile engine, or null when it is not running. */
+    internal fun labProjection(): MediaProjection? = projection
+
+    /** Why the lab cannot use the playback recorder right now, or null when it is free. */
+    internal fun labBusyReason(): String? = when {
+        projection == null -> "The audiophile engine is not running, so Svan has no capture permission. Start it in Hi-Fi first."
+        captureUids.isNotEmpty() -> "The audiophile engine is already capturing another app. Stop it and start it again with only the target playing."
+        CaptureCompat.recorders.currentPurpose != null -> "A capture check is using the recorder (${CaptureCompat.recorders.currentPurpose}). Try again in a moment."
+        else -> null
+    }
+
+    /**
+     * Runs [block] with the session's Svan effect detached (and, with [mute], the source muted), then always
+     * restores system effects. Returns null when the session is not on system effects or could not be prepared.
+     */
+    internal fun <T> labDisrupted(sid: Int, mute: Boolean, block: () -> T): T? {
+        val prepared = runCatching {
+            worker.submit(Callable {
+                val route = routes[sid] ?: return@Callable false
+                if (route.owner != Owner.ENGINE_A) return@Callable false
+                routes[sid] = route.copy(owner = Owner.PROBING) // keeps the router's own repair/retry away from it
+                EqController.globalEq.detach(sid)
+                if (mute && !muter.mute(sid)) { toEngineA(sid, route.pkg, route.uid, route.playing); return@Callable false }
+                true
+            }).get(8, TimeUnit.SECONDS)
+        }.getOrDefault(false)
+        if (!prepared) return null
+        try {
+            return block()
+        } finally {
+            runCatching {
+                worker.submit(Callable { routes[sid]?.let { toEngineA(sid, it.pkg, it.uid, it.playing) } }).get(8, TimeUnit.SECONDS)
+            }.onFailure { EqController.log("diagnostic: could not restore system effects for session $sid: $it") }
         }
     }
 
