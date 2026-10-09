@@ -81,9 +81,11 @@ bins), and `equalizer_lvm` (AOSP's 5-band Equalizer, band 0 at +6 dB, against fl
 | MBC attack 1 ms against 40 ms: time to 63% of the gain change | nearly equal (attack below one hop has no effect) | pending |
 
 The lab is the last command of the emulator job's e2e step, on API 33 and 34, as a research step (`|| echo`), so it
-cannot block the existing gates. Its results are in the `e2e-results-api34` / `api33` artifacts under `effects-lab/`.
-On API 33 that step failed before reaching the lab in runs 243 and 244 (the emulator stopped answering adb), so the
-measurements currently come from API 34.
+cannot block the existing gates. Its results would be in the `e2e-results-api34` / `api33` artifacts under `effects-lab/`.
+It has not produced a result yet. In runs 245 and 246 both emulator-e2e jobs hit their 60-minute timeout during the e2e
+step, before the lab. The same API 34 step took 44 minutes in run 244, which had no lab. In runs 243 and 244 the API 33
+step also ended before the lab; in run 244 the emulator had stopped answering adb. Until the lab has its own job or a
+longer timeout, the measurement rows stay pending.
 
 ## 4. What this means for quality (before measurement)
 
