@@ -1,3 +1,4 @@
+# Verify the public engine status after returning it to the visible viewport.
 # Verify all assertions on API 34; capture-api33-verify.yml retains the same full API 33 gates on its compatible graphics host.
 name: Android 14 frozen capture verification
 'on':

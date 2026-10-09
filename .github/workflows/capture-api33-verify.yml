@@ -1,4 +1,4 @@
-# Test all API 33 gates against the frozen APK with guest logs and the official Google APIs image.
+# Test all API 33 gates with the official 35.2.10 emulator; application APKs remain frozen.
 name: Android 13 frozen capture verification
 'on':
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
   actions: read
 env:
-  SVAN_EMULATOR_BUILD: '16428233'
+  SVAN_EMULATOR_BUILD: '12414864' # Official Android Emulator 35.2.10
 jobs:
   full-routing:
     runs-on: ubuntu-22.04
@@ -105,6 +105,10 @@ jobs:
         uname -a > e2e-out/host-memory.txt
 
         free -m >> e2e-out/host-memory.txt
+
+        cat /sys/module/kvm/parameters/ignore_msrs >> e2e-out/host-memory.txt
+
+        ps -eo pid,comm >> e2e-out/host-memory.txt
 
         sudo dmesg | tail -100 >> e2e-out/host-memory.txt || true
 

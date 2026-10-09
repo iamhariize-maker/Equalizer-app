@@ -94,6 +94,9 @@ tap 'Audiophile engine for apps that allow capture, system effects for the rest.
 scroll_to 'Start audiophile engine' up; tap 'Start audiophile engine'
 for ((attempt=0;attempt<45;attempt++)); do
     visible 'Audiophile engine connected' && break
+    # Starting capture can leave the engine summary above the current viewport.
+    # Inspect the same public status after scrolling it back into view.
+    "${A[@]}" shell input swipe 160 190 160 480 350
     sleep 1
 done
 visible 'Audiophile engine connected'
