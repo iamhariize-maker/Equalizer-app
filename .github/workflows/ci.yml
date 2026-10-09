@@ -247,7 +247,7 @@ jobs:
           test "$(grep -c '^PASS' e2e-out/capture-recovery/results.txt)" -eq 14
           ! grep -q '^FAIL' e2e-out/capture-recovery/results.txt
           cat e2e-out/diagnostic/results.txt
-          test "$(grep -c '^PASS' e2e-out/diagnostic/results.txt)" -eq 5
+          test "$(grep -c '^PASS' e2e-out/diagnostic/results.txt)" -eq 8
           ! grep -q '^FAIL' e2e-out/diagnostic/results.txt
           cat e2e-out/workspace/results.txt
           if grep -q '^FAIL' e2e-out/workspace/results.txt; then exit 1; fi

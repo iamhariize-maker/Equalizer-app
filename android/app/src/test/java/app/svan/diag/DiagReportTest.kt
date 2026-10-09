@@ -42,7 +42,7 @@ class DiagReportTest {
 
     @Test fun jsonHasTheVerdictFindingsAndTrials() {
         val j = DiagReport.json(failing, findings, extras)
-        assertEquals(1, j.getInt("format"))
+        assertEquals(2, j.getInt("format"))
         assertTrue(j.getString("verdict").startsWith("FAIL"))
         assertEquals(7, j.getJSONArray("trials").length())
         assertTrue(j.getJSONArray("findings").length() >= 1)
@@ -54,5 +54,44 @@ class DiagReportTest {
         val s = DiagReport.summary(f, DiagRules.evaluate(f, 0), extras)
         assertFalse(s.contains("Capture ladder"))
         assertTrue(DiagReport.full(f, DiagRules.evaluate(f, 0), extras).contains("Did not run: not requested"))
+    }
+
+    // ---- engine pipeline in the report
+
+    private val engineStages = Pipeline.evaluate(DiagTestFacts.facts(detection = DiagTestFacts.onEngineB(), env = DiagTestFacts.env().copy(reportAccess = false)),
+        DiagTestFacts.engine(samples = DiagTestFacts.windows(3) { DiagTestFacts.window(DiagTestFacts.NOW - 2_000L * (3 - it), captured = 0) }))
+    private val withEngine = extras.copy(
+        pipeline = engineStages, engineEvents = DiagTestFacts.healthyEvents, engineRunStartedMs = 0L,
+        engineSamples = DiagTestFacts.windows(), unobservable = listOf("The audio server's capture flags for the player's stream."),
+        allRoutes = listOf("com.spotify.music session 1 uid 10520 → ENGINE_B_MUTED playing=true"),
+    )
+
+    @Test fun summaryShowsEveryStageAndTheFirstBrokenOne() {
+        val s = DiagReport.summary(failing, findings, withEngine)
+        assertTrue(s.contains("PIPELINE"))
+        assertTrue(s.contains("C8  [FAIL] Frames arrive from the recorder"))
+        assertTrue(s.contains("D5  [N/A ]"))
+        assertTrue(s.contains("First broken stage: C8"))
+        assertTrue(s.contains("Not observable on this phone without enhanced reports: 1 item(s)"))
+        assertTrue(s.length < 6_000)
+    }
+
+    @Test fun fullReportCarriesTimelineWindowsAndTheUnobservableList() {
+        val full = DiagReport.full(failing, findings, withEngine)
+        listOf("== PIPELINE, STAGE BY STAGE ==", "== NOT OBSERVABLE ON THIS PHONE", "== ALL ROUTED PLAYERS ==", "== ENGINE TIMELINE",
+            "== ENGINE WINDOWS", "route: com.spotify.music (session 42225) → Engine B", "A clean result above says nothing about these.",
+            "(evidence: enhanced reports)").forEach { assertTrue(it, full.contains(it)) }
+    }
+
+    @Test fun reportWithoutAnEngineStillRenders() {
+        assertTrue(DiagReport.full(failing, findings, extras).contains("none: the audiophile engine produced no window in this process"))
+    }
+
+    @Test fun jsonCarriesThePipelineAndWindows() {
+        val j = DiagReport.json(failing, findings, withEngine)
+        assertEquals("C8", j.getString("firstBrokenStage"))
+        assertEquals(engineStages.size, j.getJSONArray("pipeline").length())
+        assertEquals(3, j.getJSONArray("engineWindows").length().coerceAtMost(3))
+        assertEquals(1, j.getJSONArray("unobservable").length())
     }
 }

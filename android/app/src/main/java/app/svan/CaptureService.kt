@@ -58,12 +58,15 @@ class CaptureService : Service() {
             return START_NOT_STICKY
         }
         SvanRepository.init(this)
+        app.svan.diag.EngineTrace.attachStorage(java.io.File(filesDir, "diag"))
         if (SvanRepository.settings.value.engineMode == app.svan.model.EngineMode.SYSTEM_ONLY) {
             stopSelf()
             return START_NOT_STICKY
         }
         // Must be in the foreground (type mediaProjection) *before* getMediaProjection on Android 14+.
+        if (!running) app.svan.diag.EngineTrace.beginRun()
         startForeground(NOTIF_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.FOREGROUND)
         val blocker = CapturePolicy.startupBlock(PlaybackSessions.hasReportAccess(this), SessionRouter.snapshot, Process.myUid(), SharedOutput.status.value.requested)
         if (blocker != null) {
             startupMessage.value = blocker
@@ -87,7 +90,11 @@ class CaptureService : Service() {
         if (data == null) { stopSelf(); return START_NOT_STICKY }
 
         val mpm = getSystemService(MediaProjectionManager::class.java)
-        val mp = mpm.getMediaProjection(resultCode, data) ?: return START_NOT_STICKY
+        val mp = mpm.getMediaProjection(resultCode, data) ?: run {
+            EqController.log("capture: Android returned no capture token (result code $resultCode)")
+            return START_NOT_STICKY
+        }
+        app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.PROJECTION)
         mp.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() { running = false; stopSelf() }
         }, null)
@@ -113,9 +120,11 @@ class CaptureService : Service() {
         try {
             // Probe before the main recorder: some HALs cannot open two capture records.
             check(SessionRouter.onCaptureStarted(mp, systemPackages)) { "session routing failed before capture startup" }
+            app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.ROUTING_DONE)
             var safeFallback = false
             while (running) {
                 if (!audioEpoch(mp, safeFallback)) break
+                app.svan.diag.EngineTrace.restarted(recoveryMessage.value)
                 safeFallback = true // at most one conservative reopen; source ownership stays muted
             }
         } catch (e: Exception) {
@@ -126,6 +135,7 @@ class CaptureService : Service() {
             epoch = null; stats = null; rateFacts = null
             SessionRouter.onCaptureStopped()
             EqController.log("capture: stopped")
+            app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.STOPPED)
             stopSelf()
         }
     }
@@ -182,6 +192,7 @@ class CaptureService : Service() {
                 }
             }
             val rate = negotiation.rate
+            app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.RATE_NEGOTIATED, "$rate Hz" + if (safeFallback) " (safe fallback)" else "")
             val frames = maxOf(64, (rate * 256L / 48000).toInt())
             var input: AudioRecord? = negotiation.value.first
             val output = negotiation.value.second
@@ -277,6 +288,21 @@ class CaptureService : Service() {
             var silentRun = 0L
             var watchdogFired = false
             val noDataWatchdog = CaptureNoDataWatchdog()
+            // Flight recorder: milestones fire once per epoch; windows are taken every 2 s (see EngineTrace).
+            var sawFrame = false
+            var sawAudio = false
+            var sawOutput = false
+            var lastIdleWindowNs = System.nanoTime()
+            fun traceWindow(captured: Long, generated: Long, inDb: Double, outDb: Double, queuedMs: Double,
+                            dspPct: Double, over: Int, readMs: Double, writeMs: Double) {
+                val silenced = runCatching { input?.activeRecordingConfiguration?.isClientSilenced }.getOrNull()
+                app.svan.diag.EngineTrace.sample(app.svan.diag.EngineTrace.Sample(
+                    System.currentTimeMillis(), epoch?.id, rate,
+                    if (allowed.isEmpty()) "no source admitted" else if (input == null) "waiting for recorder lease" else "captured",
+                    captured, generated, inDb, outDb, queuedMs, output.underrunCount, dspPct, over, readMs, writeMs,
+                    silenced, otherActivePlayers,
+                    SessionRouter.snapshot.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.map { it.pkg }))
+            }
             fun changeSources(next: Set<Int>) {
                 input?.let { runCatching { it.stop() }; it.release() }
                 input = null; record = null; activeRecord = null
@@ -350,16 +376,27 @@ class CaptureService : Service() {
                         EqController.log("capture: no frames for 2.5s while a muted source plays → failing open")
                         SessionRouter.onCaptureSilent(noData = true)
                     }
+                    // A recorder that delivers nothing never completes a normal 2 s window: record that fact explicitly.
+                    if (reading != null && allowed.isNotEmpty() && System.nanoTime() - lastIdleWindowNs >= 2_000_000_000L) {
+                        lastIdleWindowNs = System.nanoTime()
+                        traceWindow(0, 0, -120.0, -120.0, stats?.queuedMs ?: 0.0, 0.0, 0, readWaitMaxNs / 1e6, writeWaitMaxNs / 1e6)
+                        readWaitMaxNs = 0L
+                    }
                     Thread.sleep(2)
                     continue
                 }
                 noDataWatchdog.reset()
+                lastIdleWindowNs = System.nanoTime()
                 if (allowed.isEmpty() || reading == null) generatedFrames += n / 2 else capturedFrames += n / 2
                 app.svan.listening.ClipRecorder.offer(buf,n,epoch)
                 app.svan.listening.ProofRecorder.offerDry(buf, n) // dry tap, before the DSP edits buf in place
                 var blockPeak = 0f
                 for (i in 0 until n) blockPeak = maxOf(blockPeak, kotlin.math.abs(buf[i]))
                 levelPeak = maxOf(levelPeak, blockPeak)
+                if (reading != null && allowed.isNotEmpty()) {
+                    if (!sawFrame) { sawFrame = true; app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.FIRST_FRAME) }
+                    if (!sawAudio && blockPeak > 0f) { sawAudio = true; app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.FIRST_AUDIO) }
+                }
                 levelFrames += n / 2
                 if (app.svan.listening.ClipPlayer.playing) silentRun=0
                 else if (blockPeak == 0f) silentRun += n / 2 else { silentRun = 0; watchdogFired = false }
@@ -406,6 +443,7 @@ class CaptureService : Service() {
                     writtenFrames += count / 2
                 }
                 writeWaitMaxNs = maxOf(writeWaitMaxNs, System.nanoTime() - writeBegin)
+                if (!sawOutput && written > 0 && blockOut > 0f) { sawOutput = true; app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.FIRST_OUTPUT) }
                 // Rebuild the cushion during digital silence. A stall spends the primed cushion and nothing else
                 // refills it (the loop writes only what capture delivers), so the next hiccup would underrun.
                 // Extra silence here adds latency only while nothing is playing, where it cannot be heard.
@@ -478,6 +516,8 @@ class CaptureService : Service() {
                         20.0 * kotlin.math.log10(maxOf(levelPeak.toDouble(), 1e-6)),
                         20.0 * kotlin.math.log10(maxOf(outputPeak.toDouble(), 1e-6)), dsp.detailedMix)
                     unmaskSnapshot = dsp.bassUnmaskDiagnostics() // audio-thread snapshot; UI never races DSP getters
+                    traceWindow(capturedFrames, generatedFrames, stats!!.inputPeakDb, stats!!.outputPeakDb, stats!!.queuedMs,
+                        stats!!.dspPercent, overBudgetBlocks, readWaitMaxNs / 1e6, writeWaitMaxNs / 1e6)
                     val muted = SessionRouter.snapshot.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.joinToString { it.pkg }
                     EqController.log("capture level: peak=%.4f over %d frames; output queued=%.1f ms, underruns=%d, DSP=%.1f%%, muted=[%s], otherPlayers=%d, source=%s capturedFrames=%d generatedSilenceFrames=%d".format(levelPeak, levelFrames, stats!!.queuedMs, stats!!.underruns, stats!!.dspPercent, muted, otherActivePlayers,
                         if (allowed.isEmpty()) "none(no source admitted: output is generated silence)" else if (input == null) "waiting for recorder lease" else "captured", capturedFrames, generatedFrames))
@@ -526,6 +566,7 @@ class CaptureService : Service() {
             check(opened.sampleRate == rate) { "capture client format differs from requested $rate Hz" }
             opened.startRecording()
             check(opened.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "capture did not start" }
+            if (allowed.isNotEmpty()) app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.RECORDER_STARTED, "${allowed.size} UID(s) at $rate Hz")
             return opened
         } catch (e: Exception) {
             opened?.let { runCatching { it.stop() }; runCatching { it.release() } }

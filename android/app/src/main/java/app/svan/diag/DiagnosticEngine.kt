@@ -6,12 +6,14 @@ import android.media.audiofx.AudioEffect
 import android.os.Build
 import android.os.SystemClock
 import app.svan.BuildConfig
+import app.svan.CaptureService
 import app.svan.CaptureUidPolicyReport
 import app.svan.DetectionMonitor
 import app.svan.EqController
 import app.svan.PlaybackSessions
 import app.svan.SessionReceiver
 import app.svan.SessionRouter
+import app.svan.SvanRepository
 import app.svan.SystemEqService
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,7 +31,9 @@ import org.json.JSONObject
 object DiagnosticEngine {
     enum class Stage { IDLE, RUNNING, DONE }
 
-    data class Request(val pkg: String, val runLab: Boolean = true, val includeDisruptive: Boolean = false, val startDelaySec: Int = 0)
+    /** [watchSec]: how long a running audiophile engine is observed live (it produces a window every 2 s) before the report is built. */
+    data class Request(val pkg: String, val runLab: Boolean = true, val includeDisruptive: Boolean = false, val startDelaySec: Int = 0,
+                       val watchSec: Int = 6)
 
     class Result(val facts: DiagFacts, val findings: List<Finding>, val summary: String, val full: String,
                  val json: JSONObject, val atMs: Long, val file: File?)
@@ -137,10 +141,20 @@ object DiagnosticEngine {
             CaptureLab.run(context, pkg, uid, CaptureLab.Options(request.includeDisruptive), progress)
         }
 
+        if (CaptureService.isRunning && request.watchSec > 0) {
+            for (left in request.watchSec downTo 1) {
+                progress("Watching the live audiophile engine ($left s)")
+                SystemClock.sleep(1_000)
+            }
+        }
+
         progress("Evaluating")
         val facts = DiagFacts(env, target, detection, effects, policy, lab)
         val now = System.currentTimeMillis()
-        val findings = DiagRules.evaluate(facts, now)
+        val engine = engineFacts(now)
+        val stages = Pipeline.evaluate(facts, engine)
+        val findings = (DiagRules.evaluate(facts, now) + Pipeline.findings(stages))
+            .sortedWith(compareByDescending<Finding> { it.severity }.thenBy { it.code })
         val extras = DiagExtras(
             generatedAtMs = now,
             svanVersion = BuildConfig.VERSION_NAME,
@@ -163,6 +177,16 @@ object DiagnosticEngine {
             flingerStatic = flingerStatic,
             ledger = events,
             svanLog = synchronized(EqController.log) { EqController.log.toString() }.lines().takeLast(120),
+            pipeline = stages,
+            engineEvents = EngineTrace.events(),
+            engineSamples = EngineTrace.samples(),
+            engineRunStartedMs = engine.runStartedMs,
+            unobservable = Pipeline.unobservable(facts),
+            allRoutes = SessionRouter.snapshot.map { r ->
+                "${r.pkg} session ${r.sessionId} uid ${r.uid} → ${r.owner.name} playing=${r.playing}" +
+                    (SessionRouter.reasonFor(r.pkg)?.let { " reason=${it.name}" } ?: "")
+            },
+            previousRun = EngineTrace.previousRun,
         )
         val summary = DiagReport.summary(facts, findings, extras)
         val full = DiagReport.full(facts, findings, extras)
@@ -170,6 +194,21 @@ object DiagnosticEngine {
         val file = save(context, full, json)
         return Result(facts, findings, summary, full, json, now, file)
     }
+
+    private fun engineFacts(now: Long) = EngineFacts(
+        nowMs = now,
+        systemEffectsOnly = SvanRepository.settings.value.engineMode == app.svan.model.EngineMode.SYSTEM_ONLY,
+        captureRunning = CaptureService.isRunning,
+        runStartedMs = EngineTrace.runStartedMs,
+        marks = EngineTrace.marks(),
+        restarts = EngineTrace.restarts,
+        events = EngineTrace.events(),
+        samples = EngineTrace.samples(),
+        startupMessage = CaptureService.startupMessage.value,
+        recoveryMessage = CaptureService.recoveryMessage.value,
+        rateSummary = CaptureService.rateFacts?.summary(),
+        previousRun = EngineTrace.previousRun,
+    )
 
     private fun deviceLines(): List<String> = buildList {
         add("${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})")
@@ -201,7 +240,7 @@ object DiagnosticEngine {
 
     private fun save(context: Context, full: String, json: JSONObject): File? = runCatching {
         val dir = File(context.filesDir, "diag").apply { mkdirs() }
-        dir.listFiles()?.forEach { it.delete() } // only the latest report is kept
+        dir.listFiles()?.filter { it.name.startsWith("svan-diagnostic") }?.forEach { it.delete() } // only the latest report is kept
         File(dir, "svan-diagnostic.json").writeText(json.toString(2))
         File(dir, "svan-diagnostic.txt").apply { writeText(full) }
     }.getOrNull()

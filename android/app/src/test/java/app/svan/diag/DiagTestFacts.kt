@@ -47,4 +47,38 @@ internal object DiagTestFacts {
     ) = DiagFacts(env, target, detection, effects, policy, lab)
 
     fun codes(findings: List<Finding>) = findings.map { it.code }
+
+    // ---- live engine
+
+    const val PKG = "com.spotify.music"
+    const val NOW = 100_000L
+
+    fun onEngineB() = detection(routes = listOf(RouteFacts(42225, "ENGINE_B_MUTED", true, null)))
+
+    fun window(at: Long, captured: Long = 96_000, inDb: Double = -12.0, underruns: Int = 0, dsp: Double = 30.0, over: Int = 0,
+               silenced: Boolean? = false, muted: List<String> = listOf(PKG), state: String = "captured") =
+        EngineTrace.Sample(at, 3, 48_000, state, captured, 0, inDb, -14.0, 80.0, underruns, dsp, over, 1.0, 2.0, silenced, 1, muted)
+
+    fun windows(n: Int = 5, build: (Int) -> EngineTrace.Sample = { window(NOW - (n - it) * 2_000L) }) = (0 until n).map(build)
+
+    val healthyMarks: Map<EngineTrace.Mark, Long> = mapOf(
+        EngineTrace.Mark.FOREGROUND to 100L, EngineTrace.Mark.PROJECTION to 400L, EngineTrace.Mark.ROUTING_DONE to 2_000L,
+        EngineTrace.Mark.RATE_NEGOTIATED to 2_500L, EngineTrace.Mark.RECORDER_STARTED to 2_600L, EngineTrace.Mark.FIRST_FRAME to 2_700L,
+        EngineTrace.Mark.FIRST_AUDIO to 2_800L, EngineTrace.Mark.FIRST_OUTPUT to 2_900L)
+
+    fun ev(cat: EngineTrace.Cat, text: String, at: Long = 5_000L, pkg: String? = PKG) = EngineTrace.Event(at, cat, pkg, text)
+
+    val healthyEvents = listOf(
+        ev(EngineTrace.Cat.PROBE, "capture check: $PKG → CAPTURABLE"),
+        ev(EngineTrace.Cat.ROUTE, "route: $PKG (session 42225) → Engine B (source muted)"))
+
+    fun engine(
+        running: Boolean = true, marks: Map<EngineTrace.Mark, Long> = healthyMarks, restarts: Int = 0,
+        events: List<EngineTrace.Event> = healthyEvents, samples: List<EngineTrace.Sample> = windows(),
+        startupMessage: String = "", recoveryMessage: String = "", previous: EngineTrace.PreviousRun? = null,
+        systemOnly: Boolean = false, runStarted: Long? = 0L,
+    ) = EngineFacts(NOW, systemOnly, running, runStarted, marks, restarts, events, samples, startupMessage, recoveryMessage,
+        "rates: requested=48000", previous)
+
+    fun stage(stages: List<Stage>, id: String) = stages.first { it.id == id }
 }

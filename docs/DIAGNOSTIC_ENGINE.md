@@ -3,6 +3,10 @@
 Hi-Fi → Music detection → **Full diagnostic**. One tap measures why a player is not found, not processed, or not
 captured on *this* phone, and produces a report that can be sent to the developer.
 
+It covers two things: **finding the player** (detection) and **the live audiophile engine** (capture, DSP, output). Neither
+depends on the audio server's reports (`DUMP` or Shizuku): those add evidence when present, and the report says exactly
+what it could not see when they are absent.
+
 ## Why it exists
 
 The same symptom ("Spotify is not processed") has many unrelated causes, and they differ by phone and Android skin
@@ -20,6 +24,57 @@ a verdict never appears without the lines it rests on.
 | Effects | whether Svan's effect is attached and verified, other effects on the same session, vendor effects registered on the phone | `GlobalEqEngine`, `dumpsys media.audio_flinger`, `AudioEffect.queryEffects()` |
 | Audio-server view | the policy's own entry for the player's stream: **effective** attribute flags, UID-wide capture policy, and whether the stream is attached to a capture mix | `dumpsys media.audio_policy` (needs Enhanced detection) |
 | Capture lab | a ladder of capture attempts, a few seconds each, against the running player | `AudioPlaybackCapture`, needs the audiophile engine started |
+
+### The pipeline checklist
+
+Every report lists the chain from "player makes sound" to "processed sound leaves the phone", stage by stage, each with
+its evidence. `N/A` means the stage needs enhanced reports and cannot be judged on this phone; it is never shown as a pass.
+
+| Stage | Question | Evidence |
+| --- | --- | --- |
+| D1 | Is Svan's detection service running? | always |
+| D2 | Do broadcasts reach Svan on this phone? (Svan sends itself a test announcement) | always |
+| D3 | Did the player announce an audio session? | always |
+| D4 | Did Svan accept it, or drop it (and why)? | always |
+| D5 | Can enhanced reports list sessions no announcement covers? | enhanced reports |
+| D6 | Was the session routed to an engine? | always |
+| D7 | Is Svan's effect attached to it? | always |
+| D8 | Does the audio server confirm the effect is processing? | enhanced reports |
+| C1 | Is the audiophile engine running (or why did it not start)? | always |
+| C2 | Foreground service and capture permission token granted? | always |
+| C3 | Did startup routing finish before the first recorder? | always |
+| C4 | Were the recorder and output formats negotiated? | always |
+| C5 | Is the player on the audiophile engine (or the reason it is not)? | always |
+| C6 | What did the capture check conclude? | always |
+| C7 | Is a playback recorder running for the muted sources? | always |
+| C8 | Do frames arrive from the recorder? | always (engine windows) |
+| C9 | Do the frames contain sound, and how soon after the recorder started? | always |
+| C10 | Is Android silencing the recorder? (`isClientSilenced`, every 2 s) | always |
+| C11 | Does the source stay muted: fail-opens, lost mute control | always |
+| C12 | Does the DSP keep up with real time? | always |
+| C13 | Does the output play without gaps? | always |
+| C14 | Restarts, recovery messages, and whether the previous Svan process was killed | always |
+
+The checklist ends with the **first broken stage**, which is where to look first. A capture stage that fails also raises a
+finding (for example `NO_FRAMES_DELIVERED`, `CAPTURE_DELIVERS_SILENCE`, `ENGINE_RECORDER_SILENCED`, `FAIL_OPEN_REPEATED`,
+`MUTE_CONTROL_LOST`, `OUTPUT_UNDERRUNS`, `DSP_OVERLOADED`, `PREVIOUS_RUN_KILLED`); detection stages are explained by the
+findings in the table below.
+
+### The engine flight recorder
+
+`EngineTrace` records, from process start and without any permission:
+
+* every router decision, capture check, fail-open, lost mute and recovery, classified and timestamped (Svan's log lines are
+  classified as they are written, so the 64 KB log tail no longer decides what survives);
+* milestones of each capture run: foreground, permission token, startup routing, format negotiated, recorder started, first
+  frame, first sound, first output;
+* a window every 2 s: frames captured vs generated, input and output peak, queued output, underruns, DSP load, blocks over
+  budget, worst read and write waits, Android's own "recorder silenced" flag. A recorder that delivers nothing never
+  completes a normal window, so the loop also records an explicit empty window: silence from the recorder is visible;
+* a small file (`files/diag/engine-trace.txt`) written at most every 10 s and on a clean stop. If the next process finds a
+  file that never recorded a clean stop, the system ended Svan while it was capturing (`PREVIOUS_RUN_KILLED`).
+
+A diagnostic run on a running engine also watches it live for six seconds before it reports.
 
 ### The capture ladder
 
@@ -58,6 +113,16 @@ Findings are ordered worst first and each lists its evidence and a hedged next s
 | `ATTACHED_BUT_SILENT` | the tap exists but only silence arrives: look at the recorder side |
 | `RECORDER_SILENCED` | Android reported that it silenced Svan's recorder |
 | `LAB_PLAYER_NOT_PLAYING` | silence proves nothing; start playback and run again |
+| `ENGINE_B_START_FAILED` | the audiophile engine did not start; the reason line is in the evidence |
+| `PROJECTION_NOT_GRANTED` / `STARTUP_ROUTING_STUCK` / `RECORDER_FORMAT_REJECTED` | startup stalled at a named stage (C2, C3, C4) |
+| `TARGET_NOT_ON_ENGINE_B` | the engine runs but this player is on system effects; the reason is the router's own |
+| `CAPTURE_CHECK_NEGATIVE` | the engine's own capture check did not hear the player |
+| `RECORDER_NOT_STARTED` / `NO_FRAMES_DELIVERED` | the recorder never started, or is open and receives nothing |
+| `CAPTURE_DELIVERS_SILENCE` | frames arrive but every sample is zero while the source is muted |
+| `ENGINE_RECORDER_SILENCED` | Android reports silencing Svan's recorder while the engine runs |
+| `FAIL_OPEN_HAPPENED` / `FAIL_OPEN_REPEATED` / `MUTE_CONTROL_LOST` | Svan returned the player to system effects, or another app took the player's effect |
+| `DSP_OVERLOADED` / `OUTPUT_UNDERRUNS` / `OUTPUT_WRITE_FAILED` | the chain cannot keep real time, or the output broke |
+| `ENGINE_RESTARTING` / `PREVIOUS_RUN_KILLED` | recovery restarts, or the system killed the previous process |
 
 ## What it does not claim
 
@@ -74,9 +139,12 @@ when the user chooses. Nothing is uploaded.
 
 ## For developers
 
-* `android/app/src/main/java/app/svan/diag/`: `SignalLedger` (bounded event history), `DumpExtract` (pure parsers),
-  `EnvProbe`, `CaptureLab`, `DiagRules` (pure, unit-tested), `DiagReport` (text and JSON), `DiagnosticEngine`.
-* Tests: `app/src/test/java/app/svan/diag/` (64 tests: parsers use the layout from the android14-release
+* `android/app/src/main/java/app/svan/diag/`: `SignalLedger` (bounded event history), `EngineTrace` (live engine flight
+  recorder), `Pipeline` (the D/C checklist, pure), `DumpExtract` (pure parsers), `EnvProbe`, `CaptureLab`, `DiagRules`
+  (pure, unit-tested), `DiagReport` (text and JSON), `DiagnosticEngine`.
+* Hooks in the engine: `EqController.log` feeds the trace; `CaptureService` marks milestones (`EngineTrace.mark`, once
+  per run) and emits one window every 2 s (`EngineTrace.sample`); nothing runs per audio block.
+* Tests: `app/src/test/java/app/svan/diag/` (see the directory; parsers use the layout from the android14-release
   `ClientDescriptor::dump`; every rule has a scenario).
 * Scripted run (debug build): `am start -n app.svan/.Command --es cmd diagnostic --es pkg <package> [--ez lab false] [--ez disruptive true]`
   writes `files/diag-report.json` and `files/diag-report.txt`.

@@ -25,11 +25,22 @@ data class DiagExtras(
     val flingerStatic: List<String>,
     val ledger: List<SignalLedger.Event>,
     val svanLog: List<String>,
+    /** Detection and capture chains, stage by stage (see [Pipeline]). */
+    val pipeline: List<Stage> = emptyList(),
+    /** The live engine's flight recorder (see [EngineTrace]). */
+    val engineEvents: List<EngineTrace.Event> = emptyList(),
+    val engineSamples: List<EngineTrace.Sample> = emptyList(),
+    val engineRunStartedMs: Long? = null,
+    /** What this phone's setup cannot show (see [Pipeline.unobservable]). */
+    val unobservable: List<String> = emptyList(),
+    /** Every player Svan currently routes, not only the one examined. */
+    val allRoutes: List<String> = emptyList(),
+    val previousRun: EngineTrace.PreviousRun? = null,
 )
 
 /** Text and JSON renderings of one diagnostic run. Pure: no Android calls, so it is unit-tested. */
 object DiagReport {
-    const val FORMAT = 1
+    const val FORMAT = 2
 
     private fun stamp(ms: Long) = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date(ms))
     private fun clock(ms: Long) = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(ms))
@@ -44,6 +55,32 @@ object DiagReport {
         }
         return "${t.id.padEnd(24)} $outcome | frames=${t.frames} | ${t.scope}, usage ${t.usages}, ${t.format}" +
             (t.disruption?.let { " | $it" } ?: "")
+    }
+
+    private fun stageMark(s: Stage) = when (s.status) {
+        StageStatus.PASS -> "PASS"
+        StageStatus.FAIL -> "FAIL"
+        StageStatus.WARN -> "WARN"
+        StageStatus.WAITING -> "WAIT"
+        StageStatus.SKIPPED -> "skip"
+        StageStatus.UNKNOWN -> "????"
+        StageStatus.NEEDS_ENHANCED -> "N/A "
+    }
+
+    private fun stageLine(s: Stage) = "${s.id.padEnd(3)} [${stageMark(s)}] ${s.title}"
+
+    private fun pipelineSummary(x: DiagExtras, out: StringBuilder) {
+        if (x.pipeline.isEmpty()) return
+        val broken = Pipeline.firstBroken(x.pipeline)
+        out.appendLine("PIPELINE (D = finding the player, C = the live audiophile engine; N/A = needs enhanced reports):")
+        x.pipeline.forEach { s ->
+            out.appendLine("  " + stageLine(s))
+            if (s.status == StageStatus.FAIL || s.status == StageStatus.WARN) s.evidence.take(2).forEach { out.appendLine("        $it") }
+        }
+        out.appendLine(broken?.let { "First broken stage: ${it.id} ${it.title}" } ?: "No stage failed in what could be observed.")
+        if (x.unobservable.isNotEmpty())
+            out.appendLine("Not observable on this phone without enhanced reports: ${x.unobservable.size} item(s), listed in the full report.")
+        out.appendLine()
     }
 
     private fun findingBlock(f: Finding, withAdvice: Boolean = true): List<String> = buildList {
@@ -70,6 +107,7 @@ object DiagReport {
         appendLine()
         appendLine("VERDICT: ${DiagRules.headline(findings)}")
         appendLine()
+        pipelineSummary(x, this)
         val shown = findings.filter { it.severity >= Severity.WARN }
         if (shown.isEmpty()) appendLine("No warnings or failures.")
         shown.forEach { fnd -> findingBlock(fnd).forEach { appendLine(it) } }
@@ -97,6 +135,46 @@ object DiagReport {
         appendLine()
         appendLine("== FINDINGS (${findings.size}) ==")
         findings.forEach { fnd -> findingBlock(fnd).forEach { appendLine(it) } }
+
+        appendLine()
+        appendLine("== PIPELINE, STAGE BY STAGE ==")
+        x.pipeline.forEach { s ->
+            appendLine(stageLine(s) + if (s.needs == Evidence.ENHANCED_REPORTS) "   (evidence: enhanced reports)" else "")
+            s.evidence.forEach { appendLine("      - $it") }
+            if (s.status == StageStatus.FAIL || s.status == StageStatus.WARN) s.advice.forEach { appendLine("      > $it") }
+        }
+        if (x.unobservable.isNotEmpty()) {
+            appendLine()
+            appendLine("== NOT OBSERVABLE ON THIS PHONE (enhanced reports are off) ==")
+            x.unobservable.forEach { appendLine("  - $it") }
+            appendLine("A clean result above says nothing about these.")
+        }
+
+        appendLine()
+        appendLine("== ALL ROUTED PLAYERS ==")
+        if (x.allRoutes.isEmpty()) appendLine("none") else x.allRoutes.forEach { appendLine("  $it") }
+
+        appendLine()
+        appendLine("== ENGINE TIMELINE (flight recorder, ${x.engineEvents.size} events; +s from the start of the capture run) ==")
+        val base = x.engineRunStartedMs
+        x.engineEvents.takeLast(200).forEach { ev ->
+            val rel = if (base != null && ev.atMs >= base) "+%7.1f s".format((ev.atMs - base) / 1000.0) else clock(ev.atMs)
+            appendLine("$rel ${ev.cat.name.padEnd(9)} ${ev.pkg ?: "-"} ${ev.text}")
+        }
+        appendLine()
+        appendLine("== ENGINE WINDOWS (one per 2 s; peaks in dBFS) ==")
+        if (x.engineSamples.isEmpty()) appendLine("none: the audiophile engine produced no window in this process")
+        x.engineSamples.takeLast(30).forEach { w ->
+            appendLine("${clock(w.atMs)} ${w.sourceState} rate=${w.rateHz} captured=${w.capturedFrames} generated=${w.generatedFrames} " +
+                "in=%.0f out=%.0f queued=%.0fms underruns=%d dsp=%.0f%% over=%d readMax=%.1fms silenced=%s others=%d muted=%s".format(
+                    w.inputPeakDb, w.outputPeakDb, w.queuedMs, w.underruns, w.dspPercent, w.overBudgetBlocks, w.readWaitMaxMs,
+                    w.clientSilenced?.toString() ?: "?", w.otherPlayers, w.mutedPackages.joinToString(",").ifEmpty { "-" }))
+        }
+        x.previousRun?.let { p ->
+            appendLine()
+            appendLine("== PREVIOUS SVAN PROCESS (saved ${stamp(p.savedAtMs)}, ${if (p.cleanStop) "stopped cleanly" else "NO CLEAN STOP RECORDED"}) ==")
+            p.events.takeLast(25).forEach { appendLine("${clock(it.atMs)} ${it.cat.name.padEnd(9)} ${it.pkg ?: "-"} ${it.text}") }
+        }
 
         appendLine()
         appendLine("== DEVICE AND BUILD ==")
@@ -216,7 +294,29 @@ object DiagReport {
                 .put("evidence", JSONArray(it.evidence)).put("advice", JSONArray(it.advice)))
         }
         val c = f.lab.livePolicy?.clients?.firstOrNull()
+        val stages = JSONArray()
+        x.pipeline.forEach { s ->
+            stages.put(JSONObject().put("id", s.id).put("title", s.title).put("status", s.status.name)
+                .put("needs", s.needs.name).put("evidence", JSONArray(s.evidence)))
+        }
+        val windows = JSONArray()
+        x.engineSamples.takeLast(30).forEach { w ->
+            windows.put(JSONObject().put("atMs", w.atMs).put("state", w.sourceState).put("rate", w.rateHz)
+                .put("captured", w.capturedFrames).put("generated", w.generatedFrames)
+                .put("inDb", w.inputPeakDb).put("outDb", w.outputPeakDb).put("queuedMs", w.queuedMs).put("underruns", w.underruns)
+                .put("dsp", w.dspPercent).put("over", w.overBudgetBlocks).put("silenced", w.clientSilenced ?: JSONObject.NULL)
+                .put("muted", JSONArray(w.mutedPackages)))
+        }
+        val trace = JSONArray()
+        x.engineEvents.takeLast(200).forEach { ev ->
+            trace.put(JSONObject().put("atMs", ev.atMs).put("cat", ev.cat.name).put("pkg", ev.pkg ?: JSONObject.NULL).put("text", ev.text))
+        }
         return JSONObject()
+            .put("pipeline", stages)
+            .put("firstBrokenStage", Pipeline.firstBroken(x.pipeline)?.id ?: JSONObject.NULL)
+            .put("unobservable", JSONArray(x.unobservable))
+            .put("engineWindows", windows).put("engineTimeline", trace)
+            .put("previousProcessCleanStop", x.previousRun?.cleanStop ?: JSONObject.NULL)
             .put("format", FORMAT).put("generatedAtMs", x.generatedAtMs).put("svan", x.svanVersion)
             .put("verdict", DiagRules.headline(findings))
             .put("device", JSONArray(x.device)).put("oem", f.env.oem.family).put("sdk", f.env.sdk)

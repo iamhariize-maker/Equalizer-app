@@ -68,6 +68,7 @@ class SystemEqService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        app.svan.diag.EngineTrace.attachStorage(java.io.File(filesDir, "diag"))
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "System equalizer", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)

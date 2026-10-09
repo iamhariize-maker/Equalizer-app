@@ -96,6 +96,12 @@ def main():
     def trial(data, trial_id):
         return next((t for t in data["trials"] if t["id"] == trial_id), {})
 
+    def stage(data, stage_id):
+        return next((x["status"] for x in data["pipeline"] if x["id"] == stage_id), "MISSING")
+
+    def timeline(data):
+        return " | ".join(x["text"] for x in data["engineTimeline"])
+
     def codes(data):
         return {f["code"] for f in data["findings"]}
 
@@ -155,6 +161,10 @@ def main():
         check("diagnostic ledger saw the player's announcement and the receiver self-test arrived",
               works["announcements"]["accepted"] >= 1 and works["selfTest"]["ran"] is True and works["selfTest"]["ms"] is not None)
 
+        check("flight recorder saw the engine start: foreground, permission token and negotiated format",
+              stage(works, "C1") == "PASS" and stage(works, "C2") == "PASS" and stage(works, "C4") == "PASS"
+              and "milestone RATE_NEGOTIATED" in timeline(works) and works["format"] == 2)
+
         # 2. The disruptive tests must hear the player and must always restore system effects.
         disruptive = diagnostic("disruptive", "--ez", "disruptive", "true", limit=200)
         restored = wait("restored", idle_on_system_effects)
@@ -185,7 +195,15 @@ def main():
         check("diagnostic stands down while the engine carries the player and leaves it carried",
               "LAB_NOT_RUN" in codes(busy) and busy["lab"]["ran"] is False and "already capturing" in (busy["lab"]["skipReason"] or "")
               and full(after) and route(after).get("sid") == route(carried).get("sid"))
+        live = [stage(busy, s) for s in ("C1", "C2", "C3", "C4", "C5", "C7", "C8", "C9")]
+        check("pipeline follows the live engine: recorder, frames and sound observed with no enhanced-report evidence needed",
+              all(v == "PASS" for v in live) and stage(busy, "C11") != "FAIL" and len(busy["engineWindows"]) >= 2
+              and busy["firstBrokenStage"] is None and any(w["captured"] > 0 and w["inDb"] > -60 for w in busy["engineWindows"]))
         stop()
+        idle = diagnostic("stopped", "--ez", "lab", "false")
+        check("pipeline reports a stopped engine as waiting, keeps the flight recorder and raises no engine finding",
+              stage(idle, "C1") == "WAITING" and "milestone STOPPED" in timeline(idle)
+              and not any(c in codes(idle) for c in ("ENGINE_B_START_FAILED", "NO_FRAMES_DELIVERED", "CAPTURE_DELIVERS_SILENCE")))
     except Exception as error:
         with results.open("a") as file:
             file.write(f"FAIL diagnostic lab suite: {error}\n")

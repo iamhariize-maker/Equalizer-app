@@ -17,6 +17,7 @@ object EqController {
 
     fun log(line: String) {
         android.util.Log.i("EqSpike", line) // automated tests read logcat
+        app.svan.diag.EngineTrace.fromLog(line) // the diagnostic's flight recorder keeps a classified, timestamped copy
         synchronized(log) {
             log.appendLine(line)
             // Diagnostics must not grow for the entire lifetime of the audio service.
