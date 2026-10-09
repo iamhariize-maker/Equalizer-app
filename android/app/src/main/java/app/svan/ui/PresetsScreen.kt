@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -109,13 +111,18 @@ fun PresetsScreen() {
                 message = "All sound layers reset: EQ, headphone correction, bass, vocals and stereo."
             }, modifier = Modifier.fillMaxWidth()) { Text("Reset all sound to Flat") }
             Spacer(Modifier.height(16.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
-                maxItemsInEachRow = if (LocalDensity.current.fontScale > 1.3f) 1 else 3) {
-                ActionTile("Import AutoEq", "ParametricEQ.txt", Icons.Outlined.FileOpen, Modifier.weight(1f)) {
+            if (LocalDensity.current.fontScale > 1.3f) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionTile("Import AutoEq", "Text file", Icons.Outlined.FileOpen, Modifier.fillMaxWidth()) {
                     picker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
                 }
-                ActionTile("Paste", "APO / AutoEq text", Icons.Outlined.ContentPaste, Modifier.weight(1f)) { pasteOpen = true }
-                ActionTile("Save", "current curve", Icons.Outlined.Save, Modifier.weight(1f)) { saveOpen = true }
+                ActionTile("Paste", "APO / AutoEq text", Icons.Outlined.ContentPaste, Modifier.fillMaxWidth()) { pasteOpen = true }
+                ActionTile("Save", "current curve", Icons.Outlined.Save, Modifier.fillMaxWidth()) { saveOpen = true }
+            } else Row(Modifier.height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionTile("Import AutoEq", "Text file", Icons.Outlined.FileOpen, Modifier.weight(1f).fillMaxHeight()) {
+                    picker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
+                }
+                ActionTile("Paste", "APO / AutoEq text", Icons.Outlined.ContentPaste, Modifier.weight(1f).fillMaxHeight()) { pasteOpen = true }
+                ActionTile("Save", "current curve", Icons.Outlined.Save, Modifier.weight(1f).fillMaxHeight()) { saveOpen = true }
             }
             Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick={exportSettings.launch("Svan-settings.json")},modifier=Modifier.weight(1f)) {Text("Export settings")}

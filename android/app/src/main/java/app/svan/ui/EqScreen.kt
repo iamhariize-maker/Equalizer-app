@@ -157,16 +157,16 @@ fun EqScreen(onOpenDetection: () -> Unit = {}) {
                 },
                 modifier = Modifier.fillMaxSize(),
             )
-            if (!eq.smartEqControl && eq.workspaceMode == EqMode.PARAMETRIC && eq.bands.size <= 5 && eq.bands.all { it.gainDb == 0.0 }) {
-                Text("Drag a node · tap empty space to add · long-press to remove",
-                    style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint,
-                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 10.dp))
-            }
         }
 
         Column(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         ) {
+            if (!eq.smartEqControl && eq.workspaceMode == EqMode.PARAMETRIC && eq.bands.size <= 5 && eq.bands.all { it.gainDb == 0.0 }) {
+                Text("Drag a band · tap empty space to add · hold to remove",
+                    style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
+                    modifier = Modifier.padding(top = 8.dp))
+            }
             ThemePrint(Modifier.padding(top = 12.dp, bottom = 4.dp))
             Spacer(Modifier.height(12.dp))
             Text("Graph: combined EQ response · includes headphone and bass layers · excludes preamp",style=MaterialTheme.typography.bodySmall,color=Svan.TextFaint)

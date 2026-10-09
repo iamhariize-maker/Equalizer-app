@@ -155,7 +155,7 @@ try:
     tap("Appearance")
     root = capture("sandstone-restored-appearance")
     selected_rows = [node for node in root.iter("node")
-                     if node.get("class") == "android.widget.RadioButton"
+                     if node.get("checkable") == "true"
                      and (node.get("checked") == "true" or node.get("selected") == "true")]
     check(any(nodes(row, "Sandstone Atelier") for row in selected_rows),
           "Selected appearance survives a cold launch")

@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+# Reproducible emulator package; a moving SDK archive failed before API 36 boot.
+env:
+  SVAN_EMULATOR_BUILD: '16428233' # Android Emulator 37.2.12
+
 # A newer push to the same branch supersedes an older run instead of queueing behind it.
 concurrency:
   group: ci-${{ github.ref }}
@@ -141,6 +145,7 @@ jobs:
           api-level: 34
           target: default
           arch: x86_64
+          emulator-build: ${{ env.SVAN_EMULATOR_BUILD }}
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -no-audio -camera-back none
           script: |
@@ -215,6 +220,7 @@ jobs:
           api-level: ${{ matrix.api }}
           target: default
           arch: x86_64
+          emulator-build: ${{ env.SVAN_EMULATOR_BUILD }}
           disable-animations: true
           # No -noaudio: the test needs the emulator's audio HAL.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
@@ -317,6 +323,7 @@ jobs:
           api-level: ${{ matrix.api }}
           target: default
           arch: x86_64
+          emulator-build: ${{ env.SVAN_EMULATOR_BUILD }}
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
@@ -368,6 +375,7 @@ jobs:
           api-level: ${{ matrix.api }}
           target: ${{ matrix.target }}
           arch: x86_64
+          emulator-build: ${{ env.SVAN_EMULATOR_BUILD }}
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           working-directory: android

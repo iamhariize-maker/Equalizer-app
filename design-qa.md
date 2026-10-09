@@ -52,3 +52,26 @@ test race: the restored report was captured at 04:27:15.738, three milliseconds
 before the controller logged its resting state. The fixture now gives that
 transition the same two-second settling interval as activation. All original
 protection assertions remain intact, and no controller behavior was changed.
+
+## Full four-theme debug review
+
+The 26 native captures from CI 37893893342 confirm all five tabs and pinned
+Svaresa actions in all four themes, unchanged saved sound, and Sandstone
+restoration on cold launch. The selector incorrectly required a classic
+RadioButton class; Compose exposes a checked, checkable View row. The
+assertion now checks that actual semantic state and its Sandstone child text.
+
+Focused chart review found the instructional text colliding with the upper
+dB label. It now sits below the chart, outside measured data and gestures.
+Preset import tiles now use a short caption, retaining the full filename in
+the full-width instructions; all three actions align to the tallest tile.
+These fixes still require production and large-text recapture.
+
+The API 36 compatibility attempt failed before boot when SDK Manager received
+an invalid emulator ZIP. No APK install or smoke test ran in that attempt.
+It needs a fresh infrastructure attempt rather than an application change.
+
+The next run pins emulator build 16428233 (37.2.12), whose direct Google
+archive returns HTTP 200 with application/zip and the expected package size.
+The local installed binary confirms this build/version. This changes test
+infrastructure only; all test assertions and API matrices remain required.
