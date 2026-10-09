@@ -210,8 +210,11 @@ private fun DrawScope.drawGrid(range: Float, paint: android.graphics.Paint) {
         val x = freqToX(f, w)
         drawLine(Svan.Grid, Offset(x, 0f), Offset(x, h), strokeWidth = 1f)
         val label = if (f >= 1000) "${(f / 1000).toInt()}k" else f.toInt().toString()
-        if (f > F_MIN && f < F_MAX && (paint.textSize <= 18f * density || index % 2 == 0))
-            drawContext.canvas.nativeCanvas.drawText(label, x + 3f * density, h - 5f * density, paint)
+        if (f > F_MIN && f < F_MAX && (paint.textSize <= 18f * density || index % 2 == 0)) {
+            val textX = (x + 3f * density).coerceAtMost(w - paint.measureText(label) - 4f * density)
+                .coerceAtLeast(4f * density)
+            drawContext.canvas.nativeCanvas.drawText(label, textX, h - 5f * density, paint)
+        }
     }
 }
 

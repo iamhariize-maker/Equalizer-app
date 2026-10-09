@@ -71,6 +71,7 @@ private fun SvaramanasDock(modifier: Modifier = Modifier) {
     val request by app.svan.svaramanas.Svaramanas.request.collectAsState()
     val listening by app.svan.svaramanas.Svaramanas.listening.collectAsState()
     val eq by app.svan.SvanRepository.eq.collectAsState()
+    val largeText = LocalDensity.current.fontScale > 1.5f && LocalConfiguration.current.screenWidthDp < 420
     Row(
         modifier
             .fillMaxWidth().heightIn(min = 56.dp)
@@ -104,9 +105,13 @@ private fun SvaramanasDock(modifier: Modifier = Modifier) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(request.mode.sanskritName,style=MaterialTheme.typography.labelLarge,color=Svan.Gold)
-            Text("${request.mode.plainName} · Hold to compare",style=MaterialTheme.typography.labelSmall,color=Svan.TextMuted)
+            Text(if (largeText) "Tap to open · hold to compare" else "${request.mode.plainName} · Hold to compare",
+                style=MaterialTheme.typography.labelSmall,color=Svan.TextMuted)
         }
-        Text("Open",style=MaterialTheme.typography.labelMedium,color=Svan.Gold)
+        if (!largeText) {
+            Spacer(Modifier.width(12.dp))
+            Text("Open",style=MaterialTheme.typography.labelMedium,color=Svan.Gold)
+        }
     }
 }
 

@@ -75,3 +75,15 @@ The next run pins emulator build 16428233 (37.2.12), whose direct Google
 archive returns HTTP 200 with application/zip and the expected package size.
 The local installed binary confirms this build/version. This changes test
 infrastructure only; all test assertions and API matrices remain required.
+
+## Production and large-text review
+
+CI 37897366134 captured 68 native debug/production screens and passed all
+74 automated appearance checks. Production confirms the aligned import
+actions and chart instructions outside the plot. All themes, persistence,
+saved sound and 200% navigation/Done/compare checks pass. Manual review
+found two remaining text-scale issues: the 10k label extends outside the
+chart at 200%, and the dock's Open label crowds its wrapping subtitle.
+The label now clamps to the canvas bounds; the large-text dock uses one
+complete tap/hold instruction without a separate trailing Open label.
+Normal text retains Open with an explicit gap. Final recapture is required.
