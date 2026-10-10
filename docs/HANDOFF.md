@@ -28,7 +28,7 @@ the blind protocol: [docs/SOUND_RESEARCH_0.5.13.md](SOUND_RESEARCH_0.5.13.md). N
   the `space` side path has a −6.5 dB hole at 200 Hz, not only the +1.4 dB at 300 Hz. Details and the corrected plan:
   [BUILD_BRIEF_0.5.14.md](BUILD_BRIEF_0.5.14.md).
 - **Next.** Follow `docs/BUILD_BRIEF_0.5.14.md`: the return path for parked players without DUMP first. Then the Hi-Fi
-  diagnostic report while Gaana drops; 10–20 s excerpts for the owner's four reference masters; blind pairs per change.
+  diagnostic report while Gaana drops; 10–20 s excerpts for the owner's four reference masters; blind pairs per change. Vocal reference masters (owner, 10 Oct): Gardot "Morning Sun", Trivedi "Shauq", Rahman "Tere Paas Main" (female), Hale "Blue Sky"; see the brief's §7 and WP8.
 
 ## 0.5.12: efficiency plus native Capture Lab
 

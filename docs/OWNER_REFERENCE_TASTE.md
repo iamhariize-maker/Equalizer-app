@@ -104,3 +104,10 @@ is a **wrong-direction** note: any track where Svaresa made it worse.
    If the image shrinks, that is a bug and should be reported with the track and time.
 3. Analog-era records: the softness shelf should stay shallow where measured sharpness is below target. If they sound
    dull, that is the first thing to switch off.
+
+## Vocal masters (10 Oct 2026, owner)
+Melody Gardot, "Morning Sun"; Amit Trivedi, "Shauq"; A. R. Rahman, "Tere Paas Main" (female version); Hale, "Blue Sky".
+The owner's criterion: the voice feels real and its emotional texture is almost tangible; raising `space` must not make it
+digital, light or too airy. Used as negative controls for the shrill guard, `space` and the harshness policy; see
+`BUILD_BRIEF_0.5.14.md` §7 and WP8. Not yet measured: no excerpts have been analysed.
+

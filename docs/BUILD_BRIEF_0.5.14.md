@@ -89,6 +89,27 @@ DynamicEq ≤ 3 dB, guard 2+2) at about 4.5 dB by scaling the guard's cap with t
 capture drops to empty; gate the output to silence until a muted route returns; fade in. Only valid for single-UID capture
 (a held UID that is not muted would be captured raw and doubled).
 
+**WP8 (P1) Vocal realism: guard the voice, then test additions.** Owner target: the voice feels real, with its emotional
+texture audible, and `space` never makes it digital, light or airy. Nothing below has been heard; the reference set is §7.
+- *Protect first (acceptance tests, no new DSP).* On the vocal excerpts, at default settings with `space` at +1 and
+  Svaresa on: ShrillGuard reduction ≤ 0.3 dB (a close-miked voice has a natural 3–5 kHz presence peak; the guard and the
+  `SM-HARSH-1` policy must not shave it), BassTexture does not change vocal-band level by > 0.2 dB, the centre (mid) channel
+  is unchanged by `space` (WP4 mono-sum identity), and the 150–350 Hz side gain stays ≥ −0.5 dB (a thinned room body reads
+  "light"). Add a vocal-dominance guard: when the mid channel dominates 300 Hz–4 kHz and the analyzer shows no harsh
+  residual beyond the WP3 threshold, scale the guard and the `harshDb` policy down (reuse the stereo tuner's vocal
+  evidence; do not add a new detector unless the tuner has none).
+- *Measure before touching.* Per excerpt, with `tools/mastering/` plus a new vocal-band report (mid/side energy ratio in
+  300 Hz–4 kHz, sibilance 5–9 kHz against 1–3 kHz, 10–16 kHz breath band against the mix, crest factor of the 200 Hz–4 kHz
+  band, side/mid correlation). Put the numbers in `docs/` as the vocal baseline. Run Svan's chain at defaults and report
+  every band that moves more than 0.5 dB or the crest factor by more than 0.3 dB.
+- *Candidate additions, each behind its own default-off control and a blind pair (ranked by risk):* (1) a breath/air
+  keep-out so de-harsh and the guard never act above 9 kHz when the vocal dominates; (2) a vocal-band micro-dynamics
+  check: no limiter or dynamic-EQ action on the 200 Hz–4 kHz band below its own crest-factor floor; (3) low-level
+  even-order warmth on the vocal band (second harmonic of 200–800 Hz at about −45 dBc, parallel, DC-free), the same
+  family as WP5's `evenMix`; (4) a short, level-gated early-reflection tail on the side channel instead of any
+  decorrelator, so widening adds room rather than phase smear. Items 3 and 4 are speculative; ship only if the blind pair
+  prefers them.
+
 ## 4. Rules that still apply
 
 Allocation-free audio thread; a measured test for every DSP change; gold design tokens untouched; no GPL code; keep the ten
@@ -108,5 +129,27 @@ part of the CMake build. Turn the scenarios you rely on into tests in `core/test
 
 1. A Hi-Fi diagnostic report while Gaana drops, taken after WP2 ships.
 2. Does Gaana create a new session for every track? (the WP2 trace answers this).
-3. 10–20 s excerpts: a bass-heavy master, a bright guitar master, a hi-hat-heavy master, a vocal master. Needed for WP3 and WP5.
+3. 10–20 s excerpts: a bass-heavy master, a bright guitar master, a hi-hat-heavy master, and the four vocal masters in §7. Needed for WP3, WP5 and WP8.
 4. Texture strength by route (speaker vs headphones) once WP5 is on the phone.
+
+## 7. Vocal reference set (owner, 10 Oct 2026)
+
+Use these four as the vocal masters, in the owner's words: the voice should feel real, with its emotional textures almost
+tangible.
+1. Melody Gardot, "Morning Sun"
+2. Amit Trivedi, "Shauq"
+3. A. R. Rahman, "Tere Paas Main" (female version)
+4. Hale, "Blue Sky"
+
+I have not heard or analysed any of them; no claim about their spectra or mixes is made here. They are the **negative
+controls** for WP3, WP4 and WP8: the shrill guard, `space`, the harshness policy and BassTexture should leave them
+audibly and measurably alone unless a blind pair says otherwise. They also bound the texture work: a change that helps
+bass or hi-hats but costs these four is rejected.
+
+How to use them with no PC: the owner uploads 15–20 s excerpts of each (one vocal-forward passage; one dense passage
+where the voice sits in the full mix), features only, nothing stored. The implementer runs `analyze_corpus.py` and the
+WP8 vocal-band report, and builds the acceptance numbers in WP3/WP4/WP8 from them. Without uploads, the owner can play
+each in Svaresa with Hi-Fi on and tap **Learn this sound** after 20 s.
+
+Order to build (suggested for the next session): WP2 → WP1 → WP4 → WP8 protect tests → WP3 → WP5 → WP6; WP7 only on
+evidence. WP8's candidate additions come last and only after the vocal baseline exists.
