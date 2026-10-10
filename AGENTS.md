@@ -40,8 +40,7 @@ Owner decision (11 October 2026): remove the audio recording feature entirely (R
 eight-second clip tap, and any saving of captured audio), because the app is published from a website and piracy
 allegations are a risk. The whole-phone output fallback is off by default and has no visible name. Loudness processing
 keeps the listener's level: the trim is rate-limited and never steps, and the output may be up to 0.1 dB louder but never
-quieter. The Lab tab stays and gains working tools, such as Bass detail and Highs experimental; selective dynamic EQ is opt-in. Full work order:
-`docs/CODEX_HANDOFF_2026-10-11.md`.
+quieter. The Lab tab stays and gains working tools, such as Bass detail and Highs experimental; selective dynamic EQ is opt-in. Full work order: `docs/OPUS_BUILD_BRIEF_2026-10-11.md`.
 
 ## Repo map
 | Path | What |

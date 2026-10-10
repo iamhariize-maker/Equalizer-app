@@ -100,3 +100,16 @@ The exception in item 1 is wider than the Kotlin lane. Commit `d454d22` also tou
 - Android CI steps in `.github/workflows/ci.yml`, `capture-verify.yml` and `capture-api33-verify.yml`: the `recording_mode.sh` step and the checks of `e2e-out/recording/results.txt` are removed. The YAML parses; the workflows have not run yet.
 - Privacy and permissions docs (`docs/PRIVACY.md`, `docs/play/DATA_SAFETY.md`, `docs/privacy.html`, `docs/privacy-notes.html`) are changed to match the removal. Those files are owner-decisions-only, so the basis is the 11 October decision recorded in `AGENTS.md`.
 - `AGENTS.md`: the Lab paragraph now says the Lab tab stays, which is the owner's later decision in chat. The owner should confirm that wording.
+
+## 11 October 2026: Lab readouts in the core, and the Opus build brief (Claude)
+
+1. Commit `ec02227` adds read-only readouts so the Lab can show that an experimental processor is acting. The JNI function
+   `nativeProcessorReadouts(handle)` returns six values in a fixed order: `[0]` Analogue top reduction (<= 0 dB), `[1]` Expression
+   gain (signed dB), `[2]` shrill guard 4 kHz presence and `[3]` 8 kHz sizzle (<= 0 dB), `[4]` Bass detail attack lift and `[5]`
+   sustain lift (>= 0 dB). The Kotlin side still needs `@JvmStatic external fun nativeProcessorReadouts(handle: Long): DoubleArray`
+   in `NativeEngine.kt`, a capture-thread snapshot like `unmaskSnapshot`, and the Lab page that shows them.
+2. The core suite is 218 tests, 0 failed. The new tests check zero when off, the documented caps when on (attack 1.99 of 2 dB,
+   sustain 3.00 of 3 dB, Analogue top -2.50 dB), and clearing on reset.
+3. The current work order is `docs/OPUS_BUILD_BRIEF_2026-10-11.md`. It replaces the Codex handoff: the owner has decided the Lab
+   tab stays and gains working tools, and asked for the build to go to Opus. WP-1 to WP-5 are the remaining Kotlin work.
+4. Still open with the owner: the Engine A trim default (Claude recommends off by default, with an opt-in "estimated" switch).

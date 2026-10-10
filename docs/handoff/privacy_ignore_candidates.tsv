@@ -1,0 +1,92 @@
+category	match	package	confidence	note
+# Ignore-list candidates for ticket P-1 (docs/handoff/HANDOFF_BRIEF_2026-10-11.md). Data only, not code.
+# match: exact = whole package name (case-sensitive); prefix = package family, the prefix ends with a dot.
+# confidence: high = widely known package; verify = confirm on the phone (adb shell pm list packages | grep -i <word>) or the Play listing before hard-coding.
+# status: already = listed in MusicSourcePolicy.utilityPackages on fbe0680; protected = must never be ignored.
+messaging	exact	com.whatsapp	high	WhatsApp; status: not listed on fbe0680
+messaging	prefix	com.whatsapp.	high	WhatsApp Business (com.whatsapp.w4b)
+messaging	prefix	org.telegram.	high	Telegram family
+messaging	exact	org.thunderdog.challegram	high	Telegram X
+messaging	exact	org.thoughtcrime.securesms	high	Signal
+messaging	prefix	com.facebook.	high	Facebook, Messenger, Messenger Lite, Pages
+messaging	exact	jp.naver.line.android	high	LINE
+messaging	exact	com.viber.voip	high	Viber
+messaging	exact	com.tencent.mm	high	WeChat
+messaging	exact	com.kakao.talk	high	KakaoTalk
+messaging	exact	com.snapchat.android	high	Snapchat
+messaging	exact	com.discord	high	Discord
+messaging	exact	com.Slack	high	Slack (capital S is part of the name)
+messaging	exact	com.microsoft.teams	high	Microsoft Teams
+messaging	prefix	us.zoom.	high	Zoom
+messaging	prefix	com.skype.	high	Skype
+messaging	exact	com.google.android.apps.messaging	high	Google Messages
+messaging	exact	com.samsung.android.messaging	high	Samsung Messages
+messaging	exact	com.google.android.apps.tachyon	verify	Google calling (Duo lineage)
+messaging	exact	com.google.android.apps.meetings	verify	Google Meet
+messaging	exact	com.google.android.talk	verify	Hangouts (legacy)
+messaging	exact	com.google.android.apps.dynamite	verify	Google Chat
+messaging	exact	com.google.android.apps.googlevoice	verify	Google Voice
+messaging	exact	com.imo.android.imoim	verify	imo
+messaging	prefix	ch.threema.	verify	Threema
+messaging	exact	im.vector.app	verify	Element
+messaging	exact	com.zing.zalo	verify	Zalo
+messaging	exact	com.truecaller	verify	Truecaller
+social	prefix	com.instagram.	high	Instagram, Instagram Lite, Threads (com.instagram.barcelona); status: not listed on fbe0680
+social	prefix	com.zhiliaoapp.	high	TikTok
+social	prefix	com.ss.android.ugc.	high	TikTok and Douyin variants
+social	prefix	com.twitter.	high	X (Twitter)
+social	prefix	com.reddit.	high	Reddit
+social	prefix	com.linkedin.	high	LinkedIn
+social	exact	com.pinterest	verify	Pinterest
+social	prefix	in.mohalla.	verify	ShareChat and Moj family
+ride	prefix	com.rapido.	high	Rapido passenger, rider, captain; status: three names already in utilityPackages (MusicSourcePolicy.kt:5-9); the prefix covers others
+ride	prefix	com.ubercab.	high	Uber and Uber Driver
+ride	exact	com.ubercab	high	Uber
+ride	prefix	com.olacabs.	high	Ola customer and driver
+ride	prefix	in.swiggy.	high	Swiggy customer and partner
+ride	prefix	com.zomato.	verify	Zomato partner variants
+ride	exact	com.application.zomato	verify	Zomato customer
+ride	prefix	com.grofers.	verify	Blinkit (formerly Grofers)
+ride	prefix	com.blinkit.	verify	Blinkit
+ride	exact	com.zeptoconsumerapp	verify	Zepto
+ride	prefix	com.grabtaxi.	verify	Grab
+ride	prefix	com.gojek.	verify	Gojek
+ride	exact	me.lyft.android	verify	Lyft
+ride	prefix	ee.mtakso.	verify	Bolt
+payments	prefix	com.phonepe.	verify	PhonePe
+payments	exact	com.google.android.apps.nbu.paisa.user	verify	Google Pay
+payments	prefix	net.one97.	verify	Paytm
+payments	exact	in.org.npci.upiapp	verify	BHIM
+payments	exact	com.dreamplug.androidapp	verify	CRED
+assistant	exact	com.google.android.googlequicksearchbox	verify	Google app and Assistant voice
+assistant	prefix	com.amazon.dee.	verify	Alexa
+assistant	prefix	com.samsung.android.bixby.	verify	Bixby
+recorder	exact	com.google.android.apps.recorder	verify	Google Recorder
+recorder	exact	com.sec.android.app.voicenote	verify	Samsung Voice Recorder
+recorder	exact	com.android.soundrecorder	verify	AOSP sound recorder
+camera	exact	com.google.android.GoogleCamera	verify	Google Camera (records audio)
+camera	exact	com.sec.android.app.camera	verify	Samsung Camera
+camera	exact	com.android.camera	verify	AOSP camera
+camera	exact	com.android.camera2	verify	AOSP camera 2
+telephony	exact	com.android.phone	verify	status: already in utilityPackages; system uid usually excluded anyway
+telephony	exact	com.android.server.telecom	verify	system telecom
+telephony	exact	com.android.dialer	verify	AOSP dialer
+telephony	exact	com.google.android.dialer	verify	Google dialer
+telephony	exact	com.samsung.android.dialer	verify	Samsung dialer
+telephony	exact	com.android.incallui	verify	in-call UI
+telephony	exact	com.samsung.android.incallui	verify	Samsung in-call UI
+system	exact	com.android.systemui	high	status: already in utilityPackages
+system	exact	com.android.settings	high	status: already in utilityPackages
+system	exact	com.android.facelock	high	status: already in utilityPackages
+system	exact	com.google.android.faceunlock	high	status: already in utilityPackages
+protected	exact	com.google.android.youtube	high	YouTube: stays a platform (musicPackages on fbe0680). A test must pin it.
+protected	exact	com.google.android.apps.youtube.music	high	YouTube Music: stays a platform
+protected	exact	com.apple.android.music	high	Apple Music: stays a platform
+protected	exact	com.spotify.music	high	Spotify: stays a platform
+protected	exact	com.gaana	high	Gaana: stays a platform
+protected	exact	com.amazon.mp3	high	Amazon Music: stays a platform
+protected	exact	com.aspiro.tidal	high	Tidal: stays a platform
+protected	exact	deezer.android.app	high	Deezer: stays a platform
+protected	exact	com.soundcloud.android	high	SoundCloud: stays a platform
+protected	exact	com.neutroncode.mp	high	Neutron: stays a platform
+protected	exact	org.videolan.vlc	high	VLC: stays a platform

@@ -1,3 +1,5 @@
+> **Superseded on 11 October 2026 by `docs/OPUS_BUILD_BRIEF_2026-10-11.md`.** R-1 is done, R-2 is moot, and L-2 and U-1 assumed the Lab tab would be removed; the owner has since decided it stays. Kept as a record.
+
 # Codex handoff: Svan 0.5.13 after the owner's decisions of 11 October 2026
 
 Status: work order, nothing implemented yet. Implement on `ccr-f8964344-8f7mf5`, the owner's branch ("same branch").
