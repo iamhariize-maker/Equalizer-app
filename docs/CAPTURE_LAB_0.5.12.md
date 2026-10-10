@@ -57,6 +57,8 @@ MediaProjection and quality. The output briefly rebuffers. Each epoch builds imm
 before processing; no FFT resize or coefficient allocation occurs in process. Source mutes remain
 under the router's existing ownership/proof checks; a failed reopen exits through normal fail-open
 cleanup. Lab reopen is separate from the existing one-shot safe-rate/underrun recovery allowance.
+Fitting while normal capture is active, or repeating Restore while Lab is already off, does not
+reopen the audio epoch or reset its filters: only an actual Lab selection change needs rebuffering.
 Sound/settings edits, system-engine stop or process restart restore normal Svan. A route-only
 system-only/capture mode switch or mix-fallback preference does not invalidate the frozen curve.
 Plans are not saved

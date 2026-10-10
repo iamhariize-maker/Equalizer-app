@@ -150,7 +150,13 @@ try:
     command('lab_restore')
     normal = wait('capture', lambda v: captured(v) and v.get('labBlock') is None and v['epochId'] != old_epoch,
                   'live-restored-without-consent')
-    check(normal['quality'] == 'AUDIOPHILE', 'live restore keeps capture ownership and quality without new consent')
+    command('lab_restore')
+    time.sleep(1.5)
+    repeated_restore = report('capture')
+    (out / 'repeated-restore.json').write_text(json.dumps(repeated_restore, indent=2))
+    check(normal['quality'] == 'AUDIOPHILE' and captured(repeated_restore) and
+          repeated_restore['epochId'] == normal['epochId'],
+          'live restore keeps capture ownership and quality; repeated restore does not rebuffer')
     ordinary = level('normal-native')
     check(abs(wet - ordinary - (predicted(p, 1000) + 6)) <= .85,
           'downstream host PCM matches Lab prediction with one static EQ and one operating margin')
@@ -166,14 +172,18 @@ try:
           'sound edit restores native EQ and measured expected level')
     command('svaramanas', '--ez', 'on', 'true', '--es', 'mode', 'SVARESA')
     time.sleep(4)
+    before_fit = report('capture')
     command('lab_fit', '--ei', 'rate', '48000', '--ei', 'block', '4096', '--ez', 'hybrid', 'true')
     wait('lab', lambda v: v['ready'] and not v['busy'], 'fit-with-automatic-curve', 180)
+    after_fit = report('capture')
+    (out / 'normal-capture-after-fit.json').write_text(json.dumps(after_fit, indent=2))
     command('lab_apply')
     active = wait('capture', lambda v: captured(v) and v.get('labBlock') == 4096, 'apply-with-automatic-curve')
     time.sleep(7)
     held = report('capture')
-    check(captured(held) and held['epochId'] == active['epochId'] and report('lab')['applied'],
-          'automatic curve is held across periodic updates while native capture continues')
+    check(captured(after_fit) and after_fit['epochId'] == before_fit['epochId'] and
+          captured(held) and held['epochId'] == active['epochId'] and report('lab')['applied'],
+          'fitting normal capture does not rebuffer; selected automatic curve is held across periodic updates')
     command('lab_restore')
     wait('capture', lambda v: captured(v) and v.get('labBlock') is None, 'final-restore')
 finally:

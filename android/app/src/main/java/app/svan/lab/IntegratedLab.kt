@@ -36,7 +36,13 @@ object IntegratedLab {
     private val captureRevision = AtomicLong()
     val captureSelectionId: Long get() = captureRevision.get()
     fun captureControls(rate: Int): CaptureLabControls? = selectedCapture[rate]
-    private fun clearCapture() { selectedCapture = emptyMap(); captureRevision.incrementAndGet() }
+    private fun clearCapture() {
+        // Fitting while normal processing is active, or repeating Restore, changes
+        // no audio controls and must not reset filters or rebuffer the audio epoch.
+        if (selectedCapture.isEmpty()) return
+        selectedCapture = emptyMap()
+        captureRevision.incrementAndGet()
+    }
     // Saved JSON deliberately omits live smart layers; a fit must include them in its identity.
     private fun currentSignature() = SvanRepository.eq.value.toString() + SvanRepository.settings.value.copy(
         // Choosing a route does not change the fitted audio. Keep a preselected experiment when
