@@ -91,3 +91,12 @@ illustrations. Test scripts now send commands to `app.svan/.Command`. Details an
 4. Verified locally: `:app:compileDebugKotlin`, `:app:compileDebugJavaWithJavac` and `:app:testDebugUnitTest` pass (428 JVM tests, 0 failures). Not run here: the emulator checks, which run in CI. The core is unchanged, so `eqcore_tests` was not re-run.
 5. Still open in the Codex handoff, unchanged: W-1 (fallback default off, no visible name), P-1, L-1, A-1, U-1, and L-2. L-2 as written removes the Lab tab, which the owner has since reversed (the Lab stays and gains working tools), so L-2 needs rewriting before anyone picks it up. The owner asked that the handoff wait.
 6. Docs updated: README, `docs/PRIVACY.md`, the data-safety draft, the public site and privacy pages, and AGENTS.md (the Lab decision now says the tab stays). The three recording docs and the blind-listening screenshot are deleted.
+
+### Clarification to the R-1 entry above (11 October 2026, Claude)
+
+The exception in item 1 is wider than the Kotlin lane. Commit `d454d22` also touches files that `COORDINATION.md` gives to Codex, so Codex should review these edits as requests, not as settled:
+
+- `android/scripts/**`: `screens.sh` and `quality_lab.sh` lose the blind-listening steps; `production_release.sh` swaps the blind-dialog check for a no-crash check, so the production PASS count stays at 8; `recording_mode.sh` is deleted.
+- Android CI steps in `.github/workflows/ci.yml`, `capture-verify.yml` and `capture-api33-verify.yml`: the `recording_mode.sh` step and the checks of `e2e-out/recording/results.txt` are removed. The YAML parses; the workflows have not run yet.
+- Privacy and permissions docs (`docs/PRIVACY.md`, `docs/play/DATA_SAFETY.md`, `docs/privacy.html`, `docs/privacy-notes.html`) are changed to match the removal. Those files are owner-decisions-only, so the basis is the 11 October decision recorded in `AGENTS.md`.
+- `AGENTS.md`: the Lab paragraph now says the Lab tab stays, which is the owner's later decision in chat. The owner should confirm that wording.
