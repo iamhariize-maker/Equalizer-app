@@ -36,9 +36,17 @@ class NativeEngine(
         autoHeadroom: Boolean,
         gainProtection: Boolean,
         spatialResidual: Boolean = false,
+        lab: app.svan.lab.CaptureLabControls? = null,
     ) : this(sampleRate, channels, Quality.EFFICIENT) {
         nativeDestroy(handle)
-        handle = nativeCreateDetailed(sampleRate, channels, oversample, stopbandDb, ditherBits, ditherMode, autoHeadroom, gainProtection, spatialResidual && channels == 2)
+        handle = 0
+        handle = if (lab == null) nativeCreateDetailed(sampleRate, channels, oversample, stopbandDb, ditherBits, ditherMode, autoHeadroom, gainProtection, spatialResidual && channels == 2)
+        else {
+            require(lab.rate == sampleRate) { "Capture Lab fit rate does not match the capture client" }
+            nativeCreateLab(sampleRate, channels, oversample, stopbandDb, ditherBits, ditherMode,
+                autoHeadroom, gainProtection, spatialResidual && channels == 2,
+                lab.block, lab.stops, lab.gains, lab.coefficients, lab.inputGainDb)
+        }
     }
 
     val latencyFrames: Int get() = nativeLatency(handle)
@@ -153,6 +161,11 @@ class NativeEngine(
         @JvmStatic external fun nativeCreateDetailed(
             sampleRate: Int, channels: Int, oversample: Int, stopbandDb: Double, ditherBits: Int, ditherMode: Int,
             autoHeadroom: Boolean, gainProtection: Boolean, spatialResidual: Boolean,
+        ): Long
+        @JvmStatic external fun nativeCreateLab(
+            sampleRate: Int, channels: Int, oversample: Int, stopbandDb: Double, ditherBits: Int, ditherMode: Int,
+            autoHeadroom: Boolean, gainProtection: Boolean, spatialResidual: Boolean,
+            block: Int, stops: IntArray, gains: DoubleArray, coefficients: DoubleArray, inputGainDb: Double,
         ): Long
         @JvmStatic external fun nativeBassUnmaskDiagnostics(handle: Long): DoubleArray
         @JvmStatic external fun nativePolicyRulesJson(): String

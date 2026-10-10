@@ -44,7 +44,7 @@ object RateNegotiation {
 }
 
 data class CaptureEpoch(val id: Long, val sampleRate: Int, val latencyFrames: Int, val detailed: Boolean,
-    val appliedSettings: app.svan.model.AudioSettings)
+    val appliedSettings: app.svan.model.AudioSettings, val labBlock: Int? = null, val labHybrid: Boolean = false)
 
 /**
  * Order in which to try capture/DSP rates. This only proposes candidates: the caller opens them serially

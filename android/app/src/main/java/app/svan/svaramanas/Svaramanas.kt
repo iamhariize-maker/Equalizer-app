@@ -184,6 +184,14 @@ object Svaramanas {
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
     private val plannerGate = app.svan.PlannerRequestGate()
     private fun requestRecompute(immediate: Boolean) {
+        if (app.svan.lab.IntegratedLab.holdsAutomaticCurve) {
+            if (!immediate) {
+                _listening.value = CaptureService.isRunning
+                _heard.value = if (CaptureService.isRunning) CaptureService.analysis()?.let(Heard::from) else null
+                return // keep the fitted curve frozen while source meters continue
+            }
+            app.svan.lab.IntegratedLab.restore() // explicit sound edits resume normal adaptation
+        }
         app.svan.EfficiencyMetrics.plannerRequest()
         if (!plannerGate.request(immediate)) return
         planner.execute {
@@ -375,12 +383,14 @@ object Svaramanas {
 
     /** Planner thread only (see [requestRecompute]). */
     private fun recompute(immediate: Boolean) {
+        if (app.svan.lab.IntegratedLab.holdsAutomaticCurve) return
         val r = _request.value
         if (!r.enabled) {
             _plan.value = null
             _context.value = null
             _listening.value = CaptureService.isRunning
             main.post {
+                if (app.svan.lab.IntegratedLab.holdsAutomaticCurve) return@post
                 if (SvanRepository.eq.value.smart != null || SvanRepository.eq.value.smartEqControl) SvanRepository.update { it.copy(smart = null, smartBypass = false, smartEqControl=false) }
                 if (immediate) EqController.curveEngine.responseDb(doubleArrayOf(63.0, 1000.0)).let { c ->
                     EqController.log("svaramanas: resting response@63Hz=%.2f dB response@1kHz=%.2f dB".format(c[0], c[1]))
@@ -444,6 +454,7 @@ object Svaramanas {
         _plan.value = applied
         // Apply and log on Main: SvanRepository.update and the curve engine belong to the UI thread.
         main.post {
+            if (app.svan.lab.IntegratedLab.holdsAutomaticCurve) return@post
             if (next != prev) SvanRepository.update { it.copy(smart = next) }
             if (immediate) logPlan(applied, heard)
         }

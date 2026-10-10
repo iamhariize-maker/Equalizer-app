@@ -1,5 +1,21 @@
 ## Capture recovery — 2026-10-09, 0.5.10/code 17
 
+## 0.5.12: efficiency plus native Capture Lab
+
+The combined preview adds lifecycle-bound UI work, coalesced detection/planning and saved-state
+writes, alongside an opt-in original native WOLA realization of Lab for 44.1/48 kHz capture.
+Lab replaces the native static EQ, keeps downstream processors/final peak protection, and can be
+selected before/during capture without a fresh projection grant. Live selection rebuffers audio.
+Frozen Lab holds periodic automatic curve planning until Restore/sound edit. Its block adds actual
+DSP delay; vendor system DP remains assumed. No device battery or sound-preference claim is made.
+
+Details: [efficiency](EFFICIENCY_0.5.12.md), [capture Lab](CAPTURE_LAB_0.5.12.md).
+Local validation: 444 Android JVM tests, 185 native tests, 17 Python tests; debug/release/lint pass.
+Normal native output is byte-identical to 0.5.11 across the documented 24 host fixtures.
+API 33/34 runtime CI, phone listening and phone battery qualification are recorded separately in
+the delivered validation archive. No GPL code was copied. Branch remains `ccr-48b03ead-4py4vd`.
+
+
 The owner reports Spotify already detected/verified on system effects but locked out of native
 capture after two silent checks. See [CAPTURE_RECOVERY_0.5.10.md](CAPTURE_RECOVERY_0.5.10.md):
 legacy negative migration, one playback-recorder lease, bounded reads/no-data fail-open,

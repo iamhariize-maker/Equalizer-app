@@ -47,7 +47,7 @@ version_name=$(sed -n "s/^package: .*versionName='\([^']*\)'.*/\1/p" "$tmp/badgi
 version_code=$(sed -n "s/^package: .*versionCode='\([^']*\)'.*/\1/p" "$tmp/badging.txt")
 [[ "$package" == app.svan ]] || fail 'package must be app.svan'
 case "$version_name:$version_code" in
-  0.5.5:12|0.5.6:13|0.5.7:14|0.5.8:15|0.5.9:16|0.5.10:17|0.5.11:18) ;;
+  0.5.5:12|0.5.6:13|0.5.7:14|0.5.8:15|0.5.9:16|0.5.10:17|0.5.11:18|0.5.12:19) ;;
   *) fail 'unsupported release versionName/versionCode pair' ;;
 esac
 if grep -Eq 'application-debuggable|testOnly' "$tmp/badging.txt"; then

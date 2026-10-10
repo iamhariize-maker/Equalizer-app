@@ -456,3 +456,63 @@ jobs:
         with:
           name: compat-api${{ matrix.api }}
           path: e2e-out/
+
+  capture-lab:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [33, 34]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build test players
+        working-directory: android
+        run: ./gradlew --no-daemon :testsource:assembleCapturableDebug :testsource:assembleBlockedDebug
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-debug
+          path: tested-debug
+      - name: Verify emulator host audio measurement
+        run: |
+          python3 -m unittest discover -s android/scripts -p test_host_audio_level.py
+          mkdir -p capture-lab-out
+      - name: Exercise native Capture Lab and measure processed host output
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          QEMU_AUDIO_DRV: wav
+          QEMU_WAV_PATH: /tmp/svan-emulator-output.wav
+          QEMU_WAV_FREQUENCY: '48000'
+          QEMU_WAV_DAC_FIXED_CHANNELS: '2'
+          QEMU_WAV_FORMAT: s16
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          emulator-build: ${{ env.SVAN_EMULATOR_BUILD }}
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader -feature -Vulkan -memory 3072 -cores 2 -no-snapshot -no-boot-anim -camera-back none
+          working-directory: android
+          script: export PATH="$GITHUB_WORKSPACE/tools/ci:$PATH" ; adb -s emulator-5554 install -r "$GITHUB_WORKSPACE/tested-debug/app-debug.apk" ; adb -s emulator-5554 install -r testsource/build/outputs/apk/capturable/debug/testsource-capturable-debug.apk ; adb -s emulator-5554 install -r testsource/build/outputs/apk/blocked/debug/testsource-blocked-debug.apk ; adb -s emulator-5554 shell wm size 320x640 ; adb -s emulator-5554 shell wm density 160 ; python3 scripts/capture_lab.py emulator-5554 "$GITHUB_WORKSPACE/capture-lab-out"
+      - name: Results
+        if: always()
+        run: |
+          cat capture-lab-out/results.txt
+          test "$(grep -c '^PASS' capture-lab-out/results.txt)" -eq 7
+          ! grep -q '^FAIL' capture-lab-out/results.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: capture-lab-api${{ matrix.api }}
+          path: capture-lab-out/
+

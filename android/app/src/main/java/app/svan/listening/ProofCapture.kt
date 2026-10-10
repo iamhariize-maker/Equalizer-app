@@ -35,14 +35,22 @@ object ProofCapture {
         val s = CaptureService.epoch?.appliedSettings ?: SvanRepository.settings.value
         val eq = SvanRepository.eq.value
         val guarded = s.effectiveFor(eq)
+        val capture = CaptureService.epoch
+        val lab = capture?.takeIf { it.labBlock != null }?.let { app.svan.lab.IntegratedLab.captureControls(it.sampleRate) }
         return linkedMapOf(
             "spatialMode" to s.spatialMode.title, "captureRateHz" to CaptureService.epoch?.sampleRate,
             "experimentalBassUnmask" to s.experimentalBassUnmask,
             "qualityMode" to s.quality.title, "oversampling" to s.quality.oversample,
             "dither" to s.dither.title, "outputBitsIfDithered" to s.outputBits,
             "autoHeadroom" to guarded.autoHeadroom, "gainProtection" to guarded.gainProtection,
-            "eqEnabled" to eq.enabled, "eqBandsApplied" to eq.effectiveBands().size,
-            "eqCurve" to eq.effectiveBands().map { it.toJson().toString() },
+            "eqEnabled" to eq.enabled, "eqBandsApplied" to (lab?.gains?.size ?: eq.effectiveBands().size),
+            "eqCurve" to (lab?.gains?.indices?.map { i -> org.json.JSONObject().put("stopBin", lab.stops[i]).put("gainDb", lab.gains[i]).toString() }
+                ?: eq.effectiveBands().map { it.toJson().toString() }),
+            "staticEqMode" to if (capture?.labBlock != null) "capture-lab" else "native-parametric",
+            "captureLabBlock" to capture?.labBlock, "captureLabHybrid" to capture?.labHybrid,
+            "captureLabInputGainDb" to lab?.inputGainDb,
+            "captureLabBassCoefficients" to lab?.coefficients?.toList(),
+            "nativeLatencyFrames" to capture?.latencyFrames,
             "vocalTuner" to eq.activeVocal.toJson().toString(),
             "instrumentTuner" to eq.activeInstrument.toJson().toString(),
             "dynamicEq" to eq.dynamicEq,

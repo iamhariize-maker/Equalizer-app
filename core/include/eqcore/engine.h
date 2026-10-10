@@ -21,6 +21,7 @@
 #include "eqcore/true_peak.h"
 #include "eqcore/dynamic_eq.h"
 #include "eqcore/grounding.h"
+#include "eqcore/lab_eq.h"
 #include "eqcore/bass.h"
 #include "eqcore/bass_unmask.h"
 #include "eqcore/dither.h"
@@ -50,6 +51,7 @@ struct EngineConfig {
   bool truePeak = false;     // enabled by quality presets and Android capture
   int maxBlock = 1024;       // frames per internal chunk
   bool spatialResidual = false; // "Detailed" Backing vocals/Binaural (streaming WOLA, adds latency; stereo only)
+  LabEqConfig lab; // opt-in static EQ replacement; immutable for this capture epoch
 
   static EngineConfig forQuality(QualityMode mode, double sampleRate, int channels, int outputBits);
 };
@@ -93,7 +95,7 @@ class Engine {
   double responseDb(int channel, double freqHz) const;
   // Response of the bands alone (no preamp/headroom): what a UI draws.
   double eqResponseDb(int channel, double freqHz) const { return eq_.responseDb(channel, freqHz); }
-  double appliedGainDb() const { return gainDb_.load(); }
+  double appliedGainDb() const { return lab_ ? cfg_.lab.inputGainDb : gainDb_.load(); }
   // Current attenuation from Automatic Gain Protection (<= 0 dB).
   double gainProtectionDb() const { return agpDb_.load(); }
   void resetGainProtection() { agpDb_.store(0.0);gainResetPending_.store(true); }
@@ -112,6 +114,7 @@ class Engine {
   std::atomic<bool> autoHeadroom_;
   std::atomic<bool> gainProtection_;
   ParametricEq eq_;  // runs at sampleRate * oversample
+  std::unique_ptr<LabEq> lab_;
   std::vector<std::unique_ptr<Oversampler>> os_;
   std::vector<Dither> dither_;
   std::atomic<double> userPreampDb_{0.0};

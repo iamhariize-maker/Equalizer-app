@@ -136,6 +136,14 @@ public final class Planner {
       return band(f, rate, 60, g0) + band(f, rate, 230, g1);
     }
 
+    /** Normalized TDF2 coefficients for Svan's original native capture realization. */
+    public double[] coefficients(int rate, int fc, int g) {
+      if (g == 0) return new double[] {1, 0, 0, 0, 0};
+      double[] c = data.get(rate + ":" + fc + ":" + g);
+      if (c == null) throw new IllegalArgumentException("No EQ model");
+      return new double[] {1 + c[3] * c[0], -c[1], -c[2] - c[3] * c[0], -c[1], -c[2]};
+    }
+
     private double band(double f, int rate, int fc, int g) {
       // Zero gain is the exact identity; avoid evaluating two identical
       // transfer functions on every FFT bin and fitting sample.

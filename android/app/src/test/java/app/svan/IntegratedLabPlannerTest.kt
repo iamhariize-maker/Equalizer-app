@@ -1,6 +1,7 @@
 package app.svan
 
 import app.svan.lab.IntegratedLab
+import app.svan.lab.CaptureLabControls
 import app.svan.lab.core.Planner
 import org.junit.Assert.*
 import org.junit.Test
@@ -42,5 +43,30 @@ class IntegratedLabPlannerTest {
         assertEquals(6.0, IntegratedLab.interpolate(values, 31.5, 48000), .01)
         assertEquals(0.0, frequencies.first(), 0.0)
         assertEquals(24000.0, frequencies.last(), 1e-8)
+    }
+    @Test fun nativeBassCoefficientsMatchEveryReferenceTableResponse() {
+        val table = Planner.EqTable(File("src/main/assets/lab/eq_coefficients.csv").inputStream())
+        for (rate in listOf(44100,48000)) for (gain in listOf(-6,-3,-2,0,3,6,9)) {
+            val c = table.coefficients(rate,60,gain)
+            for (hz in listOf(20.0,31.5,60.0,100.0,230.0,1000.0,20000.0)) {
+                val w = 2*Math.PI*hz/rate
+                val br=c[0]+c[1]*kotlin.math.cos(w)+c[2]*kotlin.math.cos(2*w)
+                val bi=-c[1]*kotlin.math.sin(w)-c[2]*kotlin.math.sin(2*w)
+                val ar=1+c[3]*kotlin.math.cos(w)+c[4]*kotlin.math.cos(2*w)
+                val ai=-c[3]*kotlin.math.sin(w)-c[4]*kotlin.math.sin(2*w)
+                val db=10*kotlin.math.log10((br*br+bi*bi)/(ar*ar+ai*ai))
+                assertEquals(table.db(hz,rate,gain,0),db,1e-10)
+            }
+        }
+    }
+    @Test fun captureControlsFreezePlanArraysAndUseItsActualRate() {
+        val p = planner().plan(model(),listOf(Planner.Filter(0,60.0,6.0,1.0)),true,6.0)
+        val table=Planner.EqTable(File("src/main/assets/lab/eq_coefficients.csv").inputStream())
+        val c=CaptureLabControls(p,table)
+        assertEquals(48000,c.rate);assertEquals(4096,c.block)
+        assertEquals(10,c.coefficients.size);assertEquals(64,c.stops.toSet().size)
+        assertEquals(p.attenuationDb,c.inputGainDb,0.0)
+        val first=c.gains[0];p.gains[0]=12.0;p.model.stops[0]=999
+        assertEquals(first,c.gains[0],0.0);assertNotEquals(999,c.stops[0])
     }
 }

@@ -152,6 +152,11 @@ class MainActivity : ComponentActivity() {
             }
             "capture_report" -> if (BuildConfig.DEBUG) {
                 val d = org.json.JSONObject().put("capture", CaptureService.isRunning)
+                    .put("epochId", CaptureService.epoch?.id)
+                    .put("labBlock", CaptureService.epoch?.labBlock)
+                    .put("labHybrid", CaptureService.epoch?.labHybrid)
+                    .put("quality", CaptureService.epoch?.appliedSettings?.quality?.name)
+                    .put("latencyFrames", CaptureService.epoch?.latencyFrames)
                     .put("recorder", CaptureCompat.recorders.currentPurpose ?: org.json.JSONObject.NULL)
                     .put("admitted", org.json.JSONArray(SessionRouter.captureUids.toList()))
                     .put("storedBlocks", getSharedPreferences("capture_compat", MODE_PRIVATE).all.values.count { it == "BLOCKED" })
@@ -274,6 +279,11 @@ class MainActivity : ComponentActivity() {
             "refresh_detection" -> SystemEqService.refreshDetection(this)
             "gain_settings" -> SvanRepository.updateSettings {
                 it.copy(autoHeadroom = intent.getBooleanExtra("headroom", true), gainProtection = intent.getBooleanExtra("protection", true))
+            }
+            "audio_settings" -> if (BuildConfig.DEBUG) intent.getStringExtra("quality")?.let { name ->
+                QualityMode.entries.firstOrNull { it.name == name }?.let { q ->
+                    SvanRepository.updateSettings { it.copy(quality = q) }
+                }
             }
             "eq_band" -> SvanRepository.editEq {
                 it.copy(mode = app.svan.model.EqMode.PARAMETRIC, bands = listOf(app.svan.model.Band(freqHz = intent.getFloatExtra("frequency", 1000f).toDouble(), gainDb = intent.getFloatExtra("gain", 0f).toDouble())), preampDb = 0.0, tuning = null, bass = app.svan.model.BassTuner(), vocal = app.svan.model.VocalTuner(), instrument = app.svan.model.InstrumentTuner())

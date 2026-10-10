@@ -24,6 +24,7 @@ import app.svan.model.DitherChoice
 import app.svan.model.EqState
 import app.svan.model.QualityMode
 import app.svan.model.SpatialMode
+import app.svan.lab.IntegratedLab
 
 /**
  * Engine B: capture other apps' playback, run the full native chain (parametric
@@ -123,9 +124,14 @@ class CaptureService : Service() {
             app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.ROUTING_DONE)
             var safeFallback = false
             while (running) {
-                if (!audioEpoch(mp, safeFallback)) break
-                app.svan.diag.EngineTrace.restarted(recoveryMessage.value)
-                safeFallback = true // at most one conservative reopen; source ownership stays muted
+                when (audioEpoch(mp, safeFallback)) {
+                    EpochExit.STOP -> break
+                    EpochExit.SAFE_RETRY -> {
+                        app.svan.diag.EngineTrace.restarted(recoveryMessage.value)
+                        safeFallback = true // at most one conservative recovery reopen
+                    }
+                    EpochExit.LAB_REOPEN -> EqController.log("capture: reopening for Lab selection; quality and projection retained")
+                }
             }
         } catch (e: Exception) {
             EqController.log("capture: startup failed: $e")
@@ -141,7 +147,8 @@ class CaptureService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun audioEpoch(mp: MediaProjection, safeFallback: Boolean): Boolean {
+    private enum class EpochExit { STOP, SAFE_RETRY, LAB_REOPEN }
+    private fun audioEpoch(mp: MediaProjection, safeFallback: Boolean): EpochExit {
         epoch = null
         app.svan.listening.ProofRecorder.stop() // finish the old file before any format renegotiation
         var record: AudioRecord? = null
@@ -154,6 +161,7 @@ class CaptureService : Service() {
             if (safeFallback) it.copy(spatialMode = SpatialMode.FAST, captureRateMode = RatePolicy.Mode.SAFE) else it
         }
         val spatialCapable = settings.spatialMode != SpatialMode.FAST
+        val labSelection = IntegratedLab.captureSelectionId
         val spatialLimited = java.util.concurrent.atomic.AtomicBoolean(false)
         // Set by the audio thread when recovery changes the spatial limit; the watcher records it
         // in the epoch under the lock, so the audio thread never waits for the lock on that path.
@@ -204,10 +212,14 @@ class CaptureService : Service() {
             // Clock identity is not assumed; timestamp/backlog qualification remains separate.
             val cushion = rate * OUTPUT_CUSHION_MS / 1000
             output.setBufferSizeInFrames(minOf(output.bufferCapacityInFrames, maxOf(minOut / 8, cushion + frames * 2)))
-            var dsp = buildEngine(settings, rate)
+            val lab = IntegratedLab.captureControls(rate)
+            var dsp = buildEngine(settings, rate, spatialCapable, lab)
             engine = dsp
             synchronized(engineLock) { current = dsp }
-            epoch = CaptureEpoch(nextEpoch.incrementAndGet(), rate, dsp.latencyFrames, spatialCapable, settings)
+            epoch = CaptureEpoch(nextEpoch.incrementAndGet(), rate, dsp.latencyFrames, spatialCapable, settings,
+                lab?.block, lab?.plan?.hybrid ?: false)
+            if (lab != null) EqController.log("capture Lab: ${lab.block} frames at $rate Hz, hybrid=${lab.plan.hybrid}; static EQ replaced, final native protection retained")
+            else if (IntegratedLab.state.value.applied) EqController.log("capture Lab: no reference fit for $rate Hz; normal native capture active")
             app.svan.listening.ClipRecorder.captureChanged(epoch)
             eqWatcher = Thread({
                 var last: EqState? = null
@@ -310,7 +322,7 @@ class CaptureService : Service() {
                 allowed = next
                 silentRun = 0; watchdogFired = false; noDataWatchdog.reset()
                 // A source boundary resets analysis, even when the old recorder returned no final block.
-                val replacement = buildEngine(epoch?.appliedSettings ?: settings, rate, spatialCapable)
+                val replacement = buildEngine(epoch?.appliedSettings ?: settings, rate, spatialCapable, lab)
                 replacement.setSpatialLoadLimited(spatialLimited.get())
                 synchronized(engineLock) {
                     current = null
@@ -337,7 +349,7 @@ class CaptureService : Service() {
                         } catch (e: Exception) {
                             if (!safeFallback && rate != RatePolicy.SAFE_HZ) {
                                 recoveryMessage.value = "Capture format was rejected for this source; retrying Fast at safe 48 kHz."
-                                return true
+                                return EpochExit.SAFE_RETRY
                             }
                             throw e
                         }
@@ -361,7 +373,7 @@ class CaptureService : Service() {
                     if (running) EqController.log("capture: read failed ($n)")
                     if (running && !safeFallback && (rate != RatePolicy.SAFE_HZ || epoch?.detailed == true)) {
                         recoveryMessage.value = "Capture read failed; retrying Fast at safe 48 kHz."
-                        return true
+                        return EpochExit.SAFE_RETRY
                     }
                     break
                 }
@@ -370,7 +382,7 @@ class CaptureService : Service() {
                     else if (!watchdogFired && noDataWatchdog.observe(n, System.nanoTime()) && otherActivePlayers > 0) {
                         if (!safeFallback && rate != RatePolicy.SAFE_HZ) {
                             recoveryMessage.value = "Capture stopped delivering frames; retrying Fast at safe 48 kHz."
-                            return true
+                            return EpochExit.SAFE_RETRY
                         }
                         watchdogFired = true
                         EqController.log("capture: no frames for 2.5s while a muted source plays → failing open")
@@ -408,7 +420,7 @@ class CaptureService : Service() {
                 if (reading != null && allowed.isNotEmpty() && !watchdogFired && silentRun >= rate * SILENCE_FAILOPEN_S && otherActivePlayers > 0) {
                     if (!safeFallback && rate != RatePolicy.SAFE_HZ) {
                         recoveryMessage.value = "Capture returned silence at this rate; retrying Fast at safe 48 kHz."
-                        return true
+                        return EpochExit.SAFE_RETRY
                     }
                     watchdogFired = true
                     EqController.log("capture: muted source delivers only silence for ${SILENCE_FAILOPEN_S}s while other media plays → failing open")
@@ -427,7 +439,8 @@ class CaptureService : Service() {
                     // tails masquerade as music. Processing resumes with the next non-zero block.
                     java.util.Arrays.fill(buf, 0, n, 0f)
                 }
-                fade.apply(buf, n, fadeOut = sourceChanged)
+                val labChanged = IntegratedLab.captureSelectionId != labSelection
+                fade.apply(buf, n, fadeOut = sourceChanged || labChanged)
                 app.svan.listening.ProofRecorder.commitWet(buf, n) // exactly what the AudioTrack receives
                 var blockOut = 0f
                 for (i in 0 until n) blockOut = maxOf(blockOut, kotlin.math.abs(buf[i]))
@@ -461,10 +474,14 @@ class CaptureService : Service() {
                     EqController.log("capture: output write failed ($writeError)")
                     if (!safeFallback) {
                         recoveryMessage.value = "Playback output was interrupted; restarting capture in Fast at safe 48 kHz."
-                        return true
+                        return EpochExit.SAFE_RETRY
                     }
                     recoveryMessage.value = "Playback output failed again. Svan returned to system effects."
                     break
+                }
+                if (labChanged && running) {
+                    recoveryMessage.value = "Lab selection changed. Rebuffering capture with the same quality and permission."
+                    return EpochExit.LAB_REOPEN
                 }
                 if (sourceChanged && running) {
                     changeSources(next)
@@ -492,7 +509,7 @@ class CaptureService : Service() {
                     if (desired < 0) {
                         if (!safeFallback && rate != RatePolicy.SAFE_HZ) {
                             recoveryMessage.value = "Persistent underruns: restarting in Fast mode at safe 48 kHz. Your saved choices are unchanged."
-                            return true
+                            return EpochExit.SAFE_RETRY
                         }
                         recoveryMessage.value = "Capture could not keep up on this output. Svan returned to system effects. Try Efficient quality before restarting capture."
                         EqController.log("capture: persistent underruns at maximum buffer; returning to system effects")
@@ -543,7 +560,7 @@ class CaptureService : Service() {
             unmaskSnapshot = null
             app.svan.listening.ClipRecorder.captureChanged(null)
         }
-        return false
+        return EpochExit.STOP
     }
 
     private fun openTrack(rate: Int): AudioTrack {
@@ -592,7 +609,8 @@ class CaptureService : Service() {
             }
     }
 
-    private fun buildEngine(s: AudioSettings, rate: Int, spatialCapable: Boolean = s.spatialMode != SpatialMode.FAST): NativeEngine =
+    private fun buildEngine(s: AudioSettings, rate: Int, spatialCapable: Boolean = s.spatialMode != SpatialMode.FAST,
+        lab: app.svan.lab.CaptureLabControls? = null): NativeEngine =
         NativeEngine(
             rate, 2,
             oversample = s.oversampleAt(rate),
@@ -603,6 +621,7 @@ class CaptureService : Service() {
             autoHeadroom = s.effectiveFor(SvanRepository.eq.value).autoHeadroom,
             gainProtection = s.effectiveFor(SvanRepository.eq.value).gainProtection,
             spatialResidual = spatialCapable,
+            lab = lab,
         ).also {
             it.setSpatialMode(s.spatialMode)
             it.setAnalysis(true) // Svaramanas listens to the source (preallocated mid/side analysis every 85 ms)

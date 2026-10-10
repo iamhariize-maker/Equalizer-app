@@ -23,7 +23,7 @@ android {
         minSdk = 29
         targetSdk = 36
         versionCode = 19
-        versionName = if (productionBuild) "0.5.12" else "0.5.12-efficiency-preview"
+        versionName = if (productionBuild) "0.5.12" else "0.5.12-capture-lab-preview"
         buildConfigField("boolean", "PHONE_PREVIEW", (!productionBuild).toString())
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild {

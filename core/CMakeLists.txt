@@ -39,6 +39,7 @@ add_library(eqcore STATIC
   src/dynamic_eq.cpp
   src/grounding.cpp
   src/engine.cpp
+  src/lab_eq.cpp
   src/analyzer.cpp
   src/svaramanas.cpp)
 target_include_directories(eqcore PUBLIC include)

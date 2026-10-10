@@ -59,6 +59,7 @@ Engine::Engine(const EngineConfig& cfg)
   cfg_.channels = std::max(1, cfg_.channels);
   cfg_.oversample = sanitizeFactor(cfg_.oversample);
   cfg_.maxBlock = std::max(16, cfg_.maxBlock);
+  if(cfg_.lab.block)lab_=std::make_unique<LabEq>(cfg_.lab,cfg_.channels);
   for (int ch = 0; ch < cfg_.channels; ++ch) {
     OversamplerSpec spec;
     spec.factor = cfg_.oversample;
@@ -110,11 +111,12 @@ double Engine::responseDb(int channel, double freqHz) const {
   return eq_.responseDb(channel, freqHz) + gainDb_.load();
 }
 
-int Engine::latencyFrames() const { return (os_.empty() ? 0 : os_[0]->latencySamples()) + (cfg_.truePeak?limiter_.latencyFrames():0) + stereo_.latencyFrames(); }
+int Engine::latencyFrames() const { return (os_.empty() ? 0 : os_[0]->latencySamples()) + (cfg_.truePeak?limiter_.latencyFrames():0) + stereo_.latencyFrames() + (lab_?lab_->latencyFrames():0); }
 
 void Engine::reset() {
   gainInitialized_=false;gainRampRemaining_=0;
   eq_.reset();
+  if(lab_)lab_->reset();
   bass_.reset();unmask_.reset();
   limiter_.reset();dynamic_.reset();
   stereo_.reset();grounding_.reset();
@@ -141,7 +143,7 @@ void Engine::process(const float* in, float* out, int frames) {
     const int n = std::min(cfg_.maxBlock, frames - start);
     const float* src = in + static_cast<size_t>(start) * C;
     float* dst = out + static_cast<size_t>(start) * C;
-    const double gain = std::pow(10.0, gainDb_.load(std::memory_order_relaxed) / 20.0);
+    const double gain = std::pow(10.0, appliedGainDb() / 20.0);
     if(!gainInitialized_) { smoothedGain_=gain;gainTarget_=gain;gainInitialized_=true; }
     else if(gain!=gainTarget_) {
       gainTarget_=gain;
@@ -166,12 +168,16 @@ void Engine::process(const float* in, float* out, int frames) {
       for (int i = 0; i < n; ++i) y[i] = std::isfinite(src[i*C+ch]) ? static_cast<double>(src[i*C+ch])*gains_[i] : 0.;
       if (L > 1) {
         os_[ch]->up(y, n, high_.data());
-        eq_.process(ch, high_.data(), n * L);
+        if(!lab_)eq_.process(ch, high_.data(), n * L);
         os_[ch]->down(high_.data(), n, y);
       } else {
-        eq_.process(ch, y, n);
+        if(!lab_)eq_.process(ch, y, n);
       }
-      if (C != 2) bass_.process(ch, y, n);  // bass needs no oversampling; runs at the base rate
+      if (!lab_ && C != 2) bass_.process(ch, y, n);  // bass needs no oversampling; runs at the base rate
+    }
+    if(lab_) {
+      lab_->process(outBuf_.data(),C==2?&outBuf_[cfg_.maxBlock]:nullptr,n);
+      if(C==1)bass_.process(0,outBuf_.data(),n);
     }
     if (C == 2) bass_.processLinked(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);  // one gain for both channels
     if (C == 2) unmask_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);

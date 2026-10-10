@@ -3,6 +3,7 @@
 
 #include <string>
 #include <vector>
+#include <stdexcept>
 
 #include "eqcore/autoeq.h"
 #include "eqcore/calibration.h"
@@ -33,6 +34,30 @@ FilterType typeFromInt(jint t) {
 }  // namespace
 
 extern "C" {
+
+JNIEXPORT jlong JNICALL Java_app_svan_NativeEngine_nativeCreateLab(
+    JNIEnv* env,jclass,jint rate,jint channels,jint oversample,jdouble stopbandDb,jint ditherBits,
+    jint ditherMode,jboolean autoHeadroom,jboolean gainProtection,jboolean spatialResidual,
+    jint block,jintArray stops,jdoubleArray gains,jdoubleArray coefficients,jdouble inputGainDb) {
+  try {
+    const int count=env->GetArrayLength(stops);
+    if(count<1||count>128||env->GetArrayLength(gains)!=count||env->GetArrayLength(coefficients)!=10||
+        (rate!=44100&&rate!=48000))throw std::invalid_argument("Unsupported capture Lab format");
+    EngineConfig c;c.truePeak=true;c.sampleRate=rate;c.channels=channels;c.oversample=oversample;
+    c.stopbandDb=stopbandDb;c.ditherBits=ditherBits;c.ditherMode=static_cast<DitherMode>(ditherMode);
+    c.autoHeadroom=autoHeadroom;c.gainProtection=gainProtection;c.spatialResidual=spatialResidual;
+    c.lab.block=block;c.lab.inputGainDb=inputGainDb;
+    std::vector<jint> bins(count);env->GetIntArrayRegion(stops,0,count,bins.data());
+    c.lab.stops.assign(bins.begin(),bins.end());c.lab.gainsDb.resize(count);
+    env->GetDoubleArrayRegion(gains,0,count,c.lab.gainsDb.data());
+    double biquads[10];env->GetDoubleArrayRegion(coefficients,0,10,biquads);
+    for(int b=0;b<2;++b)c.lab.bass[b]={biquads[b*5],biquads[b*5+1],biquads[b*5+2],biquads[b*5+3],biquads[b*5+4]};
+    if(env->ExceptionCheck())return 0;
+    return reinterpret_cast<jlong>(new Engine(c));
+  } catch(const std::exception& e) {
+    env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),e.what());return 0;
+  }
+}
 
 JNIEXPORT jlong JNICALL Java_app_svan_NativeEngine_nativeCreate(
     JNIEnv*, jclass, jint sampleRate, jint channels, jint quality, jint outputBits) {

@@ -1,4 +1,4 @@
-# Svan 0.5.12 — background efficiency and interaction work
+# Svan 0.5.12 — efficiency and native Capture Lab
 
 This update targets redundant scheduling, file writes and UI work. It does not lower the selected
 audio quality to save power. No battery-life percentage or listener preference is established by
@@ -6,11 +6,19 @@ these changes; the TECNO/HiOS and LG V60 runs below remain necessary.
 
 ## Audio invariants
 
-- `core/`, the JNI bridge, all six Lab response models and the Equalizer coefficient table are
-  unchanged from the delivered 0.5.11 source (`e5b4241`). A SHA-256 manifest checks every tracked
-  file in those directories. No new audio-thread work is introduced.
+- With Lab off, the native processing order and arithmetic remain the same as delivered 0.5.11
+  (`e5b4241`). The supplied deterministic host renderer compares 24 cases (four quality modes,
+  44.1/48/96 kHz, Fast/Detailed) with bass, stereo, dynamic EQ, analysis and protection enabled.
+  Its output is byte-identical between the old and new native cores. This covers those fixtures,
+  not every possible signal or device. All six Lab models and the coefficient table are unchanged.
+- Selecting Capture Lab adds an original double-precision WOLA static-EQ replacement. This is
+  explicit additional FFT work and buffering, not a battery-saving audio mode. Details and numeric
+  validation are in [CAPTURE_LAB_0.5.12.md](CAPTURE_LAB_0.5.12.md).
 - Oversampling, sample-rate negotiation, block/buffer sizes, native analysis, limiter, reconstructed
-  peak protection, smoothing/slew rates, muting, capture admission and fail-open rules are preserved.
+  peak protection, smoothing/slew rates, muting, capture admission and fail-open rules are preserved
+  in normal processing. Lab replaces only the static EQ/preamp response, holds its fitted automatic
+  curve and adds the selected FFT delay; native dynamics and final protection still run. Live Lab
+  apply/restore reopens the audio epoch using the existing projection and a fade, without a new grant.
 - System-effect updates keep the same float conversion, 0.01 dB update threshold and stable
   cuts-before-boosts ordering. The ordering implementation is checked against the old sorted
   implementation over 500 randomized 128-band transitions, including NaNs and threshold boundaries.
@@ -74,7 +82,8 @@ alternating build order; use the same downloaded playlist to avoid network diffe
   smart on and off. Skip tracks and let tracks end; check that EQ remains connected and settings
   are preserved. Do not change oversampling or quality between runs.
 - Capture, where permitted: repeat at the same selected quality. Report any underrun/fail-open;
-  savings here are limited by the unchanged audio processing workload.
+  compare normal capture separately from Capture Lab, which adds FFT work and delay. Compare the
+  same Lab block, fit, margin and quality when measuring either version on equivalent settings.
 - Feel: visit all tabs, drag controls quickly, switch themes, return after five minutes hidden,
   and try large text. Record visible stalls or stale connection status.
 

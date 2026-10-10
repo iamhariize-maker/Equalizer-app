@@ -22,6 +22,7 @@
 #include "eqcore/biquad.h"
 #include "eqcore/dither.h"
 #include "eqcore/engine.h"
+#include "eqcore/lab_eq.h"
 #include "eqcore/calibration.h"
 #include "eqcore/comparison.h"
 #include "eqcore/oversampler.h"
@@ -4134,6 +4135,121 @@ TEST(taste_learning_averages_references_and_drives_the_voicing_targets) {
   CHECK_NEAR(voicingGain(sv::plan(ri, &f0), 65.0, FilterType::LowShelf), sv::kHouseDeepBassDb, 1e-9);
   sv::Request guided; guided.taste = &deep;  // guided mode never uses it
   CHECK(sv::plan(guided, &f0).notes.end() == std::find(sv::plan(guided, &f0).notes.begin(), sv::plan(guided, &f0).notes.end(), sv::kNoteTaste));
+}
+
+TEST(lab_wola_unity_delay_chunking_stereo_and_no_allocations) {
+  for(int block : {2048,4096,8192}) {
+    LabEqConfig c; c.block=block;c.stops={0,block/8,block/2};c.gainsDb={0,0,0};
+    LabEq a(c,2),b(c,2);
+    std::vector<double> x(block*4),y(x.size()),r=x,s=x;
+    for(size_t i=0;i<x.size();++i){x[i]=.1*std::sin(i*.129);y[i]=.07*std::cos(i*.039);}
+    r=x;s=y;
+    g_allocs=0;g_countAllocs=true;
+    a.process(x.data(),y.data(),static_cast<int>(x.size()));
+    for(size_t i=0;i<r.size();i+=137)b.process(r.data()+i,s.data()+i,std::min<size_t>(137,r.size()-i));
+    g_countAllocs=false;CHECK(g_allocs==0);
+    CHECK(a.latencyFrames()==block);
+    for(size_t i=0;i<x.size();++i){
+      CHECK_NEAR(x[i],r[i],1e-13);CHECK_NEAR(y[i],s[i],1e-13);
+      if(i>=static_cast<size_t>(block)) {
+        // Symmetric sqrt-Hann matches the reference model; its small insertion loss is intentional.
+        CHECK_NEAR(x[i],.1*std::sin((i-block)*.129),.00008);
+        CHECK_NEAR(y[i],.07*std::cos((i-block)*.039),.00006);
+      } else { CHECK_NEAR(x[i],0,1e-13);CHECK_NEAR(y[i],0,1e-13); }
+    }
+  }
+}
+
+TEST(lab_wola_constant_gain_nyquist_identity_and_reset) {
+  LabEqConfig c;c.block=2048;c.stops={0,1024};c.gainsDb={6,6};
+  LabEq a(c,1);
+  std::vector<double> x(8192);for(size_t i=0;i<x.size();++i)x[i]=.1*std::sin(i*.17);
+  a.process(x.data(),nullptr,x.size());
+  CHECK_NEAR(sineAmplitude(x,.17*48000/(2*kPi),48000,4096,8192),.1*std::pow(10.,6./20),.0002);
+  a.reset();std::fill(x.begin(),x.end(),0);a.process(x.data(),nullptr,x.size());
+  CHECK(*std::max_element(x.begin(),x.end())==0);
+  // Nyquist itself is fixed at unity in the AOSP model, even if the final band's gain differs.
+  CHECK_NEAR(a.binGain(c.block/2),1,0);
+}
+
+TEST(lab_wola_mono_reuse_preserves_independent_histories_after_stereo_transition) {
+  LabEqConfig c;c.block=8192;c.stops={0,5,30,4096};c.gainsDb={-3,6,-2,3};
+  LabEq stereo(c,2),left(c,1),right(c,1);
+  std::vector<double> l(8192*6),r(l.size());
+  for(size_t i=0;i<l.size();++i){l[i]=.13*std::sin(i*.021);r[i]=i<8192*3?l[i]:.1*std::cos(i*.015);}
+  auto expectedL=l,expectedR=r;
+  left.process(expectedL.data(),nullptr,l.size());right.process(expectedR.data(),nullptr,r.size());
+  g_allocs=0;g_countAllocs=true;stereo.process(l.data(),r.data(),l.size());g_countAllocs=false;
+  CHECK(g_allocs==0);CHECK(l==expectedL);CHECK(r==expectedR);
+}
+
+TEST(lab_wola_invalid_configuration_rejected) {
+  LabEqConfig c;c.block=1000;c.stops={500};c.gainsDb={0};
+  bool rejected=false;try{LabEq a(c,2);}catch(const std::invalid_argument&){rejected=true;}CHECK(rejected);
+  c.block=2048;c.stops={3,3,1024};c.gainsDb={0,0,0};rejected=false;
+  try{LabEq a(c,2);}catch(const std::invalid_argument&){rejected=true;}CHECK(rejected);
+  c.stops={1024};c.gainsDb={std::nan("")};rejected=false;
+  try{LabEq a(c,2);}catch(const std::invalid_argument&){rejected=true;}CHECK(rejected);
+}
+
+TEST(lab_wola_matches_all_six_published_models_and_reference_bass_blend) {
+  auto integer=[](std::ifstream& in) {
+    unsigned char b[4]{};in.read(reinterpret_cast<char*>(b),4);
+    return uint32_t(b[0])<<24|uint32_t(b[1])<<16|uint32_t(b[2])<<8|uint32_t(b[3]);
+  };
+  auto real=[&](std::ifstream& in) {
+    uint32_t bits=integer(in);float f=0;std::memcpy(&f,&bits,4);return double(f);
+  };
+  for(int rate:{44100,48000})for(int block:{2048,4096,8192}) {
+    std::ifstream in(std::string(EQCORE_REPO_DIR)+"/android/app/src/main/assets/lab/models/"+
+        std::to_string(rate)+"_"+std::to_string(block)+".bin",std::ios::binary);
+    CHECK(bool(in));CHECK(integer(in)==0x44504d31);CHECK(integer(in)==uint32_t(rate));CHECK(integer(in)==uint32_t(block));
+    const int bands=integer(in),nf=integer(in);integer(in);
+    LabEqConfig c;c.block=block;c.stops.resize(bands);c.gainsDb.resize(bands);
+    for(int& stop:c.stops)stop=integer(in);
+    for(int i=0;i<bands;++i)c.gainsDb[i]=3*std::sin(i*.53)-2*std::cos(i*.2);
+    std::vector<double> frequencies(nf),matrix(nf*bands),fixed(nf);
+    for(double& f:frequencies)f=real(in);for(double& x:matrix)x=real(in);for(double& x:fixed)x=real(in);
+    // Read only the public coefficient data generated in the earlier research. No vendor/GPL code.
+    std::ifstream table(std::string(EQCORE_REPO_DIR)+"/android/app/src/main/assets/lab/eq_coefficients.csv");
+    std::string line;std::getline(table,line);
+    while(std::getline(table,line)) {
+      std::replace(line.begin(),line.end(),',',' ');std::istringstream row(line);
+      int fs,fc,g;double a,b1,b2,gain;row>>fs>>fc>>g>>a>>b1>>b2>>gain;
+      if(fs==rate&&((fc==60&&g==6)||(fc==230&&g==-2)))
+        c.bass[fc==60?0:1]={1+gain*a,-b1,-b2-gain*a,-b1,-b2};
+    }
+    for(double desired:{20.,31.5,60.,100.,300.,1000.,16000.}) {
+      const int row=std::min_element(frequencies.begin(),frequencies.end(),[&](double a,double b){return std::abs(a-desired)<std::abs(b-desired);})-frequencies.begin();
+      const double hz=frequencies[row];double prediction=fixed[row];
+      for(int b=0;b<bands;++b)prediction+=matrix[row*bands+b]*std::pow(10.,c.gainsDb[b]/20);
+      for(const auto& biquad:c.bass)prediction*=std::abs(responseAt(biquad,hz,rate));
+      LabEq eq(c,2);std::vector<double> l(block*12),r(l.size());
+      for(size_t i=0;i<l.size();++i){l[i]=std::cos(2*kPi*hz*i/rate);r[i]=std::sin(2*kPi*hz*i/rate);}
+      eq.process(l.data(),r.data(),l.size());std::complex<double> mean{};
+      for(size_t i=block*6;i<l.size();++i)mean+=std::complex<double>(l[i],r[i])*std::polar(1.,-2*kPi*hz*(i-block)/rate);
+      mean/=block*6;
+      CHECK_NEAR(toDb(std::abs(mean)),toDb(prediction),.003);
+    }
+  }
+}
+
+TEST(lab_engine_replaces_static_eq_and_preserves_final_peak_protection) {
+  EngineConfig c=EngineConfig::forQuality(QualityMode::Audiophile,48000,2,24);c.ditherBits=0;
+  c.lab.block=2048;c.lab.stops={0,1024};c.lab.gainsDb={6,6};c.lab.inputGainDb=-3;
+  Engine e(c), reference(c);
+  e.setBandsAllChannels({{FilterType::Peak,1000,12,1,true}});e.setPreampDb(9);
+  std::vector<float> a(48000*2),b(a.size());
+  for(size_t i=0;i<a.size()/2;++i)a[2*i]=a[2*i+1]=.95f*std::sin(2*kPi*1000*i/48000);
+  b=a;g_allocs=0;g_countAllocs=true;
+  e.process(a.data(),a.data(),a.size()/2);reference.process(b.data(),b.data(),b.size()/2);
+  g_countAllocs=false;CHECK(g_allocs==0);
+  CHECK(a==b); // manual bands/preamp must not be applied a second time
+  CHECK(e.latencyFrames()==reference.latencyFrames());CHECK(e.latencyFrames()>2048);
+  CHECK_NEAR(e.appliedGainDb(),-3,0);
+  double peak=0;for(float sample:a){CHECK(std::isfinite(sample));peak=std::max(peak,std::abs(double(sample)));}
+  CHECK(peak<1);CHECK(e.gainProtectionDb()<-.1);
+  CHECK(reconstructedPeak(a,2,48000)<1.001);
 }
 
 int main(int argc, char** argv) {

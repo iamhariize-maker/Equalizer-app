@@ -26,6 +26,7 @@ object ClipRecorder {
     suspend fun record(): WavClip {
         check(CaptureService.isRunning) {"Start permitted capture in Hi-Fi, or choose a WAV"}
         val epoch = checkNotNull(CaptureService.epoch) { "Wait for capture to finish starting" }
+        check(epoch.labBlock == null) { "Restore normal Svan before recording a reference clip; offline comparisons do not yet reproduce Capture Lab. Use the recording tab to record the actual processed Lab output." }
         val slot=Slot(epoch, FloatArray(epoch.sampleRate*2*8));check(current.compareAndSet(null,slot)) {"A clip is already being recorded"}
         try {
             repeat(120){

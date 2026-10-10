@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.svan.EqController
 import app.svan.SvanRepository
+import app.svan.CaptureService
 import app.svan.lab.IntegratedLab
 import app.svan.lab.WavWriter
 import kotlinx.coroutines.Dispatchers
@@ -47,6 +48,9 @@ fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
     val scope = rememberCoroutineScope()
     var pendingReport by remember { mutableStateOf<String?>(null) }
     var pendingRate by remember { mutableIntStateOf(48000) }
+    var captureEpoch by remember { mutableStateOf(CaptureService.epoch) }
+    ObserveWhileVisible { captureEpoch = CaptureService.epoch }
+    val displayPlan = captureEpoch?.let { state.capturePlans[it.sampleRate]?.plan } ?: state.plan
     val saveReport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         val report = pendingReport
         pendingReport = null
@@ -76,7 +80,12 @@ fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
                 Text(if (state.applied) "EXPERIMENT SELECTED" else "REFERENCE MODEL", style = MaterialTheme.typography.labelMedium, color = Svan.Gold)
                 Text(state.message, style = MaterialTheme.typography.bodyMedium)
                 if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text("AOSP prediction · output rate and vendor FFT remain assumptions. Input margin reduces level; it does not guarantee sample or true peaks.",
+                Text(captureEpoch?.let { epoch -> if (epoch.labBlock != null)
+                    "CAPTURE LAB · ${epoch.sampleRate} Hz · actual ${epoch.labBlock}-frame WOLA · ${if (epoch.labHybrid) "bass blend" else "WOLA only"} · native DSP latency ${String.format(Locale.ROOT, "%.1f", epoch.latencyFrames * 1000.0 / epoch.sampleRate)} ms"
+                    else "CAPTURE · normal native processing${if (epoch.sampleRate !in listOf(44100,48000)) " · Lab supports 44.1/48 kHz capture" else ""}" }
+                    ?: "SYSTEM EFFECTS · vendor rate and FFT remain assumptions.",
+                    style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
+                Text("Input margin reduces level. Capture retains final native peak protection according to your settings. The model and margin alone do not guarantee peaks or sound quality.",
                     style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             }
         }
@@ -84,13 +93,13 @@ fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
             val curve = remember(revision) { EqController.curveEngine.responseDb(CURVE_FREQS) }
             Text("Your shared Svan curve", style = MaterialTheme.typography.titleMedium)
             LabResponseGraph(CURVE_FREQS, curve, null)
-            Text("The fit uses the combined manual, headphone and automatic curve. Edit it in EQ; the native capture engine retains its existing processors.",
+            Text("Fits the combined manual, headphone and automatic curve. Capture gets a separate static-EQ fit so its native bass and stereo processors remain active without duplicate system approximations.",
                 style = MaterialTheme.typography.bodyMedium, color = Svan.TextMuted)
             Button(onClick = onOpenEq) { Text("Edit shape in EQ") }
-            state.plan?.let { p ->
+            displayPlan?.let { p ->
                 Text("Requested / predicted shape", style = MaterialTheme.typography.titleMedium)
                 LabResponseGraph(p.model.frequencies, p.target, p.curve)
-                Text("Ash: requested · accent: predicted static EQ before input margin. Compression and limiting are not modeled here.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+                Text("${if (captureEpoch != null) "Capture" else "System"} fit · ash: requested · accent: predicted static EQ before input margin. Compression and limiting are not modeled here.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             }
         }
         if (page == 1) {
@@ -102,25 +111,25 @@ fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(2048, 4096, 8192).forEach { value -> Pill("$value", block == value, onClick = { block = value }) }
             }
-            Text("A larger block narrows the frequency bins and adds buffering. Preferred duration: ${String.format(Locale.ROOT, "%.1f", block * 1000.0 / rate)} ms; this is not measured end-to-end latency.",
+            Text("A larger block narrows bins and adds buffering. System effects receive a preferred duration of ${String.format(Locale.ROOT, "%.1f", block * 1000.0 / rate)} ms. Capture uses exactly $block frames at its negotiated 44.1/48 kHz rate; end-to-end latency remains unmeasured.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Experimental Equalizer blend", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                 Switch(blend, { blend = it })
             }
-            Text("Uses the reference 60/230 Hz biquads only when the descriptor and controls match. The numerical guard selects a blend only if predicted bass error improves without worse modeled modulation.",
+            Text("System effects require matching reference controls. Capture implements those 60/230 Hz reference biquads directly. Each fit selects a blend only if predicted bass error improves without worse modeled modulation.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             Text("Operating margin: ${margin.toInt()} dB", style = MaterialTheme.typography.titleMedium)
             Slider(margin, { margin = it }, valueRange = 3f..18f, steps = 14)
             Button(onClick = { IntegratedLab.fit(context, rate, block, blend, margin.toDouble()) }, enabled = !state.busy) { Text("Fit current curve") }
-            state.plan?.let { p ->
+            displayPlan?.let { p ->
                 Text("${p.gains.size} unique-bin controls · ${if (p.hybrid) "hybrid" else "DP only"}", style = MaterialTheme.typography.titleMedium)
                 Text("Predicted bass RMS error: ${String.format(Locale.ROOT, "%.3f", p.rms)} dB\nPredicted modulation: ${String.format(Locale.ROOT, "%.1f", p.modulationDb)} dB\nInput gain: ${String.format(Locale.ROOT, "%.1f", p.attenuationDb)} dB",
                     style = MaterialTheme.typography.bodyMedium, color = Svan.TextMuted)
                 Button(onClick = { IntegratedLab.apply() }, enabled = !state.busy && !state.applied) { Text("Apply fitted controls") }
             }
             OutlinedButton(onClick = { IntegratedLab.restore() }, enabled = !state.busy) { Text("Restore normal Svan") }
-            Text("Fit settings affect Engine A only. A sound/settings edit restores normal Svan. Experiments are not saved as the default across app restarts.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            Text("Apply before or during capture. A live change briefly rebuffers audio with the same quality and permission; the larger block adds delay and FFT work. The automatic curve is held while fitting/selected; native dynamic processors still run. Sound edits or Restore resume adaptation. Experiments are not saved across app restarts.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         }
         if (page == 2) {
             Text("Make the result measurable", style = MaterialTheme.typography.titleMedium)
