@@ -7,21 +7,24 @@ namespace eqcore {
 
 namespace {
 double coeff(double ms, double fs) { return std::exp(-1.0 / (ms * 1e-3 * fs)); }
-// Space widening runs through a high shelf whose cut above kSpaceShelfHz equals the widening, so "more space"
-// adds width through the body and presence and does not lift the air. The shelf is minimum-phase and acts on
-// the high-band delta (hi1) together with the expansion gain, so it adds no extra phase error at 2 kHz (a
-// band-limited delta with a 4 kHz low-pass lost about 2 dB there).
-constexpr double kSpaceShelfHz = 6000.0;
-std::array<BiquadCoeffs, 12> staticFilters(const StereoTunerParams& p, double fs) {
+// Space is a plain EQ on the side signal: a broad bell centred on the voice's body and presence (1.5 kHz, Q 0.45,
+// +-6 dB at +-1) and, when widening, a gentle 6.5 kHz high shelf (-2 dB at +1) so "more space" never lifts the air.
+// The side is filtered as a whole (no crossover against a dry copy), so there is no phase hole: at +1 the side is
+// about +0.5 dB at 200 Hz, +3.8 dB at 700 Hz, +5.6 dB at 2 kHz, +4.0 dB at 3 kHz and -1.0 dB at 9 kHz, and a
+// hard-panned source leaks below -20 dB under 150 Hz and below -9 dB everywhere. The mid (and so the mono sum) is
+// never touched. Narrowing mirrors the bell and has no shelf.
+constexpr double kSpaceBellHz = 1500.0, kSpaceBellQ = 0.45, kSpaceShelfHz = 6500.0;
+std::array<BiquadCoeffs, 13> staticFilters(const StereoTunerParams& p, double fs) {
   auto b = [&](FilterType t, double f, double g, double q) { return designBiquad({t, f, g, q, true}, fs); };
-  // Expansion of +6 dB at space +1 is 20 log10(g); the shelf takes it back above kSpaceShelfHz. Narrowing keeps its full cut.
-  const double shelfDb = p.space > 0 ? -6.0 * std::min(p.space, 1.0) : 0.0;
+  const double space = std::clamp(p.space, -1.0, 1.0);
+  const double shelfDb = space > 0 ? -2.0 * space : 0.0;
   return {b(FilterType::Peak, 220, 3 * p.warmth, .9), b(FilterType::HighShelf, 8000, -2 * p.warmth, .7),
           b(FilterType::Peak, 1200, 2.5 * p.intimacy, .6), b(FilterType::LowPass, 180, 0, .7071067811865476),
           b(FilterType::HighPass, 180, 0, .7071067811865476), b(FilterType::Peak, 500, 1.5 * p.instruments, 1),
           b(FilterType::Peak, 3000, 4 * p.instruments, .7), b(FilterType::HighShelf, 10000, 3 * p.instruments, .7),
           b(FilterType::Peak, 1600, 2 * p.backingVocals, .65), b(FilterType::HighShelf, 4000, 1.5 * p.spatialDetail, .7),
           b(FilterType::Peak, 500, 2.5 * p.spatialDetail, .7),
+          b(FilterType::Peak, kSpaceBellHz, 6.0 * space, kSpaceBellQ),
           b(FilterType::HighShelf, kSpaceShelfHz, shelfDb, .7071067811865476)};
 }
 }  // namespace
@@ -32,11 +35,12 @@ std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double f, 
   auto h = [&](int i) { const auto& b = c[static_cast<size_t>(i)];
     return (b.b0 + b.b1 * z + b.b2 * z * z) / (1.0 + b.a1 * z + b.a2 * z * z); };
   const auto mid = h(0) * h(1) * h(2);
-  const auto side = p.space == 0 && p.instruments == 0 && p.backingVocals == 0 && p.spatialDetail == 0 ? std::complex<double>(1, 0) :
-      // Dry side plus a bounded delta on the LR4 high band: 1 + HP^2 * (gain * shaping - 1).
-      // Equals 1 exactly at zero control, whatever the crossover phase does. The space shelf (index 11) is
-      // part of the gain, so its response is the one the processing applies.
-      1.0 + h(4) * h(4) * (std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0) * h(11) * h(5) * h(6) * h(7) * h(8) * h(9) * h(10) - 1.0);
+  // Instruments (and the automatic layers' static shaping) add a bounded delta on the LR4 high band:
+  // 1 + HP^2 * (shaping - 1), exactly 1 at zero control whatever the crossover phase does. Space (indices 11-12)
+  // then filters the whole side.
+  const auto delta = p.instruments == 0 && p.backingVocals == 0 && p.spatialDetail == 0 ? std::complex<double>(1, 0) :
+      1.0 + h(4) * h(4) * (h(5) * h(6) * h(7) * h(8) * h(9) * h(10) - 1.0);
+  const auto side = delta * (p.space == 0 ? std::complex<double>(1, 0) : h(11) * h(12));
   return {std::norm(mid), std::norm(side)};
 }
 
@@ -71,7 +75,7 @@ void StereoTuner::State::redesign(const StereoTunerParams& p, double fs_) {
   set(harshBand_, FilterType::BandPass, 3800.0, 0.0, 0.9);
   for (auto& hp : sideHp_) hp.c = c[4];
   bodyBell_.c = c[5]; presenceBell_.c = c[6]; airShelf_.c = c[7];
-  backingBell_.c=c[8];detailShelf_.c=c[9];shuffleBell_.c=c[10];spaceShelf_.c=c[11];
+  backingBell_.c=c[8];detailShelf_.c=c[9];shuffleBell_.c=c[10];spaceBell_.c=c[11];spaceShelf_.c=c[12];
   // Vocal layers: 1.2 kHz centre, roughly 450 Hz-3.2 kHz.
   set(vocalSide_, FilterType::BandPass, 1200.0, 0.0, 0.55);
   vocalMid_.c = vocalSide_.c;
@@ -110,7 +114,7 @@ void StereoTuner::State::resetSmoothHistory() {
 }
 
 void StereoTuner::State::resetSideHistory() {
-  for (Bq* b : {&sideHp_[0], &sideHp_[1], &bodyBell_, &presenceBell_, &airShelf_, &spaceShelf_}) b->z1 = b->z2 = 0;
+  for (Bq* b : {&sideHp_[0], &sideHp_[1], &bodyBell_, &presenceBell_, &airShelf_, &spaceBell_, &spaceShelf_}) b->z1 = b->z2 = 0;
 }
 
 void StereoTuner::State::resetFastHistory() {
@@ -175,16 +179,16 @@ double StereoTuner::State::process(double& left, double& right, bool fastSpatial
     }
   }
   if (side) {
-    // Dry side plus a bounded delta. The side signal itself is never filtered through
+    // Instruments: dry side plus a bounded delta. The side signal itself is never filtered through
     // the 180 Hz crossover (its all-pass phase rotated S against M and swapped hard-panned
     // bass between channels); only the *difference* between the shaped and plain high
     // band is added, so zero control is identity despite the crossover phase.
-    // Explicit Space/Instruments still alter width and relative M/S phase.
     const double plain = sideHp_[1].run(sideHp_[0].run(s));
     const double instr = bodyBell_.run(plain);
     const double hi1 = airShelf_.run(presenceBell_.run(instr));
-    // Space: gain with the high shelf that returns the air to unity (see staticFilters). Instruments still shapes the top.
-    s += spaceGain_ * spaceShelf_.run(hi1) - plain;
+    s += hi1 - plain;
+    // Space: a plain EQ on the whole side (see staticFilters); no crossover, so no hole near 200 Hz.
+    if (p_.space != 0) s = spaceShelf_.run(spaceBell_.run(s));
     if (fastSpatial && (p_.backingVocals > 0 || p_.spatialDetail > 0)) {
       double high = detailShelf_.run(backingBell_.run(hi1));
       if (p_.spatialDetail > 0) high = shuffleBell_.run(high);

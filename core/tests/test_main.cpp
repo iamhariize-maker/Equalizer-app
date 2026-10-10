@@ -2366,8 +2366,7 @@ TEST(space_widens_or_narrows_the_sides_but_not_side_bass) {
     const double gHi = toDb(sineAmplitude(sideOf(hi), 2000, fs, 24000, 48000) / 0.2);
     const double gLo = toDb(sineAmplitude(sideOf(lo), 60, fs, 24000, 48000) / 0.2);
     std::printf("    space %+.0f: sides at 2 kHz %+.2f dB, side bass at 60 Hz %+.2f dB\n", space, gHi, gLo);
-    // Dry-plus-delta: the added high band sits ~15 degrees off the dry side at 2 kHz (zero-latency
-    // IIR crossover), so the realised gain is within ~0.6 dB of the nominal +-6 dB and matches the model.
+    // A plain side bell at 1.5 kHz: 2 kHz sits about 0.4 dB under the +-6 dB centre and matches the model.
     CHECK_NEAR(gHi, 6.0 * space, 0.6);
     CHECK_NEAR(gHi, 10 * std::log10(stereoResponsePower(p, 2000, fs)[1]), 0.15);
     CHECK_NEAR(gLo, 0.0, 0.3);
@@ -2445,7 +2444,9 @@ TEST(engine_instrument_amp_keeps_centre_and_widens_sides) {
   auto wideSides = run(wide, 0.1);
   std::vector<double> side(n);
   for (int i = 0; i < n; ++i) side[i] = 0.5 * (wideSides[2 * i] - wideSides[2 * i + 1]);
-  CHECK_NEAR(toDb(sineAmplitude(side, 2000, fs, n / 2, n) / 0.1), 6.0, 0.3);
+  // The space bell (1.5 kHz, +6 dB) gives about +5.6 dB at 2 kHz; the model and the chain agree.
+  CHECK_NEAR(toDb(sineAmplitude(side, 2000, fs, n / 2, n) / 0.1), 10 * std::log10(stereoResponsePower(wide, 2000, fs)[1]), 0.3);
+  CHECK(toDb(sineAmplitude(side, 2000, fs, n / 2, n) / 0.1) > 5.0);
 }
 
 TEST(stereo_tuner_is_stable_on_noise) {
@@ -4343,25 +4344,36 @@ TEST(bass_texture_process_does_not_allocate) {
 }
 
 // ---- Space: band-limited expansion (docs/SOUND_RESEARCH_0.5.13.md) -----------------------------
-TEST(space_expansion_widens_the_body_but_never_lifts_the_air) {
+// Space is a plain side EQ (docs/BUILD_BRIEF_0.5.14.md WP4). The 0.5.13 shelf on the LR4 dry-plus-delta path left
+// a -6.5 dB hole at 200 Hz; filtering the whole side removes it. Targets at +1: body (<= 250 Hz) not below -0.5 dB,
+// 700 Hz-3 kHz widened +3.5..+6 dB, air (>= 9 kHz) not lifted above +0.5 dB; hard-pan leak below -20 dB under 150 Hz.
+TEST(space_is_a_plain_side_eq_with_body_and_no_air) {
   const double fs = 48000;
   StereoTunerParams p;
   p.space = 1.0;
   std::printf("    space +1 side gain:");
-  for (double hz : {300.0, 2000.0, 8000.0, 10000.0}) {
+  for (double hz : {120.0, 200.0, 250.0, 300.0, 700.0, 1000.0, 2000.0, 3000.0, 9000.0, 12000.0}) {
     const auto out = runTuner(p, ms(fs, 2, [](double) { return 0.0; }, [&](double t) { return 0.2 * std::sin(2 * kPi * hz * t); }), fs);
     const double measured = toDb(sineAmplitude(sideOf(out), hz, fs, 48000, 96000) / 0.2);
     const double model = 10 * std::log10(stereoResponsePower(p, hz, fs)[1]);
-    std::printf(" %.0f Hz %+.2f dB (model %+.2f)", hz, measured, model);
+    std::printf(" %.0f %+.2f", hz, measured);
     CHECK_NEAR(measured, model, 0.15);
-    // Presence (2 kHz) widens the full +6 dB. The 300 Hz body widens less (about +1.4 dB) because the existing
-    // dry-plus-delta side path meets the 180 Hz crossover phase there; that is unchanged by this shelf.
-    if (hz == 300.0) CHECK(measured > 0.5 && measured < 6.5);
-    if (hz == 2000.0) CHECK_NEAR(measured, 6.0, 0.4);
-    // The shelf takes the widening back as it rises: about +1.5 dB at 8 kHz, and the air above 10 kHz is not lifted.
-    if (hz >= 10000.0) CHECK(measured < 0.7);
+    if (hz <= 250.0) CHECK(measured >= -0.5);
+    if (hz >= 700.0 && hz <= 3000.0) CHECK(measured >= 3.5 && measured <= 6.0);
+    if (hz >= 9000.0) CHECK(measured <= 0.5);
+  }
+  std::printf("\n    hard-pan leak at +1:");
+  for (double hz : {60.0, 120.0, 150.0, 250.0, 1500.0, 4000.0, 9000.0}) {
+    const double leak = std::max(hardPanLeakDb(p, hz, fs, true), hardPanLeakDb(p, hz, fs, false));
+    std::printf(" %.0f %.1f", hz, leak);
+    CHECK(leak <= (hz <= 150.0 ? -20.0 : -9.0));
   }
   std::printf("\n");
+  // Narrowing mirrors the bell: -6 dB at its centre, the body and air close to unity.
+  p.space = -1.0;
+  CHECK_NEAR(10 * std::log10(stereoResponsePower(p, 1500, fs)[1]), -6.0, 0.05);
+  CHECK(std::fabs(10 * std::log10(stereoResponsePower(p, 100, fs)[1])) < 0.3);
+  CHECK(std::fabs(10 * std::log10(stereoResponsePower(p, 16000, fs)[1])) < 0.6);
 }
 
 // ---- Sustained-shrill guard (docs/SOUND_RESEARCH_0.5.13.md) -----------------------------------
