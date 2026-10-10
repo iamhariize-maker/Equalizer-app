@@ -47,11 +47,16 @@ internal class LateProbeSchedule(
 
     fun started(pkg: String) { state(pkg).also { it.inFlight = true; it.checks++ } }
 
-    /** The check heard only zeros (or nothing it could judge); look again after a pause, up to [maxChecks] times. */
-    fun silent(pkg: String, nowMs: Long) = state(pkg).let {
+    /**
+     * The check heard only zeros (or nothing it could judge); look again after a pause, up to [maxChecks] times.
+     * A package already proven in this capture session ([counts] = false) is re-checked after [retryMs] and never
+     * gives up: its silence is a gap between tracks or a stall, not evidence about its capture policy.
+     */
+    fun silent(pkg: String, nowMs: Long, retryMs: Long = silentRetryMs, counts: Boolean = true) = state(pkg).let {
         it.inFlight = false
-        it.nextAtMs = nowMs + silentRetryMs
-        if (it.checks >= maxChecks) it.gaveUp = true
+        it.nextAtMs = nowMs + retryMs
+        if (!counts) it.checks = (it.checks - 1).coerceAtLeast(0)
+        else if (it.checks >= maxChecks) it.gaveUp = true
     }
 
     /** Android would not open the check recorder: wait 1 minute, then 5, then stop for this capture session. */

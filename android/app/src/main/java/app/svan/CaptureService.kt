@@ -303,6 +303,10 @@ class CaptureService : Service() {
             // Flight recorder: milestones fire once per epoch; windows are taken every 2 s (see EngineTrace).
             var sawFrame = false
             var sawAudio = false
+            // Continuous captured audio since the last long silence; ten seconds tells the router earlier hand-overs were transient.
+            var heardFrames = 0L
+            var healthReported = false
+            var recorderOpenedNs = System.nanoTime()
             var sawOutput = false
             var lastIdleWindowNs = System.nanoTime()
             fun traceWindow(captured: Long, generated: Long, inDb: Double, outDb: Double, queuedMs: Double,
@@ -321,6 +325,7 @@ class CaptureService : Service() {
                 recorderLease?.close(); recorderLease = null
                 allowed = next
                 silentRun = 0; watchdogFired = false; noDataWatchdog.reset()
+                heardFrames = 0; healthReported = false
                 // A source boundary resets analysis, even when the old recorder returned no final block.
                 val replacement = buildEngine(epoch?.appliedSettings ?: settings, rate, spatialCapable, lab)
                 replacement.setSpatialLoadLimited(spatialLimited.get())
@@ -346,6 +351,7 @@ class CaptureService : Service() {
                         try {
                             input = startRecord(mp, allowed, rate, lease)
                             record = input; activeRecord = input; recorderLease = lease
+                            recorderOpenedNs = System.nanoTime()
                         } catch (e: Exception) {
                             if (!safeFallback && rate != RatePolicy.SAFE_HZ) {
                                 recoveryMessage.value = "Capture format was rejected for this source; retrying Fast at safe 48 kHz."
@@ -386,7 +392,9 @@ class CaptureService : Service() {
                         }
                         watchdogFired = true
                         EqController.log("capture: no frames for 2.5s while a muted source plays → failing open")
-                        SessionRouter.onCaptureSilent(noData = true)
+                        SessionRouter.onCaptureSilent(noData = true,
+                            silenced = runCatching { reading?.activeRecordingConfiguration?.isClientSilenced }.getOrNull(),
+                            recorderOpenMs = (System.nanoTime() - recorderOpenedNs) / 1_000_000)
                     }
                     // A recorder that delivers nothing never completes a normal 2 s window: record that fact explicitly.
                     if (reading != null && allowed.isNotEmpty() && System.nanoTime() - lastIdleWindowNs >= 2_000_000_000L) {
@@ -412,6 +420,13 @@ class CaptureService : Service() {
                 levelFrames += n / 2
                 if (app.svan.listening.ClipPlayer.playing) silentRun=0
                 else if (blockPeak == 0f) silentRun += n / 2 else { silentRun = 0; watchdogFired = false }
+                if (reading != null && allowed.isNotEmpty()) {
+                    if (silentRun >= rate) heardFrames = 0 else if (blockPeak > 0f) heardFrames += n / 2
+                    if (!healthReported && heardFrames >= rate * HEALTHY_AUDIO_S) {
+                        healthReported = true
+                        SessionRouter.onCaptureHealthy()
+                    }
+                }
                 // Fail open: a muted source whose capture stays all-zero while other media is
                 // playing means its audio is not reaching us (capture opt-out mid-session, a
                 // DRM stream...). Silence forever is the worst outcome, so hand it back to
@@ -426,8 +441,11 @@ class CaptureService : Service() {
                         return EpochExit.SAFE_RETRY
                     }
                     watchdogFired = true
-                    EqController.log("capture: muted source delivers only silence for ${silenceLimitS}s while other media plays → failing open" + if (sawAudio) " (stall, no strike)" else "")
-                    SessionRouter.onCaptureSilent(stall = sawAudio)
+                    healthReported = false
+                    EqController.log("capture: muted source delivers only silence for ${silenceLimitS}s while other media plays → failing open" + if (sawAudio) " (stall after audio)" else "")
+                    SessionRouter.onCaptureSilent(stall = sawAudio,
+                        silenced = runCatching { reading.activeRecordingConfiguration?.isClientSilenced }.getOrNull(),
+                        recorderOpenMs = (System.nanoTime() - recorderOpenedNs) / 1_000_000)
                 }
                 if (reading != null && allowed.isNotEmpty() && silentRun < rate) {
                     val begin = System.nanoTime()
@@ -707,7 +725,9 @@ class CaptureService : Service() {
         private const val CHANNEL = "capture"
         private const val NOTIF_ID = 1
         private const val SILENCE_FAILOPEN_S = 4
-        private const val STALL_FAILOPEN_S = 12
+        private const val STALL_FAILOPEN_S = 6
+        /** Captured audio for this long tells the router that earlier hand-overs were transient. */
+        private const val HEALTHY_AUDIO_S = 10
         private const val OUTPUT_CUSHION_MS = 80
         private const val OUTPUT_CAPACITY_MS = 240
         private const val CAPTURE_BACKLOG_MS = 250

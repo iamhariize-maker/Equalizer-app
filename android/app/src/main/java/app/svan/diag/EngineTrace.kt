@@ -168,14 +168,16 @@ object EngineTrace {
 internal object LogClassifier {
     data class Classified(val cat: EngineTrace.Cat, val pkg: String?)
 
-    private val pkgToken = Regex("\\b([a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*){2,})\\b")
+    // Two segments are enough: some players use short names (com.gaana). Exception class names start upper-case.
+    private val pkgToken = Regex("\\b([a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+)\\b")
 
     fun classify(line: String): Classified? {
         val l = line.trim()
         val cat = when {
             // Periodic 2-second lines are carried by structured samples instead.
             l.startsWith("capture level:") || l.startsWith("capture timing:") -> return null
-            l.startsWith("fail-open:") || l.contains("failing open") -> EngineTrace.Cat.FAILOPEN
+            l.startsWith("fail-open:") || l.startsWith("park:") || l.contains("failing open") -> EngineTrace.Cat.FAILOPEN
+            l.startsWith("promote:") || l.startsWith("uid-drop:") -> EngineTrace.Cat.ROUTE
             l.startsWith("lost mute") -> EngineTrace.Cat.MUTE
             l.startsWith("capture check") || l.startsWith("DIAG") -> EngineTrace.Cat.PROBE
             l.startsWith("route:") || (l.startsWith("capture:") && l.contains("→ Engine A")) -> EngineTrace.Cat.ROUTE

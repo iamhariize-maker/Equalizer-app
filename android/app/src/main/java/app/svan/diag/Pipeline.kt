@@ -297,7 +297,10 @@ object Pipeline {
             code = "ENGINE_RECORDER_SILENCED",
             advice = listOf("Android itself reports the recorder is being silenced (background capture limits, or the foreground-service/permission state). Keep Svan out of battery restrictions and keep its notification visible."))
 
-        val failOpens = inRun.count { it.cat == Cat.FAILOPEN && it.text.startsWith("fail-open") && (it.pkg == pkg || it.pkg == null) }
+        // Every hand-over writes one `park:` line (older runs wrote only `fail-open:` for strikes).
+        val mineFailOpen = inRun.filter { it.cat == Cat.FAILOPEN && (it.pkg == pkg || it.pkg == null) }
+        val handOvers = mineFailOpen.count { it.text.startsWith("park:") && it.text.contains("→ Engine A") }
+        val failOpens = if (handOvers > 0) handOvers else mineFailOpen.count { it.text.startsWith("fail-open") }
         val lostMute = inRun.any { it.cat == Cat.MUTE }
         out += Stage("C11", "The source stays muted and owned by Svan", when {
             lostMute -> StageStatus.FAIL
@@ -310,7 +313,7 @@ object Pipeline {
             inRun.filter { it.cat == Cat.FAILOPEN || it.cat == Cat.MUTE }.takeLast(3).forEach { add(it.text) }
         }, code = if (lostMute) "MUTE_CONTROL_LOST" else if (failOpens >= 2) "FAIL_OPEN_REPEATED" else "FAIL_OPEN_HAPPENED",
             advice = listOf(if (lostMute) "Another app took over the player's effect, so Svan stopped the audiophile engine to avoid an echo. Turn off other equalizer apps."
-            else "Svan handed the player back to system effects because capture went silent or stopped. Repeats back off for longer each time."))
+            else "Svan handed the player back to system effects because capture went silent or stopped. A player that was captured before returns by itself when its audio reaches capture again; repeats wait longer each time."))
 
         val dspMax = recent.maxOfOrNull { it.dspPercent }
         val over = recent.sumOf { it.overBudgetBlocks }

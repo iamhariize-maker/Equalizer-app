@@ -30,6 +30,18 @@ class EngineTraceTest {
         assertEquals(Cat.DETECT, classify("sync: 2 session(s) in dump: a, b")?.cat)
     }
 
+    @Test fun parkPromoteAndUidDropLinesAreClassifiedWithTheirPackage() {
+        val park = classify("park: com.gaana (session 9) → Engine A (stall after audio); listen-only checks every 3 s after 5 s, or return after 20 s; handOvers=1 strike=false sinceLastMs=first recorderOpenMs=41000 clientSilenced=false playing=null")
+        assertEquals(Cat.FAILOPEN, park?.cat)
+        assertEquals("com.gaana", park?.pkg)
+        val promote = classify("promote: com.gaana (session 9) returned to Engine B; handOvers=1 sinceLastMs=8000")
+        assertEquals(Cat.ROUTE, promote?.cat)
+        assertEquals("com.gaana", promote?.pkg)
+        val drop = classify("uid-drop: com.gaana (uid 10234) left the capture filter (session closed); remaining=0 sinceLastMs=first")
+        assertEquals(Cat.ROUTE, drop?.cat)
+        assertEquals("com.gaana", drop?.pkg)
+    }
+
     @Test fun periodicLevelLinesAndUnrelatedLinesAreNotKept() {
         assertNull(classify("capture level: peak=0.5 over 96000 frames"))
         assertNull(classify("capture timing: readWaitMaxMs=1.0"))

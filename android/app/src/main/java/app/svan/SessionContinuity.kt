@@ -56,15 +56,10 @@ internal object SharedOutputPolicy {
  * routes that player where capture cannot hear it, so wait 15 minutes; after a third, stay on Engine A
  * for the rest of the capture session. These waits are not saved; confirmed repeats are kept as strikes
  * within this capture session; silence does not establish a permanent application policy.
+ * Applies only to players whose capture was never proven in this capture session; proven players follow
+ * [ParkPolicy]'s ladder and are never blocked for the session.
  */
 internal object FailOpenBackoff {
-    /** A stall after capture was proven (buffering, a gap between tracks): a short hand-over, never a strike. */
-    const val STALL_BLOCK_MS = 20_000L
-    /** Stall hand-overs per package per capture session; a further silence is treated as a blocked capture. */
-    const val MAX_STALL_HANDOVERS = 2
-    /** Key prefix for stall counts in the per-session fail-open history, kept apart from strike counts. */
-    const val STALL_KEY = "stall:"
-
     fun blockMs(count: Int): Long = when {
         count <= 1 -> 3 * 60_000L
         count == 2 -> 15 * 60_000L
