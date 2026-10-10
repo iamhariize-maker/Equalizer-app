@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace eqcore {
 
@@ -41,6 +42,7 @@ EngineConfig EngineConfig::forQuality(QualityMode mode, double sampleRate, int c
 namespace {
 // -0.1 dBFS: leaves room for the dither's +-1 LSB without reaching full scale.
 constexpr double kAgpCeiling = 0.98855;
+constexpr double kUnknown = std::numeric_limits<double>::quiet_NaN();
 int sanitizeFactor(int f) { return (f == 2 || f == 4 || f == 8) ? f : 1; }
 }  // namespace
 
@@ -131,7 +133,14 @@ void Engine::reset() {
 void Engine::process(const float* in, float* out, int frames) {
   const int C = cfg_.channels;
   // Before processing: `in` may alias `out`. The analyser reads the first two channels.
-  if (analysisOn_.load(std::memory_order_relaxed) && C <= 2) analyzer_.process(in, frames);
+  if (analysisOn_.load(std::memory_order_relaxed) && C <= 2) {
+    analyzer_.process(in, frames);
+    // The shrill guard judges the track by the analyser's residuals (lock-free read; see ShrillGuard).
+    const auto r = analyzer_.liveResiduals();
+    shrill_.setExcess(r.valid ? r.presenceDb : kUnknown, r.valid ? r.sizzleDb : kUnknown);
+  } else {
+    shrill_.setExcess(kUnknown, kUnknown);
+  }
   const int L = cfg_.oversample;
   bass_.setCharacter(bassCharacter_.load(std::memory_order_relaxed));
   bass_.setResolve(bassResolve_.load(std::memory_order_relaxed));

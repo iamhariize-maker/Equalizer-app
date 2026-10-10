@@ -2,23 +2,23 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace eqcore {
 namespace {
 
 // Presence: fourth-order band-pass at 4 kHz. Sizzle: fourth-order band-pass at 8 kHz. Both have zero phase at
-// their centre, so the parallel band subtraction is an exact gain there.
+// their centre, so the parallel band subtraction is an exact gain there. The presence band is broad (Q 0.6) so a
+// cluster of guitar partials across 3.5-5 kHz is reduced evenly (with Q 1 a 4.8 kHz partial got only 60% of the cut).
 constexpr double kCentreHz[ShrillGuard::kBands] = {4000.0, 8000.0};
-constexpr double kQ[ShrillGuard::kBands] = {1.0, 1.4};
-// Band level relative to the whole mix (amplitude dB) above which a band counts as shrill. Checked on pure tones
-// (filter responses): a 1 kHz tone sits about -24 dB in the presence band and is never reduced; a 4 kHz tone sits
-// about -15 dB in the sizzle band and an 8 kHz tone about -10 dB in the presence band, both under their thresholds,
-// so no band reduces another band's content.
-constexpr double kThresholdDb[ShrillGuard::kBands] = {-9.0, -12.0};
+constexpr double kQ[ShrillGuard::kBands] = {0.6, 1.4};
+// Residual over the mix's tilt (dB) above which a band counts as shrill. The presence value matches the Svaresa
+// harshness rule (SM-HARSH-1 starts smoothing at 1.5 dB); sizzle needs a little more, as cymbals naturally carry it.
+constexpr double kThresholdDb[ShrillGuard::kBands] = {1.5, 2.0};
+constexpr double kSlope = 0.5;           // dB of reduction per dB of excess
 constexpr double kMaxReductionDb = 2.0;  // per band at full depth
-// Power floor, about -100 dBFS. Below it neither the mix nor a band has anything to judge, so no reduction is applied.
-// Without the floor, long digital silence (every envelope decaying to zero) would read as "shrill" and pre-reduce the
-// next sound.
+// Band power floor, about -100 dBFS. Below it a band has nothing to reduce, so nothing is applied: long digital
+// silence never leaves a reduction waiting for the next sound.
 constexpr double kFloorPower = 1e-10;
 constexpr double kEps = 1e-30;
 
@@ -39,6 +39,12 @@ ShrillGuard::ShrillGuard(double sampleRate) {
   aMedium_ = coeff(2, sampleRate);
   aSlow_ = coeff(40, sampleRate);
   aGain_ = coeff(10, sampleRate);
+  for (auto& e : excess_) e.store(std::numeric_limits<double>::quiet_NaN(), std::memory_order_relaxed);
+}
+
+void ShrillGuard::setExcess(double presenceDb, double sizzleDb) {
+  excess_[0].store(presenceDb, std::memory_order_relaxed);
+  excess_[1].store(sizzleDb, std::memory_order_relaxed);
 }
 
 void ShrillGuard::setDepth(double depth) {
@@ -54,7 +60,6 @@ void ShrillGuard::reset() {
     band.medium = band.slow = 0.0;
     band.gain = 1.0;
   }
-  fullSlow_ = 0.0;
   for (auto& r : reductionDb_) r.store(0.0, std::memory_order_relaxed);
 }
 
@@ -66,12 +71,15 @@ std::array<double, ShrillGuard::kBands> ShrillGuard::reductionsDb() const {
 
 void ShrillGuard::process(double* L, double* R, int frames) {
   const double depth = depth_.load(std::memory_order_relaxed);
+  // Per block: how far each band's residual is over its threshold (or unknown).
+  std::array<double, kBands> over{};
+  for (size_t b = 0; b < kBands; ++b) {
+    const double e = excess_[b].load(std::memory_order_relaxed);
+    over[b] = std::isfinite(e) ? e - kThresholdDb[b] : -1.0;
+  }
   for (int i = 0; i < frames; ++i) {
     const double l = L[i];
     const double r = R ? R[i] : l;
-    const double mid = 0.5 * (l + r);
-    // Mix power: the reference that decides whether a band is shrill relative to the whole sound.
-    fullSlow_ = aSlow_ * fullSlow_ + (1.0 - aSlow_) * mid * mid;
     std::array<double, kBands> yl{}, yr{};
     for (size_t b = 0; b < kBands; ++b) {
       Band& band = bands_[b];
@@ -86,13 +94,12 @@ void ShrillGuard::process(double* L, double* R, int frames) {
       const double power = bandMid * bandMid;
       band.medium = aMedium_ * band.medium + (1.0 - aMedium_) * power;
       band.slow = aSlow_ * band.slow + (1.0 - aSlow_) * power;
-      // Excess over the band's threshold (amplitude dB: 10 log10 of a power ratio), and the sustain gate: closed
-      // while the fast (2 ms) envelope runs well above the slow (40 ms) one, i.e. during an attack.
-      const bool judged = fullSlow_ > kFloorPower && band.slow > kFloorPower;
-      const double shrillDb = 10.0 * std::log10((band.slow + kEps) / (fullSlow_ + kEps)) - kThresholdDb[b];
+      // The sustain gate: closed while the fast (2 ms) envelope runs well above the slow (40 ms) one, i.e. during
+      // an attack, so picks and hi-hat clicks pass; open once the energy holds.
+      const bool judged = over[b] > 0.0 && band.slow > kFloorPower;
       const double sustainDb = 10.0 * std::log10((band.slow + kEps) / (band.medium + kEps));
       const double sustain = std::clamp((sustainDb + 12.0) / 12.0, 0.0, 1.0);
-      const double reductionDb = judged ? depth * std::clamp(0.5 * shrillDb, 0.0, kMaxReductionDb) * sustain : 0.0;
+      const double reductionDb = judged ? depth * std::clamp(kSlope * over[b], 0.0, kMaxReductionDb) * sustain : 0.0;
       const double target = std::pow(10.0, -reductionDb / 20.0);
       band.gain += (1.0 - aGain_) * (target - band.gain);
       if (std::fabs(target - band.gain) < 1e-9) band.gain = target;  // settle exactly, so the bypass stays bit-exact

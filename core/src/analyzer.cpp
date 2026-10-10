@@ -148,6 +148,9 @@ void SourceAnalyzer::reset() {
   std::fill(sidePower_.begin(), sidePower_.end(), 0.0);
   activeSeconds_ = 0.0;
   windowsSincePublish_ = 0;
+  liveValid_.store(false, std::memory_order_release);
+  livePresence_.store(0.0, std::memory_order_relaxed);
+  liveSizzle_.store(0.0, std::memory_order_relaxed);
   std::lock_guard<std::mutex> g(lock_);
   published_ = SourceFeatures{};
 }
@@ -352,11 +355,23 @@ void SourceAnalyzer::publish() {
     f.mudDb = residual(200, 500);
     f.harshDb = residual(2500, 5000);
     f.airDb = residual(10000, 16000);
+    f.sizzleDb = residual(6000, 10000);
   }
+  livePresence_.store(f.harshDb, std::memory_order_relaxed);
+  liveSizzle_.store(f.sizzleDb, std::memory_order_relaxed);
+  liveValid_.store(f.valid && n >= 3, std::memory_order_release);
   if (lock_.try_lock()) {
     published_ = f;
     lock_.unlock();
   }
+}
+
+SourceAnalyzer::LiveResiduals SourceAnalyzer::liveResiduals() const {
+  LiveResiduals r;
+  r.valid = liveValid_.load(std::memory_order_acquire);
+  r.presenceDb = livePresence_.load(std::memory_order_relaxed);
+  r.sizzleDb = liveSizzle_.load(std::memory_order_relaxed);
+  return r;
 }
 
 SourceFeatures SourceAnalyzer::snapshot() const {

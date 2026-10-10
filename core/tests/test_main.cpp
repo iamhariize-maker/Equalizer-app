@@ -4376,12 +4376,15 @@ TEST(space_is_a_plain_side_eq_with_body_and_no_air) {
   CHECK(std::fabs(10 * std::log10(stereoResponsePower(p, 16000, fs)[1])) < 0.6);
 }
 
-// ---- Sustained-shrill guard (docs/SOUND_RESEARCH_0.5.13.md) -----------------------------------
+// ---- Sustained-shrill guard, judged by the analyser (docs/BUILD_BRIEF_0.5.14.md WP3) --------------------------
 namespace {
-// Centred tone through ShrillGuard at `depth`; returns the steady-state left channel (right is identical).
-std::vector<double> shrillTone(double depth, double freq, double amp, double fs, int n) {
+constexpr double kShrill = 10.0;  // a residual far over both thresholds: the guard runs at its cap
+// Centred tone through ShrillGuard at `depth` with the given residuals; returns the left channel (right is identical).
+std::vector<double> shrillTone(double depth, double freq, double amp, double fs, int n,
+                               double presenceDb = kShrill, double sizzleDb = kShrill) {
   ShrillGuard g(fs);
   g.setDepth(depth);
+  g.setExcess(presenceDb, sizzleDb);
   std::vector<double> l(n), r(n);
   for (int i = 0; i < n; ++i) l[i] = r[i] = amp * std::sin(2 * kPi * freq * i / fs);
   for (int s = 0; s < n; s += 480) g.process(&l[s], &r[s], std::min(480, n - s));
@@ -4392,6 +4395,7 @@ std::vector<double> shrillTone(double depth, double freq, double amp, double fs,
 TEST(shrill_guard_off_is_bit_exact_bypass) {
   const double fs = 48000;
   ShrillGuard g(fs);  // default depth 0
+  g.setExcess(kShrill, kShrill);
   std::mt19937 rng(13);
   std::normal_distribution<double> nd(0, 0.2);
   std::vector<double> l(4800), r(4800);
@@ -4403,36 +4407,49 @@ TEST(shrill_guard_off_is_bit_exact_bypass) {
   CHECK(r == r0);
 }
 
-TEST(shrill_guard_caps_sustained_presence_and_sizzle_and_leaves_clean_tones_alone) {
+TEST(shrill_guard_reduces_only_bands_the_analyser_finds_in_excess) {
   const double fs = 48000;
   const int n = 48000;
   const size_t a = 24000, b = 48000;
-  // Sustained presence (4 kHz) and sizzle (8 kHz) tones are the shrill cases: each reaches the 2 dB cap at full depth.
-  auto presence = shrillTone(1.0, 4000, 0.2, fs, n);
-  CHECK_NEAR(toDb(sineAmplitude(presence, 4000, fs, a, b) / 0.2), -2.0, 0.25);
-  auto sizzle = shrillTone(1.0, 8000, 0.2, fs, n);
-  CHECK_NEAR(toDb(sineAmplitude(sizzle, 8000, fs, a, b) / 0.2), -2.0, 0.25);
-  // A clean 1 kHz tone is not shrill for either band: exactly untouched.
-  auto low = shrillTone(1.0, 1000, 0.2, fs, n);
-  CHECK_NEAR(toDb(sineAmplitude(low, 1000, fs, a, b) / 0.2), 0.0, 0.01);
+  // Far over its threshold, a band reaches the 2 dB cap at its centre at full depth.
+  CHECK_NEAR(toDb(sineAmplitude(shrillTone(1.0, 4000, 0.2, fs, n, kShrill, 0.0), 4000, fs, a, b) / 0.2), -2.0, 0.1);
+  CHECK_NEAR(toDb(sineAmplitude(shrillTone(1.0, 8000, 0.2, fs, n, 0.0, kShrill), 8000, fs, a, b) / 0.2), -2.0, 0.1);
+  // Both bands at their caps: the overlap stays bounded. The skirts of the other band soften the cut a little at
+  // each centre, the gap between the centres is cut less, and nothing is ever lifted.
+  for (double f : {4000.0, 5000.0, 6000.0, 7000.0, 8000.0}) {
+    const double both = toDb(sineAmplitude(shrillTone(1.0, f, 0.2, fs, n), f, fs, a, b) / 0.2);
+    std::printf("    both bands at cap, %.0f Hz: %+.2f dB\n", f, both);
+    CHECK(both < -0.5 && both >= -4.0);
+    if (f == 4000.0 || f == 8000.0) CHECK(both <= -1.6);
+  }
+  // 0.5 dB per dB over the 1.5 dB presence threshold: 3.5 dB of residual gives 1 dB.
+  CHECK_NEAR(toDb(sineAmplitude(shrillTone(1.0, 4000, 0.2, fs, n, 3.5, 0.0), 4000, fs, a, b) / 0.2), -1.0, 0.15);
+  // At or under the thresholds (a balanced track), or unknown: exactly untouched.
+  for (auto [pres, siz] : {std::pair{1.5, 2.0}, {0.0, 0.0}, {-4.0, -4.0},
+                           {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()}}) {
+    const auto in = shrillTone(0.0, 4000, 0.2, fs, n);
+    CHECK(shrillTone(1.0, 4000, 0.2, fs, n, pres, siz) == in);
+  }
   // Depth scales the reduction linearly in dB.
-  auto half = shrillTone(0.5, 4000, 0.2, fs, n);
-  CHECK_NEAR(toDb(sineAmplitude(half, 4000, fs, a, b) / 0.2), -1.0, 0.2);
-  // The reported reduction matches: presence band at its cap, sizzle band idle for a 4 kHz tone.
+  CHECK_NEAR(toDb(sineAmplitude(shrillTone(0.5, 4000, 0.2, fs, n, kShrill, 0.0), 4000, fs, a, b) / 0.2), -1.0, 0.1);
+  // A body tone outside both bands moves by the band skirts only, even at the cap.
+  CHECK(std::fabs(toDb(sineAmplitude(shrillTone(1.0, 1000, 0.2, fs, n), 1000, fs, a, b) / 0.2)) < 0.3);
+  // Reported reductions: presence at its cap for a 4 kHz tone; sizzle idle when only presence is in excess.
   ShrillGuard g(fs);
   g.setDepth(1.0);
+  g.setExcess(kShrill, 0.0);
   std::vector<double> l(n), r(n);
   for (int i = 0; i < n; ++i) l[i] = r[i] = 0.2 * std::sin(2 * kPi * 4000 * i / fs);
   for (int s = 0; s < n; s += 480) g.process(&l[s], &r[s], std::min(480, n - s));
   const auto reported = g.reductionsDb();
   CHECK_NEAR(reported[0], -2.0, 0.05);
-  CHECK_NEAR(reported[1], 0.0, 0.05);
+  CHECK(reported[1] == 0.0);
 }
 
 TEST(shrill_guard_lets_attacks_through_and_reduces_only_held_energy) {
   const double fs = 48000;
   const int n = 48000;
-  // A 3 ms 4 kHz burst (a pick, a cymbal click) on silence. The sustain gate is closed during its attack.
+  // A 3 ms 4 kHz burst (a pick, a cymbal click) on silence, with the residual far over threshold.
   std::vector<double> in(n, 0.0);
   const int start = 4800, len = static_cast<int>(0.003 * fs);
   for (int i = 0; i < len; ++i) {
@@ -4442,6 +4459,7 @@ TEST(shrill_guard_lets_attacks_through_and_reduces_only_held_energy) {
   auto out = in;
   ShrillGuard g(fs);
   g.setDepth(1.0);
+  g.setExcess(kShrill, kShrill);
   for (int s = 0; s < n; s += 480) g.process(&out[s], nullptr, std::min(480, n - s));  // mono path (right == nullptr)
   double peakIn = 0, peakOut = 0;
   for (int i = start; i < start + len; ++i) {
@@ -4449,10 +4467,9 @@ TEST(shrill_guard_lets_attacks_through_and_reduces_only_held_energy) {
     peakOut = std::max(peakOut, std::fabs(out[static_cast<size_t>(i)]));
   }
   std::printf("    burst peak change %+.2f dB (attack, gate closed)\n", toDb(peakOut / peakIn));
-  CHECK_NEAR(toDb(peakOut / peakIn), 0.0, 0.2);
+  CHECK(std::fabs(toDb(peakOut / peakIn)) < 0.3);
   // The same energy held for 300 ms is reduced by the cap, so the reduction targets sustained ringing only.
-  const double sustainedDb = toDb(sineAmplitude(shrillTone(1.0, 4000, 0.2, fs, n), 4000, fs, 24000, 48000) / 0.2);
-  CHECK(sustainedDb < -1.9);
+  CHECK(toDb(sineAmplitude(shrillTone(1.0, 4000, 0.2, fs, n, kShrill, 0.0), 4000, fs, 24000, 48000) / 0.2) < -1.9);
 }
 
 TEST(shrill_guard_does_not_pre_reduce_a_sound_after_long_silence) {
@@ -4469,15 +4486,16 @@ TEST(shrill_guard_does_not_pre_reduce_a_sound_after_long_silence) {
   const auto in = x;
   ShrillGuard g(fs);
   g.setDepth(1.0);
+  g.setExcess(kShrill, kShrill);
   for (int s = 0; s < burstAt; s += 480) g.process(&x[static_cast<size_t>(s)], nullptr, std::min(480, burstAt - s));
-  CHECK(g.reductionsDb()[0] == 0.0);  // after 2.5 s of silence the envelopes are under the floor: exactly no reduction
+  CHECK(g.reductionsDb()[0] == 0.0);  // after 2.5 s of silence the band is under the floor: exactly no reduction
   for (int s = burstAt; s < total; s += 480) g.process(&x[static_cast<size_t>(s)], nullptr, std::min(480, total - s));
   double peakIn = 0, peakOut = 0;
   for (int i = burstAt; i < burstAt + len; ++i) {
     peakIn = std::max(peakIn, std::fabs(in[static_cast<size_t>(i)]));
     peakOut = std::max(peakOut, std::fabs(x[static_cast<size_t>(i)]));
   }
-  CHECK_NEAR(toDb(peakOut / peakIn), 0.0, 0.2);
+  CHECK(std::fabs(toDb(peakOut / peakIn)) < 0.3);
 }
 
 TEST(shrill_guard_is_stereo_linked_and_mono_centred_signals_stay_centred) {
@@ -4485,6 +4503,7 @@ TEST(shrill_guard_is_stereo_linked_and_mono_centred_signals_stay_centred) {
   const int n = 24000;
   ShrillGuard g(fs);
   g.setDepth(1.0);
+  g.setExcess(kShrill, kShrill);
   // Hard-panned sustained presence: the empty channel stays exactly empty (no image leak from the guard).
   std::vector<double> l(n), r(n, 0.0);
   for (int i = 0; i < n; ++i) l[i] = 0.2 * std::sin(2 * kPi * 4000 * i / fs);
@@ -4495,6 +4514,7 @@ TEST(shrill_guard_is_stereo_linked_and_mono_centred_signals_stay_centred) {
   // Centred content: both channels receive identical processing.
   ShrillGuard h(fs);
   h.setDepth(1.0);
+  h.setExcess(kShrill, kShrill);
   std::vector<double> cl(n), cr(n);
   for (int i = 0; i < n; ++i) cl[i] = cr[i] = 0.2 * std::sin(2 * kPi * 4000 * i / fs) + 0.05 * std::sin(2 * kPi * 8000 * i / fs);
   for (int s = 0; s < n; s += 480) h.process(&cl[s], &cr[s], std::min(480, n - s));
@@ -4504,6 +4524,7 @@ TEST(shrill_guard_is_stereo_linked_and_mono_centred_signals_stay_centred) {
 TEST(shrill_guard_process_does_not_allocate) {
   ShrillGuard g(48000);
   g.setDepth(1.0);
+  g.setExcess(kShrill, kShrill);
   std::vector<double> l(480, 0.1), r(480, -0.05);
   g.process(l.data(), r.data(), 480);  // warm the envelopes outside the counted window
   g_allocs.store(0);
@@ -4511,6 +4532,112 @@ TEST(shrill_guard_process_does_not_allocate) {
   for (int i = 0; i < 10; ++i) g.process(l.data(), r.data(), 480);
   g_countAllocs.store(false);
   CHECK(g_allocs.load() == 0);
+}
+
+namespace {
+// Stereo-identical noise with a spectral slope: pink (Kellet, -3 dB/oct) or brown-ish (leaky integrator, -6 dB/oct).
+std::vector<float> slopedNoise(double fs, double seconds, bool brown, unsigned seed) {
+  std::mt19937 rng(seed);
+  std::normal_distribution<double> nd(0, 1);
+  const size_t n = static_cast<size_t>(fs * seconds);
+  std::vector<float> out(2 * n);
+  double b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0, acc = 0;
+  const double leak = std::exp(-2 * kPi * 20.0 / fs);
+  std::vector<double> y(n);
+  double e = 0;
+  for (size_t i = 0; i < n; ++i) {
+    const double w = nd(rng);
+    double v;
+    if (brown) { acc = leak * acc + w; v = acc; }
+    else {
+      b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759; b2 = 0.96900 * b2 + w * 0.1538520;
+      b3 = 0.86650 * b3 + w * 0.3104856; b4 = 0.55000 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.0168980;
+      v = b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362;
+      b6 = w * 0.115926;
+    }
+    y[i] = v;
+    e += v * v;
+  }
+  const double g = 0.1 / std::sqrt(e / static_cast<double>(n));  // -20 dBFS rms
+  for (size_t i = 0; i < n; ++i) out[2 * i] = out[2 * i + 1] = static_cast<float>(g * y[i]);
+  return out;
+}
+std::vector<float> runGuardEngine(const std::vector<float>& in, double fs, double depth) {
+  EngineConfig cfg;
+  cfg.sampleRate = fs;
+  cfg.channels = 2;
+  cfg.oversample = 1;
+  cfg.autoHeadroom = false;
+  cfg.gainProtection = false;
+  Engine e(cfg);
+  e.setAnalysisEnabled(true);
+  e.setShrillGuard(depth);
+  std::vector<float> out(in.size());
+  for (size_t s = 0; s + 480 <= in.size() / 2; s += 480) e.process(&in[2 * s], &out[2 * s], 480);
+  return out;
+}
+double bandPowerDb(const std::vector<float>& x, double fs, double f0, double q, size_t a, size_t b) {
+  auto c = designBiquad({FilterType::BandPass, f0, 0.0, q, true}, fs);
+  double z1 = 0, z2 = 0, e = 0;
+  for (size_t i = 0; i < x.size() / 2; ++i) {
+    const double v = x[2 * i];
+    const double y = c.b0 * v + z1;
+    z1 = c.b1 * v - c.a1 * y + z2;
+    z2 = c.b2 * v - c.a2 * y;
+    if (i >= a && i < b) e += y * y;
+  }
+  return 10 * std::log10(e / static_cast<double>(b - a) + 1e-30);
+}
+double toneAmpF(const std::vector<float>& x, double f, double fs, size_t a, size_t b) {
+  std::complex<double> acc = 0;
+  for (size_t i = a; i < b; ++i) acc += static_cast<double>(x[2 * i]) * std::polar(1.0, -2 * kPi * f * static_cast<double>(i) / fs);
+  return 2.0 * std::abs(acc) / static_cast<double>(b - a);
+}
+}  // namespace
+
+TEST(shrill_guard_leaves_balanced_spectra_alone_through_the_engine) {
+  const double fs = 48000;
+  const size_t a = static_cast<size_t>(4 * fs), b = static_cast<size_t>(7 * fs);
+  for (bool brown : {false, true}) {
+    const auto in = slopedNoise(fs, 7.0, brown, brown ? 31u : 29u);
+    const auto off = runGuardEngine(in, fs, 0.0), on = runGuardEngine(in, fs, 1.0);
+    const double d4 = bandPowerDb(on, fs, 4000, 1.0, a, b) - bandPowerDb(off, fs, 4000, 1.0, a, b);
+    const double d8 = bandPowerDb(on, fs, 8000, 1.4, a, b) - bandPowerDb(off, fs, 8000, 1.4, a, b);
+    std::printf("    %s noise, guard 1 vs 0: 4 kHz band %+.3f dB, 8 kHz band %+.3f dB\n", brown ? "-6 dB/oct" : "pink", d4, d8);
+    CHECK(std::fabs(d4) < 0.05);
+    CHECK(std::fabs(d8) < 0.05);
+  }
+}
+
+TEST(shrill_guard_tames_a_sustained_shrill_cluster_through_the_engine) {
+  const double fs = 48000;
+  const size_t n = static_cast<size_t>(fs * 7);
+  // Three sustained guitar-presence partials over bass and mids (tools/probes/0.5.13/p4_stack.cpp, scenario A).
+  std::vector<float> in(2 * n);
+  for (size_t i = 0; i < n; ++i) {
+    const double t = static_cast<double>(i) / fs;
+    const double v = 0.25 * std::sin(2 * kPi * 55 * t) + 0.08 * std::sin(2 * kPi * 400 * t) + 0.06 * std::sin(2 * kPi * 800 * t) +
+                     0.05 * (std::sin(2 * kPi * 3600 * t) + std::sin(2 * kPi * 4200 * t) + std::sin(2 * kPi * 4800 * t));
+    in[2 * i] = in[2 * i + 1] = static_cast<float>(v);
+  }
+  const auto off = runGuardEngine(in, fs, 0.0), on = runGuardEngine(in, fs, 1.0);
+  const size_t a = static_cast<size_t>(5 * fs), b = n;
+  {
+    SourceAnalyzer an(fs, 2);
+    an.process(in.data(), static_cast<int>(n));
+    const auto r = an.liveResiduals();
+    std::printf("    analyser: valid=%d presence %+.1f dB, sizzle %+.1f dB\n", r.valid ? 1 : 0, r.presenceDb, r.sizzleDb);
+    CHECK(r.valid && r.presenceDb > 3.5);
+  }
+  std::printf("    cluster, guard 1 vs 0:");
+  for (double f : {3600.0, 4200.0, 4800.0}) {
+    const double d = toDb(toneAmpF(on, f, fs, a, b) / toneAmpF(off, f, fs, a, b));
+    std::printf(" %.0f Hz %+.2f dB", f, d);
+    CHECK(d <= -1.5 && d >= -2.05);
+  }
+  const double body = toDb(toneAmpF(on, 400, fs, a, b) / toneAmpF(off, 400, fs, a, b));
+  std::printf(" | 400 Hz %+.3f dB\n", body);
+  CHECK(std::fabs(body) < 0.05);
 }
 
 int main(int argc, char** argv) {

@@ -91,7 +91,8 @@ class Engine {
   double groundingRestraintDb() const { return grounding_.restraintDb(); }
   // Bass texture 0..1: level-gated odd harmonics for bass notes (see BassTexture). Default 0 = off, bit-exact.
   void setBassTexture(double depth) { texture_.setDepth(depth); }
-  // Sustained-shrill guard 0..1: reduces sustained 4 kHz presence and 6.5 kHz+ sizzle, attacks pass (see ShrillGuard).
+  // Sustained-shrill guard 0..1: reduces sustained 4 kHz presence and 8 kHz sizzle when the analyser finds them in
+  // excess over the track's own tilt; attacks pass. Needs setAnalysisEnabled(true) (see ShrillGuard).
   // Default 0 = off, bit-exact.
   void setShrillGuard(double depth) { shrill_.setDepth(depth); }
 

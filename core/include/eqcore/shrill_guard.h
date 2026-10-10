@@ -1,10 +1,14 @@
 #pragma once
 // Sustained-shrill guard: reduction-only, stereo-linked, bounded, transient-friendly.
 //
-// Two bands are watched, each a fourth-order band-pass with zero phase at its centre: presence at 4 kHz (guitar
-// and vocal shrillness, where the ear is most sensitive to sharpness) and sizzle at 8 kHz (cymbal and hi-hat). A
-// band is "shrill" when, over a 40 ms window, its power sits above a threshold relative to the whole mix. Reduction
-// is then 0.5 dB per dB of excess, capped at 2 dB per band at full depth.
+// Two bands are acted on, each a fourth-order band-pass with zero phase at its centre: presence at 4 kHz (guitar
+// and vocal shrillness, where the ear is most sensitive to sharpness) and sizzle at 8 kHz (cymbal and hi-hat).
+// Whether a band is shrill is judged on the track, not on absolute band levels (those were inert on music: a
+// music-like spectrum sits 11 dB under any fixed threshold that leaves pink noise alone). The source analyser
+// supplies the band's residual against the mix's own least-squares tilt (setExcess): presence from 2.5-5 kHz,
+// sizzle from 6-10 kHz. Pink and -6 dB/octave material read about 0 dB; a shrill master reads several dB. Above
+// 1.5 dB (presence) or 2.0 dB (sizzle) the band is reduced by 0.5 dB per dB of excess, capped at 2 dB per band at
+// full depth. Without a valid residual (analysis off, or under 3 s of audio heard) the guard does nothing.
 //
 // Sustain gate: while a band's fast (2 ms) power runs well above its slow (40 ms) power, the sound is an attack (a
 // hi-hat click, a pick, a consonant). The gate closes, so the attack passes unchanged; once the energy holds, the
@@ -29,6 +33,10 @@ class ShrillGuard {
 
   // Any thread; picked up at the next block. Clamped to 0..1; non-finite counts as 0.
   void setDepth(double depth);
+
+  // Any thread: the analyser's presence (2.5-5 kHz) and sizzle (6-10 kHz) residuals, dB over the mix's tilt.
+  // Non-finite means unknown: that band is left alone.
+  void setExcess(double presenceDb, double sizzleDb);
   double depth() const { return depth_.load(std::memory_order_relaxed); }
 
   void reset();
@@ -56,8 +64,8 @@ class ShrillGuard {
   };
 
   std::atomic<double> depth_{0.0};
+  std::array<std::atomic<double>, kBands> excess_{};
   std::array<Band, kBands> bands_{};
-  double fullSlow_ = 0.0;
   double aMedium_ = 0.0, aSlow_ = 0.0, aGain_ = 0.0;
   std::array<std::atomic<double>, kBands> reductionDb_{};
 };

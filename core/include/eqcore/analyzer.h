@@ -12,6 +12,7 @@
 // uses try_lock and simply skips a publish if a reader holds the lock).
 // snapshot() may be called from any thread.
 #include <array>
+#include <atomic>
 #include <complex>
 #include <mutex>
 #include <vector>
@@ -39,6 +40,7 @@ struct SourceFeatures {
   double boomDb = 0.0;           // 63-125 Hz
   double harshDb = 0.0;          // 2.5-5 kHz
   double airDb = 0.0;            // 10-16 kHz (only meaningful below cutoff)
+  double sizzleDb = 0.0;         // 6-10 kHz (not in the packed JNI array; drives the shrill guard)
   std::array<double, kBands> bandDb{};  // long-term third-octave levels (dB, relative)
 
   // Mid/side power spectra retain the placement of energy across frequencies.
@@ -62,6 +64,11 @@ class SourceAnalyzer {
   void process(const float* interleaved, int frames);
   SourceFeatures snapshot() const;
   void reset();
+
+  // The latest published harshness (2.5-5 kHz) and sizzle (6-10 kHz) residuals against the mix's own tilt, dB.
+  // Lock-free, so the audio thread may read it (snapshot() locks). valid is false until 3 s of audio were heard.
+  struct LiveResiduals { bool valid = false; double presenceDb = 0.0, sizzleDb = 0.0; };
+  LiveResiduals liveResiduals() const;
 
   static constexpr int kFft = 4096;
 
@@ -106,6 +113,8 @@ class SourceAnalyzer {
 
   mutable std::mutex lock_;
   SourceFeatures published_;
+  std::atomic<bool> liveValid_{false};
+  std::atomic<double> livePresence_{0.0}, liveSizzle_{0.0};
 };
 
 // In-place radix-2 FFT (n power of two). Exposed for tests.
