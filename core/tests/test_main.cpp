@@ -35,6 +35,8 @@
 #include "eqcore/bass_unmask.h"
 #include "eqcore/policy.h"
 #include "eqcore/grounding.h"
+#include "eqcore/bass_texture.h"
+#include "eqcore/shrill_guard.h"
 #include <fstream>
 #include <sstream>
 
@@ -2176,6 +2178,7 @@ void turnEverythingOn(Engine& e) {
   e.setBassUnmask(1.0);
   e.setDynamicEq(1.0);
   e.setStereoTuner({0.4, 0.3, 0.5, 0.3, 0.6, 1.0, 1.0});
+  e.setBassTexture(1.0);
 }
 }  // namespace
 
@@ -4250,6 +4253,252 @@ TEST(lab_engine_replaces_static_eq_and_preserves_final_peak_protection) {
   double peak=0;for(float sample:a){CHECK(std::isfinite(sample));peak=std::max(peak,std::abs(double(sample)));}
   CHECK(peak<1);CHECK(e.gainProtectionDb()<-.1);
   CHECK(reconstructedPeak(a,2,48000)<1.001);
+}
+
+// ---- Bass texture (docs/SOUND_RESEARCH_0.5.13.md) -------------------------------------------
+namespace {
+// Centred tone through BassTexture at `depth`; returns the steady-state left channel (right is identical).
+std::vector<double> textureTone(double depth, double freq, double amp, double fs, int n) {
+  BassTexture t(fs);
+  t.setDepth(depth);
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) l[i] = r[i] = amp * std::sin(2 * kPi * freq * i / fs);
+  for (int s = 0; s < n; s += 480) t.process(&l[s], &r[s], std::min(480, n - s));
+  return l;
+}
+}  // namespace
+
+TEST(bass_texture_off_is_bit_exact_bypass) {
+  const double fs = 48000;
+  BassTexture t(fs);  // default depth 0
+  std::mt19937 rng(11);
+  std::normal_distribution<double> nd(0, 0.2);
+  std::vector<double> l(4800), r(4800);
+  for (auto& v : l) v = nd(rng);
+  for (auto& v : r) v = nd(rng);
+  auto l0 = l, r0 = r;
+  t.process(l.data(), r.data(), 4800);
+  CHECK(l == l0);
+  CHECK(r == r0);
+}
+
+TEST(bass_texture_is_odd_order_level_gated_and_leaves_the_fundamental_alone) {
+  const double fs = 48000;
+  const int n = 48000;
+  const size_t a = 24000, b = 48000;
+  // Quiet (-50 dBFS): the shaper is nearly linear, so the third harmonic is far below audibility.
+  auto quiet = textureTone(1.0, 50, 0.00316, fs, n);
+  CHECK(toDb(sineAmplitude(quiet, 150, fs, a, b) / sineAmplitude(quiet, 50, fs, a, b)) < -90.0);
+  CHECK_NEAR(toDb(sineAmplitude(quiet, 50, fs, a, b) / 0.00316), 0.0, 0.05);
+  // Loud (-12 dBFS): a third harmonic of about -32 dBc (tanh shaper, k = 2.5: k^2 A^2 / 12 with the
+  // fifth-order correction), and no second harmonic (odd order only).
+  auto loud = textureTone(1.0, 50, 0.25, fs, n);
+  const double h3 = toDb(sineAmplitude(loud, 150, fs, a, b) / sineAmplitude(loud, 50, fs, a, b));
+  std::printf("    bass texture at -12 dBFS: 3rd harmonic %+.1f dBc, 2nd %+.1f dBc\n", h3,
+              toDb(sineAmplitude(loud, 100, fs, a, b) / sineAmplitude(loud, 50, fs, a, b)));
+  CHECK(h3 > -34.0 && h3 < -30.0);
+  CHECK(toDb(sineAmplitude(loud, 100, fs, a, b) / sineAmplitude(loud, 50, fs, a, b)) < -60.0);
+  // The fundamental is not compressed: the generator's own fundamental gain is removed from the wet path.
+  CHECK_NEAR(toDb(sineAmplitude(loud, 50, fs, a, b) / 0.25), 0.0, 0.05);
+  // Depth scales the texture linearly in amplitude: half depth is about -6 dB on the harmonic.
+  auto half = textureTone(0.5, 50, 0.25, fs, n);
+  CHECK_NEAR(toDb(sineAmplitude(half, 150, fs, a, b) / sineAmplitude(loud, 150, fs, a, b)), -6.0, 0.3);
+  // The generated harmonics fade out well above the bass: the 27th harmonic of 50 Hz (1350 Hz) is at the noise floor.
+  CHECK(toDb(sineAmplitude(loud, 1350, fs, a, b)) < -80.0);
+}
+
+TEST(bass_texture_leaves_treble_and_the_side_image_alone) {
+  const double fs = 48000;
+  const int n = 48000;
+  const size_t a = 24000, b = 48000;
+  // Centred bass with a 1 kHz and a 2 kHz tone: the treble passes at unity gain.
+  BassTexture t(fs);
+  t.setDepth(1.0);
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) {
+    const double x = 0.25 * std::sin(2 * kPi * 50 * i / fs);
+    const double treble = 0.1 * std::sin(2 * kPi * 1000 * i / fs) + 0.05 * std::sin(2 * kPi * 2000 * i / fs);
+    l[i] = x + treble;
+    r[i] = x + 0.3 * treble;  // a different image at treble frequencies
+  }
+  auto l0 = l, r0 = r;
+  for (int s = 0; s < n; s += 480) t.process(&l[s], &r[s], std::min(480, n - s));
+  CHECK_NEAR(toDb(sineAmplitude(l, 1000, fs, a, b) / sineAmplitude(l0, 1000, fs, a, b)), 0.0, 0.05);
+  CHECK_NEAR(toDb(sineAmplitude(l, 2000, fs, a, b) / sineAmplitude(l0, 2000, fs, a, b)), 0.0, 0.05);
+  // The texture is the same added signal in both channels, so the side (L-R) is untouched to rounding.
+  double sideErr = 0;
+  for (size_t i = 0; i < l.size(); ++i) sideErr = std::max(sideErr, std::fabs((l[i] - r[i]) - (l0[i] - r0[i])));
+  CHECK(sideErr < 1e-12);
+}
+
+TEST(bass_texture_process_does_not_allocate) {
+  BassTexture t(48000);
+  t.setDepth(1.0);
+  std::vector<double> l(480, 0.1), r(480, -0.05);
+  g_allocs.store(0);
+  g_countAllocs.store(true);
+  for (int i = 0; i < 10; ++i) t.process(l.data(), r.data(), 480);
+  g_countAllocs.store(false);
+  CHECK(g_allocs.load() == 0);
+}
+
+// ---- Space: band-limited expansion (docs/SOUND_RESEARCH_0.5.13.md) -----------------------------
+TEST(space_expansion_widens_the_body_but_never_lifts_the_air) {
+  const double fs = 48000;
+  StereoTunerParams p;
+  p.space = 1.0;
+  std::printf("    space +1 side gain:");
+  for (double hz : {300.0, 2000.0, 8000.0, 10000.0}) {
+    const auto out = runTuner(p, ms(fs, 2, [](double) { return 0.0; }, [&](double t) { return 0.2 * std::sin(2 * kPi * hz * t); }), fs);
+    const double measured = toDb(sineAmplitude(sideOf(out), hz, fs, 48000, 96000) / 0.2);
+    const double model = 10 * std::log10(stereoResponsePower(p, hz, fs)[1]);
+    std::printf(" %.0f Hz %+.2f dB (model %+.2f)", hz, measured, model);
+    CHECK_NEAR(measured, model, 0.15);
+    // Presence (2 kHz) widens the full +6 dB. The 300 Hz body widens less (about +1.4 dB) because the existing
+    // dry-plus-delta side path meets the 180 Hz crossover phase there; that is unchanged by this shelf.
+    if (hz == 300.0) CHECK(measured > 0.5 && measured < 6.5);
+    if (hz == 2000.0) CHECK_NEAR(measured, 6.0, 0.4);
+    // The shelf takes the widening back as it rises: about +1.5 dB at 8 kHz, and the air above 10 kHz is not lifted.
+    if (hz >= 10000.0) CHECK(measured < 0.7);
+  }
+  std::printf("\n");
+}
+
+// ---- Sustained-shrill guard (docs/SOUND_RESEARCH_0.5.13.md) -----------------------------------
+namespace {
+// Centred tone through ShrillGuard at `depth`; returns the steady-state left channel (right is identical).
+std::vector<double> shrillTone(double depth, double freq, double amp, double fs, int n) {
+  ShrillGuard g(fs);
+  g.setDepth(depth);
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) l[i] = r[i] = amp * std::sin(2 * kPi * freq * i / fs);
+  for (int s = 0; s < n; s += 480) g.process(&l[s], &r[s], std::min(480, n - s));
+  return l;
+}
+}  // namespace
+
+TEST(shrill_guard_off_is_bit_exact_bypass) {
+  const double fs = 48000;
+  ShrillGuard g(fs);  // default depth 0
+  std::mt19937 rng(13);
+  std::normal_distribution<double> nd(0, 0.2);
+  std::vector<double> l(4800), r(4800);
+  for (auto& v : l) v = nd(rng);
+  for (auto& v : r) v = nd(rng);
+  auto l0 = l, r0 = r;
+  g.process(l.data(), r.data(), 4800);
+  CHECK(l == l0);
+  CHECK(r == r0);
+}
+
+TEST(shrill_guard_caps_sustained_presence_and_sizzle_and_leaves_clean_tones_alone) {
+  const double fs = 48000;
+  const int n = 48000;
+  const size_t a = 24000, b = 48000;
+  // Sustained presence (4 kHz) and sizzle (8 kHz) tones are the shrill cases: each reaches the 2 dB cap at full depth.
+  auto presence = shrillTone(1.0, 4000, 0.2, fs, n);
+  CHECK_NEAR(toDb(sineAmplitude(presence, 4000, fs, a, b) / 0.2), -2.0, 0.25);
+  auto sizzle = shrillTone(1.0, 8000, 0.2, fs, n);
+  CHECK_NEAR(toDb(sineAmplitude(sizzle, 8000, fs, a, b) / 0.2), -2.0, 0.25);
+  // A clean 1 kHz tone is not shrill for either band: exactly untouched.
+  auto low = shrillTone(1.0, 1000, 0.2, fs, n);
+  CHECK_NEAR(toDb(sineAmplitude(low, 1000, fs, a, b) / 0.2), 0.0, 0.01);
+  // Depth scales the reduction linearly in dB.
+  auto half = shrillTone(0.5, 4000, 0.2, fs, n);
+  CHECK_NEAR(toDb(sineAmplitude(half, 4000, fs, a, b) / 0.2), -1.0, 0.2);
+  // The reported reduction matches: presence band at its cap, sizzle band idle for a 4 kHz tone.
+  ShrillGuard g(fs);
+  g.setDepth(1.0);
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) l[i] = r[i] = 0.2 * std::sin(2 * kPi * 4000 * i / fs);
+  for (int s = 0; s < n; s += 480) g.process(&l[s], &r[s], std::min(480, n - s));
+  const auto reported = g.reductionsDb();
+  CHECK_NEAR(reported[0], -2.0, 0.05);
+  CHECK_NEAR(reported[1], 0.0, 0.05);
+}
+
+TEST(shrill_guard_lets_attacks_through_and_reduces_only_held_energy) {
+  const double fs = 48000;
+  const int n = 48000;
+  // A 3 ms 4 kHz burst (a pick, a cymbal click) on silence. The sustain gate is closed during its attack.
+  std::vector<double> in(n, 0.0);
+  const int start = 4800, len = static_cast<int>(0.003 * fs);
+  for (int i = 0; i < len; ++i) {
+    const double hann = 0.5 - 0.5 * std::cos(2 * kPi * i / (len - 1));
+    in[static_cast<size_t>(start + i)] = 0.5 * hann * std::sin(2 * kPi * 4000 * i / fs);
+  }
+  auto out = in;
+  ShrillGuard g(fs);
+  g.setDepth(1.0);
+  for (int s = 0; s < n; s += 480) g.process(&out[s], nullptr, std::min(480, n - s));  // mono path (right == nullptr)
+  double peakIn = 0, peakOut = 0;
+  for (int i = start; i < start + len; ++i) {
+    peakIn = std::max(peakIn, std::fabs(in[static_cast<size_t>(i)]));
+    peakOut = std::max(peakOut, std::fabs(out[static_cast<size_t>(i)]));
+  }
+  std::printf("    burst peak change %+.2f dB (attack, gate closed)\n", toDb(peakOut / peakIn));
+  CHECK_NEAR(toDb(peakOut / peakIn), 0.0, 0.2);
+  // The same energy held for 300 ms is reduced by the cap, so the reduction targets sustained ringing only.
+  const double sustainedDb = toDb(sineAmplitude(shrillTone(1.0, 4000, 0.2, fs, n), 4000, fs, 24000, 48000) / 0.2);
+  CHECK(sustainedDb < -1.9);
+}
+
+TEST(shrill_guard_does_not_pre_reduce_a_sound_after_long_silence) {
+  const double fs = 48000;
+  const int total = static_cast<int>(3 * fs);
+  std::vector<double> x(static_cast<size_t>(total), 0.0);
+  for (int i = 0; i < 24000; ++i) x[static_cast<size_t>(i)] = 0.2 * std::sin(2 * kPi * 4000 * i / fs);  // 0.5 s tone
+  const int burstAt = total - 2400;  // a 3 ms burst at the very end, after 2.5 s of digital silence
+  const int len = static_cast<int>(0.003 * fs);
+  for (int i = 0; i < len; ++i) {
+    const double hann = 0.5 - 0.5 * std::cos(2 * kPi * i / (len - 1));
+    x[static_cast<size_t>(burstAt + i)] = 0.5 * hann * std::sin(2 * kPi * 4000 * i / fs);
+  }
+  const auto in = x;
+  ShrillGuard g(fs);
+  g.setDepth(1.0);
+  for (int s = 0; s < burstAt; s += 480) g.process(&x[static_cast<size_t>(s)], nullptr, std::min(480, burstAt - s));
+  CHECK(g.reductionsDb()[0] == 0.0);  // after 2.5 s of silence the envelopes are under the floor: exactly no reduction
+  for (int s = burstAt; s < total; s += 480) g.process(&x[static_cast<size_t>(s)], nullptr, std::min(480, total - s));
+  double peakIn = 0, peakOut = 0;
+  for (int i = burstAt; i < burstAt + len; ++i) {
+    peakIn = std::max(peakIn, std::fabs(in[static_cast<size_t>(i)]));
+    peakOut = std::max(peakOut, std::fabs(x[static_cast<size_t>(i)]));
+  }
+  CHECK_NEAR(toDb(peakOut / peakIn), 0.0, 0.2);
+}
+
+TEST(shrill_guard_is_stereo_linked_and_mono_centred_signals_stay_centred) {
+  const double fs = 48000;
+  const int n = 24000;
+  ShrillGuard g(fs);
+  g.setDepth(1.0);
+  // Hard-panned sustained presence: the empty channel stays exactly empty (no image leak from the guard).
+  std::vector<double> l(n), r(n, 0.0);
+  for (int i = 0; i < n; ++i) l[i] = 0.2 * std::sin(2 * kPi * 4000 * i / fs);
+  for (int s = 0; s < n; s += 480) g.process(&l[s], &r[s], std::min(480, n - s));
+  double leak = 0;
+  for (double v : r) leak = std::max(leak, std::fabs(v));
+  CHECK(leak < 1e-12);
+  // Centred content: both channels receive identical processing.
+  ShrillGuard h(fs);
+  h.setDepth(1.0);
+  std::vector<double> cl(n), cr(n);
+  for (int i = 0; i < n; ++i) cl[i] = cr[i] = 0.2 * std::sin(2 * kPi * 4000 * i / fs) + 0.05 * std::sin(2 * kPi * 8000 * i / fs);
+  for (int s = 0; s < n; s += 480) h.process(&cl[s], &cr[s], std::min(480, n - s));
+  CHECK(cl == cr);
+}
+
+TEST(shrill_guard_process_does_not_allocate) {
+  ShrillGuard g(48000);
+  g.setDepth(1.0);
+  std::vector<double> l(480, 0.1), r(480, -0.05);
+  g.process(l.data(), r.data(), 480);  // warm the envelopes outside the counted window
+  g_allocs.store(0);
+  g_countAllocs.store(true);
+  for (int i = 0; i < 10; ++i) g.process(l.data(), r.data(), 480);
+  g_countAllocs.store(false);
+  CHECK(g_allocs.load() == 0);
 }
 
 int main(int argc, char** argv) {

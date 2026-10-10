@@ -12,7 +12,8 @@
 //   smoothness 0..1  dynamic de-harsher: cuts the 2.5-6 kHz "shrill" band only
 //                     while it spikes relative to the rest of the voice
 // Instrument amplifier (side only, above ~180 Hz so bass stays centred):
-//   space      -1..1 caved in .. spacious (side level, +-6 dB)
+//   space      -1..1 caved in .. spacious (side level, +-6 dB on the body and presence; a shelf at
+//                     6 kHz returns the expansion to unity above that, so spaciousness does not lift the air)
 //   instruments 0..1 string/sax presence, body and air on the sides
 //   backingVocals 0..1 vocal-layer de-masker. A static side bell (1600 Hz, up
 //                     to 2 dB) plus a dynamic side vocal-band lift (up to 4 dB)
@@ -95,7 +96,7 @@ class StereoTuner {
   struct State {
     StereoTunerParams p_;
     Bq warmBell_, warmShelf_, intimacyBell_, harshBand_;
-    Bq sideHp_[2], bodyBell_, presenceBell_, airShelf_, backingBell_, detailShelf_, shuffleBell_;
+    Bq sideHp_[2], bodyBell_, presenceBell_, airShelf_, backingBell_, detailShelf_, shuffleBell_, spaceShelf_;
     double envBand_ = 1e-9, envFull_ = 1e-9, deharshGain_ = 1.0, spaceGain_ = 1.0;
     double aBand_, rBand_, aFull_, rFull_, gSmooth_;
     // Backing-vocal de-masker: matched vocal-band filters on side and mid.

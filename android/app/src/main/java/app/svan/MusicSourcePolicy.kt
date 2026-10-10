@@ -11,7 +11,7 @@ object MusicSourcePolicy {
         "com.spotify.music", "com.google.android.apps.youtube.music", "com.google.android.youtube",
         "com.amazon.mp3", "com.apple.android.music", "com.aspiro.tidal", "deezer.android.app",
         "com.soundcloud.android", "com.neutroncode.mp", "com.neutroncode.mpeval",
-        "com.maxmpz.audioplayer", "com.hiby.music", "org.videolan.vlc",
+        "com.maxmpz.audioplayer", "com.hiby.music", "org.videolan.vlc", "com.gaana",
     )
     fun excludedPackage(pkg: String): Boolean = pkg.lowercase() in utilityPackages
     fun exclusion(s: PlaybackSession): String? = when {

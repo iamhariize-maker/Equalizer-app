@@ -1,4 +1,30 @@
 # Svan development record
+## 0.5.13 (candidate): capture stability, bass texture, space without air, sustained shrill — 2026-10-10
+
+Base: the designated branch was fast-forwarded to the 0.5.12 Capture Lab line (`d8f0201`, no history rewritten). Research and
+the blind protocol: [docs/SOUND_RESEARCH_0.5.13.md](SOUND_RESEARCH_0.5.13.md). No version bump in this change.
+
+- **Capture.** Silence after a source's audio was heard in the epoch is a stall: 12 s before fail-open, no sample-rate retry,
+  a 20 s hand-over and no strike, at most two per app per capture session (the third silence takes the strike path). A new
+  session of an app already on Engine B is admitted at once. A proven app returns to Engine B while another source is
+  captured. `com.gaana` joins the immediate-admission list (admission only). The Gaana diagnosis is from code; it needs a
+  Hi-Fi diagnostic report taken while it drops to confirm which path fired.
+- **DSP (core).** `BassTexture`: odd-order, level-gated harmonics of the mid channel's 150 Hz-and-below band, the shaper's
+  fundamental removed, depth 0 bit-exact; the app drives it from `groundingBody`. `ShrillGuard`: sustain-gated reduction of
+  4 kHz presence and 8 kHz sizzle, capped at 2 dB per band; the app drives it from `groundingRestraint`. Space widening now
+  returns to unity above about 6 kHz (side gain +6.05 dB at 2 kHz, +1.47 dB at 8 kHz, +0.61 dB at 10 kHz).
+  Engine order: stereo → grounding → shrill guard → bass texture → dynamic EQ → limiter → dither.
+- **Verified here.** Core: 196 checks, 0 failed (185 before, plus the new ones); ASan and UBSan clean. Android: `assembleDebug`
+  and `testDebugUnitTest` pass (445 JVM tests, including the Gaana admission test); the native library builds with the new JNI
+  entry points.
+- **Not verified.** Any listening (every sound change is unverified by ears). Real Gaana or other streaming sessions. Phone,
+  DAC or CPU cost on device. The CI emulator end-to-end checks, including the bass-versus-mid balance check (they run after
+  push). Lint and the release build were not run in this session.
+- **Known limit, unchanged from before.** The 300 Hz body widens only about +1.4 dB: the side path is dry-plus-delta and the
+  delta meets the 180 Hz crossover phase there. The fix is a phase-matched side crossover (research §4, item 3).
+- **Next.** Hi-Fi diagnostic report while Gaana drops; 10–20 s excerpts for the owner's four reference masters; blind pairs
+  per change, one at a time.
+
 ## 0.5.12: efficiency plus native Capture Lab
 
 The combined preview adds lifecycle-bound UI work, coalesced detection/planning and saved-state

@@ -416,15 +416,18 @@ class CaptureService : Service() {
                 // playing means its audio is not reaching us (capture opt-out mid-session, a
                 // DRM stream...). Silence forever is the worst outcome, so hand it back to
                 // Engine A. Paused sources are indistinguishable from blocked ones without
-                // another active player, hence the otherActivePlayers condition.
-                if (reading != null && allowed.isNotEmpty() && !watchdogFired && silentRun >= rate * SILENCE_FAILOPEN_S && otherActivePlayers > 0) {
-                    if (!safeFallback && rate != RatePolicy.SAFE_HZ) {
+                // another active player, hence the otherActivePlayers condition. Once this epoch has heard the
+                // source, silence is a stall (buffering, a gap between tracks): it waits longer, skips the rate
+                // retry (a capture restart) and records no strike.
+                val silenceLimitS = if (sawAudio) STALL_FAILOPEN_S else SILENCE_FAILOPEN_S
+                if (reading != null && allowed.isNotEmpty() && !watchdogFired && silentRun >= rate * silenceLimitS && otherActivePlayers > 0) {
+                    if (!sawAudio && !safeFallback && rate != RatePolicy.SAFE_HZ) {
                         recoveryMessage.value = "Capture returned silence at this rate; retrying Fast at safe 48 kHz."
                         return EpochExit.SAFE_RETRY
                     }
                     watchdogFired = true
-                    EqController.log("capture: muted source delivers only silence for ${SILENCE_FAILOPEN_S}s while other media plays → failing open")
-                    SessionRouter.onCaptureSilent()
+                    EqController.log("capture: muted source delivers only silence for ${silenceLimitS}s while other media plays → failing open" + if (sawAudio) " (stall, no strike)" else "")
+                    SessionRouter.onCaptureSilent(stall = sawAudio)
                 }
                 if (reading != null && allowed.isNotEmpty() && silentRun < rate) {
                     val begin = System.nanoTime()
@@ -644,8 +647,13 @@ class CaptureService : Service() {
         if (previous == null || v != previous.activeVocal || i != previous.activeInstrument) engine.setStereoTuner(v.intimacy, v.warmth, v.smoothness, i.space, i.instruments, i.backingVocals, i.spatialDetail)
         val smart = eq.activeSmart
         val before = previous?.activeSmart
-        if (previous == null || smart?.groundingRestraint != before?.groundingRestraint || smart?.groundingBody != before?.groundingBody)
+        if (previous == null || smart?.groundingRestraint != before?.groundingRestraint || smart?.groundingBody != before?.groundingBody) {
             engine.setGrounding(smart?.groundingRestraint ?: 0.0, smart?.groundingBody ?: 0.0)
+            // Bass texture follows the house body weight: the bass gains odd harmonics where the voicing asks for weight.
+            engine.setBassTexture(smart?.groundingBody ?: 0.0)
+            // The sustained-shrill guard follows the same restraint weight as the transient restraint.
+            engine.setShrillGuard(smart?.groundingRestraint ?: 0.0)
+        }
     }
 
     private fun applyProtection(engine: NativeEngine,eq: EqState,settings: AudioSettings) {
@@ -699,6 +707,7 @@ class CaptureService : Service() {
         private const val CHANNEL = "capture"
         private const val NOTIF_ID = 1
         private const val SILENCE_FAILOPEN_S = 4
+        private const val STALL_FAILOPEN_S = 12
         private const val OUTPUT_CUSHION_MS = 80
         private const val OUTPUT_CAPACITY_MS = 240
         private const val CAPTURE_BACKLOG_MS = 250

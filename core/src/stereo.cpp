@@ -7,14 +7,22 @@ namespace eqcore {
 
 namespace {
 double coeff(double ms, double fs) { return std::exp(-1.0 / (ms * 1e-3 * fs)); }
-std::array<BiquadCoeffs, 11> staticFilters(const StereoTunerParams& p, double fs) {
+// Space widening runs through a high shelf whose cut above kSpaceShelfHz equals the widening, so "more space"
+// adds width through the body and presence and does not lift the air. The shelf is minimum-phase and acts on
+// the high-band delta (hi1) together with the expansion gain, so it adds no extra phase error at 2 kHz (a
+// band-limited delta with a 4 kHz low-pass lost about 2 dB there).
+constexpr double kSpaceShelfHz = 6000.0;
+std::array<BiquadCoeffs, 12> staticFilters(const StereoTunerParams& p, double fs) {
   auto b = [&](FilterType t, double f, double g, double q) { return designBiquad({t, f, g, q, true}, fs); };
+  // Expansion of +6 dB at space +1 is 20 log10(g); the shelf takes it back above kSpaceShelfHz. Narrowing keeps its full cut.
+  const double shelfDb = p.space > 0 ? -6.0 * std::min(p.space, 1.0) : 0.0;
   return {b(FilterType::Peak, 220, 3 * p.warmth, .9), b(FilterType::HighShelf, 8000, -2 * p.warmth, .7),
           b(FilterType::Peak, 1200, 2.5 * p.intimacy, .6), b(FilterType::LowPass, 180, 0, .7071067811865476),
           b(FilterType::HighPass, 180, 0, .7071067811865476), b(FilterType::Peak, 500, 1.5 * p.instruments, 1),
           b(FilterType::Peak, 3000, 4 * p.instruments, .7), b(FilterType::HighShelf, 10000, 3 * p.instruments, .7),
           b(FilterType::Peak, 1600, 2 * p.backingVocals, .65), b(FilterType::HighShelf, 4000, 1.5 * p.spatialDetail, .7),
-          b(FilterType::Peak, 500, 2.5 * p.spatialDetail, .7)};
+          b(FilterType::Peak, 500, 2.5 * p.spatialDetail, .7),
+          b(FilterType::HighShelf, kSpaceShelfHz, shelfDb, .7071067811865476)};
 }
 }  // namespace
 
@@ -26,8 +34,9 @@ std::array<double, 2> stereoResponsePower(const StereoTunerParams& p, double f, 
   const auto mid = h(0) * h(1) * h(2);
   const auto side = p.space == 0 && p.instruments == 0 && p.backingVocals == 0 && p.spatialDetail == 0 ? std::complex<double>(1, 0) :
       // Dry side plus a bounded delta on the LR4 high band: 1 + HP^2 * (gain * shaping - 1).
-      // Equals 1 exactly at zero control, whatever the crossover phase does.
-      1.0 + h(4) * h(4) * (std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0) * h(5) * h(6) * h(7) * h(8) * h(9) * h(10) - 1.0);
+      // Equals 1 exactly at zero control, whatever the crossover phase does. The space shelf (index 11) is
+      // part of the gain, so its response is the one the processing applies.
+      1.0 + h(4) * h(4) * (std::pow(10.0, 6.0 * std::clamp(p.space, -1.0, 1.0) / 20.0) * h(11) * h(5) * h(6) * h(7) * h(8) * h(9) * h(10) - 1.0);
   return {std::norm(mid), std::norm(side)};
 }
 
@@ -62,7 +71,7 @@ void StereoTuner::State::redesign(const StereoTunerParams& p, double fs_) {
   set(harshBand_, FilterType::BandPass, 3800.0, 0.0, 0.9);
   for (auto& hp : sideHp_) hp.c = c[4];
   bodyBell_.c = c[5]; presenceBell_.c = c[6]; airShelf_.c = c[7];
-  backingBell_.c=c[8];detailShelf_.c=c[9];shuffleBell_.c=c[10];
+  backingBell_.c=c[8];detailShelf_.c=c[9];shuffleBell_.c=c[10];spaceShelf_.c=c[11];
   // Vocal layers: 1.2 kHz centre, roughly 450 Hz-3.2 kHz.
   set(vocalSide_, FilterType::BandPass, 1200.0, 0.0, 0.55);
   vocalMid_.c = vocalSide_.c;
@@ -101,7 +110,7 @@ void StereoTuner::State::resetSmoothHistory() {
 }
 
 void StereoTuner::State::resetSideHistory() {
-  for (Bq* b : {&sideHp_[0], &sideHp_[1], &bodyBell_, &presenceBell_, &airShelf_}) b->z1 = b->z2 = 0;
+  for (Bq* b : {&sideHp_[0], &sideHp_[1], &bodyBell_, &presenceBell_, &airShelf_, &spaceShelf_}) b->z1 = b->z2 = 0;
 }
 
 void StereoTuner::State::resetFastHistory() {
@@ -174,7 +183,8 @@ double StereoTuner::State::process(double& left, double& right, bool fastSpatial
     const double plain = sideHp_[1].run(sideHp_[0].run(s));
     const double instr = bodyBell_.run(plain);
     const double hi1 = airShelf_.run(presenceBell_.run(instr));
-    s += spaceGain_ * hi1 - plain;  // Space and Instruments: explicit widening, honoured as asked
+    // Space: gain with the high shelf that returns the air to unity (see staticFilters). Instruments still shapes the top.
+    s += spaceGain_ * spaceShelf_.run(hi1) - plain;
     if (fastSpatial && (p_.backingVocals > 0 || p_.spatialDetail > 0)) {
       double high = detailShelf_.run(backingBell_.run(hi1));
       if (p_.spatialDetail > 0) high = shuffleBell_.run(high);

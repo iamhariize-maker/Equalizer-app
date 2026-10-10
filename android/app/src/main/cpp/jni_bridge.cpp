@@ -286,6 +286,14 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetGrounding(JNIEnv*, jc
   fromHandle(h)->setGrounding({restraint, body});
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassTexture(JNIEnv*, jclass, jlong h, jdouble depth) {
+  fromHandle(h)->setBassTexture(depth);
+}
+
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetShrillGuard(JNIEnv*, jclass, jlong h, jdouble depth) {
+  fromHandle(h)->setShrillGuard(depth);
+}
+
 JNIEXPORT jdouble JNICALL Java_app_svan_NativeEngine_nativeGroundingRestraintDb(JNIEnv*, jclass, jlong h) {
   return fromHandle(h)->groundingRestraintDb();
 }

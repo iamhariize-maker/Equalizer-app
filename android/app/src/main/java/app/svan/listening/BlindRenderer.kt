@@ -41,7 +41,7 @@ object BlindRenderer {
             val v=state.activeVocal;val i=state.activeInstrument;it.setStereoTuner(v.intimacy,v.warmth,v.smoothness,i.space,i.instruments,i.backingVocals,i.spatialDetail)
             it.setDynamicEq(state.dynamicEq)
             it.setBassUnmask(if(settings.experimentalBassUnmask && state === snapshot && state.enabled) 1.0 else 0.0)
-            val sm=state.activeSmart;it.setGrounding(sm?.groundingRestraint?:0.0,sm?.groundingBody?:0.0)
+            val sm=state.activeSmart;it.setGrounding(sm?.groundingRestraint?:0.0,sm?.groundingBody?:0.0);it.setBassTexture(sm?.groundingBody?:0.0);it.setShrillGuard(sm?.groundingRestraint?:0.0)
         }
         fun process(state: EqState): FloatArray =engine(state).use {e->
             val warm=clip.samples.copyOfRange(0,minOf(clip.samples.size,clip.rate*2));e.process(warm,warm,warm.size/2)

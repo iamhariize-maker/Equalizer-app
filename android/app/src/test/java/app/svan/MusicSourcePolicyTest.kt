@@ -28,6 +28,12 @@ class MusicSourcePolicyTest {
         assertTrue(gate.admit(music.copy(packageName="new.player",contentType="CONTENT_TYPE_MUSIC"),0,false))
         assertTrue(gate.admit(music.copy(packageName="new.player",state="paused"),0,true))
     }
+    @Test fun gaanaIsAdmittedAsKnownMusicWithoutClaimingCapturePermission() {
+        // Admission only: whether Gaana permits capture is decided by its manifest and stream flags, not by its name.
+        val gaana = music.copy(packageName = "com.gaana", usage = "USAGE_MEDIA", contentType = "CONTENT_TYPE_UNKNOWN")
+        assertTrue(MusicSourceGate().admit(gaana, 0, false))
+        assertFalse(MusicSourceGate().admit(gaana.copy(usage = "USAGE_NOTIFICATION"), 0, false))
+    }
     @Test fun parsingPreservesMusicAndSonificationContent() {
         for ((raw,expected) in listOf("2" to "CONTENT_TYPE_MUSIC","4" to "CONTENT_TYPE_SONIFICATION","CONTENT_TYPE_SONIFICATION" to "CONTENT_TYPE_SONIFICATION")) {
             val s=PlaybackSessions.parse("piid:1 u/pid:10234/50 state:started usage=MEDIA content=$raw sessionId:2").single()

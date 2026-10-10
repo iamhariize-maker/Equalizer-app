@@ -38,6 +38,8 @@ add_library(eqcore STATIC
   src/true_peak.cpp
   src/dynamic_eq.cpp
   src/grounding.cpp
+  src/bass_texture.cpp
+  src/shrill_guard.cpp
   src/engine.cpp
   src/lab_eq.cpp
   src/analyzer.cpp

@@ -58,6 +58,13 @@ internal object SharedOutputPolicy {
  * within this capture session; silence does not establish a permanent application policy.
  */
 internal object FailOpenBackoff {
+    /** A stall after capture was proven (buffering, a gap between tracks): a short hand-over, never a strike. */
+    const val STALL_BLOCK_MS = 20_000L
+    /** Stall hand-overs per package per capture session; a further silence is treated as a blocked capture. */
+    const val MAX_STALL_HANDOVERS = 2
+    /** Key prefix for stall counts in the per-session fail-open history, kept apart from strike counts. */
+    const val STALL_KEY = "stall:"
+
     fun blockMs(count: Int): Long = when {
         count <= 1 -> 3 * 60_000L
         count == 2 -> 15 * 60_000L

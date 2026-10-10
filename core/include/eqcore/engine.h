@@ -21,6 +21,8 @@
 #include "eqcore/true_peak.h"
 #include "eqcore/dynamic_eq.h"
 #include "eqcore/grounding.h"
+#include "eqcore/bass_texture.h"
+#include "eqcore/shrill_guard.h"
 #include "eqcore/lab_eq.h"
 #include "eqcore/bass.h"
 #include "eqcore/bass_unmask.h"
@@ -87,6 +89,11 @@ class Engine {
   // Grounding: HF transient restraint + low-mid harmonic body (mono and stereo).
   void setGrounding(const GroundingParams& p) { grounding_.setParams(p); }
   double groundingRestraintDb() const { return grounding_.restraintDb(); }
+  // Bass texture 0..1: level-gated odd harmonics for bass notes (see BassTexture). Default 0 = off, bit-exact.
+  void setBassTexture(double depth) { texture_.setDepth(depth); }
+  // Sustained-shrill guard 0..1: reduces sustained 4 kHz presence and 6.5 kHz+ sizzle, attacks pass (see ShrillGuard).
+  // Default 0 = off, bit-exact.
+  void setShrillGuard(double depth) { shrill_.setDepth(depth); }
 
   // Interleaved float I/O. In-place (in == out) is allowed. Allocation-free.
   void process(const float* in, float* out, int frames);
@@ -133,6 +140,8 @@ class Engine {
   std::atomic<double> dynamicDb_[4]{};
   StereoTuner stereo_;
   Grounding grounding_;
+  BassTexture texture_;
+  ShrillGuard shrill_;
   std::atomic<bool> analysisOn_{false};
   SourceAnalyzer analyzer_;
   double smoothedGain_ = 1.0, gainTarget_ = 1.0, gainStep_ = 0.0;

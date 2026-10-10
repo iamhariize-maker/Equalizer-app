@@ -55,6 +55,8 @@ Engine::Engine(const EngineConfig& cfg)
       dynamic_(cfg.sampleRate),
       stereo_(cfg.sampleRate, cfg.spatialResidual && cfg.channels == 2),
       grounding_(cfg.sampleRate),
+      texture_(cfg.sampleRate),
+      shrill_(cfg.sampleRate),
       analyzer_(cfg.sampleRate, std::clamp(cfg.channels, 1, 2)) {
   cfg_.channels = std::max(1, cfg_.channels);
   cfg_.oversample = sanitizeFactor(cfg_.oversample);
@@ -119,7 +121,7 @@ void Engine::reset() {
   if(lab_)lab_->reset();
   bass_.reset();unmask_.reset();
   limiter_.reset();dynamic_.reset();
-  stereo_.reset();grounding_.reset();
+  stereo_.reset();grounding_.reset();texture_.reset();shrill_.reset();
   analyzer_.reset();
   resetGainProtection();
   for (auto& o : os_) o->reset();
@@ -188,6 +190,11 @@ void Engine::process(const float* in, float* out, int frames) {
     if (C == 2) stereo_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n, gains_.data());
     if (C == 2) grounding_.process(&outBuf_[0], &outBuf_[static_cast<size_t>(cfg_.maxBlock)], n);
     else if (C == 1) grounding_.process(&outBuf_[0], nullptr, n);
+    // Sustained shrill is reduced after grounding (which handles transient spikes) and before the texture,
+    // so the texture's harmonics are never reduced by it. The texture comes after grounding, so its harmonics
+    // are not saturated a second time; the dynamic EQ still gets the last word on resonances.
+    shrill_.process(&outBuf_[0], C==2?&outBuf_[cfg_.maxBlock]:nullptr, n);
+    texture_.process(&outBuf_[0], C==2?&outBuf_[cfg_.maxBlock]:nullptr, n);
     dynamic_.process(&outBuf_[0],C==2?&outBuf_[cfg_.maxBlock]:nullptr,n,dynamicAmount_.load(std::memory_order_relaxed),C==2?gains_.data():nullptr);
     const auto reductions=dynamic_.reductionsDb();for(int b=0;b<4;++b)dynamicDb_[b].store(reductions[b],std::memory_order_relaxed);
     if(cfg_.truePeak) {

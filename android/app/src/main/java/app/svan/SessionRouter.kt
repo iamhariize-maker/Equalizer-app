@@ -115,9 +115,24 @@ object SessionRouter {
      * A single event may be transient (one stream, an ad, a track), so it only backs off within the capture
      * session (see [FailOpenBackoff]). Silence does not establish a permanent app capture policy.
      */
-    fun onCaptureSilent(noData: Boolean = false) {
+    fun onCaptureSilent(noData: Boolean = false, stall: Boolean = false) {
         worker.execute {
             routes.values.filter { it.owner == Owner.ENGINE_B_MUTED && it.playing != false }.forEach {
+                if (stall) {
+                    // Capture already delivered this source's audio in this epoch: silence now is a stall
+                    // (buffering, a gap between tracks), not a blocked capture. Hand over briefly and keep the
+                    // proof of capture. The first few stalls per capture session get this treatment; a source
+                    // that keeps going silent is treated as blocked below, so it cannot cycle forever.
+                    val stalls = (failOpens[FailOpenBackoff.STALL_KEY + it.pkg] ?: 0) + 1
+                    failOpens[FailOpenBackoff.STALL_KEY + it.pkg] = stalls
+                    if (stalls <= FailOpenBackoff.MAX_STALL_HANDOVERS) {
+                        tempBlocked[it.pkg] = System.currentTimeMillis() + FailOpenBackoff.STALL_BLOCK_MS
+                        EqController.log("stall: ${it.pkg} (session ${it.sessionId}) went silent after its capture was heard → Engine A for ${FailOpenBackoff.STALL_BLOCK_MS / 1000} s, no strike ($stalls of ${FailOpenBackoff.MAX_STALL_HANDOVERS})")
+                        toEngineA(it.sessionId, it.pkg, it.uid, it.playing, RouteReason.SILENT_RECENTLY)
+                        return@forEach
+                    }
+                    EqController.log("stall: ${it.pkg} keeps going silent after its capture was heard → treated as blocked")
+                }
                 val count = (failOpens[it.pkg] ?: 0) + 1
                 failOpens[it.pkg] = count
                 val blockMs = FailOpenBackoff.blockMs(count)
@@ -588,8 +603,12 @@ object SessionRouter {
             try {
                 this.evidence = evidence
                 this.verification = verification
+                // A new session of an app whose audio already goes to Engine B (a format change, a second track) is the
+                // same source: admit it at once, instead of leaving the whole UID unprocessable for the admission delay.
                 val seen = snapshot.filter { it.uid != Process.myUid() && it.state != "released" &&
-                    musicGate.admit(it, SystemClock.elapsedRealtime(), routes.containsKey(it.sessionId) && routes[it.sessionId]?.uid == it.uid) }
+                    musicGate.admit(it, SystemClock.elapsedRealtime(),
+                        (routes.containsKey(it.sessionId) && routes[it.sessionId]?.uid == it.uid) ||
+                            routes.values.any { r -> r.uid == it.uid && r.owner == Owner.ENGINE_B_MUTED }) }
                     .associateBy { it.sessionId }
                 // An explicitly released or reclassified current record is definitive.
                 snapshot.filter { it.state == "released" || MusicSourcePolicy.exclusion(it) != null }.forEach { closeOnWorker(it.sessionId) }
@@ -740,7 +759,9 @@ object SessionRouter {
         val now = SystemClock.elapsedRealtime()
         routes.values.toList().forEach { r ->
             if (r.owner != Owner.ENGINE_A || r.playing != true || r.uid < 0) return@forEach
-            val worthRetry = !tempBlockedNow(r.pkg) && !probeInFlight && captureUids.isEmpty() &&
+            // A player whose capture was already proven returns to Engine B even while another source is captured;
+            // players never proven still wait for an idle engine before their check.
+            val worthRetry = !tempBlockedNow(r.pkg) && !probeInFlight && (captureUids.isEmpty() || r.pkg in confirmedCapture) &&
                 r.pkg !in muteCheckFailed && reasons[r.pkg] != RouteReason.APP_CAPTURE_DISABLED && reasons[r.pkg] != RouteReason.STREAM_NOT_CAPTURABLE &&
                 lateProbes.due(r.pkg, now)
             if (worthRetry && lateProbes.tickReady(r.sessionId, now)) reroute(r.sessionId, r.pkg, r.uid, r.playing)
