@@ -47,6 +47,7 @@ object BlindRenderer {
             app.svan.BassDetail.apply(it, if (state === snapshot) app.svan.BassDetail.levels(settings, state,
                 app.svan.BassDetail.routeFactor(app.svan.CaptureService.routeType)) else app.svan.BassDetail.Levels.OFF)
             it.setAnalogTop(if (state === snapshot) app.svan.BassDetail.analogTop(settings, state) else 0.0)
+            it.setExpression(if (state === snapshot) app.svan.BassDetail.expression(settings, state) else 0.0)
         }
         fun process(state: EqState): FloatArray =engine(state).use {e->
             val warm=clip.samples.copyOfRange(0,minOf(clip.samples.size,clip.rate*2));e.process(warm,warm,warm.size/2)

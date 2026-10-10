@@ -28,19 +28,23 @@ candidate (`d44173e`, research in [SOUND_RESEARCH_0.5.13.md](SOUND_RESEARCH_0.5.
   +0.31 dB (the brief asked 0.2). Hi-Fi > Bass detail switches, all off by default: Attack definition (pick/slap band +1.8 dB at
   onsets, 0.000 dB between), Sustain (decaying tail up to +3 dB, never above its peak), Dimension (harmonics above 200 Hz
   widened as pure side; mono sum exact), Tube colour (2nd harmonic -23 dBc). Tabla/dholak-like stroke: glide kept within 0.64 %.
-- **Highs (WP10).** Hi-hat detail through the house chain: onset correlation 0.994, envelope depth 99.8 %. Hi-Fi > Highs
-  "Analogue top" (off by default): loud, sustained 6-12 kHz eases by 0.15 dB per dB over -30 dBFS, at most 2.5 dB; quiet air and
-  clicks pass.
-- **Verified here.** Core: 211 tests, 0 failed checks; ASan and UBSan clean. Android: `assembleDebug`, `:app:assembleRelease`,
-  `lintDebug`, `testDebugUnitTest` pass (461 JVM tests). Host CPU: the full chain about 7 % of real time; the new stages are
+- **Highs (WP10).** Hi-hat detail through the house chain: onset correlation 0.994, envelope depth 99.8 %. Hi-Fi > Highs,
+  both off by default: "Analogue top" (loud, sustained 6-12 kHz eases by 0.15 dB per dB over -30 dBFS, at most 2.5 dB; quiet air
+  and clicks pass) and "Expression (winds and strings)" (1-4 kHz swells and decays grow by up to 1.4 dB peak to peak; a 2 s
+  energy match keeps the level: a +-3 dB 1 Hz swell spans 5.90 -> 7.31 dB at +0.12 dB average; steady tones and 3 ms hits
+  within 0.04 dB; 300 Hz and 10 kHz under 0.05 dB).
+- **Listen-check backoff.** Listen-only checks of a parked player that keep hearing silence (a paused track Android still lists)
+  slow from every 3 s to 10 s after ten, and to 30 s after forty more; a new stream or a return to Engine B restores 3 s.
+- **Verified here.** Core: 215 tests, 0 failed checks; ASan and UBSan clean (211-test run; the 4 expression tests run in CI). Android: `assembleDebug`, `:app:assembleRelease`,
+  `lintDebug`, `testDebugUnitTest` pass (462 JVM tests). Host CPU: the full chain about 7 % of real time; the new stages are
   within run-to-run noise (about +-10 %). Emulator: `capture_recovery.py` gains a DUMP-free stall check (15 PASS expected),
   which runs only in CI after push.
 - **Not verified.** Any listening: every sound change is unheard. Real Gaana or other streaming sessions, phones, DACs, CPU on a
   phone. The route factors, thresholds, voice protection and budget are design values awaiting the owner's excerpts.
-- **Not built.** WP7 (recorder hold; needs traces), WP8 candidates 2-4, WP10 fatigue trim and expression, voice scaling of the
-  harshDb policy and of sizzle.
+- **Not built.** WP7 (recorder hold; needs traces), WP8 candidates 2-4, WP10 fatigue trim, voice scaling of the harshDb policy
+  and of sizzle.
 - **Next.** Owner: install 0.5.13, take a Hi-Fi diagnostic report while Gaana drops (the new trace lines name what happened),
-  try each Bass detail and Analogue top switch on and off, and upload the reference excerpts listed in the brief's section 7.
+  try each Bass detail and Highs switch on and off, and upload the reference excerpts listed in the brief's section 7.
 
 ## 0.5.12: efficiency plus native Capture Lab
 

@@ -24,6 +24,7 @@
 #include "eqcore/bass_texture.h"
 #include "eqcore/shrill_guard.h"
 #include "eqcore/analog_top.h"
+#include "eqcore/expression.h"
 #include "eqcore/lab_eq.h"
 #include "eqcore/bass.h"
 #include "eqcore/bass_unmask.h"
@@ -105,6 +106,9 @@ class Engine {
   // Analogue top 0..1: loud, sustained 6-12 kHz energy softens by up to 2.5 dB; quiet air and clicks pass (see AnalogTop).
   // Default 0 = off, bit-exact.
   void setAnalogTop(double depth) { analogTop_.setDepth(depth); }
+  // Expression 0..1: swells and decays of the 1-4 kHz band slightly larger, average level unchanged, attacks untouched
+  // (see Expression). Default 0 = off, bit-exact.
+  void setExpression(double depth) { expression_.setDepth(depth); }
 
   // Interleaved float I/O. In-place (in == out) is allowed. Allocation-free.
   void process(const float* in, float* out, int frames);
@@ -154,6 +158,7 @@ class Engine {
   BassTexture texture_;
   ShrillGuard shrill_;
   AnalogTop analogTop_;
+  Expression expression_;
   std::atomic<bool> analysisOn_{false};
   SourceAnalyzer analyzer_;
   double smoothedGain_ = 1.0, gainTarget_ = 1.0, gainStep_ = 0.0;

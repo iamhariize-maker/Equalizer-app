@@ -47,6 +47,11 @@ class BassDetailTest {
         assertEquals(1.0, BassDetail.analogTop(AudioSettings(analogTop = true), EqState()), 0.0)
         assertEquals(0.0, BassDetail.analogTop(AudioSettings(analogTop = true), EqState(enabled = false)), 0.0)
         assertTrue(AudioSettings().withLiveCaptureControls(AudioSettings(analogTop = true)).analogTop)
+        assertEquals(0.0, BassDetail.expression(AudioSettings(), EqState()), 0.0)
+        assertEquals(1.0, BassDetail.expression(AudioSettings(expression = true), EqState()), 0.0)
+        assertTrue(AudioSettings().withLiveCaptureControls(AudioSettings(expression = true)).expression)
+        val saved = AudioSettings(expression = true, analogTop = true)
+        assertEquals(saved, AudioSettings.fromJson(org.json.JSONObject(saved.toJson().toString())))
     }
 
     @Test fun bassExperimentsSurviveSavingAndApplyLive() {

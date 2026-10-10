@@ -37,6 +37,7 @@
 #include "eqcore/grounding.h"
 #include "eqcore/bass_texture.h"
 #include "eqcore/analog_top.h"
+#include "eqcore/expression.h"
 #include "eqcore/shrill_guard.h"
 #include <fstream>
 #include <sstream>
@@ -2186,6 +2187,7 @@ void turnEverythingOn(Engine& e) {
   e.setBassSustain(1.0);
   e.setShrillGuard(1.0);
   e.setAnalogTop(1.0);
+  e.setExpression(1.0);
   e.setAnalysisEnabled(true);
 }
 }  // namespace
@@ -5170,6 +5172,113 @@ TEST(house_chain_keeps_hi_hat_detail) {
     CHECK(corr >= 0.98);
     CHECK(keep >= 0.90);
   }
+}
+
+// ---- Expression: emotion without loudness (docs/BUILD_BRIEF_0.5.14.md WP10) ------------------------------------
+namespace {
+// A 2 kHz tone whose level follows env(t) (linear), through Expression; returns the left channel.
+std::vector<double> expressionRun(double depth, double freq, const std::function<double(double)>& env, double fs, int n) {
+  Expression x(fs);
+  x.setDepth(depth);
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) l[i] = r[i] = env(i / fs) * std::sin(2 * kPi * freq * i / fs);
+  for (int s = 0; s < n; s += 480) x.process(&l[s], &r[s], std::min(480, n - s));
+  return l;
+}
+// RMS (dB) in consecutive windows of `w` samples from `a`.
+std::vector<double> windowedDb(const std::vector<double>& x, size_t a, size_t w) {
+  std::vector<double> out;
+  for (size_t s = a; s + w <= x.size(); s += w) {
+    double e = 0;
+    for (size_t i = s; i < s + w; ++i) e += x[i] * x[i];
+    out.push_back(10 * std::log10(e / static_cast<double>(w) + 1e-30));
+  }
+  return out;
+}
+}  // namespace
+
+TEST(expression_off_is_bit_exact_and_steady_tones_are_untouched) {
+  const double fs = 48000;
+  const int n = 96000;
+  const auto steady = [](double) { return 0.2; };
+  CHECK(expressionRun(0.0, 2000, steady, fs, n) == expressionRun(0.0, 2000, steady, fs, n));
+  {
+    Expression x(fs);
+    std::vector<double> l(4800, 0.1), r(4800, -0.05);
+    const auto l0 = l, r0 = r;
+    x.process(l.data(), r.data(), 4800);
+    CHECK(l == l0 && r == r0);
+  }
+  const double d = toDb(sineAmplitude(expressionRun(1.0, 2000, steady, fs, 4 * n), 2000, fs, 288000, 384000) / 0.2);
+  std::printf("    steady 2 kHz tone: %+.3f dB\n", d);
+  CHECK(std::fabs(d) < 0.05);
+}
+
+TEST(expression_enlarges_swells_without_raising_the_level) {
+  const double fs = 48000;
+  const int n = static_cast<int>(fs * 8);
+  // A 2 kHz voice swelling +-3 dB once a second (a sax or violin phrase), and a 6 Hz vibrato-like +-1.5 dB ripple.
+  const auto swell = [](double t) { return 0.15 * std::pow(10.0, 3.0 * std::sin(2 * kPi * 1.0 * t) / 20.0); };
+  const auto in = expressionRun(0.0, 2000, swell, fs, n), out = expressionRun(1.0, 2000, swell, fs, n);
+  const size_t a = static_cast<size_t>(3 * fs), w = 2400;  // 50 ms windows after settling
+  const auto wi = windowedDb(in, a, w), wo = windowedDb(out, a, w);
+  const double spanIn = *std::max_element(wi.begin(), wi.end()) - *std::min_element(wi.begin(), wi.end());
+  const double spanOut = *std::max_element(wo.begin(), wo.end()) - *std::min_element(wo.begin(), wo.end());
+  double eIn = 0, eOut = 0;
+  for (size_t i = a; i < in.size(); ++i) { eIn += in[i] * in[i]; eOut += out[i] * out[i]; }
+  const double levelDb = 10 * std::log10(eOut / eIn);
+  std::printf("    1 Hz swell: span %.2f -> %.2f dB (+%.2f), average level %+.3f dB\n", spanIn, spanOut, spanOut - spanIn, levelDb);
+  CHECK(spanOut - spanIn >= 0.5 && spanOut - spanIn <= 1.5);
+  CHECK(std::fabs(levelDb) <= 0.2);
+  const auto vibrato = [](double t) { return 0.15 * std::pow(10.0, 1.5 * std::sin(2 * kPi * 6.0 * t) / 20.0); };
+  const auto vin = expressionRun(0.0, 2000, vibrato, fs, n), vout = expressionRun(1.0, 2000, vibrato, fs, n);
+  const auto vi = windowedDb(vin, a, 480), vo = windowedDb(vout, a, 480);  // 10 ms windows
+  const double vSpanIn = *std::max_element(vi.begin(), vi.end()) - *std::min_element(vi.begin(), vi.end());
+  const double vSpanOut = *std::max_element(vo.begin(), vo.end()) - *std::min_element(vo.begin(), vo.end());
+  std::printf("    6 Hz vibrato ripple: span %.2f -> %.2f dB\n", vSpanIn, vSpanOut);
+  CHECK(vSpanOut > vSpanIn + 0.1 && vSpanOut - vSpanIn <= 1.5);
+}
+
+TEST(expression_leaves_attacks_body_and_air_alone) {
+  const double fs = 48000;
+  const int n = 48000;
+  // A 3 ms 2 kHz burst every 250 ms (a drum or pick in the band): its peaks pass.
+  const auto bursts = [](double t) {
+    const double since = std::fmod(t, 0.25);
+    return since < 0.003 ? 0.5 * (0.5 - 0.5 * std::cos(2 * kPi * since / 0.003)) : 0.0;
+  };
+  const auto in = expressionRun(0.0, 2000, bursts, fs, n), out = expressionRun(1.0, 2000, bursts, fs, n);
+  double worst = 0;
+  for (double t0 = 0.25; t0 < 0.95; t0 += 0.25) {
+    double pi = 0, po = 0;
+    for (size_t i = static_cast<size_t>(t0 * fs); i < static_cast<size_t>((t0 + 0.004) * fs); ++i) {
+      pi = std::max(pi, std::fabs(in[i])); po = std::max(po, std::fabs(out[i]));
+    }
+    worst = std::max(worst, std::fabs(toDb(po / pi)));
+  }
+  std::printf("    burst peaks: worst change %.2f dB\n", worst);
+  CHECK(worst < 0.3);
+  // Swelling body (300 Hz) and air (10 kHz) are outside the band.
+  const auto swell = [](double t) { return 0.15 * std::pow(10.0, 3.0 * std::sin(2 * kPi * t) / 20.0); };
+  for (double f : {300.0, 10000.0}) {
+    const auto bi = expressionRun(0.0, f, swell, fs, 4 * n), bo = expressionRun(1.0, f, swell, fs, 4 * n);
+    double worstF = 0;
+    const auto wi = windowedDb(bi, 96000, 2400), wo = windowedDb(bo, 96000, 2400);
+    for (size_t k = 0; k < wi.size(); ++k) worstF = std::max(worstF, std::fabs(wo[k] - wi[k]));
+    std::printf("    %.0f Hz swell: worst window change %.3f dB\n", f, worstF);
+    CHECK(worstF < 0.15);
+  }
+}
+
+TEST(expression_process_does_not_allocate) {
+  Expression x(48000);
+  x.setDepth(1.0);
+  std::vector<double> l(480, 0.1), r(480, -0.05);
+  g_allocs.store(0);
+  g_countAllocs.store(true);
+  for (int i = 0; i < 10; ++i) x.process(l.data(), r.data(), 480);
+  g_countAllocs.store(false);
+  CHECK(g_allocs.load() == 0);
 }
 
 int main(int argc, char** argv) {

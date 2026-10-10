@@ -19,7 +19,7 @@ What was built from this brief, and where the result differs. Details and number
 | WP7 recorder hold | Not built | Waits for traces showing a UID drop at every track change |
 | WP8 voice | Protection built | Centre dominance (1-4 kHz mid over side) scales presence reduction to a quarter; sizzle not scaled; the harshDb policy is not scaled. Candidates 2-4 not built |
 | WP9 bass detail | Built | Attack, sustain, dimension as Hi-Fi switches (off by default); tabla/dholak test added; no on-screen meter (owner: "heard") |
-| WP10 highs | Protection test and "Analogue top" built | Fatigue trim not built (Svaresa's SM-SOFT-1 already softens a sharp top); expression candidate not built |
+| WP10 highs | Protection test, "Analogue top" and "Expression" built | Fatigue trim not built (Svaresa's SM-SOFT-1 already softens a sharp top); Expression has a 2 s energy match so its level stays put |
 
 ## Start here (build in tiers; each tier ends at a green core/android run and its own commit)
 

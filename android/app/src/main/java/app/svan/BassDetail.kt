@@ -49,4 +49,7 @@ internal object BassDetail {
 
     /** The highs experiment (analogue top): full depth when the listener turns it on and the EQ is active. */
     fun analogTop(settings: AudioSettings, eq: EqState): Double = if (eq.enabled && settings.analogTop) 1.0 else 0.0
+
+    /** The expression experiment (winds and strings): full depth when turned on and the EQ is active. */
+    fun expression(settings: AudioSettings, eq: EqState): Double = if (eq.enabled && settings.expression) 1.0 else 0.0
 }

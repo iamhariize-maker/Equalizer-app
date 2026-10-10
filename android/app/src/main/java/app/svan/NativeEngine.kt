@@ -93,6 +93,9 @@ class NativeEngine(
     /** Analogue top 0..1: loud, sustained 6-12 kHz energy softens by up to 2.5 dB; quiet air and clicks pass. 0 = off. */
     fun setAnalogTop(depth: Double) = nativeSetAnalogTop(handle, depth)
 
+    /** Expression 0..1: 1-4 kHz swells and decays slightly larger at an unchanged average level; attacks untouched. 0 = off. */
+    fun setExpression(depth: Double) = nativeSetExpression(handle, depth)
+
     /** Sustained-shrill guard 0..1: reduces sustained 4 kHz presence and 8 kHz sizzle the analyser finds in excess (Engine B). 0 = off. */
     fun setShrillGuard(depth: Double) = nativeSetShrillGuard(handle, depth)
 
@@ -197,6 +200,7 @@ class NativeEngine(
         @JvmStatic external fun nativeSetBassTexture(handle: Long, depth: Double)
         @JvmStatic external fun nativeSetShrillGuard(handle: Long, depth: Double)
         @JvmStatic external fun nativeSetAnalogTop(handle: Long, depth: Double)
+        @JvmStatic external fun nativeSetExpression(handle: Long, depth: Double)
         @JvmStatic external fun nativeSetBassDetail(handle: Long, evenMix: Double, attack: Double, spread: Double, sustain: Double)
         @JvmStatic external fun nativeGroundingRestraintDb(handle: Long): Double
         @JvmStatic external fun nativeComputeTuning(measurement: String, target: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray

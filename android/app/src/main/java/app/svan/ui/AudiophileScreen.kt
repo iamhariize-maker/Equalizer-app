@@ -266,6 +266,8 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         SectionLabel("Highs (experimental)")
         SettingSwitchRow("Analogue top", "Loud, sustained treble (6-12 kHz: crash cymbals, bright washes) eases by up to 2.5 dB, the way tape does. Quiet air and short clicks pass unchanged; nothing is lifted. Off by default, not yet listening-tested.",
             s.analogTop, { on -> SvanRepository.updateSettings { it.copy(analogTop = on) } })
+        SettingSwitchRow("Expression (winds and strings)", "Makes swells and decays in the 1-4 kHz singing range (sax, trumpet, violin) a little larger, up to 1.4 dB peak to peak, while the average level stays the same. Drum hits and picks are left alone. Off by default, not yet listening-tested.",
+            s.expression, { on -> SvanRepository.updateSettings { it.copy(expression = on) } })
 
         SectionLabel("Capture processing quality")
         Text("Quality and dither changes take effect when capture restarts. This keeps filter latency stable during a song. System effects use Android’s own processing.",

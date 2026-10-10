@@ -658,6 +658,7 @@ class CaptureService : Service() {
     private fun applyBassDetail(engine: NativeEngine, eq: EqState, settings: AudioSettings) {
         BassDetail.apply(engine, BassDetail.levels(settings, eq, BassDetail.routeFactor(routeType)))
         engine.setAnalogTop(BassDetail.analogTop(settings, eq))
+        engine.setExpression(BassDetail.expression(settings, eq))
     }
 
     private fun applyEq(engine: NativeEngine, eq: EqState, previous: EqState? = null) {
