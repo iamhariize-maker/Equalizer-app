@@ -36,9 +36,28 @@ during capture recovery; API 35/36 lose their emulator during smoke checks. The
 new Lab harness incorrectly accepted a preceding player's connection on API 34
 and stops at `StopIteration` before the new assertions. Its follow-up waits for
 its own healthy route and a fresh status receipt, and captures the Lab pages.
-No application source changes in that follow-up. A focused frozen-APK workflow
-checks source equality before testing the original built artifact. Further runtime
-and appearance results remain pending and will be recorded before delivery.
+No application source changes in that follow-up. The [focused frozen-APK workflow](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/38045228410)
+checks source equality before testing the original built artifact. API 34 passes
+all **seven integrated-Lab checks**: basic discovery, same-session reopen churn,
+64 unique-bin controls, the existing effect owner, fitted-chain churn, restoring
+normal architecture on a curve edit, and real CLOSE expiry. Both API 33 focused
+attempts lose the emulator before those assertions (`error: closed`, then TCP
+5554 connection refused). API 33 Lab/capture qualification therefore remains open;
+its passing install and basic-detection results do not substitute for it.
+
+The first run's native appearance job passes **47 debug and 42 production UI
+checks**. Mint Circuit is exercised on all five main screens and the Svaresa
+panel; debug checks confirm theme changes preserve saved sound. Cold-launch theme
+restoration and 2× text navigation also pass. Reviewed screenshots include the
+production Mint Circuit main screens, Svaresa, applied Lab Shape/Engine/Measure,
+and large-text Lab/section navigation. Controls remain readable and reachable.
+
+The exact delivered preview comes from first-run artifact **11667241403**, built
+from **88a230e874b663566c5391814d299d796b77cb3b**. Its APK SHA-256 is
+`48450cfb13b2e2a87db51f2a2ae8e9c83213b403af378e69c634400dd3ecc910`.
+The fixture/research follow-up is **f63440e6d9d8f2d0e8c5fea4e98222c1eef04841**;
+application, native core, model assets and build configuration are unchanged.
+The full end-to-end matrix is still running; this is not an all-green matrix claim.
 
 Unverified on the owner's phones: commercial-player track changes, OEM background
 survival, USB/Bluetooth route coverage, vendor FFT and Equalizer equivalence,
