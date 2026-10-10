@@ -118,3 +118,8 @@ brutality, because unbalanced highs make listeners change track or lower the vol
 strings (violin) should be emotional, not loud. Work packages WP9 and WP10 in `BUILD_BRIEF_0.5.14.md`. Nothing here has
 been measured on the owner's tracks.
 
+Bass references (10 Oct 2026, owner): attack: Massive Attack "Girl I Love You", Nine Inch Nails "Copy of A"; texture:
+"Bound" (Drone), Nine Inch Nails "Me, I'm Not" (especially the ending); boomy bass waves: "Liquid Bass" (Ambient Capsule One),
+"Bass Waves" (DJ Iceman J). Priority: master the bass-head sustain and ring of tabla and dholak. "Visualised" means heard in
+more detail; no display is wanted. Details in BUILD_BRIEF_0.5.14.md, WP9 and section 7.
+

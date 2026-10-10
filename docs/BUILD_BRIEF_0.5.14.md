@@ -141,8 +141,18 @@ just louder. The bass is built in time layers; give each its own measured handle
   fundamental ≤ 0.2 dB; no DC; mono-sum change of the dimension path < 0.05 dB; pick-band lift only inside onset windows;
   decay-extender never raises a note above its own peak; level matched to ±0.1 dB for every blind pair. Stress case:
   heavily limited, boomy bass (the Metro Boomin reference) must come out no louder in the low band than it went in.
-- *Optional, P3.* A "bass anatomy" display in Lab/Hi-Fi that draws attack, body, tail and harmonic level live from engine
-  meters, drawn in code in the house palette. I read "visualised" mainly as heard; say if the owner means the screen.
+- *Owner's answer:* "visualised" means heard in more detail, so the bass should feel like it has shape, not like a display
+  is wanted. No on-screen bass meter is planned.
+- *Tabla, dholak and similar drums (owner priority).* The bass head of a tabla or dholak gives a pitched, ringing tone
+  that decays and often glides in pitch when the palm presses the head; the finger slap and the ring above it carry the
+  character. Treat it as its own test case. Design consequences: nothing may assume a fixed pitch or track a pitch (the
+  memoryless shaper already makes harmonics follow a gliding note exactly; keep it that way); the decay-extender follows
+  each note's own envelope and never lifts a tail above the note's peak; the pick/slap attack lift applies to the 0.6–3 kHz
+  slap of these drums as well. Synthetic test signal: a damped low sine (about 60–150 Hz) with a glide of ±20 % over its
+  first 150 ms, a few weaker upper partials, and a 1–3 kHz slap burst. Acceptance: glide shape preserved (instantaneous
+  frequency within 1 % of the input over the note), tail level within +3 dB of the input and never above the peak, second
+  and third partials of the ring raised by no more than the WP5 limits, no DC, and a ring that decays to the input's level
+  inside 1.5× its original time.
 
 **WP10 (P1 protect, P2 candidates) Highs: balance and analogue ease, nothing special.** Owner target: keep detail and
 clarity, but make the highs pleasant and balanced, because uneven highs are what make listeners skip tracks or turn the
@@ -182,8 +192,7 @@ part of the CMake build. Turn the scenarios you rely on into tests in `core/test
 
 1. A Hi-Fi diagnostic report while Gaana drops, taken after WP2 ships.
 2. Does Gaana create a new session for every track? (the WP2 trace answers this).
-3. 10–20 s excerpts: a bass-heavy master with audible pick or string attack, a boomy/limited master, a bright guitar master, a hi-hat-heavy master, the four vocal masters in §7, and one or two each of a sax or trumpet passage and a violin passage. Needed for WP3, WP5 and WP8–WP10. Name the tracks and I add them to §7.
-4. By "visualised" for the bass, do you mean heard in more detail, or also a live display (WP9 optional)?
+3. 15–20 s excerpts of every track in §7 (vocal and bass sets), plus one or two each of a sax or trumpet passage, a violin passage, and a tabla or dholak passage with audible bass-head ring (name the tracks and I add them). Needed for WP3, WP5 and WP8–WP10.
 4. Texture strength by route (speaker vs headphones) once WP5 is on the phone.
 
 ## 7. Vocal reference set (owner, 10 Oct 2026)
@@ -207,3 +216,14 @@ each in Svaresa with Hi-Fi on and tap **Learn this sound** after 20 s.
 
 Order to build: follow the tiers in "Start here". Inside Tier 1: WP2 → WP1 → WP4 → WP3 → the WP8/WP10 protect tests. The
 candidate additions in WP8–WP10 come last and only after the vocal and highs baselines exist.
+
+### Bass reference set (owner, 10 Oct 2026), titles as given
+Not measured; I have not heard them. Roles are the owner's descriptions.
+| Role | Tracks | Used to test |
+|---|---|---|
+| Attack | Massive Attack, "Girl I Love You"; Nine Inch Nails, "Copy of A" | WP9 pick/slap attack lift, onset windows, no smearing of kick-bass separation |
+| Texture | "Bound" (artist given as Drone; confirm); Nine Inch Nails, "Me, I'm Not" (especially the ending) | WP5/WP9 texture range, side-only harmonic spread, mono-sum identity |
+| Boomy / waves | "Liquid Bass" (Ambient Capsule One); "Bass Waves" (DJ Iceman J) | Stress cases: low band must come out no louder, decay extender and ported-box tail must stay off or bounded |
+| Hand drums | Tabla and dholak: no track named yet | The tabla/dholak ring test in WP9 |
+For the bass set, ask the owner for 15–20 s excerpts the same way as the vocal set (features only). The first thing to
+measure is each excerpt's low-band crest factor and decay times before any bass stage runs.
