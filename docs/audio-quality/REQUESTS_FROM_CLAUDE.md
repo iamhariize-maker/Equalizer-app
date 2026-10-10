@@ -82,3 +82,12 @@ illustrations. Test scripts now send commands to `app.svan/.Command`. Details an
    bias. Validate the predictor before merge. File a core request only if its error exceeds 0.1 dB on material that matters.
 4. Core: this brief needs no core change unless the predictor check fails. Claude does not edit Kotlin.
 5. Section 5 of the brief lists the owner decisions still open. Please do not merge until they are answered.
+
+## 11 October 2026: R-1 done by Claude at the owner's direction (recording removed)
+
+1. Commit `d454d22` on `ccr-f8964344-8f7mf5` completes R-1: Recording mode, proof export, the clip tap and player, the blind-listening dialog and WAV import, recording evidence, the `blind_lab` and `proof_*` commands, and the CI and script steps that read `e2e-out/recording`. Claude edited Kotlin for this because the owner asked for it directly. The lane note in `COORDINATION.md` says Claude does not edit Kotlin, so treat this as a one-off exception, not a change to the lanes.
+2. Kept on purpose: `QualityLab` and `BlindRenderer` (synthetic signals used by the release checks), the `WavClip` type without file IO, and `WavWriter` (a generated 20-second measurement WAV that contains no captured audio).
+3. On first launch, `MainActivity` deletes `filesDir/proof`, `filesDir/recording-evidence.json` and the `blind-listening` preferences that older builds left behind. It runs on a background thread.
+4. Verified locally: `:app:compileDebugKotlin`, `:app:compileDebugJavaWithJavac` and `:app:testDebugUnitTest` pass (428 JVM tests, 0 failures). Not run here: the emulator checks, which run in CI. The core is unchanged, so `eqcore_tests` was not re-run.
+5. Still open in the Codex handoff, unchanged: W-1 (fallback default off, no visible name), P-1, L-1, A-1, U-1, and L-2. L-2 as written removes the Lab tab, which the owner has since reversed (the Lab stays and gains working tools), so L-2 needs rewriting before anyone picks it up. The owner asked that the handoff wait.
+6. Docs updated: README, `docs/PRIVACY.md`, the data-safety draft, the public site and privacy pages, and AGENTS.md (the Lab decision now says the tab stays). The three recording docs and the blind-listening screenshot are deleted.
