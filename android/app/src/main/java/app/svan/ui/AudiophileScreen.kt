@@ -251,6 +251,18 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             if (d.size == 5) Text("70/110/180/280 Hz cuts: ${d.take(4).joinToString { "%.2f dB".format(it) }} · estimated note ${if (d[4] > 0) "%.1f Hz".format(d[4]) else "unknown"}", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         }
 
+        SectionLabel("Bass detail (experimental)")
+        Text("Audiophile engine only. Each is off by default, never turned on automatically, and has not been listening-tested yet: compare it on and off with a blind comparison before keeping it.",
+            style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+        SettingSwitchRow("Attack definition", "Lifts the pick and slap band (0.6-2.5 kHz) by up to 2 dB for about 10 ms when a bass note or hand-drum stroke starts. Nothing changes between notes.",
+            s.bassAttack, { on -> SvanRepository.updateSettings { it.copy(bassAttack = on) } })
+        SettingSwitchRow("Sustain", "Holds the decaying tail of a bass note or tabla/dholak ring up by at most 3 dB, never above the note's own peak. Steady notes are left alone.",
+            s.bassSustain, { on -> SvanRepository.updateSettings { it.copy(bassSustain = on) } })
+        SettingSwitchRow("Dimension", "Gives the bass harmonics above about 200 Hz a small phase difference between left and right, so the note has size. The fundamental and the mono sum are unchanged.",
+            s.bassDimension, { on -> SvanRepository.updateSettings { it.copy(bassDimension = on) } })
+        SettingSwitchRow("Tube colour", "Adds a second harmonic to the bass (about -23 dB at a loud note) beside the odd-harmonic texture. Can thicken notes that already have strong partials.",
+            s.bassTube, { on -> SvanRepository.updateSettings { it.copy(bassTube = on) } })
+
         SectionLabel("Capture processing quality")
         Text("Quality and dither changes take effect when capture restarts. This keeps filter latency stable during a song. System effects use Android’s own processing.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)

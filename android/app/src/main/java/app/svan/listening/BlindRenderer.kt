@@ -36,12 +36,16 @@ object BlindRenderer {
             settings.effectiveFor(state).autoHeadroom,settings.effectiveFor(state).gainProtection,
             settings.spatialMode!=SpatialMode.FAST).also {
             it.setSpatialMode(settings.spatialMode)
+            it.setAnalysis(true) // the shrill guard judges the excerpt by the analyser, as it does live
             it.setBands(state.effectiveBands().map(Band::toNative));it.setPreampDb(state.effectivePreampDb())
             it.setBassCharacter(state.bassCharacter,state.bass.crossoverHz);it.setBassResolve(state.bassResolve)
             val v=state.activeVocal;val i=state.activeInstrument;it.setStereoTuner(v.intimacy,v.warmth,v.smoothness,i.space,i.instruments,i.backingVocals,i.spatialDetail)
             it.setDynamicEq(state.dynamicEq)
             it.setBassUnmask(if(settings.experimentalBassUnmask && state === snapshot && state.enabled) 1.0 else 0.0)
-            val sm=state.activeSmart;it.setGrounding(sm?.groundingRestraint?:0.0,sm?.groundingBody?:0.0);it.setBassTexture(sm?.groundingBody?:0.0);it.setShrillGuard(sm?.groundingRestraint?:0.0)
+            val sm=state.activeSmart;it.setGrounding(sm?.groundingRestraint?:0.0,sm?.groundingBody?:0.0);it.setShrillGuard(sm?.groundingRestraint?:0.0)
+            // Bass experiments belong to the enhanced side only, like the unmask experiment above.
+            app.svan.BassDetail.apply(it, if (state === snapshot) app.svan.BassDetail.levels(settings, state,
+                app.svan.BassDetail.routeFactor(app.svan.CaptureService.routeType)) else app.svan.BassDetail.Levels.OFF)
         }
         fun process(state: EqState): FloatArray =engine(state).use {e->
             val warm=clip.samples.copyOfRange(0,minOf(clip.samples.size,clip.rate*2));e.process(warm,warm,warm.size/2)

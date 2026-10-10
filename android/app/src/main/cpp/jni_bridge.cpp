@@ -290,6 +290,15 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassTexture(JNIEnv*, 
   fromHandle(h)->setBassTexture(depth);
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassDetail(JNIEnv*, jclass, jlong h, jdouble evenMix, jdouble attack,
+                                                                      jdouble spread, jdouble sustain) {
+  auto* e = fromHandle(h);
+  e->setBassEvenMix(evenMix);
+  e->setBassAttack(attack);
+  e->setBassSpread(spread);
+  e->setBassSustain(sustain);
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetShrillGuard(JNIEnv*, jclass, jlong h, jdouble depth) {
   fromHandle(h)->setShrillGuard(depth);
 }

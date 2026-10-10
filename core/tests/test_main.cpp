@@ -4291,13 +4291,13 @@ TEST(bass_texture_is_odd_order_level_gated_and_leaves_the_fundamental_alone) {
   auto quiet = textureTone(1.0, 50, 0.00316, fs, n);
   CHECK(toDb(sineAmplitude(quiet, 150, fs, a, b) / sineAmplitude(quiet, 50, fs, a, b)) < -90.0);
   CHECK_NEAR(toDb(sineAmplitude(quiet, 50, fs, a, b) / 0.00316), 0.0, 0.05);
-  // Loud (-12 dBFS): a third harmonic of about -32 dBc (tanh shaper, k = 2.5: k^2 A^2 / 12 with the
-  // fifth-order correction), and no second harmonic (odd order only).
+  // Loud (-12 dBFS): a third harmonic of about -24 dBc (tanh shaper, drive up to 4.5; 0.5.13's 2.5 gave about
+  // -32 dBc, which a review judged too subtle), and no second harmonic (odd order only).
   auto loud = textureTone(1.0, 50, 0.25, fs, n);
   const double h3 = toDb(sineAmplitude(loud, 150, fs, a, b) / sineAmplitude(loud, 50, fs, a, b));
   std::printf("    bass texture at -12 dBFS: 3rd harmonic %+.1f dBc, 2nd %+.1f dBc\n", h3,
               toDb(sineAmplitude(loud, 100, fs, a, b) / sineAmplitude(loud, 50, fs, a, b)));
-  CHECK(h3 > -34.0 && h3 < -30.0);
+  CHECK(h3 > -27.0 && h3 < -21.0);
   CHECK(toDb(sineAmplitude(loud, 100, fs, a, b) / sineAmplitude(loud, 50, fs, a, b)) < -60.0);
   // The fundamental is not compressed: the generator's own fundamental gain is removed from the wet path.
   CHECK_NEAR(toDb(sineAmplitude(loud, 50, fs, a, b) / 0.25), 0.0, 0.05);
@@ -4335,6 +4335,300 @@ TEST(bass_texture_leaves_treble_and_the_side_image_alone) {
 TEST(bass_texture_process_does_not_allocate) {
   BassTexture t(48000);
   t.setDepth(1.0);
+  std::vector<double> l(480, 0.1), r(480, -0.05);
+  g_allocs.store(0);
+  g_countAllocs.store(true);
+  for (int i = 0; i < 10; ++i) t.process(l.data(), r.data(), 480);
+  g_countAllocs.store(false);
+  CHECK(g_allocs.load() == 0);
+}
+
+// ---- Bass detail: even harmonics, attack, dimension, sustain (docs/BUILD_BRIEF_0.5.14.md WP5, WP9) --------
+namespace {
+struct BassControls { double depth = 0, even = 0, attack = 0, spread = 0, sustain = 0; };
+void runBass(const BassControls& c, std::vector<double>& l, std::vector<double>& r, double fs) {
+  BassTexture t(fs);
+  t.setDepth(c.depth);
+  t.setEvenMix(c.even);
+  t.setAttack(c.attack);
+  t.setSpread(c.spread);
+  t.setSustain(c.sustain);
+  t.reset();  // start at the targets (no 20 ms ramp) so the measurements see the settled controls
+  const size_t n = l.size();
+  for (size_t s = 0; s < n; s += 256) t.process(&l[s], &r[s], static_cast<int>(std::min<size_t>(256, n - s)));
+}
+// The probe-3 bass line: six decaying notes with partials, peak -6 dBFS.
+struct BassNote { double f0, t0, tau, amp; };
+const std::vector<BassNote>& bassLineNotes() {
+  static const std::vector<BassNote> notes = {{41.2, 0.0, 0.45, 0.5}, {55.0, 0.5, 0.45, 0.5}, {73.4, 1.0, 0.45, 0.5},
+                                              {98.0, 1.5, 0.45, 0.5}, {41.2, 2.0, 0.9, 0.5}, {49.0, 3.0, 0.9, 0.5}};
+  return notes;
+}
+std::vector<double> bassLine(double fs) {
+  const size_t n = static_cast<size_t>(fs * 4.0);
+  std::vector<double> in(n, 0.0);
+  for (const auto& nt : bassLineNotes())
+    for (size_t i = static_cast<size_t>(nt.t0 * fs); i < n; ++i) {
+      const double t = static_cast<double>(i) / fs - nt.t0;
+      const double env = (1 - std::exp(-t / 0.004)) * std::exp(-t / nt.tau);
+      in[i] += nt.amp * env * (std::sin(2 * kPi * nt.f0 * t) + 0.5 * std::sin(2 * kPi * 2 * nt.f0 * t + 0.3) +
+                               0.25 * std::sin(2 * kPi * 3 * nt.f0 * t + 0.7));
+    }
+  double peak = 0;
+  for (double v : in) peak = std::max(peak, std::fabs(v));
+  for (auto& v : in) v *= 0.5 / peak;
+  return in;
+}
+// A tabla/dholak-like bass-head stroke: a damped low tone (110 Hz) gliding down 20 % over its first 150 ms,
+// weaker upper partials, and a 1-3 kHz slap burst at the strike.
+std::vector<double> handDrum(double fs, double seconds, double strikeAt) {
+  const size_t n = static_cast<size_t>(fs * seconds);
+  std::vector<double> x(n, 0.0);
+  std::mt19937 rng(17);
+  std::normal_distribution<double> nd(0, 1);
+  Biquad slapBand;
+  slapBand.setCoeffs(designBiquad({FilterType::BandPass, 1700.0, 0.0, 0.8, true}, fs));
+  double ph = 0;
+  for (size_t i = static_cast<size_t>(strikeAt * fs); i < n; ++i) {
+    const double t = static_cast<double>(i) / fs - strikeAt;
+    const double f = 110.0 * (0.8 + 0.2 * std::exp(-t / 0.05));  // 110 Hz falling toward 88 Hz
+    ph += 2 * kPi * f / fs;
+    const double ring = (1 - std::exp(-t / 0.002)) * std::exp(-t / 0.25);
+    const double slap = std::exp(-t / 0.004) * slapBand.process(nd(rng));
+    x[i] = 0.4 * ring * (std::sin(ph) + 0.3 * std::sin(2.0 * ph + 0.4) + 0.12 * std::sin(3.1 * ph + 1.1)) + 0.35 * slap;
+  }
+  return x;
+}
+// Instantaneous frequency of the band 60-160 Hz by zero crossings, averaged per window: one value per window.
+std::vector<double> crossingRate(const std::vector<double>& x, double fs, size_t a, size_t b, size_t window) {
+  Biquad lp, hp;
+  lp.setCoeffs(designBiquad({FilterType::LowPass, 160.0, 0.0, 0.7071, true}, fs));
+  hp.setCoeffs(designBiquad({FilterType::HighPass, 60.0, 0.0, 0.7071, true}, fs));
+  std::vector<double> y(x.size());
+  for (size_t i = 0; i < x.size(); ++i) y[i] = lp.process(hp.process(x[i]));
+  std::vector<double> rates;
+  for (size_t w = a; w + window <= b; w += window) {
+    std::vector<double> times;
+    for (size_t i = w + 1; i < w + window; ++i)
+      if (y[i - 1] < 0 && y[i] >= 0) times.push_back(static_cast<double>(i - 1) + y[i - 1] / (y[i - 1] - y[i]));
+    rates.push_back(times.size() >= 2 ? (times.size() - 1) * fs / (times.back() - times.front()) : 0.0);
+  }
+  return rates;
+}
+double windowRms(const std::vector<double>& x, size_t a, size_t b) {
+  double e = 0;
+  for (size_t i = a; i < b; ++i) e += x[i] * x[i];
+  return std::sqrt(e / static_cast<double>(b - a));
+}
+}  // namespace
+
+TEST(bass_detail_controls_off_are_bit_exact_even_after_use) {
+  const double fs = 48000;
+  BassTexture t(fs);
+  for (auto set : {&BassTexture::setDepth, &BassTexture::setEvenMix, &BassTexture::setAttack, &BassTexture::setSpread,
+                   &BassTexture::setSustain}) (t.*set)(1.0);
+  std::vector<double> l = bassLine(fs), r = l;
+  for (size_t s = 0; s < 48000; s += 480) t.process(&l[s], &r[s], 480);
+  for (auto set : {&BassTexture::setDepth, &BassTexture::setEvenMix, &BassTexture::setAttack, &BassTexture::setSpread,
+                   &BassTexture::setSustain}) (t.*set)(0.0);
+  for (size_t s = 48000; s < 96000; s += 480) t.process(&l[s], &r[s], 480);  // 1 s: every control ramps to exactly 0
+  std::vector<double> l2(l.begin() + 96000, l.begin() + 144000), r2 = l2;
+  const auto l0 = l2, r0 = r2;
+  for (size_t s = 0; s < l2.size(); s += 480) t.process(&l2[s], &r2[s], 480);
+  CHECK(l2 == l0);
+  CHECK(r2 == r0);
+}
+
+TEST(bass_texture_on_a_bass_line_keeps_peaks_and_fundamentals_and_adds_no_dc) {
+  const double fs = 48000;
+  const auto in = bassLine(fs);
+  for (double even : {0.0, 1.0}) {
+    std::vector<double> l = in, r = in;
+    runBass({1.0, even, 0, 0, 0}, l, r, fs);
+    double peakIn = 0, peakOut = 0, dc = 0, worst = 0, worstAlone = 0;
+    for (size_t i = 0; i < in.size(); ++i) {
+      peakIn = std::max(peakIn, std::fabs(in[i]));
+      peakOut = std::max(peakOut, std::fabs(l[i]));
+      dc += l[i] - in[i];
+    }
+    for (size_t k = 0; k < bassLineNotes().size(); ++k) {
+      const auto& nt = bassLineNotes()[k];
+      for (double w0 : {0.01, 0.15, 0.30}) {
+        const size_t a = static_cast<size_t>((nt.t0 + w0) * fs), b = a + static_cast<size_t>(0.1 * fs);
+        if (b >= in.size()) continue;
+        const double d = toDb(sineAmplitude(l, nt.f0, fs, a, b) / sineAmplitude(in, nt.f0, fs, a, b));
+        if (std::fabs(d) > std::fabs(worst)) worst = d;
+        if (k == 0 && std::fabs(d) > std::fabs(worstAlone)) worstAlone = d;  // the first note sounds alone
+      }
+    }
+    std::printf("    bass line, depth 1, even %.0f: peak %+.2f dB, fundamental alone %+.3f dB, worst with overlapping notes %+.3f dB, mean offset %.1e\n",
+                even, toDb(peakOut / peakIn), worstAlone, worst, dc / static_cast<double>(in.size()));
+    CHECK(toDb(peakOut / peakIn) <= 0.3);
+    // A note sounding alone keeps its fundamental within 0.2 dB. Where a note rings into the next one, the two
+    // intermodulate onto each other's fundamentals: with the stronger texture that adds up to about +0.3 dB (0.5.13's
+    // weaker drive kept it under 0.11 dB). The even ("tube") colour adds difference tones of the note's own partials
+    // too; it is an off-by-default blind-test control.
+    CHECK(std::fabs(worstAlone) <= (even > 0 ? 0.6 : 0.2));
+    CHECK(std::fabs(worst) <= (even > 0 ? 0.6 : 0.35));
+    CHECK(std::fabs(dc / static_cast<double>(in.size())) < 1e-4);
+  }
+}
+
+TEST(bass_even_mix_adds_a_second_harmonic_and_no_dc) {
+  const double fs = 48000;
+  const int n = 48000;
+  const size_t a = 24000, b = 48000;
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) l[i] = r[i] = 0.25 * std::sin(2 * kPi * 50 * i / fs);
+  const auto in = l;
+  runBass({1.0, 1.0, 0, 0, 0}, l, r, fs);
+  const double h2 = toDb(sineAmplitude(l, 100, fs, a, b) / sineAmplitude(l, 50, fs, a, b));
+  double dc = 0;
+  for (size_t i = a; i < b; ++i) dc += l[i] - in[i];
+  std::printf("    even mix 1 at -12 dBFS: 2nd harmonic %+.1f dBc, mean offset %.1e\n", h2, dc / static_cast<double>(b - a));
+  CHECK(h2 > -26.0 && h2 < -20.0);
+  CHECK(std::fabs(dc / static_cast<double>(b - a)) < 1e-4);
+  CHECK_NEAR(toDb(sineAmplitude(l, 50, fs, a, b) / 0.25), 0.0, 0.2);
+}
+
+TEST(bass_dimension_widens_only_the_harmonics_and_keeps_the_mono_sum) {
+  const double fs = 48000;
+  const int n = 48000;
+  const size_t a = 24000, b = 48000;
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) l[i] = r[i] = 0.25 * std::sin(2 * kPi * 50 * i / fs);
+  auto l1 = l, r1 = r, l2 = l, r2 = r;
+  runBass({1.0, 0, 0, 0, 0}, l1, r1, fs);
+  runBass({1.0, 0, 0, 1.0, 0}, l2, r2, fs);
+  double monoErr = 0;
+  std::vector<double> side(n);
+  for (int i = 0; i < n; ++i) {
+    monoErr = std::max(monoErr, std::fabs((l2[i] + r2[i]) - (l1[i] + r1[i])));
+    side[i] = 0.5 * (l2[i] - r2[i]);
+  }
+  const double fundSide = toDb(sineAmplitude(side, 50, fs, a, b) / 0.25);
+  const double h5Mid = sineAmplitude(l1, 250, fs, a, b), h5Side = sineAmplitude(side, 250, fs, a, b);
+  const double h9Mid = sineAmplitude(l1, 450, fs, a, b), h9Side = sineAmplitude(side, 450, fs, a, b);
+  std::printf("    dimension: mono sum change %.1e, fundamental in the side %+.1f dB, side/mid at 250 Hz %+.1f dB, 450 Hz %+.1f dB\n",
+              monoErr, fundSide, toDb(h5Side / h5Mid), toDb(h9Side / h9Mid));
+  CHECK(monoErr < 1e-12);
+  CHECK(fundSide < -80.0);
+  CHECK(toDb(h5Side / h5Mid) > -20.0 && toDb(h5Side / h5Mid) < -3.0);
+  CHECK(toDb(h9Side / h9Mid) > -20.0 && toDb(h9Side / h9Mid) < -3.0);
+}
+
+TEST(bass_attack_lifts_the_pick_band_only_at_note_onsets) {
+  const double fs = 48000;
+  const int n = static_cast<int>(fs * 1.5);
+  // A steady 1.2 kHz tone (the pick band) and a bass note struck at 0.5 s from silence.
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) {
+    const double t = i / fs;
+    const double note = t < 0.5 ? 0.0 : 0.4 * (1 - std::exp(-(t - 0.5) / 0.002)) * std::exp(-(t - 0.5) / 0.6) * std::sin(2 * kPi * 55 * (t - 0.5));
+    l[i] = r[i] = note + 0.05 * std::sin(2 * kPi * 1200 * t);
+  }
+  const auto in = l;
+  runBass({0, 0, 1.0, 0, 0}, l, r, fs);
+  const auto band = [&](const std::vector<double>& x, double t0, double t1) {
+    return sineAmplitude(x, 1200, fs, static_cast<size_t>(t0 * fs), static_cast<size_t>(t1 * fs));
+  };
+  const double atOnset = toDb(band(l, 0.502, 0.514) / band(in, 0.502, 0.514));
+  const double before = toDb(band(l, 0.2, 0.45) / band(in, 0.2, 0.45));
+  const double after = toDb(band(l, 0.65, 1.4) / band(in, 0.65, 1.4));
+  std::printf("    attack: pick band at the onset %+.2f dB, before %+.3f dB, from 150 ms after %+.3f dB\n", atOnset, before, after);
+  CHECK(atOnset > 0.8 && atOnset <= 2.05);
+  CHECK(std::fabs(before) < 0.1);
+  CHECK(std::fabs(after) < 0.1);
+}
+
+TEST(bass_sustain_keeps_a_decaying_note_up_but_never_above_its_peak) {
+  const double fs = 48000;
+  const int n = static_cast<int>(fs * 1.2);
+  // A fast-decaying 60 Hz note (tau 120 ms) and, separately, a steady note.
+  std::vector<double> l(n), r(n), sl(n), sr(n);
+  for (int i = 0; i < n; ++i) {
+    const double t = i / fs;
+    l[i] = r[i] = 0.4 * (1 - std::exp(-t / 0.002)) * std::exp(-t / 0.12) * std::sin(2 * kPi * 60 * t);
+    sl[i] = sr[i] = 0.25 * std::sin(2 * kPi * 60 * t);
+  }
+  const auto in = l, steady = sl;
+  runBass({0, 0, 0, 0, 1.0}, l, r, fs);
+  runBass({0, 0, 0, 0, 1.0}, sl, sr, fs);
+  double peakIn = 0, peakOut = 0;
+  for (int i = 0; i < n; ++i) { peakIn = std::max(peakIn, std::fabs(in[i])); peakOut = std::max(peakOut, std::fabs(l[i])); }
+  const auto lift = [&](double t0, double t1) {
+    const size_t a = static_cast<size_t>(t0 * fs), b = static_cast<size_t>(t1 * fs);
+    return toDb(windowRms(l, a, b) / windowRms(in, a, b));
+  };
+  const double early = lift(0.0, 0.05), tail = lift(0.25, 0.45);
+  const double steadyDb = toDb(sineAmplitude(sl, 60, fs, 24000, 57600) / sineAmplitude(steady, 60, fs, 24000, 57600));
+  std::printf("    sustain: peak %+.2f dB, first 50 ms %+.2f dB, tail 250-450 ms %+.2f dB, steady note %+.3f dB\n",
+              toDb(peakOut / peakIn), early, tail, steadyDb);
+  CHECK(toDb(peakOut / peakIn) <= 0.3);
+  CHECK(std::fabs(early) < 0.5);
+  CHECK(tail >= 1.0 && tail <= 3.2);
+  CHECK(std::fabs(steadyDb) < 0.1);
+}
+
+TEST(bass_detail_keeps_a_hand_drum_glide_and_bounds_its_ring) {
+  const double fs = 48000;
+  const double strike = 0.3;
+  const auto in = handDrum(fs, 2.0, strike);
+  std::vector<double> l = in, r = in;
+  runBass({1.0, 0.5, 1.0, 1.0, 1.0}, l, r, fs);
+  std::vector<double> sl = in, sr = in;  // attack and sustain alone: the band's peak must not rise
+  runBass({0, 0, 1.0, 0, 1.0}, sl, sr, fs);
+  // Glide: the 60-160 Hz zero-crossing rate per 20 ms window over the first 300 ms matches the input within 1 %.
+  const size_t a = static_cast<size_t>((strike + 0.01) * fs), b = static_cast<size_t>((strike + 0.31) * fs);
+  const auto rin = crossingRate(in, fs, a, b, 960), rout = crossingRate(l, fs, a, b, 960);
+  double worstGlide = 0;
+  for (size_t w = 0; w < rin.size(); ++w) worstGlide = std::max(worstGlide, std::fabs(rout[w] / rin[w] - 1.0));
+  // Ring: the 60-160 Hz band never exceeds the stroke's own peak and stays within +3 dB of the input in its tail.
+  Biquad lp, hp, lp2, hp2;
+  const auto lowC = designBiquad({FilterType::LowPass, 160.0, 0.0, 0.7071, true}, fs);
+  const auto highC = designBiquad({FilterType::HighPass, 60.0, 0.0, 0.7071, true}, fs);
+  lp.setCoeffs(lowC); lp2.setCoeffs(lowC); hp.setCoeffs(highC); hp2.setCoeffs(highC);
+  std::vector<double> bi(in.size()), bo(in.size()), bs(in.size());
+  Biquad lp3, hp3;
+  lp3.setCoeffs(lowC); hp3.setCoeffs(highC);
+  for (size_t i = 0; i < in.size(); ++i) {
+    bi[i] = lp.process(hp.process(in[i])); bo[i] = lp2.process(hp2.process(l[i])); bs[i] = lp3.process(hp3.process(sl[i]));
+  }
+  double peakSustain = 0;
+  for (double v : bs) peakSustain = std::max(peakSustain, std::fabs(v));
+  double peakIn = 0, peakOut = 0, dc = 0;
+  for (size_t i = 0; i < in.size(); ++i) {
+    peakIn = std::max(peakIn, std::fabs(bi[i]));
+    peakOut = std::max(peakOut, std::fabs(bo[i]));
+    dc += l[i] - in[i];
+  }
+  double worstTail = -1e9;
+  for (double t0 = 0.1; t0 < 1.0; t0 += 0.1) {
+    const size_t s0 = static_cast<size_t>((strike + t0) * fs), s1 = s0 + static_cast<size_t>(0.1 * fs);
+    worstTail = std::max(worstTail, toDb(windowRms(bo, s0, s1) / windowRms(bi, s0, s1)));
+  }
+  // Decay: time for the band to fall 30 dB under its peak (RMS over 20 ms windows), within 1.5x the input's.
+  const auto fallTime = [&](const std::vector<double>& x, double peak) {
+    for (size_t s = static_cast<size_t>(strike * fs); s + 960 < x.size(); s += 480)
+      if (s > static_cast<size_t>((strike + 0.05) * fs) && windowRms(x, s, s + 960) * std::sqrt(2.0) < peak * 0.0316)
+        return static_cast<double>(s) / fs - strike;
+    return 99.0;
+  };
+  const double tin = fallTime(bi, peakIn), tout = fallTime(bo, peakIn);
+  std::printf("    hand drum: glide error %.2f %%, band peak %+.2f dB (attack+sustain alone %+.2f dB), worst tail %+.2f dB, -30 dB after %.2f s (input %.2f s), offset %.1e\n",
+              100 * worstGlide, toDb(peakOut / peakIn), toDb(peakSustain / peakIn), worstTail, tout, tin, dc / static_cast<double>(in.size()));
+  CHECK(worstGlide < 0.01);
+  CHECK(toDb(peakSustain / peakIn) <= 0.1);  // the sustain never lifts the ring above the stroke's peak
+  CHECK(toDb(peakOut / peakIn) <= 0.5);      // with the texture's harmonics and difference tones added
+  CHECK(worstTail <= 3.2);
+  CHECK(tout <= 1.5 * tin);
+  CHECK(std::fabs(dc / static_cast<double>(in.size())) < 1e-4);
+}
+
+TEST(bass_detail_process_does_not_allocate) {
+  BassTexture t(48000);
+  for (auto set : {&BassTexture::setDepth, &BassTexture::setEvenMix, &BassTexture::setAttack, &BassTexture::setSpread,
+                   &BassTexture::setSustain}) (t.*set)(1.0);
   std::vector<double> l(480, 0.1), r(480, -0.05);
   g_allocs.store(0);
   g_countAllocs.store(true);

@@ -414,6 +414,11 @@ data class AudioSettings(
     val captureRateMode: app.svan.RatePolicy.Mode = app.svan.RatePolicy.Mode.SAFE,
     /** Explicit experiment only; Auto master never enables this. */
     val experimentalBassUnmask: Boolean = false,
+    /** Bass detail experiments (audiophile engine), each off by default and never enabled automatically. */
+    val bassAttack: Boolean = false,
+    val bassDimension: Boolean = false,
+    val bassSustain: Boolean = false,
+    val bassTube: Boolean = false,
 ) {
     /** Auto master may add protection, but never rewrites the listener's saved choices. */
     fun effectiveFor(eq: EqState): AudioSettings = if (eq.smartProtection)
@@ -428,6 +433,10 @@ data class AudioSettings(
         autoHeadroom = requested.autoHeadroom,
         gainProtection = requested.gainProtection,
         experimentalBassUnmask = requested.experimentalBassUnmask,
+        bassAttack = requested.bassAttack,
+        bassDimension = requested.bassDimension,
+        bassSustain = requested.bassSustain,
+        bassTube = requested.bassTube,
     )
 
     /** Maintain the original internal-rate target as the client rate increases. */
@@ -443,6 +452,7 @@ data class AudioSettings(
         .put("engine", engineMode.name).put("quality", quality.name).put("bits", outputBits)
         .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs).put("mixFallback", wholeMixFallback)
         .put("spatialMode", spatialMode.name).put("captureRateMode", captureRateMode.name).put("bassUnmaskExperimental", experimentalBassUnmask)
+        .put("bassAttack", bassAttack).put("bassDimension", bassDimension).put("bassSustain", bassSustain).put("bassTube", bassTube)
 
     companion object {
         fun fromJson(o: JSONObject) = AudioSettings(
@@ -458,6 +468,10 @@ data class AudioSettings(
             spatialMode = runCatching { SpatialMode.valueOf(o.getString("spatialMode")) }.getOrDefault(SpatialMode.FAST),
             captureRateMode = runCatching { app.svan.RatePolicy.Mode.valueOf(o.getString("captureRateMode")) }.getOrDefault(app.svan.RatePolicy.Mode.SAFE),
             experimentalBassUnmask = o.optBoolean("bassUnmaskExperimental", false),
+            bassAttack = o.optBoolean("bassAttack", false),
+            bassDimension = o.optBoolean("bassDimension", false),
+            bassSustain = o.optBoolean("bassSustain", false),
+            bassTube = o.optBoolean("bassTube", false),
         )
     }
 }

@@ -239,6 +239,7 @@ class CaptureService : Service() {
                             it.setBassUnmask(if (audioSettings.experimentalBassUnmask && eq.enabled) 1.0 else 0.0)
                             if (spatialCapable) it.setSpatialMode(audioSettings.spatialMode)
                             if(eq !== last)applyEq(it, eq, last)
+                            applyBassDetail(it, eq, audioSettings)
                             epoch = epoch?.let { active ->
                                 val live = active.appliedSettings.withLiveCaptureControls(audioSettings)
                                 active.copy(appliedSettings = if (spatialCapable) live.copy(
@@ -265,6 +266,8 @@ class CaptureService : Service() {
             val recovery = CaptureBufferRecovery(output.underrunCount)
             val spatialRecovery = CaptureSpatialRecovery(output.underrunCount)
             var recoveryFrames = 0L
+            routeType = runCatching { output.routedDevice?.type }.getOrNull()
+            synchronized(engineLock) { current?.let { applyBassDetail(it, SvanRepository.eq.value, epoch?.appliedSettings ?: settings) } }
             runCatching {
                 val facts = RateFacts(rate, input?.sampleRate, output.sampleRate,
                     mixerHint,
@@ -647,8 +650,13 @@ class CaptureService : Service() {
             it.setSpatialMode(s.spatialMode)
             it.setAnalysis(true) // Svaramanas listens to the source (preallocated mid/side analysis every 85 ms)
             applyEq(it, SvanRepository.eq.value)
+            applyBassDetail(it, SvanRepository.eq.value, s)
             it.setBassUnmask(if (s.experimentalBassUnmask && SvanRepository.eq.value.enabled) 1.0 else 0.0)
         }
+
+    /** Bass texture (house body weight, scaled by the output route) and the explicit bass experiments. */
+    private fun applyBassDetail(engine: NativeEngine, eq: EqState, settings: AudioSettings) =
+        BassDetail.apply(engine, BassDetail.levels(settings, eq, BassDetail.routeFactor(routeType)))
 
     private fun applyEq(engine: NativeEngine, eq: EqState, previous: EqState? = null) {
         // Preserve limiter history through adaptation; resetting it would release
@@ -667,8 +675,7 @@ class CaptureService : Service() {
         val before = previous?.activeSmart
         if (previous == null || smart?.groundingRestraint != before?.groundingRestraint || smart?.groundingBody != before?.groundingBody) {
             engine.setGrounding(smart?.groundingRestraint ?: 0.0, smart?.groundingBody ?: 0.0)
-            // Bass texture follows the house body weight: the bass gains odd harmonics where the voicing asks for weight.
-            engine.setBassTexture(smart?.groundingBody ?: 0.0)
+            // The bass texture (with its experiments) is set by applyBassDetail, from the same body weight.
             // The sustained-shrill guard follows the same restraint weight as the transient restraint.
             engine.setShrillGuard(smart?.groundingRestraint ?: 0.0)
         }
@@ -711,6 +718,9 @@ class CaptureService : Service() {
         @Volatile var epoch: CaptureEpoch? = null
             private set
         @Volatile var rateFacts: RateFacts? = null
+            private set
+        /** Type of the output device capture plays to (AudioDeviceInfo.TYPE_*), or null when unknown. */
+        @Volatile var routeType: Int? = null
             private set
         @Volatile private var current: NativeEngine? = null
         @Volatile private var unmaskSnapshot: DoubleArray? = null

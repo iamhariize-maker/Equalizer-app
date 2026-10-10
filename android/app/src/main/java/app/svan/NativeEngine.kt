@@ -86,7 +86,11 @@ class NativeEngine(
     /** Bass texture 0..1: level-gated odd harmonics for bass notes, mid channel only (Engine B). 0 = off, bit-exact. */
     fun setBassTexture(depth: Double) = nativeSetBassTexture(handle, depth)
 
-    /** Sustained-shrill guard 0..1: reduces sustained 4 kHz presence and 8 kHz sizzle, attacks pass (Engine B only). 0 = off. */
+    /** Bass detail, each 0..1, 0 = off (bit-exact): even "tube" harmonics, pick/slap attack, side-only dimension, sustain. */
+    fun setBassDetail(evenMix: Double, attack: Double, spread: Double, sustain: Double) =
+        nativeSetBassDetail(handle, evenMix, attack, spread, sustain)
+
+    /** Sustained-shrill guard 0..1: reduces sustained 4 kHz presence and 8 kHz sizzle the analyser finds in excess (Engine B). 0 = off. */
     fun setShrillGuard(depth: Double) = nativeSetShrillGuard(handle, depth)
 
     /** Reduction Grounding currently applies to the top band, dB (<= 0). */
@@ -189,6 +193,7 @@ class NativeEngine(
         @JvmStatic external fun nativeSetGrounding(handle: Long, restraint: Double, body: Double)
         @JvmStatic external fun nativeSetBassTexture(handle: Long, depth: Double)
         @JvmStatic external fun nativeSetShrillGuard(handle: Long, depth: Double)
+        @JvmStatic external fun nativeSetBassDetail(handle: Long, evenMix: Double, attack: Double, spread: Double, sustain: Double)
         @JvmStatic external fun nativeGroundingRestraintDb(handle: Long): Double
         @JvmStatic external fun nativeComputeTuning(measurement: String, target: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray
         @JvmStatic external fun nativeFitCorrection(text: String, bassDb: Double, tilt: Double, bands: Int): DoubleArray
