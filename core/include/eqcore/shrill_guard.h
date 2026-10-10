@@ -43,6 +43,10 @@ class ShrillGuard {
   // Any thread: the analyser's presence (2.5-5 kHz) and sizzle (6-10 kHz) residuals, dB over the mix's tilt.
   // Non-finite means unknown: that band is left alone.
   void setExcess(double presenceDb, double sizzleDb, double centreDb = 0.0);
+
+  // Any thread: the most the presence band may take, dB (0..2). The engine lowers it when other stages already reduce
+  // 3-6 kHz, so the reductions together stay inside one budget.
+  void setPresenceCap(double db);
   double depth() const { return depth_.load(std::memory_order_relaxed); }
 
   void reset();
@@ -72,6 +76,7 @@ class ShrillGuard {
   std::atomic<double> depth_{0.0};
   std::array<std::atomic<double>, kBands> excess_{};
   std::atomic<double> presenceScale_{1.0};
+  std::atomic<double> presenceCap_{2.0};
   std::array<Band, kBands> bands_{};
   double aMedium_ = 0.0, aSlow_ = 0.0, aGain_ = 0.0;
   std::array<std::atomic<double>, kBands> reductionDb_{};

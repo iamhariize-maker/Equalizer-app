@@ -4950,6 +4950,53 @@ TEST(shrill_guard_tames_a_sustained_shrill_cluster_through_the_engine) {
   }
 }
 
+// WP6: with every top-band reducer at maximum, the guard only completes a 4.5 dB budget for 3-6 kHz.
+TEST(shrill_guard_stays_inside_the_top_band_budget_with_every_reducer_at_maximum) {
+  const double fs = 48000;
+  const size_t n = static_cast<size_t>(fs * 7);
+  const auto in = shrillCluster(fs, 7.0, true);
+  auto run = [&](double guard, bool others) {
+    auto cfg = EngineConfig::forQuality(QualityMode::Audiophile, fs, 2, 24);
+    cfg.autoHeadroom = false;
+    cfg.gainProtection = false;
+    Engine e(cfg);
+    e.setAnalysisEnabled(true);
+    if (others) {
+      e.setGrounding({1.0, 0.0});
+      e.setStereoTuner({0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0});
+      e.setDynamicEq(1.0);
+    }
+    e.setShrillGuard(guard);
+    std::vector<float> out(in.size());
+    for (size_t s = 0; s + 480 <= n; s += 480) e.process(&in[2 * s], &out[2 * s], 480);
+    return out;
+  };
+  const auto ref = run(0.0, false), others = run(0.0, true), all = run(1.0, true);
+  const size_t a = static_cast<size_t>(5 * fs);
+  std::printf("    top budget:");
+  for (double f : {3600.0, 4200.0, 4800.0}) {
+    const double r0 = toDb(toneAmpF(others, f, fs, a, n) / toneAmpF(ref, f, fs, a, n));
+    const double r1 = toDb(toneAmpF(all, f, fs, a, n) / toneAmpF(ref, f, fs, a, n));
+    std::printf(" %.0f Hz others %+.2f, with guard %+.2f;", f, r0, r1);
+    // The guard adds at most what the budget leaves (0.3 dB tolerance for the block-delayed dynamic-EQ meter).
+    CHECK(r0 - r1 <= std::max(0.0, 4.5 + r0) + 0.3);
+  }
+  std::printf("\n");
+  // The cap itself: with 0.5 dB left, a sustained 4 kHz tone far over threshold loses 0.5 dB, not 2.
+  ShrillGuard g(fs);
+  g.setDepth(1.0);
+  g.setExcess(kShrill, 0.0);
+  g.setPresenceCap(0.5);
+  std::vector<double> l(48000), r(48000);
+  for (int i = 0; i < 48000; ++i) l[i] = r[i] = 0.2 * std::sin(2 * kPi * 4000 * i / fs);
+  for (int s = 0; s < 48000; s += 480) g.process(&l[s], &r[s], 480);
+  CHECK_NEAR(toDb(sineAmplitude(l, 4000, fs, 24000, 48000) / 0.2), -0.5, 0.05);
+  g.setPresenceCap(0.0);
+  for (int i = 0; i < 48000; ++i) l[i] = r[i] = 0.2 * std::sin(2 * kPi * 4000 * i / fs);
+  for (int s = 0; s < 48000; s += 480) g.process(&l[s], &r[s], 480);
+  CHECK_NEAR(toDb(sineAmplitude(l, 4000, fs, 24000, 48000) / 0.2), 0.0, 0.02);
+}
+
 // WP8 protection: a close-miked, centred voice with a strong natural presence peak is not shaved.
 TEST(shrill_guard_leaves_a_centred_voice_with_a_presence_peak_alone) {
   const double fs = 48000;

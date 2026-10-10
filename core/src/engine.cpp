@@ -43,6 +43,7 @@ namespace {
 // -0.1 dBFS: leaves room for the dither's +-1 LSB without reaching full scale.
 constexpr double kAgpCeiling = 0.98855;
 constexpr double kUnknown = std::numeric_limits<double>::quiet_NaN();
+constexpr double kTopBudgetDb = 4.5;  // combined 3-6 kHz reduction the guard may complete, dB
 int sanitizeFactor(int f) { return (f == 2 || f == 4 || f == 8) ? f : 1; }
 }  // namespace
 
@@ -202,6 +203,14 @@ void Engine::process(const float* in, float* out, int frames) {
     // Sustained shrill is reduced after grounding (which handles transient spikes) and before the texture,
     // so the texture's harmonics are never reduced by it. The texture comes after grounding, so its harmonics
     // are not saturated a second time; the dynamic EQ still gets the last word on resonances.
+    // One budget for 3-6 kHz (docs/BUILD_BRIEF_0.5.14.md WP6): the guard's presence band takes only what the grounding
+    // restraint (this block), the vocal de-harsh (this block) and the upper dynamic-EQ lanes (last block) have left.
+    {
+      const auto dyn = dynamic_.reductionsDb();
+      const double used = -std::min(0.0, grounding_.restraintDb()) - std::min(0.0, stereo_.lastDeharshDb()) -
+                          std::min({0.0, dyn[2], dyn[3]});
+      shrill_.setPresenceCap(kTopBudgetDb - used);
+    }
     shrill_.process(&outBuf_[0], C==2?&outBuf_[cfg_.maxBlock]:nullptr, n);
     texture_.process(&outBuf_[0], C==2?&outBuf_[cfg_.maxBlock]:nullptr, n);
     dynamic_.process(&outBuf_[0],C==2?&outBuf_[cfg_.maxBlock]:nullptr,n,dynamicAmount_.load(std::memory_order_relaxed),C==2?gains_.data():nullptr);

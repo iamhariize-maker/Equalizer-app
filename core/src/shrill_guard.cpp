@@ -45,6 +45,10 @@ ShrillGuard::ShrillGuard(double sampleRate) {
   for (auto& e : excess_) e.store(std::numeric_limits<double>::quiet_NaN(), std::memory_order_relaxed);
 }
 
+void ShrillGuard::setPresenceCap(double db) {
+  presenceCap_.store(std::isfinite(db) ? std::clamp(db, 0.0, kMaxReductionDb) : kMaxReductionDb, std::memory_order_relaxed);
+}
+
 void ShrillGuard::setExcess(double presenceDb, double sizzleDb, double centreDb) {
   excess_[0].store(presenceDb, std::memory_order_relaxed);
   excess_[1].store(sizzleDb, std::memory_order_relaxed);
@@ -77,11 +81,12 @@ std::array<double, ShrillGuard::kBands> ShrillGuard::reductionsDb() const {
 void ShrillGuard::process(double* L, double* R, int frames) {
   const double depth = depth_.load(std::memory_order_relaxed);
   // Per block: how far each band's residual is over its threshold (or unknown).
-  std::array<double, kBands> over{}, scale{};
+  std::array<double, kBands> over{}, scale{}, cap{};
   for (size_t b = 0; b < kBands; ++b) {
     const double e = excess_[b].load(std::memory_order_relaxed);
     over[b] = std::isfinite(e) ? e - kThresholdDb[b] : -1.0;
     scale[b] = b == 0 ? presenceScale_.load(std::memory_order_relaxed) : 1.0;
+    cap[b] = b == 0 ? presenceCap_.load(std::memory_order_relaxed) : kMaxReductionDb;
   }
   for (int i = 0; i < frames; ++i) {
     const double l = L[i];
@@ -105,7 +110,7 @@ void ShrillGuard::process(double* L, double* R, int frames) {
       const bool judged = over[b] > 0.0 && band.slow > kFloorPower;
       const double sustainDb = 10.0 * std::log10((band.slow + kEps) / (band.medium + kEps));
       const double sustain = std::clamp((sustainDb + 12.0) / 12.0, 0.0, 1.0);
-      const double reductionDb = judged ? depth * scale[b] * std::clamp(kSlope * over[b], 0.0, kMaxReductionDb) * sustain : 0.0;
+      const double reductionDb = judged ? depth * scale[b] * std::clamp(kSlope * over[b], 0.0, cap[b]) * sustain : 0.0;
       const double target = std::pow(10.0, -reductionDb / 20.0);
       band.gain += (1.0 - aGain_) * (target - band.gain);
       if (std::fabs(target - band.gain) < 1e-9) band.gain = target;  // settle exactly, so the bypass stays bit-exact
