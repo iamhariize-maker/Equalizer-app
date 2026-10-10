@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -35,8 +36,8 @@ import java.util.Locale
 @Composable
 fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
     val context = LocalContext.current
-    val state by IntegratedLab.state.collectAsState()
-    val revision by SvanRepository.engineARevision.collectAsState()
+    val state by IntegratedLab.state.collectAsStateWithLifecycle()
+    val revision by SvanRepository.curveRevision.collectAsStateWithLifecycle()
     var page by rememberSaveable { mutableIntStateOf(0) }
     var rate by rememberSaveable { mutableIntStateOf(48000) }
     var block by rememberSaveable { mutableIntStateOf(4096) }

@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.BackHandler
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -24,6 +25,7 @@ import app.svan.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.CoroutineScope
 
 enum class HelpPanel { NONE, DETECTION, BATTERY, COMPATIBILITY }
 object OnboardingUi {
@@ -33,20 +35,30 @@ object OnboardingUi {
 }
 
 @Composable
-fun ObserveWhileVisible(onTick: () -> Unit) {
-    val owner = LocalLifecycleOwner.current
+fun ObserveWhileVisible(intervalMs: Long = 1_000L, onTick: () -> Unit) {
+    require(intervalMs > 0)
     val currentTick by rememberUpdatedState(onTick)
-    LaunchedEffect(owner) {
+    VisibleEffect(intervalMs) {
+        while (isActive) { EfficiencyMetrics.uiPoll(); currentTick(); delay(intervalMs) }
+    }
+}
+
+/** UI-only work stops when the Activity is hidden; audio services keep their own lifetime. */
+@Composable
+internal fun VisibleEffect(vararg keys: Any?, block: suspend CoroutineScope.() -> Unit) {
+    val owner = LocalLifecycleOwner.current
+    val currentBlock by rememberUpdatedState(block)
+    LaunchedEffect(owner, *keys) {
         owner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            while (isActive) { currentTick(); delay(1_000) }
+            currentBlock()
         }
     }
 }
 
 @Composable
 fun SetupHelpHost() {
-    val panel by OnboardingUi.panel.collectAsState()
-    val fixture by OnboardingUi.fixture.collectAsState()
+    val panel by OnboardingUi.panel.collectAsStateWithLifecycle()
+    val fixture by OnboardingUi.fixture.collectAsStateWithLifecycle()
     if (panel != HelpPanel.NONE) {
         BackHandler { OnboardingUi.panel.value = HelpPanel.NONE; OnboardingUi.fixture.value = null }
         Surface(color = Svan.Black, modifier = Modifier.fillMaxSize()) {
@@ -74,7 +86,7 @@ fun SetupHelpHost() {
 @Composable
 private fun DetectionWizard(fixture: String?) {
     val context = LocalContext.current
-    val grant by DetectionSetup.state.collectAsState()
+    val grant by DetectionSetup.state.collectAsStateWithLifecycle()
     var live by remember { mutableStateOf(OnboardingAndroid.wizard(context)) }
     var linkError by remember { mutableStateOf<String?>(null) }
     ObserveWhileVisible { if (fixture == null) { DetectionSetup.refresh(); live = OnboardingAndroid.wizard(context) } }

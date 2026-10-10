@@ -14,6 +14,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -178,8 +182,17 @@ object Svaramanas {
         Thread(r, "svaramanas-planner").apply { isDaemon = true }
     }
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
-    private fun requestRecompute(immediate: Boolean) = planner.execute {
-        runCatching { recompute(immediate) }.onFailure { EqController.log("svaramanas: plan failed: $it") }
+    private val plannerGate = app.svan.PlannerRequestGate()
+    private fun requestRecompute(immediate: Boolean) {
+        app.svan.EfficiencyMetrics.plannerRequest()
+        if (!plannerGate.request(immediate)) return
+        planner.execute {
+            do {
+                val urgent = plannerGate.takeImmediate()
+                app.svan.EfficiencyMetrics.plannerRun()
+                runCatching { recompute(urgent) }.onFailure { EqController.log("svaramanas: plan failed: $it") }
+            } while (plannerGate.complete())
+        }
     }
     private lateinit var prefs: android.content.SharedPreferences
     @Volatile private var initialized = false
@@ -329,9 +342,11 @@ object Svaramanas {
         }
         scope.launch {
             requestRecompute(immediate = true)
-            while (true) {
-                delay(UPDATE_MS)
-                if (_request.value.enabled) requestRecompute(immediate = false)
+            _request.map { it.enabled }.distinctUntilChanged().collectLatest { enabled ->
+                if (enabled) while (isActive) {
+                    delay(UPDATE_MS)
+                    requestRecompute(immediate = false)
+                }
             }
         }
     }

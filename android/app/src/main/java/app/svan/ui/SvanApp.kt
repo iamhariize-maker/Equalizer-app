@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -42,7 +43,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
@@ -68,9 +68,9 @@ import androidx.compose.foundation.selection.selectable
 @Composable
 private fun SvaramanasDock(modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val request by app.svan.svaramanas.Svaramanas.request.collectAsState()
-    val listening by app.svan.svaramanas.Svaramanas.listening.collectAsState()
-    val eq by app.svan.SvanRepository.eq.collectAsState()
+    val request by app.svan.svaramanas.Svaramanas.request.collectAsStateWithLifecycle()
+    val listening by app.svan.svaramanas.Svaramanas.listening.collectAsStateWithLifecycle()
+    val eq by app.svan.SvanRepository.eq.collectAsStateWithLifecycle()
     val largeText = LocalDensity.current.fontScale > 1.5f && LocalConfiguration.current.screenWidthDp < 420
     Row(
         modifier
@@ -132,8 +132,8 @@ fun SvanApp(
     onStopCapture: () -> Unit,
     labActions: List<Pair<String, () -> Unit>>,
 ) {
-    val blindOpen by app.svan.listening.BlindLab.open.collectAsState()
-    val helpPanel by OnboardingUi.panel.collectAsState()
+    val blindOpen by app.svan.listening.BlindLab.open.collectAsStateWithLifecycle()
+    val helpPanel by OnboardingUi.panel.collectAsStateWithLifecycle()
     if(blindOpen) BlindListening()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var sectionsOpen by rememberSaveable { mutableStateOf(false) }

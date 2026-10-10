@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -38,7 +39,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,8 +70,8 @@ import kotlin.math.sqrt
 @OptIn(ExperimentalLayoutApi::class)
 fun PresetsScreen() {
     val context = LocalContext.current
-    val eq by SvanRepository.eq.collectAsState()
-    val user by SvanRepository.userPresets.collectAsState()
+    val eq by SvanRepository.eq.collectAsStateWithLifecycle()
+    val user by SvanRepository.userPresets.collectAsStateWithLifecycle()
     var message by remember { mutableStateOf<String?>(null) }
     var pasteOpen by remember { mutableStateOf(false) }
     var saveOpen by remember { mutableStateOf(false) }

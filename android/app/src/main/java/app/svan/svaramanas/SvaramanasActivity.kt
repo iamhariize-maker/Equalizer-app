@@ -1,5 +1,6 @@
 package app.svan.svaramanas
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -13,7 +14,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -41,7 +41,7 @@ class SvaramanasActivity : ComponentActivity() {
                     bars.isAppearanceLightNavigationBars = light
                     onDispose { }
                 }
-                val bubble by Svaramanas.bubble.collectAsState()
+                val bubble by Svaramanas.bubble.collectAsStateWithLifecycle()
                 Box(
                     Modifier
                         .fillMaxSize()

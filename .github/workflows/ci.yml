@@ -120,6 +120,50 @@ jobs:
           name: Svan-production-test-build
           path: android/build-kit/production-test/
 
+  efficiency-ui:
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [33, 34]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-debug
+          path: tested-debug
+      - name: Observe UI lifecycle and idle scheduling
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: default
+          arch: x86_64
+          emulator-build: '16428233'
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader -feature -Vulkan -memory 3072 -cores 2 -no-snapshot -no-boot-anim -no-audio -camera-back none
+          script: |
+            export PATH="$GITHUB_WORKSPACE/tools/ci:$PATH"
+            adb -s emulator-5554 install -r tested-debug/app-debug.apk
+            python3 android/scripts/efficiency.py emulator-5554 efficiency-out
+      - name: Results
+        if: always()
+        run: |
+          cat efficiency-out/results.txt
+          test "$(grep -c '^PASS' efficiency-out/results.txt)" -eq 10
+          ! grep -q '^FAIL' efficiency-out/results.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: efficiency-api${{ matrix.api }}
+          path: efficiency-out/
+
   appearance-ui:
     needs: android
     runs-on: ubuntu-latest

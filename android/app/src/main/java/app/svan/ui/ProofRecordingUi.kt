@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -46,18 +47,18 @@ private fun Context.activity(): Activity? = when (this) {
 /** Fixed-height recording reference above every tab, so editing settings keeps the clock in view. */
 @Composable
 fun ProofRecordingPanel() {
-    val state by ProofRecorder.state.collectAsState()
+    val state by ProofRecorder.state.collectAsStateWithLifecycle()
     if (state !is ProofRecorder.State.Recording) return
     val context = LocalContext.current
-    val label by ProofRecorder.currentLabel.collectAsState()
-    val sync by ProofRecorder.lastSync.collectAsState()
-    val ab by ProofRecorder.lastAb.collectAsState()
-    val cueNote by ProofCapture.cueNote.collectAsState()
+    val label by ProofRecorder.currentLabel.collectAsStateWithLifecycle()
+    val sync by ProofRecorder.lastSync.collectAsStateWithLifecycle()
+    val ab by ProofRecorder.lastAb.collectAsStateWithLifecycle()
+    val cueNote by ProofCapture.cueNote.collectAsStateWithLifecycle()
     var frame by remember { mutableLongStateOf(ProofRecorder.recordedFrames) }
     var marking by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var markError by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
+    VisibleEffect(Unit) {
         while (true) withFrameNanos { frame = ProofRecorder.recordedFrames }
     }
     Column(Modifier.fillMaxWidth().height(274.dp).background(Svan.Black).padding(horizontal = 16.dp, vertical = 4.dp)) {
@@ -114,7 +115,9 @@ fun ProofRecordingPanel() {
 @Composable
 fun ProofRecordingOverlay() {
     val context = LocalContext.current
-    val state by ProofRecorder.state.collectAsState()
+    val state by ProofRecorder.state.collectAsStateWithLifecycle()
+    // These rare events stay live: a started countdown must complete, and an old sync flash
+    // must not replay when the Activity returns. They create no idle polling timer.
     val countdown by ProofRecordingUi.countdown.collectAsState()
     val flashId by ProofCapture.flash.collectAsState()
     var flash by remember { mutableStateOf(false) }

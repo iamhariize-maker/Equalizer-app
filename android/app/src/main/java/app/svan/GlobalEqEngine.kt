@@ -412,10 +412,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             eq.setBandLevel(0, (labPlan!!.eq0 * scale * 100).toInt().toShort())
             eq.setBandLevel(1, (labPlan!!.eq1 * scale * 100).toInt().toShort())
         }
-        val order = centers.indices.sortedBy { if (sent[it].isNaN() || gains[it] < sent[it]) 0 else 1 }
-        for (i in order) {
-            val g = gains[i].toFloat()
-            if (abs(g - sent[i]) < 0.01f) continue
+        forEachBandUpdate(gains, sent) { i, g ->
             // Upper edge = geometric midpoint to the next centre.
             val cutoff = labCutoffs?.get(i) ?: if (i + 1 < centers.size) sqrt(centers[i] * centers[i + 1]) else 22000.0
             dp.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, cutoff.toFloat(), g))

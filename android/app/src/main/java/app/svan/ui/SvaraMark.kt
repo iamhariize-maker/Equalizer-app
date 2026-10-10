@@ -14,6 +14,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -141,10 +147,7 @@ object SvaraMark {
 /** Compose wrapper. Pulses gently while [listening]. */
 @Composable
 fun SvaramanasMark(size: Dp, listening: Boolean, resting: Boolean, modifier: Modifier = Modifier) {
-    val pulse by rememberInfiniteTransition(label = "manas").animateFloat(
-        initialValue = 0f, targetValue = if (listening) 1f else 0f,
-        animationSpec = infiniteRepeatable(tween(1369, easing = LinearEasing), RepeatMode.Reverse), label = "pulse",
-    )
+    val pulse by listeningPulse(listening && !resting, 1369)
     Canvas(modifier.size(size)) {
         drawIntoCanvas { SvaraMark.draw(it.nativeCanvas, center.x, center.y, this.size.minDimension / 2f, pulse, resting) }
     }
@@ -153,11 +156,18 @@ fun SvaramanasMark(size: Dp, listening: Boolean, resting: Boolean, modifier: Mod
 /** Svaresa's automatic-master mark. The wave brightens only while it can listen. */
 @Composable
 fun SvaresaMark(size: Dp, listening: Boolean, resting: Boolean, modifier: Modifier = Modifier) {
-    val pulse by rememberInfiniteTransition(label = "svaresa").animateFloat(
-        initialValue = 0f, targetValue = if (listening) 1f else 0f,
-        animationSpec = infiniteRepeatable(tween(1618, easing = LinearEasing), RepeatMode.Reverse), label = "pulse",
-    )
+    val pulse by listeningPulse(listening && !resting, 1618)
     Canvas(modifier.size(size)) {
         drawIntoCanvas { SvaraMark.drawSvaresa(it.nativeCanvas, center.x, center.y, this.size.minDimension / 2f, pulse, resting) }
     }
+}
+
+@Composable
+private fun listeningPulse(listening: Boolean, periodMs: Int): State<Float> {
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    return if (listening && lifecycle.isAtLeast(Lifecycle.State.RESUMED)) {
+        rememberInfiniteTransition(label = "listening").animateFloat(
+            initialValue = 0f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(periodMs, easing = LinearEasing), RepeatMode.Reverse), label = "pulse")
+    } else remember { mutableFloatStateOf(0f) }
 }

@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -21,7 +22,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,8 +45,8 @@ import app.svan.svaramanas.TuningSignatures
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TuningSignaturesSection(onMessage: (String) -> Unit) {
-    val slots by Svaramanas.signatures.collectAsState()
-    val taste by Svaramanas.taste.collectAsState()
+    val slots by Svaramanas.signatures.collectAsStateWithLifecycle()
+    val taste by Svaramanas.taste.collectAsStateWithLifecycle()
     val hasTaste = TuningSignatures.isValid(taste)
     val inUse = if (hasTaste) TuningSignatures.indexMatching(slots, taste) else null
     var selected by remember { mutableStateOf<Int?>(null) }

@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Intent
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
@@ -21,12 +22,12 @@ import kotlinx.coroutines.withContext
 @Composable
 fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
     val context = LocalContext.current
-    val report by PlaybackSessions.report.collectAsState()
-    val shell by app.svan.ShizukuAudioReports.state.collectAsState()
+    val report by PlaybackSessions.report.collectAsStateWithLifecycle()
+    val shell by app.svan.ShizukuAudioReports.state.collectAsStateWithLifecycle()
     var showDetails by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(app.svan.OnboardingAndroid.working(context)) }
     var wholeMix by remember { mutableStateOf(app.svan.EqController.globalEq.mixFallbackOn) }
-    val settings by app.svan.SvanRepository.settings.collectAsState()
+    val settings by app.svan.SvanRepository.settings.collectAsStateWithLifecycle()
     ObserveWhileVisible {
         working = app.svan.OnboardingAndroid.working(context)
         wholeMix = app.svan.EqController.globalEq.mixFallbackOn
@@ -64,7 +65,7 @@ fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
 
 @Composable
 private fun SharedOutputCard() {
-    val shared by app.svan.SharedOutput.status.collectAsState()
+    val shared by app.svan.SharedOutput.status.collectAsStateWithLifecycle()
     var captureRunning by remember { mutableStateOf(app.svan.CaptureService.isRunning) }
     ObserveWhileVisible { captureRunning = app.svan.CaptureService.isRunning }
     SvanCard {

@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -26,8 +27,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,7 +50,6 @@ import app.svan.listening.ProofCapture
 import app.svan.listening.ProofRecorder
 import app.svan.model.SpatialMode
 import app.svan.RatePolicy
-import kotlinx.coroutines.delay
 
 /** Svan processing controls and observed routing status. */
 @OptIn(ExperimentalLayoutApi::class)
@@ -59,8 +57,8 @@ import kotlinx.coroutines.delay
 fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     val context = LocalContext.current
     val prefs = SessionRouter.appPreferences()
-    val s by SvanRepository.settings.collectAsState()
-    val eq by SvanRepository.eq.collectAsState()
+    val s by SvanRepository.settings.collectAsStateWithLifecycle()
+    val eq by SvanRepository.eq.collectAsStateWithLifecycle()
     var stats by remember { mutableStateOf(CaptureService.stats) }
     var systemRunning by remember { mutableStateOf(SystemEqService.isRunning) }
     var knownApps by remember { mutableStateOf(emptySet<String>()) }
@@ -71,24 +69,21 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
     var showRules by remember { mutableStateOf(false) }
     var showPlaybackDetails by remember { mutableStateOf(false) }
     if (showRules) PolicyRulesScreen { showRules = false }
-    val detection by DetectionMonitor.status.collectAsState()
-    val captureStartup by CaptureService.startupMessage.collectAsState()
-    val captureRecovery by CaptureService.recoveryMessage.collectAsState()
-    LaunchedEffect(Unit) {
-        while (true) {
-            stats = CaptureService.stats
-            systemRunning = SystemEqService.isRunning
-            running = CaptureService.isRunning
-            verdicts = SessionRouter.compat().all()
-            systemApps = prefs.systemOnlyPackages()
-            knownApps = verdicts.keys + systemApps + SessionRouter.snapshot.map { it.pkg } +
-                DetectionMonitor.status.value.sessions.filter { source ->
-                    app.svan.MusicSourcePolicy.immediate(source.session) || SessionRouter.snapshot.any { it.sessionId == source.session.sessionId }
-                }.map { it.session.packageName }
-            knownApps = knownApps.filterNot { app.svan.MusicSourcePolicy.excludedPackage(it) }.toSet()
-            routes = SessionRouter.snapshot.toList()
-            delay(700)
-        }
+    val detection by DetectionMonitor.status.collectAsStateWithLifecycle()
+    val captureStartup by CaptureService.startupMessage.collectAsStateWithLifecycle()
+    val captureRecovery by CaptureService.recoveryMessage.collectAsStateWithLifecycle()
+    ObserveWhileVisible(intervalMs = 700) {
+        stats = CaptureService.stats
+        systemRunning = SystemEqService.isRunning
+        running = CaptureService.isRunning
+        verdicts = SessionRouter.compat().all()
+        systemApps = prefs.systemOnlyPackages()
+        knownApps = verdicts.keys + systemApps + SessionRouter.snapshot.map { it.pkg } +
+            DetectionMonitor.status.value.sessions.filter { source ->
+                app.svan.MusicSourcePolicy.immediate(source.session) || SessionRouter.snapshot.any { it.sessionId == source.session.sessionId }
+            }.map { it.session.packageName }
+        knownApps = knownApps.filterNot { app.svan.MusicSourcePolicy.excludedPackage(it) }.toSet()
+        routes = SessionRouter.snapshot.toList()
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 16.dp else 24.dp)) {
@@ -330,12 +325,12 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
 @Composable
 private fun ProofRecorderCard(engineRunning: Boolean) {
     val context = LocalContext.current
-    val state by ProofRecorder.state.collectAsState()
+    val state by ProofRecorder.state.collectAsStateWithLifecycle()
     var error by remember { mutableStateOf("") }
     var compatibility by remember { mutableStateOf(true) }
     var matchLevel by remember { mutableStateOf(false) }
     var abMatchLevel by remember { mutableStateOf(true) }
-    val countdown by ProofRecordingUi.countdown.collectAsState()
+    val countdown by ProofRecordingUi.countdown.collectAsStateWithLifecycle()
     SectionLabel("Recording mode")
     SvanCard {
         Column {

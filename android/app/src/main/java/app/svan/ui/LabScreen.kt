@@ -17,7 +17,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import app.svan.EqController
-import kotlinx.coroutines.delay
 
 /** Diagnostics from the spike, kept for testing on new devices. */
 @Composable
@@ -37,11 +35,8 @@ fun LabScreen(actions: List<Pair<String, () -> Unit>>, onOpenEq: () -> Unit = {}
         return
     }
     var log by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) {
-        while (true) {
-            log = synchronized(EqController.log) { EqController.log.toString() }.takeLast(12000)
-            delay(800)
-        }
+    ObserveWhileVisible(intervalMs = 800) {
+        log = synchronized(EqController.log) { EqController.log.toString() }.takeLast(12000)
     }
     Column(Modifier.fillMaxSize().padding(if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 16.dp else 24.dp)) {
         ScreenTitle("Device probes", "Device probes and the engine log.")

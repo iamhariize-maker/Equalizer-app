@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -42,6 +44,10 @@ object SvanRepository {
     /** Bumped whenever Engine A has applied the newest curve (for UI status). */
     private val _engineARevision = MutableStateFlow(0)
     val engineARevision: StateFlow<Int> = _engineARevision.asStateFlow()
+
+    private val _curveRevision = MutableStateFlow(0)
+    /** Synchronous curve changes only; unrelated UI/native-spatial edits do not redraw the graph. */
+    val curveRevision: StateFlow<Int> = _curveRevision.asStateFlow()
 
     @Volatile private var initialized = false
 
@@ -77,7 +83,14 @@ object SvanRepository {
                     EqController.globalEq.setDynamics(state.bassCharacter, state.bass.crossoverHz, state.systemSmoothness, state.levelling)
                     EqController.globalEq.applyCurveFrom(EqController.curveEngine, _settings.value.effectiveFor(state).gainProtection)
                     _engineARevision.update { it + 1 }
+                }
+            }
+            scope.launch {
+                // Adaptive smart layers are transient. Serialize/write only a changed saved state,
+                // independently of the slower system-effects binder worker.
+                _eq.map { it.persistenceState() }.distinctUntilChanged().collect { state ->
                     prefs.edit().putString("eq", state.toJson().toString()).apply()
+                    EfficiencyMetrics.savedEqWrite()
                 }
             }
         }
@@ -209,8 +222,8 @@ object SvanRepository {
     fun updateSettings(transform: (AudioSettings) -> AudioSettings) {
         val old = _settings.value
         val next = transform(old)
-        EqController.curveEngine.setAutoHeadroom(next.effectiveFor(_eq.value).autoHeadroom)
-        EqController.curveEngine.setGainProtection(next.effectiveFor(_eq.value).gainProtection)
+        if (next == old) return
+        applyCurve(_eq.value, next)
         _settings.value = next
         prefs.edit().putString("settings", next.toJson().toString()).apply()
         if (next.engineMode == app.svan.model.EngineMode.SYSTEM_ONLY && next.engineMode != old.engineMode) {
@@ -226,17 +239,20 @@ object SvanRepository {
 
     // ---- internals ----
 
-    private var lastSystemBands: List<app.svan.model.Band>? = null
+    private var lastCurve: CurveConfiguration? = null
 
     @Synchronized
-    private fun applyCurve(s: EqState) {
+    private fun applyCurve(s: EqState, settings: AudioSettings = _settings.value) {
         val engine = EqController.curveEngine
         // The curve engine renders Engine A's curve, so it gets the system-effects stand-ins.
-        engine.setAutoHeadroom(_settings.value.effectiveFor(s).autoHeadroom)
-        engine.setGainProtection(_settings.value.effectiveFor(s).gainProtection)
-        val bands = s.systemEffectsBands()
-        if (bands != lastSystemBands) { engine.setBands(bands.map { it.toNative() }); lastSystemBands = bands }
-        engine.setPreampDb(s.effectivePreampDb())
+        val next = CurveConfiguration.from(s, settings)
+        if (next == lastCurve) return
+        engine.setAutoHeadroom(next.autoHeadroom)
+        engine.setGainProtection(next.gainProtection)
+        if (next.bands != lastCurve?.bands) engine.setBands(next.bands.map { it.toNative() })
+        engine.setPreampDb(next.preampDb)
+        lastCurve = next
+        _curveRevision.update { it + 1 }
     }
 
     private fun persistPresets() {

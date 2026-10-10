@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -40,7 +41,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -71,7 +71,8 @@ import kotlin.math.pow
 fun SoundScreen() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val eq by SvanRepository.eq.collectAsState()
+    val eq by SvanRepository.eq.collectAsStateWithLifecycle()
+    val curveRevision by SvanRepository.curveRevision.collectAsStateWithLifecycle()
     val tuning = eq.tuning
 
     var query by remember { mutableStateOf("") }
@@ -142,7 +143,7 @@ fun SoundScreen() {
         apply()
     }
 
-    val curve = remember(eq) { EqController.curveEngine.curveDb(CURVE_FREQS) }
+    val curve = remember(curveRevision) { EqController.curveEngine.curveDb(CURVE_FREQS) }
 
     val landscapeFirst = SvanAppearance.current == AppearanceTheme.ORIGINAL || SvanAppearance.current == AppearanceTheme.SANDSTONE_ATELIER
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 16.dp else 24.dp)) {

@@ -18,6 +18,7 @@ import android.media.audiofx.AudioEffect
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import app.svan.diag.SignalLedger
 import java.util.concurrent.Executors
@@ -28,6 +29,7 @@ class SystemEqService : Service() {
     private val scanGate = ScanRequestGate()
     @Volatile private var alive = false
     private var callback: AudioManager.AudioPlaybackCallback? = null
+    private var playbackCallbackRegistered = false
     private val deviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) {
             SignalLedger.record(SignalLedger.Kind.DEVICE, "output added: " + added.joinToString { "type ${it.type}" })
@@ -45,28 +47,30 @@ class SystemEqService : Service() {
     }
     private val sessionReceiver = SessionReceiver()
     private val main = Handler(Looper.getMainLooper())
+    private val schedule = DiscoverySchedule(SystemClock.uptimeMillis())
     private val rescan = object : Runnable {
         override fun run() {
             if (!alive) return
-            sync()
-            // Track changes in basic mode have no privileged report to trigger repair.
-            // Keep a short cadence while audio/known connections exist, without busy-scanning idle phones.
-            val active = DetectionMonitor.publicActiveCount(this@SystemEqService)?.let { it > 0 }
-                ?: SessionRouter.snapshot.isNotEmpty()
-            val basic = !PlaybackSessions.hasReportAccess(this@SystemEqService)
-            main.postDelayed(this, if (basic && active) 1_000 else 5_000)
+            if (schedule.due(SystemClock.uptimeMillis())) sync()
+            armScan()
         }
     }
-    private val recoveryScan = Runnable { sync() }
+
+    private fun armScan() {
+        main.removeCallbacks(rescan)
+        if (alive) main.postAtTime(rescan, schedule.nextMs())
+    }
 
     /** Bluetooth route/session creation is asynchronous; check again after it settles. */
     private fun recover(reason: String) {
         if (!alive) return
         SignalLedger.record(SignalLedger.Kind.DETECTION, reason)
         EqController.log("detection: $reason; checking now and after route settles")
+        val now = SystemClock.uptimeMillis()
+        schedule.scanned(now)
         sync()
-        main.removeCallbacks(recoveryScan)
-        longArrayOf(350, 1_000, 2_500, 5_000, 10_000).forEach { main.postDelayed(recoveryScan, it) }
+        schedule.recover(now)
+        armScan()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -115,7 +119,10 @@ class SystemEqService : Service() {
                 recover("playback changed")
             }
         }.also { cb ->
-            runCatching { getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(cb, main) }
+            runCatching {
+                getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(cb, main)
+                playbackCallbackRegistered = true
+            }
                 .onFailure { EqController.log("detection: playback callback unavailable; periodic scans remain active: $it") }
         }
         runCatching { getSystemService(AudioManager::class.java).registerAudioDeviceCallback(deviceCallback, main) }
@@ -141,6 +148,11 @@ class SystemEqService : Service() {
                             val st = outcome.status
                             // Permission may be revoked while the activity stays open; do not leave setup saying READY.
                             main.post {
+                                if (!alive) return@post
+                                schedule.interval(SystemClock.uptimeMillis(), DiscoverySchedule.cadence(
+                                    !st.dumpPermission, st.publicActive, SessionRouter.snapshot.isNotEmpty(),
+                                    CaptureService.isRunning, playbackCallbackRegistered))
+                                armScan()
                                 if ((DetectionSetup.state.value.stage == DetectionSetup.Stage.READY) != st.dumpPermission) DetectionSetup.refresh()
                                 if (st.dumpPermission || st.knownAudioSessions > 0) CaptureService.startupMessage.value = ""
                             }
@@ -184,7 +196,6 @@ class SystemEqService : Service() {
         prefs().edit().putBoolean(KEY_CLEAN, true).apply()
         if (instance === this) { instance = null; isRunning = false }
         main.removeCallbacks(rescan)
-        main.removeCallbacks(recoveryScan)
         unregisterReceiver(sessionReceiver)
         unregisterReceiver(wakeReceiver)
         callback?.let { runCatching { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(it) } }

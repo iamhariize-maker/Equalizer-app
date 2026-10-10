@@ -100,6 +100,8 @@ fun ResponseGraph(
             textAlign = android.graphics.Paint.Align.CENTER
         }
     }
+    val curvePath = remember { Path() }
+    val fillPath = remember { Path() }
     val currentBands by rememberUpdatedState(bands)
     val currentCurve by rememberUpdatedState(curveDb)
     val select by rememberUpdatedState(onSelect)
@@ -170,7 +172,7 @@ fun ResponseGraph(
             },
     ) {
         drawGrid(range, gridPaint)
-        drawCurve(curveDb, range, dim)
+        drawCurve(curveDb, range, dim, curvePath, fillPath)
         // Nodes
         bands.forEachIndexed { i, b ->
             val x = freqToX(b.freqHz, size.width)
@@ -202,7 +204,7 @@ private fun DrawScope.drawGrid(range: Float, paint: android.graphics.Paint) {
     while (db <= range) {
         val y = dbToY(db.toDouble(), h, range)
         drawLine(if (db == 0) Svan.Outline else Svan.Grid, Offset(0f, y), Offset(w, y), strokeWidth = if (db == 0) 2f else 1f)
-        if (db != 0) drawContext.canvas.nativeCanvas.drawText("%+d".format(db), 6f * density,
+        if (db != 0) drawContext.canvas.nativeCanvas.drawText(if (db > 0) "+$db" else db.toString(), 6f * density,
             (y - 3f * density).coerceIn(paint.textSize + 3f * density, h - 5f * density), paint)
         db += step
     }
@@ -218,18 +220,19 @@ private fun DrawScope.drawGrid(range: Float, paint: android.graphics.Paint) {
     }
 }
 
-private fun DrawScope.drawCurve(curve: DoubleArray, range: Float, alpha: Float) {
+private fun DrawScope.drawCurve(curve: DoubleArray, range: Float, alpha: Float, line: Path, fill: Path) {
     if (curve.isEmpty()) return
     val w = size.width
     val h = size.height
-    val line = Path()
+    line.rewind()
     curve.forEachIndexed { i, db ->
         val x = freqToX(CURVE_FREQS[i], w)
         val y = dbToY(db, h, range)
         if (i == 0) line.moveTo(x, y) else line.lineTo(x, y)
     }
     val zeroY = dbToY(0.0, h, range)
-    val fill = Path().apply {
+    fill.rewind()
+    fill.apply {
         addPath(line)
         lineTo(w, zeroY)
         lineTo(0f, zeroY)

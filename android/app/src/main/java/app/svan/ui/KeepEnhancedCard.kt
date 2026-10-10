@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -25,7 +26,7 @@ import rikka.shizuku.Shizuku
 @Composable
 fun KeepEnhancedCard() {
     val context = LocalContext.current
-    val grant by DumpGrant.state.collectAsState()
+    val grant by DumpGrant.state.collectAsStateWithLifecycle()
     var hasDump by remember { mutableStateOf(PlaybackSessions.hasDumpPermission(context)) }
     var shizukuReady by remember { mutableStateOf(false) }
     var shizukuInstalled by remember { mutableStateOf(false) }

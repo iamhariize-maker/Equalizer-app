@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -44,8 +45,6 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,7 +66,6 @@ import app.svan.SvanRepository
 import app.svan.model.Band
 import app.svan.model.EqMode
 import app.svan.model.GraphicLayout
-import kotlinx.coroutines.delay
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.pow
@@ -77,20 +75,21 @@ private const val MAX_BANDS = 128
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 fun EqScreen(onOpenDetection: () -> Unit = {}) {
-    val eq by SvanRepository.eq.collectAsState()
-    val settings by SvanRepository.settings.collectAsState()
-    val detection by DetectionSetup.state.collectAsState()
-    val undo by SvanRepository.eqUndo.collectAsState()
-    val request by Svaramanas.request.collectAsState()
-    val heard by Svaramanas.heard.collectAsState()
-    val listening by Svaramanas.listening.collectAsState()
+    val eq by SvanRepository.eq.collectAsStateWithLifecycle()
+    val curveRevision by SvanRepository.curveRevision.collectAsStateWithLifecycle()
+    val settings by SvanRepository.settings.collectAsStateWithLifecycle()
+    val detection by DetectionSetup.state.collectAsStateWithLifecycle()
+    val undo by SvanRepository.eqUndo.collectAsStateWithLifecycle()
+    val request by Svaramanas.request.collectAsStateWithLifecycle()
+    val heard by Svaramanas.heard.collectAsStateWithLifecycle()
+    val listening by Svaramanas.listening.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var conversion by remember { mutableStateOf<String?>(null) }
     var selected by remember { mutableIntStateOf(0) }
 
 
     // The engine already holds this state (SvanRepository applies it synchronously).
-    val curve = remember(eq) { EqController.curveEngine.curveDb(CURVE_FREQS) }
+    val curve = remember(curveRevision) { EqController.curveEngine.curveDb(CURVE_FREQS) }
     val displayBands = if (eq.smartEqControl) eq.smart?.bands ?: emptyList() else eq.manualBands()
     if (selected >= displayBands.size) selected = (displayBands.size - 1).coerceAtLeast(0)
     fun changeMode(mode: EqMode, count: Int = eq.workspaceGraphicCount) {
@@ -98,7 +97,7 @@ fun EqScreen(onOpenDetection: () -> Unit = {}) {
         conversion=fit?.let { "Curve fitted · %.2f dB RMS · %.2f dB maximum difference. Undo restores the original.".format(it.rmsErrorDb,it.maxErrorDb) }
     }
     val headroom = max(0.0, (curve.maxOrNull() ?: 0.0) + eq.effectivePreampDb())
-    val appliedGain = remember(eq, settings) { EqController.curveEngine.appliedGainDb }
+    val appliedGain = remember(curveRevision) { EqController.curveEngine.appliedGainDb }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Header(eq.enabled, if (eq.smartEqControl) "${request.mode.sanskritName} · ${request.mode.plainName}" else eq.presetName, settings.quality.title) { SvanRepository.update { it.copy(enabled = !it.enabled) } }
@@ -274,19 +273,16 @@ private fun Header(enabled: Boolean, preset: String, quality: String, onPower: (
 private fun EngineStatus(quality: String, enabled: Boolean) {
     var text by remember { mutableStateOf("") }
     var live by remember { mutableStateOf(false) }
-    LaunchedEffect(quality, enabled) {
-        while (true) {
-            val routes = SessionRouter.snapshot
-            val b = routes.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.map { it.pkg }.distinct().size
-            val a = routes.filter { it.owner == SessionRouter.Owner.ENGINE_A && it.sessionId in EqController.globalEq.attachedSessions }.map { it.pkg }.distinct().size
-            live = enabled && (a > 0 || b > 0)
-            text = when {
-                !enabled -> "EQ bypassed"
-                CaptureService.isRunning && b > 0 -> "$quality · $b app${if (b == 1) "" else "s"}" + if (a > 0) " · +$a system" else ""
-                a > 0 -> "System EQ · $a app${if (a == 1) "" else "s"}"
-                else -> "No music connected"
-            }
-            delay(1000)
+    ObserveWhileVisible {
+        val routes = SessionRouter.snapshot
+        val b = routes.filter { it.owner == SessionRouter.Owner.ENGINE_B_MUTED }.map { it.pkg }.distinct().size
+        val a = routes.filter { it.owner == SessionRouter.Owner.ENGINE_A && it.sessionId in EqController.globalEq.attachedSessions }.map { it.pkg }.distinct().size
+        live = enabled && (a > 0 || b > 0)
+        text = when {
+            !enabled -> "EQ bypassed"
+            CaptureService.isRunning && b > 0 -> "$quality · $b app${if (b == 1) "" else "s"}" + if (a > 0) " · +$a system" else ""
+            a > 0 -> "System EQ · $a app${if (a == 1) "" else "s"}"
+            else -> "No music connected"
         }
     }
     Row(

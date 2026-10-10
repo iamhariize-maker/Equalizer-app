@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.animation.AnimatedVisibility
@@ -31,7 +32,6 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,16 +67,16 @@ fun SvaramanasPanel(
     onBubbleChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val request by Svaramanas.request.collectAsState()
-    val plan by Svaramanas.plan.collectAsState()
-    val heard by Svaramanas.heard.collectAsState()
-    val listening by Svaramanas.listening.collectAsState()
-    val ctx by Svaramanas.context.collectAsState()
-    val headphoneNote by app.svan.svaramanas.AutoHeadphone.statusFlow.collectAsState()
-    val eq by SvanRepository.eq.collectAsState()
+    val request by Svaramanas.request.collectAsStateWithLifecycle()
+    val plan by Svaramanas.plan.collectAsStateWithLifecycle()
+    val heard by Svaramanas.heard.collectAsStateWithLifecycle()
+    val listening by Svaramanas.listening.collectAsStateWithLifecycle()
+    val ctx by Svaramanas.context.collectAsStateWithLifecycle()
+    val headphoneNote by app.svan.svaramanas.AutoHeadphone.statusFlow.collectAsStateWithLifecycle()
+    val eq by SvanRepository.eq.collectAsStateWithLifecycle()
     var message by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(message) { if (message != null) { delay(4000); message = null } }
-    val tasteTracks by Svaramanas.tasteTracks.collectAsState()
+    val tasteTracks by Svaramanas.tasteTracks.collectAsStateWithLifecycle()
     var tasteMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tasteMessage) { if (tasteMessage != null) { delay(5000); tasteMessage = null } }
 

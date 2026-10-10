@@ -1,5 +1,6 @@
 package app.svan.ui
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -16,7 +17,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,7 +38,7 @@ import app.svan.diag.Severity
 @Composable
 fun DiagnosticCard() {
     val context = LocalContext.current
-    val state by DiagnosticEngine.state.collectAsState()
+    val state by DiagnosticEngine.state.collectAsStateWithLifecycle()
     val candidates = remember { KnownPlayers.candidates(context, SessionRouter.snapshot.map { it.pkg }) }
     var pkg by remember { mutableStateOf(candidates.firstOrNull()?.first ?: "com.spotify.music") }
     var lab by remember { mutableStateOf(true) }

@@ -109,6 +109,20 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("quality")?.let { q -> runCatching { QualityMode.valueOf(q) }.getOrNull()?.let { pendingQuality = it } }
         EqController.log("CMD $cmd")
         when (cmd) {
+            "efficiency_watch" -> if (BuildConfig.DEBUG) {
+                val directory = filesDir
+                val seconds = intent.getIntExtra("seconds", 30).coerceIn(1, 180)
+                val warmup = intent.getIntExtra("warmup", 0).coerceIn(0, 30)
+                java.io.File(directory, "efficiency-watch-start.json").delete()
+                java.io.File(directory, "efficiency-watch-end.json").delete()
+                val handler = android.os.Handler(android.os.Looper.getMainLooper())
+                handler.postDelayed({
+                    java.io.File(directory, "efficiency-watch-start.json").writeText(EfficiencyMetrics.snapshot().toString())
+                }, warmup * 1000L)
+                handler.postDelayed({
+                    java.io.File(directory, "efficiency-watch-end.json").writeText(EfficiencyMetrics.snapshot().toString())
+                }, (seconds + warmup) * 1000L)
+            }
             "lab_fit" -> if (BuildConfig.DEBUG) app.svan.lab.IntegratedLab.fit(this,
                 intent.getIntExtra("rate", 48000), intent.getIntExtra("block", 4096),
                 intent.getBooleanExtra("hybrid", false), 6.0)
