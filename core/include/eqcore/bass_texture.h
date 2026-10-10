@@ -56,6 +56,10 @@ class BassTexture {
   void setSpread(double spread);
   void setSustain(double sustain);
   double depth() const { return target_[kDepth].load(std::memory_order_relaxed); }
+  // What the two time-varying controls did in the last block, dB (>= 0), for the Lab readouts. Zero when the control
+  // is off or idle. Any thread; relaxed. Attack is the pick/slap lift (at most 2 dB), sustain the decay lift (at most 3 dB).
+  double attackLiftDb() const { return attackLiftDb_.load(std::memory_order_relaxed); }
+  double sustainLiftDb() const { return sustainLiftDb_.load(std::memory_order_relaxed); }
 
   void reset();
 
@@ -83,6 +87,8 @@ class BassTexture {
   void setControl(Control c, double v);
 
   std::array<std::atomic<double>, kControls> target_{};
+  std::atomic<double> attackLiftDb_{0.0};
+  std::atomic<double> sustainLiftDb_{0.0};
   std::array<double, kControls> value_{};
   double aRamp_ = 0.0, aUp_ = 0.0, aDown_ = 0.0;
   double level_ = 0.0;

@@ -109,6 +109,12 @@ class Engine {
   // Expression 0..1: swells and decays of the 1-4 kHz band slightly larger, average level unchanged, attacks untouched
   // (see Expression). Default 0 = off, bit-exact.
   void setExpression(double depth) { expression_.setDepth(depth); }
+  // Live readouts for the Lab, dB, any thread, relaxed. Zero when a processor is off or idle; the first four are
+  // <= 0 (reductions), expression is signed (swell/decay gain), the Bass detail lifts are >= 0.
+  double analogTopReductionDb() const { return analogTop_.reductionDb(); }
+  double expressionGainDb() const { return expression_.gainDb(); }
+  std::array<double, 2> shrillReductionsDb() const { return shrill_.reductionsDb(); }  // {4 kHz presence, 8 kHz sizzle}
+  std::array<double, 2> bassDetailLiftDb() const { return {texture_.attackLiftDb(), texture_.sustainLiftDb()}; }
 
   // Interleaved float I/O. In-place (in == out) is allowed. Allocation-free.
   void process(const float* in, float* out, int frames);

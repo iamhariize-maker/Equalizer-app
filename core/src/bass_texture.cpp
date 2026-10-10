@@ -138,6 +138,8 @@ void BassTexture::reset() {
   onsetFast_ = onsetSlow_ = gate_ = 0.0;
   env_ = peak_ = 0.0;
   lift_ = 1.0;
+  attackLiftDb_.store(0.0, std::memory_order_relaxed);
+  sustainLiftDb_.store(0.0, std::memory_order_relaxed);
   corr_ = subPower_ = 0.0;
   for (size_t c = 0; c < kControls; ++c) value_[c] = target_[c].load(std::memory_order_relaxed);
 }
@@ -147,6 +149,7 @@ void BassTexture::process(double* left, double* right, int frames) {
   std::array<double, kControls> target{};
   for (size_t c = 0; c < kControls; ++c) target[c] = target_[c].load(std::memory_order_relaxed);
   const double tableStep = kTableMax / (kTableSize - 1);
+  double lastPickGain = 0.0;
   for (int i = 0; i < frames; ++i) {
     for (size_t c = 0; c < kControls; ++c) {
       double& v = value_[c];
@@ -211,9 +214,14 @@ void BassTexture::process(double* left, double* right, int frames) {
     lift_ = liftTarget < lift_ ? liftTarget : aLiftUp_ * lift_ + (1.0 - aLiftUp_) * liftTarget;
     if (sustain == 0.0) lift_ = 1.0;
     const double body = (lift_ - 1.0) * sub + pickGain * pick;
+    lastPickGain = pickGain;
 
     left[i] += add + body + side;
     if (right) right[i] += add + body - side;
+  }
+  if (frames > 0) {  // two logarithms per block, not per sample
+    attackLiftDb_.store(lastPickGain > 0.0 ? 20.0 * std::log10(1.0 + lastPickGain) : 0.0, std::memory_order_relaxed);
+    sustainLiftDb_.store(lift_ > 1.0 ? 20.0 * std::log10(lift_) : 0.0, std::memory_order_relaxed);
   }
 }
 

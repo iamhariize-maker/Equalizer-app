@@ -214,6 +214,18 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeBassUnmaskDiagno
   return result;
 }
 
+// Live Lab readouts, dB: [analogTop (<= 0), expression (signed), shrill 4 kHz presence (<= 0), shrill 8 kHz sizzle (<= 0),
+// bass attack lift (>= 0), bass sustain lift (>= 0)]. Zero when the processor is off or idle.
+JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeProcessorReadouts(JNIEnv* env, jclass, jlong h) {
+  const Engine* e = fromHandle(h);
+  const auto shrill = e->shrillReductionsDb();
+  const auto lift = e->bassDetailLiftDb();
+  const jdouble out[6] = {e->analogTopReductionDb(), e->expressionGainDb(), shrill[0], shrill[1], lift[0], lift[1]};
+  jdoubleArray result = env->NewDoubleArray(6);
+  env->SetDoubleArrayRegion(result, 0, 6, out);
+  return result;
+}
+
 // The Svaresa/Svaramanas rule registry as JSON (read-only, for the "How Svaresa decides" screen).
 JNIEXPORT jstring JNICALL Java_app_svan_NativeEngine_nativePolicyRulesJson(JNIEnv* env, jclass) {
   return env->NewStringUTF(eqcore::policy::rulesJson().c_str());

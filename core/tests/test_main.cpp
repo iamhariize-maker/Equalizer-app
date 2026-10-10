@@ -5281,6 +5281,85 @@ TEST(expression_process_does_not_allocate) {
   CHECK(g_allocs.load() == 0);
 }
 
+// ---- Lab readouts: the app can show that an experimental processor is acting --------------------------------------
+namespace {
+// Runs a 60 Hz note shaped by env(t) through a BassTexture with only the given control on; returns the largest lifts seen.
+struct Lifts { double attack = 0, sustain = 0; };
+Lifts bassLifts(bool attackOn, bool sustainOn, const std::function<double(double)>& env, double seconds) {
+  const double fs = 48000;
+  BassTexture t(fs);
+  t.setAttack(attackOn ? 1.0 : 0.0);
+  t.setSustain(sustainOn ? 1.0 : 0.0);
+  Lifts peak;
+  std::vector<double> l(480), r(480);
+  for (int s = 0; s < static_cast<int>(seconds * fs); s += 480) {
+    for (int i = 0; i < 480; ++i) l[i] = r[i] = env((s + i) / fs) * std::sin(2 * kPi * 60.0 * (s + i) / fs);
+    t.process(l.data(), r.data(), 480);
+    peak.attack = std::max(peak.attack, t.attackLiftDb());
+    peak.sustain = std::max(peak.sustain, t.sustainLiftDb());
+  }
+  return peak;
+}
+}  // namespace
+
+TEST(bass_detail_readouts_are_zero_when_off_and_bounded_when_on) {
+  const auto plucked = [](double t) { return t < 0.5 ? 0.0 : 0.4 * std::exp(-(t - 0.5) / 0.35); };
+  const Lifts off = bassLifts(false, false, plucked, 3.0);
+  CHECK(off.attack == 0.0 && off.sustain == 0.0);
+  const Lifts attack = bassLifts(true, false, plucked, 3.0);
+  const Lifts sustain = bassLifts(false, true, plucked, 3.0);
+  std::printf("    attack lift %.2f dB (cap 2), sustain lift %.2f dB (cap 3)\n", attack.attack, sustain.sustain);
+  CHECK(attack.attack > 0.3 && attack.attack <= 2.0 + 1e-6);
+  CHECK(attack.sustain == 0.0);
+  CHECK(sustain.sustain > 0.2 && sustain.sustain <= 3.0 + 1e-6);
+  CHECK(sustain.attack == 0.0);
+}
+
+TEST(bass_detail_readouts_clear_on_reset) {
+  BassTexture t(48000);
+  t.setSustain(1.0);
+  std::vector<double> l(4800), r(4800);
+  for (int s = 0; s < 96000; s += 4800) {
+    for (int i = 0; i < 4800; ++i) l[i] = r[i] = 0.4 * std::exp(-(s + i) / 48000.0 / 0.35) * std::sin(2 * kPi * 60.0 * (s + i) / 48000.0);
+    t.process(l.data(), r.data(), 4800);
+  }
+  CHECK(t.sustainLiftDb() > 0.0);
+  t.reset();
+  CHECK(t.sustainLiftDb() == 0.0 && t.attackLiftDb() == 0.0);
+}
+
+TEST(engine_lab_readouts_are_zero_when_off_and_show_analogue_top_when_on) {
+  const double fs = 48000;
+  const auto run = [&](bool analogOn, bool expressionOn) {
+    Engine e(detailedConfig(fs));
+    e.setAnalogTop(analogOn ? 1.0 : 0.0);
+    e.setExpression(expressionOn ? 1.0 : 0.0);
+    std::vector<float> buf(960);
+    double analogMin = 0, expressionAbs = 0;
+    for (int s = 0; s < 96000; s += 480) {
+      for (int i = 0; i < 480; ++i) {
+        const double t = (s + i) / fs;
+        const float v = static_cast<float>(0.5 * std::sin(2 * kPi * 8000.0 * t) +
+                                           0.2 * (1.0 + 0.8 * std::sin(2 * kPi * 3.0 * t)) * std::sin(2 * kPi * 2000.0 * t));
+        buf[2 * i] = buf[2 * i + 1] = v;
+      }
+      e.process(buf.data(), buf.data(), 480);
+      analogMin = std::min(analogMin, e.analogTopReductionDb());
+      expressionAbs = std::max(expressionAbs, std::fabs(e.expressionGainDb()));
+    }
+    return std::make_pair(analogMin, expressionAbs);
+  };
+  const auto off = run(false, false);
+  CHECK(off.first == 0.0 && off.second == 0.0);
+  const auto on = run(true, true);
+  std::printf("    analogue top %.2f dB (cap -2.5), expression peak %.2f dB\n", on.first, on.second);
+  CHECK(on.first < -0.5 && on.first >= -2.5 - 1e-6);
+  CHECK(on.second > 0.0 && on.second < 1.5);
+  Engine e(detailedConfig(fs));
+  const auto shrill = e.shrillReductionsDb();
+  CHECK(shrill[0] <= 0.0 && shrill[1] <= 0.0);
+}
+
 int main(int argc, char** argv) {
   const char* filter = argc > 1 ? argv[1] : nullptr;
   int run = 0;
