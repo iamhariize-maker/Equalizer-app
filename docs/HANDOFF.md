@@ -17,13 +17,18 @@ the blind protocol: [docs/SOUND_RESEARCH_0.5.13.md](SOUND_RESEARCH_0.5.13.md). N
 - **Verified here.** Core: 196 checks, 0 failed (185 before, plus the new ones); ASan and UBSan clean. Android: `assembleDebug`
   and `testDebugUnitTest` pass (445 JVM tests, including the Gaana admission test); the native library builds with the new JNI
   entry points.
-- **Not verified.** Any listening (every sound change is unverified by ears). Real Gaana or other streaming sessions. Phone,
-  DAC or CPU cost on device. The CI emulator end-to-end checks, including the bass-versus-mid balance check (they run after
-  push). Lint and the release build were not run in this session.
-- **Known limit, unchanged from before.** The 300 Hz body widens only about +1.4 dB: the side path is dry-plus-delta and the
-  delta meets the 180 Hz crossover phase there. The fix is a phase-matched side crossover (research §4, item 3).
-- **Next.** Hi-Fi diagnostic report while Gaana drops; 10–20 s excerpts for the owner's four reference masters; blind pairs
-  per change, one at a time.
+- **Not verified.** Any listening (every sound change is unverified by ears). Real Gaana or other streaming sessions. Phone or
+  DAC behaviour (host CPU was measured: about +5% of the Audiophile engine). CI on `d44173e` (run 38072765359): `core`
+  (release, ASan/UBSan, TSan), `android` (lint, JVM tests, production APK and Play bundle), `capture-lab` 33/34 and `compat`
+  29/30/33 pass. `efficiency-ui (33)` and `production-ui (33)` fail as harness aborts (adb exit 1, incomplete PASS counts,
+  no FAIL lines), identically to the base `d8f0201`, where six API 33/compat jobs are red. `emulator-e2e` and
+  `basic-detection` were still running when this was written; read them before relying on the bass-versus-mid balance check.
+- **Review corrections (measured).** The capture changes above are dead without DUMP (`SessionRouter.sync` and the
+  `playing == true` promotion never run there), the shrill guard's absolute thresholds are inert on music-like spectra, and
+  the `space` side path has a −6.5 dB hole at 200 Hz, not only the +1.4 dB at 300 Hz. Details and the corrected plan:
+  [BUILD_BRIEF_0.5.14.md](BUILD_BRIEF_0.5.14.md).
+- **Next.** Follow `docs/BUILD_BRIEF_0.5.14.md`: the return path for parked players without DUMP first. Then the Hi-Fi
+  diagnostic report while Gaana drops; 10–20 s excerpts for the owner's four reference masters; blind pairs per change.
 
 ## 0.5.12: efficiency plus native Capture Lab
 

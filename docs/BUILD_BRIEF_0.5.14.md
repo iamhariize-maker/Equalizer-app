@@ -1,0 +1,112 @@
+# Build brief 0.5.14 — return path for parked players, shrill guard re-base, space, bass texture range
+
+Read `AGENTS.md` first. Work on the branch the session names. Base: `d44173e` (0.5.13 candidate). Evidence below comes
+from an independent review with measurements; the probes that produced it are in `tools/probes/0.5.13/` (see §5).
+Nothing here has been heard on a phone. Do not claim sound quality; ship each change as a blind-test pair.
+
+## 1. Verdict on `d44173e`
+
+| Part | Verdict | Why |
+|---|---|---|
+| `BassTexture` + wiring | **Keep**, retune range (WP5) | Bass line probe: peak −0.04 dB, fundamental ≤0.11 dB, no DC, 1.1 ms/s CPU. But −32 dBc at −12 dBFS is probably too subtle |
+| `ShrillGuard` detector | **Re-base** (WP3) | Inert on realistic material (see F4) |
+| `space` 6 kHz shelf | **Replace** (WP4) | Air is tamed, but the side still has a −6.5 dB hole at 200 Hz (F5) |
+| Capture changes | **Replace mechanism** (WP1) | Dead on the no-DUMP path the owner runs (F1, F2) |
+| `com.gaana` admission, JNI, tests | Keep | Harmless, compiled, tested |
+
+CI on `d44173e` (run 38072765359): core (release, ASan/UBSan, TSan), android (lint, JVM, production APK), capture-lab 33/34,
+compat 29/30/33 pass. `efficiency-ui (33)` and `production-ui (33)` fail as harness aborts (adb exit 1, 5/10 PASS, no
+FAIL lines) and fail the same way on the base `d8f0201`, where six API 33/compat jobs are red. Compare job by job before
+blaming a change. Read `emulator-e2e` and `basic-detection` results for this run before starting.
+
+## 2. Findings (all measured or read from code)
+
+| # | Finding | Evidence |
+|---|---|---|
+| F1 | Without DUMP, `SessionRouter.sync` never runs: `SystemEqService.sync` calls it only when `st.dumpPermission`, else `repairKnownSessions()`. So `MusicSourceGate`, sibling admission and the dump-fed `evidence` UID exclusion are dead there | `SystemEqService.kt` ~L150–160 |
+| F2 | Without DUMP a route's `playing` is always `null` (set only by `sync`). `retryParkedPlayers` needs `playing == true`, so a source handed to Engine A (fail-open or stall) **never returns** until a new OPEN arrives. This is the leading explanation for "Gaana gets disconnected and stays" | `SessionRouter.kt` `retryParkedPlayers`, `sessionOpened(…, playing = null)` |
+| F3 | During capture a CLOSE removes a muted route at once (`sessionClosed`, `projection != null`). An app that opens a new session per track tears the recorder down and reopens it every track. Engine rebuild is **not** the cost: construct 0.10–0.35 ms, `reset()` 0.003 ms | `p1_cost` probe. Whether Gaana churns sessions is unverified |
+| F4 | `ShrillGuard` is inert on music. Presence threshold −9 dB sits on the pink-noise edge (pink: −9.0). Music-like spectra read −20 dB, so 11 dB under it. On a sustained harsh cluster the repo's analyzer reads `harshDb` **+29.2 dB** (smoothing starts at 1.5) while the guard changes nothing (0.00 dB at 3.6/4.2/4.8 kHz) | `p2`, `p4`, `p5` probes |
+| F5 | `space` +1 side gain, old / committed: 120 Hz −0.6/−0.6, **200 Hz −6.7/−6.5**, 300 Hz +1.1/+1.4, 600 Hz +5.1/+5.3, 2 kHz +5.9/+6.1, 8 kHz +6.0/+1.5, 10 kHz +6.0/+0.6 dB. The 200 Hz hole (LR4 crossover phase against the dry path) plus a lifted top reads as "light and airy" | `p6` probe; `stereoResponsePower` |
+| F6 | Harmonic level vs shaper drive k at −12 dBFS (3rd harmonic): k 2.5 → −31.3, 3.5 → −26.9, 4.5 → −24.1, 6.5 → −21.3 dBc. At the house mapping (depth 0.7) the committed texture sits near −35 dBc | `drive.py` |
+| F7 | New stages cost +5% of the Audiophile engine on the host (BassTexture 1.1 ms/s, ShrillGuard 3.9 ms/s). Not a concern | `p1_cost` probe |
+| F8 | The analyzer's `harshDb` is the 2.5–5 kHz residual against the mix's own least-squares tilt. Pink noise reads −0.2, steeper music-like −0.1, a bright flat top reads `harsh` −4.0 and `air` +12.8. It separates shrill from normal cleanly | `p5` probe; `analyzer.cpp` `residual()` |
+
+Note on `otherActivePlayers`: the muted source's own track is still an active player, so the silence fail-open fires on a
+**stalled but active** track (buffering, ad gap, DRM zeros), not on a pause (a paused track leaves the active list).
+
+## 3. Work packages (priority order)
+
+**WP1 (P0) Return path without DUMP.** Files: `SessionRouter.kt` (`onCaptureSilent`, `retryParkedPlayers`), new pure
+`ParkPolicy.kt`, `ParkPolicyTest.kt`, `SessionContinuity.kt`.
+- Treat `playing == null` as "maybe playing" everywhere; only an explicit `false` blocks promotion.
+- `ParkPolicy`: per-package state machine with a fake-clock interface. Confirmed packages are **never blocked
+  permanently**: hand-over after 6 s of zeros on an active track, minimum dwell 5 s, then return by a listen-only probe
+  every 2–3 s (reuse the late-probe machinery, unmuted) or by timer backoff 20 s → 60 s → 180 s → 600 s cap. Reset the
+  counters after 10 s of captured audio. Unconfirmed packages keep today's 3 min / 15 min / session strikes.
+- Distinguish blocked from stalled with `AudioRecord.activeRecordingConfiguration.isClientSilenced` (already traced):
+  silenced → blocked (strike); not silenced → stall (no strike).
+- Promote only parked routes with reason in {`SILENT_RECENTLY`, `NO_CAPTURE_DATA`, `WAITING_FOR_PLAYBACK`}; allow it while
+  another source is captured only when the package is confirmed. Fold or remove the `stall:` keys and `STALL_*` constants.
+- Tests: JVM (fake clock): stall → park → promote with `playing == null`; repeated stalls grow the backoff to the cap and
+  never go permanent for a confirmed package; explicit `playing == false` is not promoted; unconfirmed strikes unchanged.
+  Emulator: add a stall mode to the fixture player (15 s of zeros mid-track, track still active) and assert the source is
+  back on Engine B within 30 s with no new OPEN, in a DUMP-free job.
+
+**WP2 (P0) Make the next Gaana report conclusive.** Add `EqController.log` lines with prefixes the classifier knows
+(`diag/EngineTrace.kt` ~L178; add `park:`, `promote:`, `uid-drop:`): package, reason, ms since the previous event, recorder
+open duration, and `isClientSilenced`. Test the classifier. Ship before or with WP1.
+
+**WP3 (P1) Re-base `ShrillGuard` on the analyzer.**
+- Keep: two 4th-order band-passes (4 kHz Q 1, 8 kHz Q 1.4), the sustain gate (2 ms vs 40 ms power; closed during attacks),
+  2 dB cap per band, 10 ms gain smoothing, bypass bit-exactness, the −100 dBFS floor. Delete the internal absolute
+  band-to-mix detector.
+- Input: analyzer residuals. Add lock-free atomics in `SourceAnalyzer` published where `published_ = f` is set (the audio
+  thread must not call `snapshot()`, which locks) plus a new `residual(6000, 10000)` kept off the packed JNI array. The
+  engine passes them per block when `analysisOn_`; with analysis off the guard idles.
+- Start values (match `SM-HARSH-1`): presence reduces above `harshDb` 1.5 dB, sizzle above 2.0 dB, 0.5 dB per dB, cap 2 dB.
+- Tests: the probe-4 cluster drops 1.5–2.0 dB per partial at depth 1; pink and −6 dB/oct noise change < 0.05 dB; a 3 ms burst
+  peak changes < 0.3 dB while excess is high; depth 0 bit-exact. Calibrate against the owner's reference excerpts with
+  `tools/mastering/` (percentiles, not pink-noise reasoning).
+
+**WP4 (P1) `space` as a plain side EQ.** Replace the LR4 dry-plus-delta for `space` with a bell plus high shelf on S. Keep mono
+sum bit-identical, keep `stereoResponsePower` in sync, update the tests that pin the old structure and say why.
+Targets at +1: side gain ≥ −0.5 dB at ≤ 250 Hz, +3.5…+6 dB over 700 Hz–3 kHz, ≤ +0.5 dB at ≥ 9 kHz; hard-pan leak ≤ −20 dB
+below 150 Hz and ≤ −9 dB elsewhere. Probe 6 trial (bell 1.5 kHz +6 dB Q 0.45 plus shelf 6.5 kHz −5 dB): −0.2 @200, +0.8 @300,
++3.1 @600, +5.2 @1k, +5.5 @2k, +2.3 @4k, −2.8 @8k, −3.9 @10k. It overshoots at the top: use a milder shelf (−2…−3 dB) and
+drop the 250 Hz low shelf (it worsened the 60 Hz leak to −23 dB). Narrowing mirrors the bell; no top shelf.
+
+**WP5 (P1) Bass texture range.** Raise `kDriveMax` 2.5 → 4.5 (≈ −24 dBc at −12 dBFS, full depth). Add `evenMix` 0..1 (default 0)
+as a blind-test control for the second harmonic (full-wave rectified sub band, DC removed by the 30 Hz high-pass). Add a
+route factor in Kotlin (speaker 1.0, wired and Bluetooth 0.7 as starting guesses, blind-tested). Acceptance: bass-line probe
+peak growth ≤ 0.3 dB, fundamental deviation ≤ 0.2 dB, no DC; `evenMix` 1 gives a 2nd harmonic −26…−20 dBc.
+
+**WP6 (P2) Top-band budget.** After WP3, cap the combined 3–6 kHz reduction (Grounding restraint ≤ 4 dB, vocal de-harsh,
+DynamicEq ≤ 3 dB, guard 2+2) at about 4.5 dB by scaling the guard's cap with the remaining budget, using the existing meters
+(`groundingRestraintDb()`, `lastDeharshDb()`, `reductionsDb()`). Test on the probe-4 scenario at maximum settings.
+
+**WP7 (P2, only if WP2 traces show a UID drop at every track change).** Hold the recorder open for ≤ 2 s when a single-UID
+capture drops to empty; gate the output to silence until a muted route returns; fade in. Only valid for single-UID capture
+(a held UID that is not muted would be captured raw and doubled).
+
+## 4. Rules that still apply
+
+Allocation-free audio thread; a measured test for every DSP change; gold design tokens untouched; no GPL code; keep the ten
+detection, 39 routing, nine workspace and eight control checks intact; never open a pull request; commit trailers carry the
+session link and a generic co-author line with no model name. No version bump unless the owner asks. Document verified and
+unverified items in `docs/HANDOFF.md`.
+
+## 5. Probes and commands
+
+`tools/probes/0.5.13/` holds `p1_cost.cpp` (construction, reset, CPU), `p2_dsp.cpp` (guard on tilted noise), `p3_bass.cpp`
+(bass line and 808 glide), `p4_stack.cpp` (guard plus existing reducers), `p5_analyzer.cpp` (analyzer residuals),
+`p6_space.cpp` (side gain and leak tables), `drive.py` (harmonic level vs drive). Build: configure the core with
+`-DCMAKE_BUILD_TYPE=Release`, then `g++ -O2 -std=c++17 -Icore/include <probe>.cpp build/libeqcore.a -lpthread`. They are not
+part of the CMake build. Turn the scenarios you rely on into tests in `core/tests/test_main.cpp`.
+
+## 6. Questions for the owner
+
+1. A Hi-Fi diagnostic report while Gaana drops, taken after WP2 ships.
+2. Does Gaana create a new session for every track? (the WP2 trace answers this).
+3. 10–20 s excerpts: a bass-heavy master, a bright guitar master, a hi-hat-heavy master, a vocal master. Needed for WP3 and WP5.
+4. Texture strength by route (speaker vs headphones) once WP5 is on the phone.

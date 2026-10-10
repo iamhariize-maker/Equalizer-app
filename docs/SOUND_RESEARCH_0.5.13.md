@@ -1,5 +1,12 @@
 # Svan 0.5.13 — capture stability, bass texture, spacious without air, sustained shrill
 
+> **Review note (2026-10-10).** An independent review with measurements corrects four points below. The corrected plan is
+> [BUILD_BRIEF_0.5.14.md](BUILD_BRIEF_0.5.14.md). (1) The capture changes in §1 sit on code that does not run without DUMP,
+> and a source handed to Engine A is never promoted back there (brief F1, F2). (2) The shrill guard's absolute thresholds are
+> inert on music-like spectra, and on a harsh cluster the analyzer rates at +29 dB (F4). (3) The `space` "known limit" understates
+> the problem: the side also has a −6.5 dB hole at 200 Hz (F5). (4) CPU and engine-rebuild costs were measured and are not a
+> concern (F3, F7).
+
 Status: code and core/JVM tests are in this branch. **No listening has been done.** Nothing here is a sound-quality
 claim until the blind protocol in §6 has run on the owner's phones. Verified here: the core suite (196 checks, 0 failed;
 ASan and UBSan clean), the Android debug build and the JVM unit tests (Gradle). Not verified here: the emulator
