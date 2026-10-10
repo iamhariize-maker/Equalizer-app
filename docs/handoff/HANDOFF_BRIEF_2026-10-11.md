@@ -284,7 +284,8 @@ Do these in order on the LG V60. Keep the detailed report each time (Hi-Fi → M
   `EQCORE_REPO_DIR`, so run them from a full checkout. From a `core/`-only export the lab model test dereferences an empty
   vector at `core/tests/test_main.cpp:4238` (`lab_wola_matches_all_six_published_models_and_reference_bass_blend`), and
   four policy checks report missing Kotlin files. Both are artifacts of the partial export (verified here with ASan and
-  UBSan). **Full-checkout result at `fbe0680`: see the line below.**
+  UBSan). **Full-checkout result at `fbe0680`: 215 tests, 0 failed checks, exit 0** (default CMake Release build in this
+  container, GCC 13.3). ASan and UBSan have not been run on the full tree.
 - **Android:** `cd android && ./gradlew assembleDebug :app:assembleRelease lintDebug testDebugUnitTest`, with
   `ANDROID_HOME` set. Not run in this pass.
 - **Manifest policy:** `python3 android/scripts/check_manifest_permissions.py <compiled manifest dump>`.
@@ -335,5 +336,5 @@ Append this only after the owner confirms the target branch. Do not edit `docs/a
 - Owner report: pasted in the 11 October 2026 session, read in full.
 - Code: `ccr-f8964344-8f7mf5` at `fbe0680`, read with `git show` and `git grep`. Nothing was checked out or pushed there.
 - Probes: `docs/handoff/probes/` (run against the 0.5.13 core on this container).
-- Core test run at `fbe0680`: see §4 for the full-checkout result. The earlier partial-export runs (no lab assets, no Kotlin
-  test files) are artifacts and are not findings.
+- Core test run at `fbe0680`: 215 tests, 0 failed checks on a full checkout (§4). The earlier partial-export runs (no lab
+  assets, no Kotlin test files) are artifacts and are not findings.
