@@ -1,34 +1,46 @@
 # Svan development record
-## 0.5.13 (candidate): capture stability, bass texture, space without air, sustained shrill — 2026-10-10
+## 0.5.13 (version 0.5.13, code 20): parked players return, analyser-driven shrill guard, space as side EQ, bass detail — 2026-10-10
 
-Base: the designated branch was fast-forwarded to the 0.5.12 Capture Lab line (`d8f0201`, no history rewritten). Research and
-the blind protocol: [docs/SOUND_RESEARCH_0.5.13.md](SOUND_RESEARCH_0.5.13.md). No version bump in this change.
+Built from [BUILD_BRIEF_0.5.14.md](BUILD_BRIEF_0.5.14.md) (its status table lists every work package) on top of the 0.5.13
+candidate (`d44173e`, research in [SOUND_RESEARCH_0.5.13.md](SOUND_RESEARCH_0.5.13.md)). Base line is 0.5.12 (code 19).
 
-- **Capture.** Silence after a source's audio was heard in the epoch is a stall: 12 s before fail-open, no sample-rate retry,
-  a 20 s hand-over and no strike, at most two per app per capture session (the third silence takes the strike path). A new
-  session of an app already on Engine B is admitted at once. A proven app returns to Engine B while another source is
-  captured. `com.gaana` joins the immediate-admission list (admission only). The Gaana diagnosis is from code; it needs a
-  Hi-Fi diagnostic report taken while it drops to confirm which path fired.
-- **DSP (core).** `BassTexture`: odd-order, level-gated harmonics of the mid channel's 150 Hz-and-below band, the shaper's
-  fundamental removed, depth 0 bit-exact; the app drives it from `groundingBody`. `ShrillGuard`: sustain-gated reduction of
-  4 kHz presence and 8 kHz sizzle, capped at 2 dB per band; the app drives it from `groundingRestraint`. Space widening now
-  returns to unity above about 6 kHz (side gain +6.05 dB at 2 kHz, +1.47 dB at 8 kHz, +0.61 dB at 10 kHz).
-  Engine order: stereo → grounding → shrill guard → bass texture → dynamic EQ → limiter → dither.
-- **Verified here.** Core: 196 checks, 0 failed (185 before, plus the new ones); ASan and UBSan clean. Android: `assembleDebug`
-  and `testDebugUnitTest` pass (445 JVM tests, including the Gaana admission test); the native library builds with the new JNI
-  entry points.
-- **Not verified.** Any listening (every sound change is unverified by ears). Real Gaana or other streaming sessions. Phone or
-  DAC behaviour (host CPU was measured: about +5% of the Audiophile engine). CI on `d44173e` (run 38072765359): `core`
-  (release, ASan/UBSan, TSan), `android` (lint, JVM tests, production APK and Play bundle), `capture-lab` 33/34 and `compat`
-  29/30/33 pass. `efficiency-ui (33)` and `production-ui (33)` fail as harness aborts (adb exit 1, incomplete PASS counts,
-  no FAIL lines), identically to the base `d8f0201`, where six API 33/compat jobs are red. `emulator-e2e` and
-  `basic-detection` were still running when this was written; read them before relying on the bass-versus-mid balance check.
-- **Review corrections (measured).** The capture changes above are dead without DUMP (`SessionRouter.sync` and the
-  `playing == true` promotion never run there), the shrill guard's absolute thresholds are inert on music-like spectra, and
-  the `space` side path has a −6.5 dB hole at 200 Hz, not only the +1.4 dB at 300 Hz. Details and the corrected plan:
-  [BUILD_BRIEF_0.5.14.md](BUILD_BRIEF_0.5.14.md).
-- **Next.** Follow `docs/BUILD_BRIEF_0.5.14.md`: the return path for parked players without DUMP first. Then the Hi-Fi
-  diagnostic report while Gaana drops; 10–20 s excerpts for the owner's four reference masters; blind pairs per change. Vocal reference masters (owner, 10 Oct): Gardot "Morning Sun", Trivedi "Shauq", Rahman "Tere Paas Main" (female), Hale "Blue Sky"; see the brief's §7 and WP8.
+- **Capture return path (WP1, WP2).** Without DUMP a route's playing state is always unknown and the retry of parked players
+  needed "playing", so a player handed to system effects (silence, a stall, or a new stream opened while the old one was still
+  muted) never came back until a new OPEN: the leading explanation for Gaana dropping off. `ParkPolicy`: a player proven in this
+  capture session is never blocked for the session; hand-overs wait 20 s, 60 s, 3 min, then every 10 min, and while no other
+  source is captured a listen-only check every 3 s after a 5 s dwell brings it back as soon as its audio reaches capture again.
+  Android silencing the recorder starts two rungs higher; 10 s of captured audio forgets the hand-overs; unproven players keep the
+  3 min / 15 min / session strikes. Unknown playing counts as possibly playing while Android's public playback list shows a
+  player besides Svan. Stall hand-over after 6 s (was 12). Trace lines `park:`, `promote:`, `uid-drop:` (package, reason, time
+  since the previous event, recorder open time, isClientSilenced); the trace classifier now keeps two-part package names such as
+  `com.gaana`, which it dropped before.
+- **Space (WP4).** A plain side EQ: 1.5 kHz bell (Q 0.45, +-6 dB) plus a 6.5 kHz shelf (-2 dB) when widening. At +1: 200 Hz
+  +0.5, 700 Hz +3.8, 2 kHz +5.6, 3 kHz +4.0, 9 kHz -1.0 dB; hard-pan leak -22.5 dB at 150 Hz. The old -6.5 dB hole at 200 Hz is
+  gone; mid and mono sum untouched.
+- **Shrill guard (WP3, WP6, WP8).** Judged by the analyser's residuals against the mix's own tilt (presence 2.5-5 kHz, new
+  sizzle 6-10 kHz), published lock-free. Over 1.5 / 2.0 dB it cuts 0.5 dB per dB, at most 2 dB per band. Through the engine:
+  pink and -6 dB/oct noise 0.000 dB; a double-tracked shrill cluster -1.56..-1.89 dB per partial; a 3 ms burst 0.00 dB.
+  Voice protection: centre dominance over 1-4 kHz scales presence reduction to a quarter (a centred voice with a +14 dB singer's
+  formant changes -0.13 dB; the same shrill cluster in mono only about -0.45 dB). Presence reduction stays inside a 4.5 dB
+  budget shared with grounding restraint, vocal de-harsh and the upper dynamic-EQ lanes.
+- **Bass (WP5, WP9).** Texture drive 4.5: 3rd harmonic -25 dBc at -12 dBFS (was -32), scaled by output (speaker 1.0, other
+  outputs 0.7, unknown 0.85). A note alone keeps its fundamental within 0.04 dB; overlapping notes intermodulate by up to
+  +0.31 dB (the brief asked 0.2). Hi-Fi > Bass detail switches, all off by default: Attack definition (pick/slap band +1.8 dB at
+  onsets, 0.000 dB between), Sustain (decaying tail up to +3 dB, never above its peak), Dimension (harmonics above 200 Hz
+  widened as pure side; mono sum exact), Tube colour (2nd harmonic -23 dBc). Tabla/dholak-like stroke: glide kept within 0.64 %.
+- **Highs (WP10).** Hi-hat detail through the house chain: onset correlation 0.994, envelope depth 99.8 %. Hi-Fi > Highs
+  "Analogue top" (off by default): loud, sustained 6-12 kHz eases by 0.15 dB per dB over -30 dBFS, at most 2.5 dB; quiet air and
+  clicks pass.
+- **Verified here.** Core: 211 tests, 0 failed checks; ASan and UBSan clean. Android: `assembleDebug`, `:app:assembleRelease`,
+  `lintDebug`, `testDebugUnitTest` pass (461 JVM tests). Host CPU: the full chain about 7 % of real time; the new stages are
+  within run-to-run noise (about +-10 %). Emulator: `capture_recovery.py` gains a DUMP-free stall check (15 PASS expected),
+  which runs only in CI after push.
+- **Not verified.** Any listening: every sound change is unheard. Real Gaana or other streaming sessions, phones, DACs, CPU on a
+  phone. The route factors, thresholds, voice protection and budget are design values awaiting the owner's excerpts.
+- **Not built.** WP7 (recorder hold; needs traces), WP8 candidates 2-4, WP10 fatigue trim and expression, voice scaling of the
+  harshDb policy and of sizzle.
+- **Next.** Owner: install 0.5.13, take a Hi-Fi diagnostic report while Gaana drops (the new trace lines name what happened),
+  try each Bass detail and Analogue top switch on and off, and upload the reference excerpts listed in the brief's section 7.
 
 ## 0.5.12: efficiency plus native Capture Lab
 

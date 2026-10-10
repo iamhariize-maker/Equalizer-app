@@ -188,6 +188,28 @@ def main():
         time.sleep(2)
         check("same session resumes with fresh mute proof and measured native EQ", route(resumed)["sid"] == late_sid and heard_both(resumed) and abs(level("resumed-cut") - flat + 6) <= .75)
 
+        # A stall without enhanced detection (docs/BUILD_BRIEF_0.5.14.md WP1): the session is announced with DUMP
+        # revoked, so its playing state is unknown. Zeros on the same, still active track hand it to system effects;
+        # it must return to native capture by itself, with no new session announcement.
+        stop()
+        adb("shell", "pm", "revoke", "app.svan", "android.permission.DUMP")
+        time.sleep(2)
+        loud()
+        wait("nodump-connected", lambda d: route(d).get("owner") == "ENGINE_A")
+        start()
+        nodump = wait("nodump-captured", full)
+        stall_sid = route(nodump)["sid"]
+        tone(cap, "--ef", "live_amp", "0")
+        parked = wait("nodump-parked", lambda d: route(d).get("owner") == "ENGINE_A" and route(d).get("reason") == "SILENT_RECENTLY", limit=30)
+        tone(cap, "--ef", "live_amp", "0.25")
+        returned = wait("nodump-returned", full, limit=30)
+        time.sleep(2)
+        check("a stalled source returns to native capture without DUMP or a new session",
+              route(nodump).get("playing") is None and route(parked)["sid"] == stall_sid and route(returned)["sid"] == stall_sid
+              and abs(level("nodump-returned-cut") - flat + 6) <= .75)
+        adb("shell", "pm", "grant", "app.svan", "android.permission.DUMP")
+        time.sleep(2)
+
         stop()
         eq("forget_verdicts")
         adb("logcat", "-c")

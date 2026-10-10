@@ -344,7 +344,7 @@ jobs:
           test "$(grep -c '^PASS' e2e-out/basic-detection/results.txt)" -eq 14
           ! grep -q '^FAIL' e2e-out/basic-detection/results.txt
           cat e2e-out/capture-recovery/results.txt
-          test "$(grep -c '^PASS' e2e-out/capture-recovery/results.txt)" -eq 14
+          test "$(grep -c '^PASS' e2e-out/capture-recovery/results.txt)" -eq 15
           ! grep -q '^FAIL' e2e-out/capture-recovery/results.txt
           cat e2e-out/diagnostic/results.txt
           test "$(grep -c '^PASS' e2e-out/diagnostic/results.txt)" -eq 8
@@ -442,7 +442,7 @@ jobs:
           test "$(grep -c '^PASS' basic-out/results.txt)" -eq 14
           ! grep -q '^FAIL' basic-out/results.txt
           cat basic-out/capture-recovery/results.txt
-          test "$(grep -c '^PASS' basic-out/capture-recovery/results.txt)" -eq 14
+          test "$(grep -c '^PASS' basic-out/capture-recovery/results.txt)" -eq 15
           ! grep -q '^FAIL' basic-out/capture-recovery/results.txt
           cat basic-out/integrated-lab/results.txt
           test "$(grep -c '^PASS' basic-out/integrated-lab/results.txt)" -eq 7

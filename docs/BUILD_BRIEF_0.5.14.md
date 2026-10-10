@@ -4,6 +4,23 @@ Read `AGENTS.md` first. Work on the branch the session names. Base: `d44173e` (0
 from an independent review with measurements; the probes that produced it are in `tools/probes/0.5.13/` (see §5).
 Nothing here has been heard on a phone. Do not claim sound quality; ship each change as a blind-test pair.
 
+## Status: built as Svan 0.5.13 (code 20), 10 Oct 2026
+
+What was built from this brief, and where the result differs. Details and numbers: `docs/HANDOFF.md` (0.5.13 entry).
+
+| WP | State | Notes |
+|---|---|---|
+| WP1 return path | Built | `ParkPolicy`; unknown playing counts as maybe playing while Android lists another player; emulator check added to `capture_recovery.py` (15 PASS now) |
+| WP2 trace lines | Built | `park:` `promote:` `uid-drop:`; the classifier also accepts two-part package names (`com.gaana` was dropped before) |
+| WP3 guard on analyser | Built | Presence band Q 0.6 (not 1.0) so a 3.6-4.8 kHz cluster is cut evenly |
+| WP4 space side EQ | Built | Bell 1.5 kHz Q 0.45 +-6 dB, shelf 6.5 kHz -2 dB when widening |
+| WP5 texture range | Built | Drive 4.5 (-25 dBc); fundamental within 0.04 dB for a note alone but up to +0.31 dB where notes overlap (brief: 0.2 dB). `evenMix` is the "Tube colour" switch; route factor speaker 1.0, other outputs 0.7, unknown 0.85 |
+| WP6 budget | Built | Guard presence cap = 4.5 dB minus grounding, de-harsh and upper dynamic-EQ reductions |
+| WP7 recorder hold | Not built | Waits for traces showing a UID drop at every track change |
+| WP8 voice | Protection built | Centre dominance (1-4 kHz mid over side) scales presence reduction to a quarter; sizzle not scaled; the harshDb policy is not scaled. Candidates 2-4 not built |
+| WP9 bass detail | Built | Attack, sustain, dimension as Hi-Fi switches (off by default); tabla/dholak test added; no on-screen meter (owner: "heard") |
+| WP10 highs | Protection test and "Analogue top" built | Fatigue trim not built (Svaresa's SM-SOFT-1 already softens a sharp top); expression candidate not built |
+
 ## Start here (build in tiers; each tier ends at a green core/android run and its own commit)
 
 - **Tier 1, stability and protection:** WP2, WP1, WP4, WP3, and the *protect* tests of WP8 and WP10. These fix what is

@@ -87,6 +87,9 @@ Owner's engine follow-up: give Svaresa broader authority only where it improves 
 changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
+Latest (10 Oct 2026): 0.5.13/code 20 built from `docs/BUILD_BRIEF_0.5.14.md` (status table at its top): DUMP-free return path for
+parked players (`ParkPolicy`), analyser-driven shrill guard with voice protection and a 3-6 kHz budget, `space` as a plain side
+EQ, stronger bass texture plus off-by-default Bass detail and Analogue top switches. Nothing in it has been heard yet.
 Latest (9 Oct 2026): capture recovery 0.5.10/code 17, see `docs/CAPTURE_RECOVERY_0.5.10.md`.
 A single playback-recorder lease serializes main/probe/diagnostic records; the idle main record closes.
 Legacy silence-based blocks are migrated; a negative sample never becomes a persistent app-policy verdict.
