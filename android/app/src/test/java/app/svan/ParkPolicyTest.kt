@@ -98,6 +98,19 @@ class ParkPolicyTest {
         assertFalse(p.proven(pkg))
     }
 
+    @Test fun checksThatKeepHearingSilenceSlowDownAndANewStreamRestoresThePace() {
+        val p = ParkPolicy()
+        p.markProven(pkg)
+        val delays = (1..60).map { p.silentListen(pkg) }
+        assertEquals(List(10) { 3_000L } + List(40) { 10_000L } + List(10) { 30_000L }, delays)
+        p.released(pkg)
+        assertEquals(3_000L, p.silentListen(pkg))
+        repeat(20) { p.silentListen(pkg) }
+        p.handOver(pkg, 0, null); p.released(pkg); p.handOver(pkg, 1_000, null)
+        assertTrue(p.healthy(pkg))
+        assertEquals(3_000L, p.silentListen(pkg))
+    }
+
     @Test fun provenPlayersAreReCheckedQuicklyAndNeverGiveUp() {
         val s = LateProbeSchedule(maxChecks = 2, silentRetryMs = 30_000)
         repeat(10) { i ->

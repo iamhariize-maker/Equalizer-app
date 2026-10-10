@@ -8,7 +8,8 @@ package app.svan
  * that proof is most often a stall (buffering, an ad gap, a new track that has not started), so each hand-over
  * waits a little longer: [ladderMs] (20 s, 60 s, 3 min, then every 10 minutes). While the engine carries no other
  * source, a listen-only check every [listenEveryMs] after [minDwellMs] can bring it back as soon as its audio
- * reaches capture again. Ten seconds of captured audio ([healthy]) forgets the hand-overs. A hand-over while
+ * reaches capture again. Checks that keep hearing silence (a paused track still listed by Android) slow down: after
+ * ten, every 10 s; after forty more, every 30 s. A new stream or a return to Engine B restores the fast pace. Ten seconds of captured audio ([healthy]) forgets the hand-overs. A hand-over while
  * Android reports the capture client as silenced starts two rungs higher, but is still never permanent.
  *
  * A package never proven in this capture session keeps [FailOpenBackoff]'s strikes (3 min, 15 min, then the rest of
@@ -30,6 +31,7 @@ internal class ParkPolicy(
         var untilMs = 0L
         var nextListenMs = 0L
         var lastHandOverMs: Long? = null
+        var silentListens = 0
     }
 
     private val states = HashMap<String, State>()
@@ -83,12 +85,25 @@ internal class ParkPolicy(
         return pkg in provenPackages && s.untilMs != 0L && nowMs >= s.parkedAtMs + minDwellMs && nowMs >= s.nextListenMs
     }
 
-    /** A listen-only check started; the next one waits [listenEveryMs]. */
-    fun listened(pkg: String, nowMs: Long) { states[pkg]?.nextListenMs = nowMs + listenEveryMs }
+    /** A listen-only check started; the next one waits the current listen interval. */
+    fun listened(pkg: String, nowMs: Long) { states[pkg]?.let { it.nextListenMs = nowMs + interval(it.silentListens) } }
+
+    /** A check of a proven [pkg] heard only silence: how long until the next one (3 s, then 10 s, then 30 s). */
+    fun silentListen(pkg: String): Long {
+        val s = state(pkg)
+        s.silentListens++
+        return interval(s.silentListens)
+    }
+
+    private fun interval(silentListens: Int): Long = when {
+        silentListens <= FAST_LISTENS -> listenEveryMs
+        silentListens <= FAST_LISTENS + MEDIUM_LISTENS -> 10_000L
+        else -> 30_000L
+    }
 
     /** [pkg] left the park window (returned to Engine B, or a new stream replaced it). Hand-over counts are kept. */
     fun released(pkg: String) {
-        states[pkg]?.let { it.untilMs = 0L; it.nextListenMs = 0L }
+        states[pkg]?.let { it.untilMs = 0L; it.nextListenMs = 0L; it.silentListens = 0 }
     }
 
     /** True when [pkg] is parked after a hand-over (window not yet released). */
@@ -100,10 +115,16 @@ internal class ParkPolicy(
         if (s.handOvers == 0 && s.strikes == 0) return false
         s.handOvers = 0
         s.strikes = 0
+        s.silentListens = 0
         return true
     }
 
     fun handOvers(pkg: String): Int = states[pkg]?.handOvers ?: 0
+
+    private companion object {
+        const val FAST_LISTENS = 10
+        const val MEDIUM_LISTENS = 40
+    }
 
     fun forget(pkg: String) { states.remove(pkg); provenPackages.remove(pkg) }
 

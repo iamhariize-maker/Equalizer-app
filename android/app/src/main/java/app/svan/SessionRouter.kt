@@ -893,7 +893,7 @@ object SessionRouter {
         }
         EqController.log("capture check: $pkg → silent while unmuted; policy unproven, source remains audible")
         // A player proven in this capture session is between tracks or stalled: look again soon, without giving up.
-        if (park.proven(pkg)) lateProbes.silent(pkg, now, park.listenEveryMs, counts = false) else lateProbes.silent(pkg, now)
+        if (park.proven(pkg)) lateProbes.silent(pkg, now, park.silentListen(pkg), counts = false) else lateProbes.silent(pkg, now)
         reasons[pkg] = if (lateProbes.gaveUp(pkg)) RouteReason.INCONCLUSIVE else RouteReason.SILENT_RECENTLY
     }
 
