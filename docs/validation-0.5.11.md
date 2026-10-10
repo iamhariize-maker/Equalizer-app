@@ -26,8 +26,19 @@ CI adds seven integrated-Lab/DUMP-free runtime assertions on API 33 and 34, and
 Mint Circuit to the existing native appearance/screenshots suite. All prior test
 assertions remain. The capture-recovery screenshot search now returns to the top
 before searching for the same exact policy text; the earlier branch run retained
-a scroll position below that text. Emulator results remain pending and will be
-recorded before delivery.
+a scroll position below that text.
+
+The first [CI run at app commit 88a230e](https://github.com/iamhariize-maker/Equalizer-app/actions/runs/38043767633)
+passes the Android/production build gates, native sanitizers and release install
+checks on API 29/30/33. Both API 33/34 pass all **14 DUMP-free detection checks**;
+API 34 also passes all **14 capture-recovery checks**. API 33 loses its emulator
+during capture recovery; API 35/36 lose their emulator during smoke checks. The
+new Lab harness incorrectly accepted a preceding player's connection on API 34
+and stops at `StopIteration` before the new assertions. Its follow-up waits for
+its own healthy route and a fresh status receipt, and captures the Lab pages.
+No application source changes in that follow-up. A focused frozen-APK workflow
+checks source equality before testing the original built artifact. Further runtime
+and appearance results remain pending and will be recorded before delivery.
 
 Unverified on the owner's phones: commercial-player track changes, OEM background
 survival, USB/Bluetooth route coverage, vendor FFT and Equalizer equivalence,
