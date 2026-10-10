@@ -49,7 +49,12 @@ class SystemEqService : Service() {
         override fun run() {
             if (!alive) return
             sync()
-            main.postDelayed(this, 5_000)
+            // Track changes in basic mode have no privileged report to trigger repair.
+            // Keep a short cadence while audio/known connections exist, without busy-scanning idle phones.
+            val active = DetectionMonitor.publicActiveCount(this@SystemEqService)?.let { it > 0 }
+                ?: SessionRouter.snapshot.isNotEmpty()
+            val basic = !PlaybackSessions.hasReportAccess(this@SystemEqService)
+            main.postDelayed(this, if (basic && active) 1_000 else 5_000)
         }
     }
     private val recoveryScan = Runnable { sync() }

@@ -1,6 +1,8 @@
 package app.svan
 
 import android.media.audiofx.DynamicsProcessing
+import android.media.audiofx.Equalizer
+import app.svan.lab.core.Planner
 import android.os.SystemClock
 import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
@@ -27,6 +29,10 @@ class GlobalEqEngine(bandCount: Int = 128) {
         private set
 
     private val effects = ConcurrentHashMap<Int, DynamicsProcessing>()
+    private val labEqualizers = ConcurrentHashMap<DynamicsProcessing, Equalizer>()
+    private var labPlan: Planner.Plan? = null
+    private var labCutoffs: DoubleArray? = null
+    private var preferredFrameMs: Float? = null
     private val lastSent = ConcurrentHashMap<DynamicsProcessing, FloatArray>()
     private data class DynamicsState(val character: Double, val crossover: Double, val smoothness: Double, val levelling: Double?)
     private val lastDynamics = ConcurrentHashMap<DynamicsProcessing, DynamicsState>()
@@ -72,6 +78,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             mix = null
             runCatching { fadeMix(current, 1.0, 0.0) } // reach flat before bypassing: no tonal jump or click
             lastSent.remove(current); lastDynamics.remove(current); lastProtection.remove(current)
+            labEqualizers.remove(current)?.let { runCatching { it.release() } }
             runCatching { current.enabled = false }
             runCatching { current.release() }
             if (!on) EqController.log("whole-mix fallback: off")
@@ -84,6 +91,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
         return try {
             val dp = DynamicsProcessing(PRIORITY, 0, buildConfig())
             candidate = dp
+            prepareLabEqualizer(dp, 0)
             dp.enabled = true // flat: the curve fades in below rather than jumping
             fadeMix(dp, 0.0, 1.0)
             check(dp.hasControl() && dp.enabled) { "Android did not enable the output-mix effect" }
@@ -92,7 +100,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             EqController.log("whole-mix fallback: on (an unannounced player is playing)")
             true
         } catch (e: RuntimeException) {
-            candidate?.let { lastSent.remove(it); lastDynamics.remove(it); lastProtection.remove(it); runCatching { it.release() } }
+            candidate?.let { labEqualizers.remove(it)?.let { eq -> runCatching { eq.release() } }; lastSent.remove(it); lastDynamics.remove(it); lastProtection.remove(it); runCatching { it.release() } }
             mixRefusedAtMs = SystemClock.elapsedRealtime()
             EqController.log("whole-mix fallback: unavailable on this phone ($e)")
             false
@@ -140,6 +148,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
                 DynamicsProcessing(PRIORITY, sessionId, buildConfig())
             }
             candidate = dp
+            prepareLabEqualizer(dp, sessionId)
             // DynamicsProcessing applies the stream volume itself (the mixer then
             // plays at unity), and configuring its architecture resets that gain
             // to 0 dB. AudioFlinger resends the volume only when the volume or the
@@ -171,7 +180,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             Log.i(TAG, "attached to session $sessionId ($bandCount bands)")
             true
         } catch (e: RuntimeException) {
-            candidate?.let { lastSent.remove(it); lastDynamics.remove(it); lastProtection.remove(it); runCatching { it.release() } }
+            candidate?.let { labEqualizers.remove(it)?.let { eq -> runCatching { eq.release() } }; lastSent.remove(it); lastDynamics.remove(it); lastProtection.remove(it); runCatching { it.release() } }
             // UnsupportedOperationException / IllegalStateException on some OEM builds.
             Log.w(TAG, "attach failed for session $sessionId", e)
             EqController.log("system effects: attach failed for session $sessionId: $e")
@@ -203,17 +212,26 @@ class GlobalEqEngine(bandCount: Int = 128) {
             lastSent.remove(it)
             lastDynamics.remove(it)
             lastProtection.remove(it)
+            labEqualizers.remove(it)?.let { eq -> runCatching { eq.enabled = false }; runCatching { eq.release() } }
             runCatching { it.enabled = false }
             runCatching { it.release() }
         }
     }
 
     @Synchronized
-    fun releaseAll() { setMixFallback(false); effects.keys.toList().forEach(::detach) }
+    fun releaseAll() {
+        setMixFallback(false)
+        effects.keys.toList().forEach(::detach)
+        if (labPlan != null) {
+            clearLab()
+            app.svan.lab.IntegratedLab.curveChanged()
+        }
+    }
 
     /** Changes the band count; attached sessions are re-created with the new layout. */
     @Synchronized
     fun reconfigure(bands: Int, frameMs: Int = frameDurationMs) {
+        if (labPlan != null) return // explicit Lab plan owns architecture until normal curve update/restore
         if (bands == bandCount && frameMs == frameDurationMs) return
         val sessions = effects.keys.toList()
         sessions.forEach(::detach)
@@ -228,6 +246,10 @@ class GlobalEqEngine(bandCount: Int = 128) {
     /** Samples [engine]'s parametric curve into the band gains and pushes it to every session. */
     @Synchronized
     fun applyCurveFrom(engine: NativeEngine, gainProtection: Boolean = true) {
+        if (labPlan != null) {
+            clearLab()
+            app.svan.lab.IntegratedLab.curveChanged()
+        }
         protection = gainProtection
         val response = engine.responseDb(centersHz)
         if (response.size != bandCount) return // raced with reconfigure(); the next update fixes it
@@ -263,7 +285,66 @@ class GlobalEqEngine(bandCount: Int = 128) {
             true, 4, // MBC: bass feel + vocal smoothness (see setDynamics)
             false, 0,          // post-EQ
             true,              // limiter
-        ).setPreferredFrameDuration(frameDurationMs.toFloat()).build()
+        ).setPreferredFrameDuration(preferredFrameMs ?: frameDurationMs.toFloat()).build()
+
+    /** Same effect owner and routing table as normal Svan, never a parallel processing service. */
+    @Synchronized
+    fun applyLab(plan: Planner.Plan) {
+        require(plan.guardPassed && plan.gains.all { it.isFinite() && it in -18.0..12.0 })
+        require(plan.attenuationDb.isFinite() && plan.attenuationDb in -60.0..0.0)
+        val sessions = effects.keys.toList()
+        val hadMix = mix != null
+        setMixFallback(false)
+        sessions.forEach(::detach)
+        labPlan = plan
+        bandCount = plan.model.bands
+        preferredFrameMs = ((plan.model.block - 0.5) * 1000 / plan.model.rate).toFloat()
+        frameDurationMs = preferredFrameMs!!.toInt()
+        labCutoffs = DoubleArray(bandCount) { plan.cutoff(it) }
+        centersHz = labCutoffs!!.copyOf()
+        gainsDb = plan.gains.copyOf()
+        inputGainDb = plan.attenuationDb.toFloat()
+        sessions.forEach { if (it == 0) attachOutputMix() else attach(it) }
+        if (hadMix) setMixFallback(true)
+    }
+
+    @Synchronized
+    fun clearLab() {
+        if (labPlan == null) return
+        val sessions = effects.keys.toList()
+        setMixFallback(false)
+        sessions.forEach(::detach)
+        labPlan = null
+        labCutoffs = null
+        preferredFrameMs = null
+        bandCount = SvanRepository.settings.value.systemBands
+        frameDurationMs = SvanRepository.settings.value.systemFrameMs
+        centersHz = logSpaced(bandCount, 20.0, 20000.0)
+        gainsDb = EqController.curveEngine.responseDb(centersHz)
+        inputGainDb = 0f
+        sessions.forEach { if (it == 0) attachOutputMix() else attach(it) }
+    }
+
+    private fun prepareLabEqualizer(dp: DynamicsProcessing, session: Int) {
+        val plan = labPlan ?: return
+        dp.setInputGainAllChannelsTo(-60f)
+        if (!plan.hybrid) return
+        val eq = Equalizer(PRIORITY, session)
+        try {
+            check(eq.descriptor.uuid.toString() == "ce772f20-847d-11df-bb17-0002a5d5c51b") { "Equalizer implementation has no reference model" }
+            check(eq.hasControl() && eq.numberOfBands.toInt() == 5) { "Equalizer control unavailable" }
+            val expected = intArrayOf(60, 230, 910, 3600, 14000)
+            expected.forEachIndexed { i, hz -> check(abs(eq.getCenterFreq(i.toShort()) / 1000.0 / hz - 1) < .015) }
+            val range = eq.bandLevelRange
+            check(range[0] <= -600 && range[1] >= 900)
+            for (i in 0..4) eq.setBandLevel(i.toShort(), 0)
+            eq.enabled = true
+            labEqualizers[dp] = eq
+        } catch (e: RuntimeException) {
+            runCatching { eq.release() }
+            throw e
+        }
+    }
 
     /**
      * Dynamics on system effects, via DynamicsProcessing's multiband compressor
@@ -326,16 +407,21 @@ class GlobalEqEngine(bandCount: Int = 128) {
         val sent = lastSent.getOrPut(dp) { FloatArray(centers.size) { Float.NaN } }
         // Apply attenuation first, so a partial binder update cannot stack old boosts
         // with new boosts before their compensating cuts have reached the session.
+        if (labPlan != null) dp.setInputGainAllChannelsTo(minOf(dp.getInputGainByChannelIndex(0), inputGainDb * scale.toFloat()))
+        labEqualizers[dp]?.let { eq ->
+            eq.setBandLevel(0, (labPlan!!.eq0 * scale * 100).toInt().toShort())
+            eq.setBandLevel(1, (labPlan!!.eq1 * scale * 100).toInt().toShort())
+        }
         val order = centers.indices.sortedBy { if (sent[it].isNaN() || gains[it] < sent[it]) 0 else 1 }
         for (i in order) {
             val g = gains[i].toFloat()
             if (abs(g - sent[i]) < 0.01f) continue
             // Upper edge = geometric midpoint to the next centre.
-            val cutoff = if (i + 1 < centers.size) sqrt(centers[i] * centers[i + 1]) else 22000.0
+            val cutoff = labCutoffs?.get(i) ?: if (i + 1 < centers.size) sqrt(centers[i] * centers[i + 1]) else 22000.0
             dp.setPreEqBandAllChannelsTo(i, DynamicsProcessing.EqBand(true, cutoff.toFloat(), g))
             sent[i] = g
         }
-        if (lastProtection[dp] == null) dp.setInputGainAllChannelsTo(inputGainDb)
+        if (lastProtection[dp] == null || labPlan != null) dp.setInputGainAllChannelsTo(inputGainDb * scale.toFloat())
         applyMbc(dp)
         if (lastProtection[dp] != protection) dp.setLimiterAllChannelsTo(
             DynamicsProcessing.Limiter(

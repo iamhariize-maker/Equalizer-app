@@ -17,6 +17,13 @@ A system-wide equalizer for Android.
 
 Svan (स्वन्) is the Sanskrit word for sound. The full name is Svanam Shreshtham: Ultimate Sound.
 
+The **0.5.11 testing preview** adds basic connection recovery at track boundaries,
+an integrated **Svan Lab** (Shape / Engine / Measure) and the **Mint Circuit** theme
+under Appearance. Lab fits are opt-in AOSP-reference experiments through the same
+session router, not a second equalizer service. Read the [trial guide and limits](docs/INTEGRATED_LAB_0.5.11.md)
+and [validation record](docs/validation-0.5.11.md). Apple Music/YouTube Music phone
+transitions and vendor sound/latency/peak performance still need device checks.
+
 It's an equalizer that works across the apps on your phone instead of inside a single player. You can load a correction for your headphones from the AutoEq database, tweak it by hand with up to 256 parametric bands per channel, and not worry about clipping when you boost. It doesn't need root.
 
 Svan is in beta and I'm still finding out which phones, players and Bluetooth setups it actually works with. If you try it, please tell me what happened, even if the answer is "nothing". The [device report form](https://github.com/iamhariize-maker/Equalizer-app/issues/new?template=device-report.yml) takes about a minute.

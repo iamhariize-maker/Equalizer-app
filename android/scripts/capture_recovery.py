@@ -109,7 +109,7 @@ def main():
 
     def screen(name, text):
         # Keep screenshots anchored to the new controls/reasons, using actual UI text.
-        for attempt in range(7):
+        for attempt in range(24):
             adb("shell", "uiautomator", "dump", "/sdcard/capture-recovery-ui.xml")
             xml = adb("shell", "cat", "/sdcard/capture-recovery-ui.xml")
             nodes = list(ET.fromstring(xml).iter("node"))
@@ -119,6 +119,11 @@ def main():
                     bounds = list(map(int, re.findall(r"\d+", tab.get("bounds"))))
                     adb("shell", "input", "tap", str((bounds[0] + bounds[2]) // 2), str((bounds[1] + bounds[3]) // 2))
                     time.sleep(1)
+                    # Tab state intentionally retains scroll. The preceding Retry capture check
+                    # stops below the per-app status card; searching only downward misses a new
+                    # reason above it. Return to the top before looking for the exact policy text.
+                    for _ in range(12):
+                        adb("shell", "input", "swipe", "160", "200", "160", "510", "100")
                     continue
             if any(text in n.get("text", "") for n in nodes):
                 (out / f"{name}.xml").write_text(xml)

@@ -27,7 +27,7 @@ object SessionRouter {
     data class Route(val sessionId: Int, val pkg: String, val uid: Int, val owner: Owner, val playing: Boolean? = null)
 
     private val routes = ConcurrentHashMap<Int, Route>()
-    private val worker = Executors.newSingleThreadExecutor()
+    private val worker = Executors.newSingleThreadScheduledExecutor()
     private var routingBatch = false // worker-only: publish complete routing transactions
     // Worker-owned lifecycle state. Successful scans are reconciled in order.
     private val absence = SessionAbsenceTracker()
@@ -36,6 +36,8 @@ object SessionRouter {
     private val missingRepair = MissingEffectRepair()
     private val healthRepair = MissingEffectRepair(firstDelayMs = 1_000)
     private val history = SessionConnectionHistory()
+    private val closeGrace = SessionCloseGrace()
+    private var closeReaper: java.util.concurrent.ScheduledFuture<*>? = null
     private val sharedHandoff = SharedOutputHandoff()
     @Volatile var recentConnections: List<String> = emptyList()
         private set
@@ -210,6 +212,9 @@ object SessionRouter {
             missingRepair.clear()
             healthRepair.clear()
             history.clear()
+            closeGrace.clear()
+            closeReaper?.cancel(false)
+            closeReaper = null
             sharedHandoff.cancel()
             recentConnections = emptyList()
             SharedOutput.publish(false, false, "Off. Per-player connections are used.")
@@ -264,6 +269,11 @@ object SessionRouter {
         worker.execute {
             routingBatch = true
             try {
+                // A system-effects CLOSE held for a quick reopen is never authority to mute
+                // that source when the user starts capture during the grace interval.
+                closeGrace.expired(Long.MAX_VALUE).forEach { closeOnWorker(it.sid, forgetEvidence = true) }
+                closeReaper?.cancel(false)
+                closeReaper = null
                 lateProbes.clear()
                 probeSerial++
                 probeInFlight = false
@@ -346,6 +356,7 @@ object SessionRouter {
 
     private fun openOnWorker(sessionId: Int, pkg: String, uid: Int, playing: Boolean?) {
         if (!enabled) return
+        closeGrace.reopened(sessionId)
         absence.forget(sessionId)
         val existing = routes[sessionId]
         if (existing != null && existing.uid >= 0 && uid >= 0 && existing.uid != uid) {
@@ -404,8 +415,31 @@ object SessionRouter {
                 EqController.log("CLOSE ignored: package does not own session $sessionId")
                 return@execute
             }
-            closeOnWorker(sessionId, forgetEvidence = true)
+            val route = routes[sessionId]
+            if (route?.owner != Owner.ENGINE_A || projection != null) {
+                // Capture must fail open immediately; never retain a mute during a track gap.
+                closeOnWorker(sessionId, forgetEvidence = true)
+                return@execute
+            }
+            val generation = history.active(sessionId)?.generation ?: return@execute
+            closeGrace.closing(sessionId, pkg, generation, SystemClock.elapsedRealtime())
+            closeGrace.overflow().forEach { closeOnWorker(it.sid, forgetEvidence = true) }
+            scheduleCloseReaper()
         }
+    }
+
+    private fun scheduleCloseReaper() {
+        if (closeReaper != null) return
+        val delay = closeGrace.nextDelay(SystemClock.elapsedRealtime()) ?: return
+        closeReaper = worker.schedule({
+            closeReaper = null
+            closeGrace.expired(SystemClock.elapsedRealtime()).forEach { pending ->
+                if (routes[pending.sid]?.pkg == pending.pkg && history.active(pending.sid)?.generation == pending.generation)
+                    closeOnWorker(pending.sid, forgetEvidence = true)
+            }
+            scheduleCloseReaper()
+            SystemEqService.requestScanNow()
+        }, delay, TimeUnit.MILLISECONDS)
     }
 
     /** Broadcast-discovered sessions still recover even without enhanced detection. */
@@ -424,6 +458,7 @@ object SessionRouter {
     }
 
     private fun closeOnWorker(sessionId: Int, forgetEvidence: Boolean = false) {
+        closeGrace.reopened(sessionId)
         // CLOSE is definitive even when DUMP becomes unavailable. An older started
         // record must not look like an unmuted sibling when the player opens a new
         // session. Policy-rejected active records still retain their evidence.
@@ -448,6 +483,7 @@ object SessionRouter {
     }
 
     private fun repairOnWorker(sid: Int) {
+        if (closeGrace.contains(sid)) return // do not resurrect a track that announced CLOSE
         val r = routes[sid] ?: return
         val now = SystemClock.elapsedRealtime()
         val retry = when (r.owner) {

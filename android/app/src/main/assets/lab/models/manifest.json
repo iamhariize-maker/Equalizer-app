@@ -1,0 +1,37 @@
+{
+  "scope": "AOSP reference mathematical model; not vendor calibration",
+  "source": "https://android.googlesource.com/platform/frameworks/av/+/refs/heads/android14-release/media/libeffects/dynamicsproc/dsp/DPFrequency.cpp",
+  "generator": "tools/lab/generate_models.py",
+  "files": [
+    {
+      "name": "44100_2048.bin",
+      "sha256": "4205294c8fbb0d2b7d2dfbf1a45d284aa2729495fd06e18074419fbd465a92c8",
+      "bytes": 1339608
+    },
+    {
+      "name": "44100_4096.bin",
+      "sha256": "2fdee65ec01d0281fdd609a3fab4e15e67455340cd4c466d0491a793d53f8a9e",
+      "bytes": 1831904
+    },
+    {
+      "name": "44100_8192.bin",
+      "sha256": "976920813b5cdde890c6fa2f7e908a439db0bbc795b2a7d108ccdb432fc9c96b",
+      "bytes": 3046992
+    },
+    {
+      "name": "48000_2048.bin",
+      "sha256": "9a3f4072fb4fa95289d4d277cafb02cb03ec592c4e99b0ac7d76c2a28a1524c6",
+      "bytes": 1307384
+    },
+    {
+      "name": "48000_4096.bin",
+      "sha256": "5c70f801b449c04bec829714e2a9e8cd0d81b81f885e50400c7d8b16502c751b",
+      "bytes": 1756872
+    },
+    {
+      "name": "48000_8192.bin",
+      "sha256": "55ff77624e65f2f58b97051c55b7b191f6d8f5398afdedd6ae2b90f7ca245060",
+      "bytes": 2854592
+    }
+  ]
+}

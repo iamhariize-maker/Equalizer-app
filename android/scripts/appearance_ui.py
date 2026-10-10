@@ -20,7 +20,8 @@ args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 results = []
 themes = [("svan_original", "Svan Original"), ("midnight_raga", "Midnight Raga"),
-          ("sandstone_atelier", "Sandstone Atelier"), ("indigo_loom", "Indigo Loom")]
+          ("sandstone_atelier", "Sandstone Atelier"), ("indigo_loom", "Indigo Loom"),
+          ("mint_circuit", "Mint Circuit")]
 
 
 def adb(*command, binary=False):

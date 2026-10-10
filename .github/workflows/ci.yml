@@ -334,7 +334,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -feature -Vulkan -memory 3072 -cores 2 -no-snapshot -no-boot-anim -camera-back none
           working-directory: android
-          script: export PATH="$GITHUB_WORKSPACE/tools/ci:$PATH" ; adb -s emulator-5554 install -r "$GITHUB_WORKSPACE/tested-debug/app-debug.apk" ; adb -s emulator-5554 install -r testsource/build/outputs/apk/capturable/debug/testsource-capturable-debug.apk ; adb -s emulator-5554 install -r testsource/build/outputs/apk/blocked/debug/testsource-blocked-debug.apk ; adb -s emulator-5554 shell wm size 320x640 ; adb -s emulator-5554 shell wm density 160 ; bash scripts/basic_detection.sh emulator-5554 "$GITHUB_WORKSPACE/basic-out" || exit 1 ; python3 scripts/capture_recovery.py emulator-5554 "$GITHUB_WORKSPACE/basic-out/capture-recovery"
+          script: export PATH="$GITHUB_WORKSPACE/tools/ci:$PATH" ; adb -s emulator-5554 install -r "$GITHUB_WORKSPACE/tested-debug/app-debug.apk" ; adb -s emulator-5554 install -r testsource/build/outputs/apk/capturable/debug/testsource-capturable-debug.apk ; adb -s emulator-5554 install -r testsource/build/outputs/apk/blocked/debug/testsource-blocked-debug.apk ; adb -s emulator-5554 shell wm size 320x640 ; adb -s emulator-5554 shell wm density 160 ; bash scripts/basic_detection.sh emulator-5554 "$GITHUB_WORKSPACE/basic-out" || exit 1 ; python3 scripts/capture_recovery.py emulator-5554 "$GITHUB_WORKSPACE/basic-out/capture-recovery" || exit 1 ; python3 scripts/integrated_lab.py emulator-5554 "$GITHUB_WORKSPACE/basic-out/integrated-lab"
       - name: Results
         if: always()
         run: |
@@ -344,6 +344,9 @@ jobs:
           cat basic-out/capture-recovery/results.txt
           test "$(grep -c '^PASS' basic-out/capture-recovery/results.txt)" -eq 14
           ! grep -q '^FAIL' basic-out/capture-recovery/results.txt
+          cat basic-out/integrated-lab/results.txt
+          test "$(grep -c '^PASS' basic-out/integrated-lab/results.txt)" -eq 7
+          ! grep -q '^FAIL' basic-out/integrated-lab/results.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

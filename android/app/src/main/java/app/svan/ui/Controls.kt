@@ -85,16 +85,18 @@ fun Pill(
     accent: Color = Svan.Gold,
     enabled: Boolean = true,
 ) {
-    val bg by animateColorAsState(if (selected) accent.copy(alpha = 0.16f) else Svan.SurfaceHigh, label = "pillBg")
+    val circuit = SvanAppearance.current == AppearanceTheme.SVAN_LAB
+    val pillShape = if (circuit) RoundedCornerShape(14.dp) else RoundedCornerShape(50)
+    val bg by animateColorAsState(if (selected) { if (circuit) accent else accent.copy(alpha = 0.16f) } else Svan.SurfaceHigh, label = "pillBg")
     val border by animateColorAsState(if (selected) accent else Svan.Outline, label = "pillBorder")
-    val fg by animateColorAsState(if (selected) accent else if (enabled) Svan.Text else Svan.TextFaint, label = "pillFg")
+    val fg by animateColorAsState(if (selected) { if (circuit) Svan.OnGold else accent } else if (enabled) Svan.Text else Svan.TextFaint, label = "pillFg")
     Box(
         modifier
             .heightIn(min = 48.dp)
             .semantics { this.selected = selected }
-            .clip(RoundedCornerShape(50))
+            .clip(pillShape)
             .background(bg)
-            .border(1.dp, border, RoundedCornerShape(50))
+            .border(1.dp, border, pillShape)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,

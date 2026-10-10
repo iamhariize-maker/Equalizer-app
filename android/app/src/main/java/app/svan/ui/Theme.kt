@@ -52,7 +52,11 @@ object Svan {
     val AccentBrush get() = palette.accentBrush
     val CurveBrush get() = palette.curveBrush
     val SpectrumFill get() = palette.spectrumFill
-    val DisplayFont get() = if (SvanAppearance.current == AppearanceTheme.ORIGINAL) FontFamily.Serif else AtelierDisplay
+    val DisplayFont get() = when (SvanAppearance.current) {
+        AppearanceTheme.ORIGINAL -> FontFamily.Serif
+        AppearanceTheme.SVAN_LAB -> FontFamily.SansSerif
+        else -> AtelierDisplay
+    }
 
     // Filter types stay within the gold family, told apart by value, not hue.
     fun typeColor(t: FilterType): Color = when (t) {
@@ -173,7 +177,14 @@ fun SvanTheme(content: @Composable () -> Unit) {
             outline = Svan.Outline,
             outlineVariant = Svan.Grid,
         ),
-        typography = if (theme == AppearanceTheme.ORIGINAL) OriginalType else AtelierType,
+        typography = when (theme) {
+            AppearanceTheme.ORIGINAL -> OriginalType
+            AppearanceTheme.SVAN_LAB -> OriginalType.copy(
+                headlineMedium = OriginalType.headlineMedium.copy(fontFamily = FontFamily.SansSerif),
+                titleLarge = OriginalType.titleLarge.copy(fontFamily = FontFamily.SansSerif),
+            )
+            else -> AtelierType
+        },
         content = content,
     )
 }

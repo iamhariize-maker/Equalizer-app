@@ -109,6 +109,20 @@ class MainActivity : ComponentActivity() {
         intent.getStringExtra("quality")?.let { q -> runCatching { QualityMode.valueOf(q) }.getOrNull()?.let { pendingQuality = it } }
         EqController.log("CMD $cmd")
         when (cmd) {
+            "lab_fit" -> if (BuildConfig.DEBUG) app.svan.lab.IntegratedLab.fit(this,
+                intent.getIntExtra("rate", 48000), intent.getIntExtra("block", 4096),
+                intent.getBooleanExtra("hybrid", false), 6.0)
+            "lab_apply" -> if (BuildConfig.DEBUG) app.svan.lab.IntegratedLab.apply()
+            "lab_restore" -> if (BuildConfig.DEBUG) app.svan.lab.IntegratedLab.restore()
+            "lab_status" -> if (BuildConfig.DEBUG) {
+                val s = app.svan.lab.IntegratedLab.state.value
+                val report = org.json.JSONObject().put("busy", s.busy).put("applied", s.applied)
+                    .put("ready", s.plan != null).put("message", s.message)
+                    .put("healthy", org.json.JSONArray(EqController.globalEq.attachedSessions.filter { EqController.globalEq.isHealthy(it) }))
+                    .put("bands", EqController.globalEq.bandCount)
+                s.plan?.let { report.put("plan", org.json.JSONObject(app.svan.lab.IntegratedLab.export())) }
+                java.io.File(filesDir, "lab-status.json").writeText(report.toString())
+            }
             "shared_output" -> if (BuildConfig.DEBUG) SessionRouter.setSharedOutput(intent.getBooleanExtra("on", false))
             "switch_shared_output" -> if (BuildConfig.DEBUG) SessionRouter.switchToSharedOutput()
             "test_output_change" -> if (BuildConfig.DEBUG) SessionRouter.outputChanged()

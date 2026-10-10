@@ -60,4 +60,15 @@ internal val AppearanceTheme.palette: AppearancePalette get() = when (this) {
     AppearanceTheme.MIDNIGHT_RAGA -> raga
     AppearanceTheme.SANDSTONE_ATELIER -> sandstone
     AppearanceTheme.INDIGO_LOOM -> indigo
+    AppearanceTheme.SVAN_LAB -> lab
 }
+
+private val lab = AppearancePalette(
+    background = Color(0xFF0D1417), surface = Color(0xFF172226), raised = Color(0xFF203034), tonal = Color(0xFF263638),
+    border = Color(0xFF647A73), grid = Color(0xFF31433E),
+    text = Color(0xFFE5EEE9), secondary = Color(0xFFB8CDC3), muted = Color(0xFF92A69F),
+    accent = Color(0xFF9CE6BD), highlight = Color(0xFFC3F6D6), depth = Color(0xFF80BE9C),
+    warning = Color(0xFFEDBC7B), neutral = Color(0xFF92A69F), live = Color(0xFF9CE6BD),
+    air = Color(0xFF89A8DF), sky = Color(0xFF172226), space = Color(0xFF6DBCB1),
+    voice = Color(0xFFE5ACB5), learned = Color(0xFF9CE6BD), onAccent = Color(0xFF0D1417),
+)

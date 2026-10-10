@@ -30,7 +30,12 @@ import kotlinx.coroutines.delay
 
 /** Diagnostics from the spike, kept for testing on new devices. */
 @Composable
-fun LabScreen(actions: List<Pair<String, () -> Unit>>) {
+fun LabScreen(actions: List<Pair<String, () -> Unit>>, onOpenEq: () -> Unit = {}) {
+    var diagnostics by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    if (!diagnostics) {
+        IntegratedLabPanel(onOpenEq, onDiagnostics = { diagnostics = true })
+        return
+    }
     var log by remember { mutableStateOf("") }
     LaunchedEffect(Unit) {
         while (true) {
@@ -39,7 +44,8 @@ fun LabScreen(actions: List<Pair<String, () -> Unit>>) {
         }
     }
     Column(Modifier.fillMaxSize().padding(if (SvanAppearance.current == AppearanceTheme.ORIGINAL) 16.dp else 24.dp)) {
-        ScreenTitle("Lab", "Device probes and the engine log.")
+        ScreenTitle("Device probes", "Device probes and the engine log.")
+        androidx.compose.material3.TextButton(onClick = { diagnostics = false }) { Text("Back to Svan Lab") }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             actions.forEach { (label, action) -> Pill(label, false, action) }

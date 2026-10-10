@@ -46,6 +46,14 @@ private fun polar(c: Offset, r: Float, a: Double) = Offset(c.x + r * cos(a).toFl
 @Composable
 fun SoundLandscape(curve: DoubleArray, modifier: Modifier = Modifier, live: Boolean = true) {
     val theme = SvanAppearance.current
+    if (theme == AppearanceTheme.SVAN_LAB) {
+        Canvas(modifier) {
+            drawRect(Svan.Surface)
+            for (i in 1..8) drawLine(Svan.Grid.copy(alpha = 0.45f), Offset(size.width * i / 9, 0f), Offset(size.width * i / 9, size.height))
+            for (i in 1..4) drawLine(Svan.Grid.copy(alpha = 0.45f), Offset(0f, size.height * i / 5), Offset(size.width, size.height * i / 5))
+        }
+        return
+    }
     if (theme.landscape != null) {
         Image(painterResource(theme.landscape), contentDescription = null, modifier = modifier,
             contentScale = ContentScale.Crop, alignment = Alignment.BottomEnd)

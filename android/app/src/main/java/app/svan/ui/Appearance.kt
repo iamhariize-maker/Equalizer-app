@@ -63,7 +63,9 @@ enum class AppearanceTheme(
     SANDSTONE_ATELIER("sandstone_atelier", "Sandstone Atelier", "Warm parchment · etched dunes", true,
         R.drawable.landscape_sandstone, R.drawable.print_sandstone, IntOffset(10, 264), IntSize(2150, 200)),
     INDIGO_LOOM("indigo_loom", "Indigo Loom", "Indigo contours · geometric print", false,
-        R.drawable.landscape_indigo, R.drawable.print_indigo, IntOffset(0, 294), IntSize(2172, 137));
+        R.drawable.landscape_indigo, R.drawable.print_indigo, IntOffset(0, 294), IntSize(2172, 137)),
+    SVAN_LAB("mint_circuit", "Mint Circuit", "Mint on charcoal · clean instrument panels", false, null,
+        R.drawable.print_original, IntOffset(42, 264), IntSize(2090, 194));
 
     companion object {
         fun fromStoredId(id: String?): AppearanceTheme = entries.firstOrNull { it.storedId == id } ?: ORIGINAL
@@ -98,6 +100,14 @@ object SvanAppearance {
 /** Real generated print, cropped only at draw time; transparent source pixels stay unchanged. */
 @Composable
 fun ThemePrint(modifier: Modifier = Modifier, theme: AppearanceTheme = SvanAppearance.current, alpha: Float = 0.72f) {
+    if (theme == AppearanceTheme.SVAN_LAB) {
+        androidx.compose.foundation.Canvas(modifier.fillMaxWidth().height(18.dp)) {
+            drawLine(theme.palette.grid, androidx.compose.ui.geometry.Offset(0f, size.height / 2),
+                androidx.compose.ui.geometry.Offset(size.width, size.height / 2), 1.dp.toPx())
+            drawCircle(theme.palette.accent, 3.dp.toPx(), androidx.compose.ui.geometry.Offset(size.width / 2, size.height / 2))
+        }
+        return
+    }
     val bitmap = ImageBitmap.imageResource(theme.print)
     Image(
         painter = BitmapPainter(bitmap, theme.printOrigin, theme.printSize),

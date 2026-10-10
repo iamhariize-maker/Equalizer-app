@@ -187,7 +187,7 @@ fun SvanApp(
                         1 -> EqScreen(onOpenDetection = { tab = 3 })
                         2 -> PresetsScreen()
                         3 -> AudiophileScreen(onStartCapture, onStopCapture)
-                        else -> LabScreen(labActions)
+                        else -> LabScreen(labActions, onOpenEq = { tab = 1 })
                     }
                 }
             }
