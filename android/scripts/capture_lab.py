@@ -74,8 +74,6 @@ def level(name):
 
 
 def screenshot(name):
-    adb('shell', 'wm', 'size', '780x1688')
-    adb('shell', 'wm', 'density', '320')
     adb('shell', 'am', 'start', '-W', '-n', 'app.svan/.MainActivity')
     def tree():
         adb('shell', 'uiautomator', 'dump', '/sdcard/capture-lab.xml')
@@ -98,8 +96,6 @@ def screenshot(name):
     (out/(name+'.xml')).write_text(ET.tostring(root,encoding='unicode'))
     (out/(name+'.png')).write_bytes(subprocess.check_output(
         ['adb','-s',serial,'exec-out','screencap','-p'],timeout=100))
-    adb('shell','wm','size','320x640')
-    adb('shell','wm','density','160')
 
 
 def predicted(plan, hz):
@@ -113,6 +109,10 @@ def predicted(plan, hz):
 
 
 try:
+    # Fix geometry before capture starts; screenshots must not reconfigure the
+    # activity/display while downstream PCM and live epoch changes are measured.
+    adb('shell', 'wm', 'size', '780x1688')
+    adb('shell', 'wm', 'density', '320')
     for permission in ('DUMP', 'RECORD_AUDIO', 'POST_NOTIFICATIONS'):
         adb('shell', 'pm', 'grant', 'app.svan', 'android.permission.' + permission)
     command('stop_capture')

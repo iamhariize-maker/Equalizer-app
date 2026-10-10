@@ -69,7 +69,9 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-        handleCommand(intent)
+        // Configuration changes retain the original launch intent. Replaying its debug
+        // command can stop a running capture or overwrite a later sound selection.
+        if (savedInstanceState == null) handleCommand(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
