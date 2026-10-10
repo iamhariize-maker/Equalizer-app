@@ -123,7 +123,7 @@ fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
             Slider(margin, { margin = it }, valueRange = 3f..18f, steps = 14)
             Button(onClick = { IntegratedLab.fit(context, rate, block, blend, margin.toDouble()) }, enabled = !state.busy) { Text("Fit current curve") }
             displayPlan?.let { p ->
-                Text("${p.gains.size} unique-bin controls · ${if (p.hybrid) "hybrid" else "DP only"}", style = MaterialTheme.typography.titleMedium)
+                Text("${p.gains.size} unique-bin controls · ${if (p.hybrid) "hybrid" else if (captureEpoch != null) "WOLA only" else "DP only"}", style = MaterialTheme.typography.titleMedium)
                 Text("Predicted bass RMS error: ${String.format(Locale.ROOT, "%.3f", p.rms)} dB\nPredicted modulation: ${String.format(Locale.ROOT, "%.1f", p.modulationDb)} dB\nInput gain: ${String.format(Locale.ROOT, "%.1f", p.attenuationDb)} dB",
                     style = MaterialTheme.typography.bodyMedium, color = Svan.TextMuted)
                 Button(onClick = { IntegratedLab.apply() }, enabled = !state.busy && !state.applied) { Text("Apply fitted controls") }

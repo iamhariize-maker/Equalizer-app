@@ -38,7 +38,12 @@ object IntegratedLab {
     fun captureControls(rate: Int): CaptureLabControls? = selectedCapture[rate]
     private fun clearCapture() { selectedCapture = emptyMap(); captureRevision.incrementAndGet() }
     // Saved JSON deliberately omits live smart layers; a fit must include them in its identity.
-    private fun currentSignature() = SvanRepository.eq.value.toString() + SvanRepository.settings.value.toJson().toString()
+    private fun currentSignature() = SvanRepository.eq.value.toString() + SvanRepository.settings.value.copy(
+        // Choosing a route does not change the fitted audio. Keep a preselected experiment when
+        // switching from system-only to capture, or enabling/disabling a mix-fallback preference.
+        engineMode = app.svan.model.EngineMode.SYSTEM_ONLY, wholeMixFallback = false,
+    ).toJson().toString()
+    fun matchesCurrentSource(): Boolean = signature == currentSignature()
 
     @Synchronized
     fun fit(context: Context, rate: Int, block: Int, hybrid: Boolean, margin: Double) {

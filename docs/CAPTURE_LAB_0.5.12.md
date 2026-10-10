@@ -57,7 +57,9 @@ MediaProjection and quality. The output briefly rebuffers. Each epoch builds imm
 before processing; no FFT resize or coefficient allocation occurs in process. Source mutes remain
 under the router's existing ownership/proof checks; a failed reopen exits through normal fail-open
 cleanup. Lab reopen is separate from the existing one-shot safe-rate/underrun recovery allowance.
-Sound/settings edits, system-engine stop or process restart restore normal Svan. Plans are not saved
+Sound/settings edits, system-engine stop or process restart restore normal Svan. A route-only
+system-only/capture mode switch or mix-fallback preference does not invalidate the frozen curve.
+Plans are not saved
 as an automatic startup default.
 
 Capture above 48 kHz retains normal native processing: no compatible reference fit is supplied for

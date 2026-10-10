@@ -247,6 +247,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
     @Synchronized
     fun applyCurveFrom(engine: NativeEngine, gainProtection: Boolean = true) {
         if (labPlan != null) {
+            if (app.svan.lab.IntegratedLab.matchesCurrentSource()) return
             clearLab()
             app.svan.lab.IntegratedLab.curveChanged()
         }
