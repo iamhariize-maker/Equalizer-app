@@ -4,6 +4,16 @@ Read `AGENTS.md` first. Work on the branch the session names. Base: `d44173e` (0
 from an independent review with measurements; the probes that produced it are in `tools/probes/0.5.13/` (see §5).
 Nothing here has been heard on a phone. Do not claim sound quality; ship each change as a blind-test pair.
 
+## Start here (build in tiers; each tier ends at a green core/android run and its own commit)
+
+- **Tier 1, stability and protection:** WP2, WP1, WP4, WP3, and the *protect* tests of WP8 and WP10. These fix what is
+  broken and stop the new stages from hurting the voice and the highs. No new taste features.
+- **Tier 2, bass:** WP5, then WP9. Each new sound feature is default-off behind its own control until a level-matched
+  blind pair prefers it.
+- **Tier 3, the rest:** the candidate additions in WP8 and WP10, WP6, and WP7 only if the traces call for it.
+Every perceptual statement in WP8–WP10 comes from reasoning and general psychoacoustics, not from listening or from the
+owner's tracks; treat each as a hypothesis with a measured acceptance test, not as a known result.
+
 ## 1. Verdict on `d44173e`
 
 | Part | Verdict | Why |
@@ -110,6 +120,49 @@ texture audible, and `space` never makes it digital, light or airy. Nothing belo
   decorrelator, so widening adds room rather than phase smear. Items 3 and 4 are speculative; ship only if the blind pair
   prefers them.
 
+**WP9 (P1) Bass detail you can place in space.** Owner target: every layer of the bass audible (pick and string attack,
+sustain, bass waves and glides, the rubbery, ported-box bounce), with texture that feels three-dimensional rather than
+just louder. The bass is built in time layers; give each its own measured handle, all level-gated and bounded:
+- *Attack (pick, string noise, kick-bass separation).* A bass-onset-gated lift of the 0.6–2.5 kHz "pick" band: detect the
+  onset on the sub band (fast against slow envelope, as in `ShrillGuard` but inverted), raise the pick band by up to
+  +2 dB for 5–15 ms. Between onsets the band changes < 0.1 dB. This is mid-range, not treble, so it does not touch the
+  WP10 rule.
+- *Body and sustain (40–250 Hz).* Existing `BassTexture` (range per WP5). Candidate: a bounded decay-extender on the bass
+  band (slower release only, tail lift ≤ +3 dB, never above the note's own peak) so a held note keeps its shape.
+- *Rubbery, ported-box bounce.* Candidate, speculative: a level-gated, low-Q resonant tail around 45–60 Hz at about
+  −20 dB below the note, with `evenMix` supplying the tube-like even harmonic. Muddying is the risk: ship only if the blind
+  pair prefers it, and make the centre frequency follow the detected note (or stay off) instead of ringing on one pitch.
+- *Dimension.* Below about 150 Hz the bass stays centred and mono-safe. The apparent size and depth of a bass note comes
+  from its harmonics above about 200 Hz, so spread **only the texture's wet harmonics** into the side channel (a small,
+  fixed all-pass phase difference between left and right on 250–700 Hz, ≤ 0.3 ms equivalent). Because the spread lives in
+  the side channel, the mono sum and the fundamental stay bit-identical. This relies on the general finding that low
+  inter-channel coherence below roughly 700 Hz widens a source; verify it by blind pair, not by this sentence.
+- *Acceptance (synthetic bass line + 808 glide from `p3_bass`, plus the owner's excerpts):* peak growth ≤ 0.3 dB;
+  fundamental ≤ 0.2 dB; no DC; mono-sum change of the dimension path < 0.05 dB; pick-band lift only inside onset windows;
+  decay-extender never raises a note above its own peak; level matched to ±0.1 dB for every blind pair. Stress case:
+  heavily limited, boomy bass (the Metro Boomin reference) must come out no louder in the low band than it went in.
+- *Optional, P3.* A "bass anatomy" display in Lab/Hi-Fi that draws attack, body, tail and harmonic level live from engine
+  meters, drawn in code in the house palette. I read "visualised" mainly as heard; say if the owner means the screen.
+
+**WP10 (P1 protect, P2 candidates) Highs: balance and analogue ease, nothing special.** Owner target: keep detail and
+clarity, but make the highs pleasant and balanced, because uneven highs are what make listeners skip tracks or turn the
+volume down. Winds (sax, trumpet) and moody strings (violin) should come across through emotion, not loudness.
+- *Protect (Tier 1, tests only).* On the excerpts, at defaults: no band above 4 kHz changes by more than 0.3 dB unless the
+  analyzer's residual (WP3) says it is in excess; a **detail-retention** check on 4–12 kHz (onset-strength correlation
+  between input and output ≥ 0.98, envelope modulation depth ≥ 90 % of the input's) so softening never flattens the
+  texture; shrill excerpts must lose perceived sharpness (Zwicker sharpness from the analyzer) while passing that check.
+- *Balance candidates (default-off, blind pair).* (1) A slow **fatigue trim**: integrate 2–6 kHz energy over 30–60 s with an
+  equal-loudness weighting and ease a high shelf by up to 1.5 dB when a track is persistently above its own tilt target;
+  never faster than seconds, so it cannot pump. The phone's music-stream volume index is available and may scale it.
+  (2) **Level-dependent top softening**: the 6–12 kHz band's gain falls a little as its own level rises above a knee
+  (soft, ≤ 1.5 dB per 10 dB, 20–50 ms), so loud cymbal crashes soften while quiet air stays. This is the analogue-tape
+  behaviour in a controllable form and differs from the guard (which keys on sustained excess, not level).
+- *Emotion without loudness (winds, strings).* Candidate, speculative: where the Harmonic/Percussive split shows tonal
+  dominance (the analyzer already has HPSS), expand slow envelope detail in 1–4 kHz (swells and decays at 0.5–2 Hz,
+  vibrato envelope at 4–8 Hz) by ≤ 1.5 dB peak-to-peak, **loudness-neutral** (integrated level matched), and lean
+  300–500 Hz warmth by ≤ 1 dB. Measure with a modulation-depth metric; the claim is "more expressive", never "louder".
+- *Do not:* add air, brilliance or any treble boost; any new treble action must be reductive or loudness-neutral.
+
 ## 4. Rules that still apply
 
 Allocation-free audio thread; a measured test for every DSP change; gold design tokens untouched; no GPL code; keep the ten
@@ -129,7 +182,8 @@ part of the CMake build. Turn the scenarios you rely on into tests in `core/test
 
 1. A Hi-Fi diagnostic report while Gaana drops, taken after WP2 ships.
 2. Does Gaana create a new session for every track? (the WP2 trace answers this).
-3. 10–20 s excerpts: a bass-heavy master, a bright guitar master, a hi-hat-heavy master, and the four vocal masters in §7. Needed for WP3, WP5 and WP8.
+3. 10–20 s excerpts: a bass-heavy master with audible pick or string attack, a boomy/limited master, a bright guitar master, a hi-hat-heavy master, the four vocal masters in §7, and one or two each of a sax or trumpet passage and a violin passage. Needed for WP3, WP5 and WP8–WP10. Name the tracks and I add them to §7.
+4. By "visualised" for the bass, do you mean heard in more detail, or also a live display (WP9 optional)?
 4. Texture strength by route (speaker vs headphones) once WP5 is on the phone.
 
 ## 7. Vocal reference set (owner, 10 Oct 2026)
@@ -151,5 +205,5 @@ where the voice sits in the full mix), features only, nothing stored. The implem
 WP8 vocal-band report, and builds the acceptance numbers in WP3/WP4/WP8 from them. Without uploads, the owner can play
 each in Svaresa with Hi-Fi on and tap **Learn this sound** after 20 s.
 
-Order to build (suggested for the next session): WP2 → WP1 → WP4 → WP8 protect tests → WP3 → WP5 → WP6; WP7 only on
-evidence. WP8's candidate additions come last and only after the vocal baseline exists.
+Order to build: follow the tiers in "Start here". Inside Tier 1: WP2 → WP1 → WP4 → WP3 → the WP8/WP10 protect tests. The
+candidate additions in WP8–WP10 come last and only after the vocal and highs baselines exist.

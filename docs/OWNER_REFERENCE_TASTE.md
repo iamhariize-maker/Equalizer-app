@@ -111,3 +111,10 @@ The owner's criterion: the voice feels real and its emotional texture is almost 
 digital, light or too airy. Used as negative controls for the shrill guard, `space` and the harshness policy; see
 `BUILD_BRIEF_0.5.14.md` §7 and WP8. Not yet measured: no excerpts have been analysed.
 
+## Bass and highs goals (10 Oct 2026, owner)
+Bass: as much detail as possible, from bass-guitar picks to bass waves, tube-like and rubbery ported-box bounce, with
+texture that feels three-dimensional. Highs: preserve detail and clarity but favour a pleasant analogue sound over raw
+brutality, because unbalanced highs make listeners change track or lower the volume; winds (sax, trumpet) and moody
+strings (violin) should be emotional, not loud. Work packages WP9 and WP10 in `BUILD_BRIEF_0.5.14.md`. Nothing here has
+been measured on the owner's tracks.
+
