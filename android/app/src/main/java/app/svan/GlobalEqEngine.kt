@@ -81,7 +81,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
             labEqualizers.remove(current)?.let { runCatching { it.release() } }
             runCatching { current.enabled = false }
             runCatching { current.release() }
-            if (!on) EqController.log("whole-mix fallback: off")
+            if (!on) EqController.log("output-mix EQ: off")
         }
         if (!on || SystemClock.elapsedRealtime() - mixRefusedAtMs < MIX_RETRY_MS && mixRefusedAtMs != 0L) return false
         // A player attached moments ago may not be in the router's snapshot yet: never stack on it.
@@ -97,12 +97,12 @@ class GlobalEqEngine(bandCount: Int = 128) {
             check(dp.hasControl() && dp.enabled) { "Android did not enable the output-mix effect" }
             mix = dp
             mixRefusedAtMs = 0L
-            EqController.log("whole-mix fallback: on (an unannounced player is playing)")
+            EqController.log("output-mix EQ: on (an unannounced player is playing)")
             true
         } catch (e: RuntimeException) {
             candidate?.let { labEqualizers.remove(it)?.let { eq -> runCatching { eq.release() } }; lastSent.remove(it); lastDynamics.remove(it); lastProtection.remove(it); runCatching { it.release() } }
             mixRefusedAtMs = SystemClock.elapsedRealtime()
-            EqController.log("whole-mix fallback: unavailable on this phone ($e)")
+            EqController.log("output-mix EQ: unavailable on this phone ($e)")
             false
         }
     }
@@ -268,7 +268,7 @@ class GlobalEqEngine(bandCount: Int = 128) {
     private fun forEachEffect(apply: (DynamicsProcessing) -> Unit) {
         mix?.let { dp ->
             try { apply(dp) } catch (e: RuntimeException) {
-                EqController.log("whole-mix fallback: update failed: $e")
+                EqController.log("output-mix EQ: update failed: $e")
                 setMixFallback(false)
             }
         }

@@ -28,7 +28,7 @@ object QualityLab {
         check(calibration.fit.rmsErrorDb<.4&&calibration.fit.bands.size==64)
         val tuning=Tuning(true,"Measured test headphone","Synthetic fixture","Flat target",calibration.fit.bands.map {Band(it.type,it.freqHz,it.gainDb,it.q)},calibration.fit.rmsErrorDb)
         val r=BlindRenderer.render(context,WavClip(fs,source),EqState(tuning=tuning,smartEqControl=true),AudioSettings(quality=QualityMode.EFFICIENT),
-            SmartRequest(enabled=true,mode=SmartMode.SVARESA,night=NightMode.OFF,volumeAware=false,routeAware=false,autoHeadphone=false))
+            SmartRequest(enabled=true,mode=SmartMode.SVARESA,night=NightMode.OFF,volumeAware=false,routeAware=false,autoHeadphone=false,selectiveEq=true))
         check(abs(r.levels[2]-r.levels[3])<.1&&r.levels[4]<=0&&r.levels[5]<=0)
         val data=JSONObject().put("truePeakBefore",before).put("truePeakAfter",after).put("dynamicDb",dynamic[1])
             .put("calibrationRmsDb",calibration.fit.rmsErrorDb).put("matchDb",abs(r.levels[2]-r.levels[3]))

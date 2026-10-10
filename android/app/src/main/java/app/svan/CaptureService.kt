@@ -631,8 +631,8 @@ class CaptureService : Service() {
             // Dither "off" means no word-length reduction at all: float goes straight out.
             ditherBits = if (s.dither == DitherChoice.OFF) 0 else s.outputBits,
             ditherMode = s.dither.nativeMode,
-            autoHeadroom = s.effectiveFor(SvanRepository.eq.value).autoHeadroom,
-            gainProtection = s.effectiveFor(SvanRepository.eq.value).gainProtection,
+            autoHeadroom = s.captureFor(SvanRepository.eq.value).autoHeadroom,
+            gainProtection = s.captureFor(SvanRepository.eq.value).gainProtection,
             spatialResidual = spatialCapable,
             lab = lab,
         ).also {
@@ -674,7 +674,7 @@ class CaptureService : Service() {
     }
 
     private fun applyProtection(engine: NativeEngine,eq: EqState,settings: AudioSettings) {
-        val effective=settings.effectiveFor(eq)
+        val effective=settings.captureFor(eq)
         engine.setAutoHeadroom(effective.autoHeadroom)
         engine.setGainProtection(effective.gainProtection)
     }

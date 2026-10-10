@@ -408,8 +408,8 @@ data class AudioSettings(
     val gainProtection: Boolean = true,
     val systemBands: Int = 128,
     val systemFrameMs: Int = 80,
-    /** EQ the whole output mix while a playing app hides its audio session (see MixFallback). */
-    val wholeMixFallback: Boolean = true,
+    /** Output-mix fallback (see MixFallback). Off by default since defaults revision 2; never named in the UI. */
+    val wholeMixFallback: Boolean = false,
     val spatialMode: SpatialMode = SpatialMode.FAST,
     val captureRateMode: app.svan.RatePolicy.Mode = app.svan.RatePolicy.Mode.SAFE,
     /** Explicit experiment only; Auto master never enables this. */
@@ -423,10 +423,23 @@ data class AudioSettings(
     val analogTop: Boolean = false,
     /** Highs experiment: 1-4 kHz swells and decays slightly larger at an unchanged level (winds, strings). */
     val expression: Boolean = false,
+    /**
+     * Keep the listener's level under Svaresa on the audiophile engine (owner decision D4: never quieter). The loudness
+     * trim sets the level and the true-peak limiter protects the peaks, instead of static headroom lowering the whole
+     * track by the largest boost. On by default; a Lab switch compares it with static headroom.
+     */
+    val levelMatch: Boolean = true,
+    /** Engine A has no measurement, so its loudness trim is an estimate and stays off unless the listener opts in. */
+    val estimatedTrimOnSystemEffects: Boolean = false,
 ) {
     /** Auto master may add protection, but never rewrites the listener's saved choices. */
     fun effectiveFor(eq: EqState): AudioSettings = if (eq.smartProtection)
         copy(autoHeadroom=true,gainProtection=true) else this
+
+    /** What the capture engine applies: under Svaresa with [levelMatch], the limiter, not static headroom, guards the peaks. */
+    fun captureFor(eq: EqState): AudioSettings = effectiveFor(eq).let {
+        if (eq.smartProtection && levelMatch) it.copy(autoHeadroom = false, gainProtection = true) else it
+    }
 
     fun sameCaptureFormat(other: AudioSettings): Boolean = quality==other.quality &&
         outputBits==other.outputBits && dither==other.dither && spatialMode==other.spatialMode &&
@@ -443,6 +456,7 @@ data class AudioSettings(
         bassTube = requested.bassTube,
         analogTop = requested.analogTop,
         expression = requested.expression,
+        levelMatch = requested.levelMatch,
     )
 
     /** Maintain the original internal-rate target as the client rate increases. */
@@ -456,11 +470,18 @@ data class AudioSettings(
 
     fun toJson(): JSONObject = JSONObject()
         .put("engine", engineMode.name).put("quality", quality.name).put("bits", outputBits)
-        .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs).put("mixFallback", wholeMixFallback)
+        .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs).put("mixFallback", wholeMixFallback).put("defaults", DEFAULTS_REVISION)
         .put("spatialMode", spatialMode.name).put("captureRateMode", captureRateMode.name).put("bassUnmaskExperimental", experimentalBassUnmask)
         .put("bassAttack", bassAttack).put("bassDimension", bassDimension).put("bassSustain", bassSustain).put("bassTube", bassTube).put("analogTop", analogTop).put("expression", expression)
+        .put("levelMatch", levelMatch).put("estimatedTrimA", estimatedTrimOnSystemEffects)
 
     companion object {
+        /**
+         * 2 (0.5.14): the output-mix fallback defaults to off. Older saves (and older backups) stored the old default as if
+         * it were a choice, so a save without this revision starts with the fallback off once.
+         */
+        const val DEFAULTS_REVISION = 2
+
         fun fromJson(o: JSONObject) = AudioSettings(
             engineMode = runCatching { EngineMode.valueOf(o.getString("engine")) }.getOrDefault(EngineMode.SYSTEM_ONLY),
             quality = runCatching { QualityMode.valueOf(o.getString("quality")) }.getOrDefault(QualityMode.AUDIOPHILE),
@@ -470,7 +491,7 @@ data class AudioSettings(
             gainProtection = o.optBoolean("agp", true),
             systemFrameMs = o.optInt("sysFrameMs", 80).takeIf { it in listOf(10, 40, 80) } ?: 80,
             systemBands = o.optInt("sysBands", 128).takeIf { it in listOf(64, 128, 256) } ?: 128,
-            wholeMixFallback = o.optBoolean("mixFallback", true),
+            wholeMixFallback = o.optInt("defaults", 1) >= DEFAULTS_REVISION && o.optBoolean("mixFallback", false),
             spatialMode = runCatching { SpatialMode.valueOf(o.getString("spatialMode")) }.getOrDefault(SpatialMode.FAST),
             captureRateMode = runCatching { app.svan.RatePolicy.Mode.valueOf(o.getString("captureRateMode")) }.getOrDefault(app.svan.RatePolicy.Mode.SAFE),
             experimentalBassUnmask = o.optBoolean("bassUnmaskExperimental", false),
@@ -480,6 +501,8 @@ data class AudioSettings(
             bassTube = o.optBoolean("bassTube", false),
             analogTop = o.optBoolean("analogTop", false),
             expression = o.optBoolean("expression", false),
+            levelMatch = o.optBoolean("levelMatch", true),
+            estimatedTrimOnSystemEffects = o.optBoolean("estimatedTrimA", false),
         )
     }
 }

@@ -70,13 +70,17 @@ data class SmartRequest(
     val volumeAware: Boolean = true,
     val routeAware: Boolean = true,
     val autoHeadphone: Boolean = true,
-    val selectiveEq: Boolean = true,
+    /** Selective dynamic EQ is opt-in since defaults revision 2 (0.5.14). */
+    val selectiveEq: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject().put("on", enabled).put("mode", mode.name).put("feel", feel.name).put("strength", strength)
         .put("picks", JSONArray().apply { picks.forEach { put(it.name) } })
-        .put("night", night.name).put("volumeAware", volumeAware).put("routeAware", routeAware).put("autoHeadphone", autoHeadphone).put("selectiveEq",selectiveEq)
+        .put("night", night.name).put("volumeAware", volumeAware).put("routeAware", routeAware).put("autoHeadphone", autoHeadphone).put("selectiveEq",selectiveEq).put("defaults", DEFAULTS_REVISION)
 
     companion object {
+        /** 2 (0.5.14): selective dynamic EQ became opt-in; older saves stored the old default, so it starts off once. */
+        const val DEFAULTS_REVISION = 2
+
         fun fromJson(o: JSONObject) = SmartRequest(
             enabled = o.optBoolean("on", false),
             mode = runCatching { SmartMode.valueOf(o.optString("mode", SmartMode.GUIDED.name)) }.getOrDefault(SmartMode.GUIDED),
@@ -88,7 +92,7 @@ data class SmartRequest(
             volumeAware = o.optBoolean("volumeAware", true),
             routeAware = o.optBoolean("routeAware", true),
             autoHeadphone = o.optBoolean("autoHeadphone", true),
-            selectiveEq=o.optBoolean("selectiveEq",true),
+            selectiveEq = o.optInt("defaults", 1) >= DEFAULTS_REVISION && o.optBoolean("selectiveEq", false),
         )
     }
 }
@@ -389,7 +393,9 @@ object Svaramanas {
             _plan.value = null
             _context.value = null
             _listening.value = CaptureService.isRunning
+            trimTarget = 0.0
             main.post {
+                trimApplied = 0.0
                 if (app.svan.lab.IntegratedLab.holdsAutomaticCurve) return@post
                 if (SvanRepository.eq.value.smart != null || SvanRepository.eq.value.smartEqControl) SvanRepository.update { it.copy(smart = null, smartBypass = false, smartEqControl=false) }
                 if (immediate) EqController.curveEngine.responseDb(doubleArrayOf(63.0, 1000.0)).let { c ->
@@ -446,9 +452,16 @@ object Svaramanas {
             val b = drifted.bands[i / 5]
             when (i % 5) { 0 -> b.type.ordinal.toDouble(); 1 -> b.freqHz; 2 -> b.gainDb; 3 -> b.q; else -> if (b.enabled) 1.0 else 0.0 }
         }
-        val delta = NativeEngine.nativeSmartLoudnessDelta(bands, packed?.takeIf { heard?.valid == true },
-            drifted.intimacy, drifted.space, drifted.instruments)
-        val next = drifted.copy(preampDb = (-delta).coerceIn(-18.0, 1.5))
+        val measured = packed?.takeIf { heard?.valid == true }
+        val delta = NativeEngine.nativeSmartLoudnessDelta(bands, measured, drifted.intimacy, drifted.space, drifted.instruments)
+        // The loudness trim (D4): blended from the pink-reference estimate toward the heard spectrum, then ramped by
+        // [TrimRamp] so it never steps. Engine A has only the estimate, and uses it only if the listener opted in.
+        val estimate = if (measured == null) delta
+            else NativeEngine.nativeSmartLoudnessDelta(bands, null, drifted.intimacy, drifted.space, drifted.instruments)
+        trimTarget = TrimRamp.target(-estimate, if (engineB && measured != null) -delta else null,
+            TrimRamp.blendWeight(heard?.valid == true, heard?.seconds ?: 0.0),
+            estimateAllowed = engineB || SvanRepository.settings.value.estimatedTrimOnSystemEffects)
+        val next = drifted.copy(preampDb = trimApplied)
         val applied = p.copy(bands = if (!eq.smartEqControl || eq.smartEqMode == app.svan.model.EqMode.PARAMETRIC) next.bands.take(p.bands.size) else p.bands, preampDb = next.preampDb, predictedDeltaDb = delta,
             notes = if (abs(delta) > 0.05 && 30 !in p.notes) p.notes + 30 else p.notes)
         _plan.value = applied
@@ -456,9 +469,40 @@ object Svaramanas {
         main.post {
             if (app.svan.lab.IntegratedLab.holdsAutomaticCurve) return@post
             if (next != prev) SvanRepository.update { it.copy(smart = next) }
+            startTrimRamp()
             if (immediate) logPlan(applied, heard)
         }
     }
+
+    /** The trim the ramp aims for (any thread) and the trim applied (written on Main only). See [TrimRamp]. */
+    @Volatile private var trimTarget = 0.0
+    @Volatile private var trimApplied = 0.0
+    private var trimTicking = false
+    private var lastTrimTickMs = 0L
+    private val trimTick = object : Runnable {
+        override fun run() {
+            val now = android.os.SystemClock.elapsedRealtime()
+            val stepped = TrimRamp.step(trimApplied, trimTarget, (now - lastTrimTickMs) / 1000.0)
+            lastTrimTickMs = now
+            if (stepped != trimApplied) {
+                trimApplied = stepped
+                if (!app.svan.lab.IntegratedLab.holdsAutomaticCurve)
+                    SvanRepository.update { s -> s.smart?.let { s.copy(smart = it.copy(preampDb = stepped)) } ?: s }
+            }
+            if (TrimRamp.settled(trimApplied, trimTarget)) trimTicking = false else main.postDelayed(this, TrimRamp.TICK_MS)
+        }
+    }
+
+    /** Main thread. */
+    private fun startTrimRamp() {
+        if (trimTicking) return
+        trimTicking = true
+        lastTrimTickMs = android.os.SystemClock.elapsedRealtime()
+        main.post(trimTick)
+    }
+
+    /** The applied trim, for the Lab readout. */
+    val appliedTrimDb: Double get() = trimApplied
 
     private var heardLogs = 0
 

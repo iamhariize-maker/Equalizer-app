@@ -174,6 +174,7 @@ object SessionRouter {
     fun init(context: Context) {
         if (!::compatStore.isInitialized) {
             appContext = context.applicationContext
+            installUidResolver(appContext)
             compatStore = CaptureCompat(appContext)
             appEngines = AppEnginePreferences(appContext)
             EqController.globalEq.onEffectChanged = { sid, effect ->
@@ -364,7 +365,7 @@ object SessionRouter {
 
     /** [playing] = null when unknown (broadcast path). [uid] < 0 = unknown, resolved here. */
     fun sessionOpened(sessionId: Int, pkg: String, uid: Int, playing: Boolean? = null) {
-        if (!enabled || sessionId <= 0 || uid == Process.myUid() || MusicSourcePolicy.excludedPackage(pkg)) return
+        if (!enabled || sessionId <= 0 || uid == Process.myUid() || MusicSourcePolicy.excludedPackage(pkg, uid)) return
         worker.execute {
             if (!enabled) return@execute
             val observed = if (PlaybackSessions.hasReportAccess(appContext))
@@ -393,6 +394,7 @@ object SessionRouter {
 
     private fun openOnWorker(sessionId: Int, pkg: String, uid: Int, playing: Boolean?) {
         if (!enabled) return
+        if (refusePrivate(sessionId, pkg, uid)) return
         closeGrace.reopened(sessionId)
         absence.forget(sessionId)
         val existing = routes[sessionId]
@@ -491,6 +493,25 @@ object SessionRouter {
             }
             retryParkedPlayers()
         }
+    }
+
+    /** Packages that share a uid, cached for a minute: the ignore list checks every package on a session's uid. */
+    private fun installUidResolver(context: Context) {
+        val pm = context.packageManager
+        val cache = java.util.concurrent.ConcurrentHashMap<Int, Pair<Long, List<String>>>()
+        MusicSourcePolicy.packagesForUid = { uid ->
+            val now = SystemClock.elapsedRealtime()
+            cache[uid]?.takeIf { now - it.first < 60_000L }?.second
+                ?: (runCatching { pm.getPackagesForUid(uid)?.toList() }.getOrNull().orEmpty()).also { cache[uid] = now to it }
+        }
+    }
+
+    /** Private apps (see [MusicSourcePolicy.privateCategory]) are never routed; a route they already hold is closed. */
+    private fun refusePrivate(sessionId: Int, pkg: String, uid: Int): Boolean {
+        val category = MusicSourcePolicy.privateCategory(pkg, uid) ?: return false
+        if (routes.containsKey(sessionId)) closeOnWorker(sessionId)
+        EqController.log("route: ignored $pkg (session $sessionId): private app, ${category.label}")
+        return true
     }
 
     private fun closeOnWorker(sessionId: Int, forgetEvidence: Boolean = false) {
@@ -682,6 +703,7 @@ object SessionRouter {
 
     private fun reroute(sid: Int, pkg: String, uid: Int, playing: Boolean?) {
         if (!enabled) return
+        if (refusePrivate(sid, pkg, uid)) return
         val mp = projection
         if (mp == null) { toEngineA(sid, pkg, uid, playing); return }
         val gate = routeGate(sid, pkg, uid)

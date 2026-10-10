@@ -187,6 +187,8 @@ measure "T17 implicit broadcast connects without enhanced permission"
 tone $CAP --ez stop true; sleep 3
 
 log "T18 already-playing player before a live detection grant"
+# The output-mix fallback is off by default since 0.5.14; this test opts in to check that it still engages.
+eq mix_fallback --ez on true; sleep 1
 tone $CAP --ef freq 1000 --ef amp 0.25 --ez broadcast false; sleep 3
 measure "T18 no detection before permission grant"
 # The test meter is first in the output-mix chain, so the whole-mix fallback is verified structurally.
@@ -198,6 +200,7 @@ eq refresh_detection
 wait_for "route: $CAP .*Engine A" 30; sleep 3
 measure "T19 live permission grant discovers existing playback"
 MIX_OFF=$(mix_state "not s['mixFallback'] and s['connectedPlayers']>=1")
+eq mix_fallback --ez on false
 log "T21 Svaramanas static plan on system effects"
 $A logcat -c
 eq svaramanas --ez on true --es mode GUIDED --es feel BRIGHT --es picks VOCALS,GUITARS,DRUMS

@@ -14,6 +14,12 @@ import android.os.SystemClock
  * moment before a player is routed from switching the mix effect on and off.
  */
 class MixFallbackPolicy(private val holdMs: Long = 3_000L, private val pauseGraceMs: Long = 30_000L) {
+    companion object {
+        /** In a phone call or a voice/video chat the output mix carries the other person's voice: never equalise it. */
+        fun callActive(mode: Int): Boolean = mode == android.media.AudioManager.MODE_IN_CALL ||
+            mode == android.media.AudioManager.MODE_IN_COMMUNICATION || mode == android.media.AudioManager.MODE_RINGTONE
+    }
+
     private var unroutedSinceMs = -1L
     private var on = false
     private var quietSinceMs = -1L
@@ -50,10 +56,12 @@ object MixFallback {
         val eq = SvanRepository.eq.value
         val allowed = SvanRepository.settings.value.wholeMixFallback && eq.enabled && SystemEqService.isRunning && !CaptureService.isRunning && !SharedOutput.status.value.requested
         val audio = context.getSystemService(AudioManager::class.java)
+        // Never equalise the output mix during a call or a voice/video chat.
+        val inCall = MixFallbackPolicy.callActive(runCatching { audio.mode }.getOrDefault(AudioManager.MODE_NORMAL))
         val routedPlaying = SessionRouter.snapshot.count {
             (it.owner == SessionRouter.Owner.ENGINE_A || it.owner == SessionRouter.Owner.ENGINE_B_MUTED) && it.playing != false
         }
-        val want = policy.next(SystemClock.elapsedRealtime(), allowed, runCatching { audio.isMusicActive }.getOrDefault(false),
+        val want = policy.next(SystemClock.elapsedRealtime(), allowed && !inCall, runCatching { audio.isMusicActive }.getOrDefault(false),
             DetectionMonitor.publicActiveCount(context), routedPlaying)
         EqController.globalEq.setMixFallback(want)
     }

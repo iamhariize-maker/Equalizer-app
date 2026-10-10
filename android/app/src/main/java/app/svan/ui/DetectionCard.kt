@@ -26,11 +26,8 @@ fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
     val shell by app.svan.ShizukuAudioReports.state.collectAsStateWithLifecycle()
     var showDetails by remember { mutableStateOf(false) }
     var working by remember { mutableStateOf(app.svan.OnboardingAndroid.working(context)) }
-    var wholeMix by remember { mutableStateOf(app.svan.EqController.globalEq.mixFallbackOn) }
-    val settings by app.svan.SvanRepository.settings.collectAsStateWithLifecycle()
     ObserveWhileVisible {
         working = app.svan.OnboardingAndroid.working(context)
-        wholeMix = app.svan.EqController.globalEq.mixFallbackOn
     }
     SectionLabel("Music detection")
     Text(when {
@@ -42,13 +39,6 @@ fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
         style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
     KeepEnhancedCard()
     WorkingStatusCard(working, stats = captureStats)
-    if (wholeMix) Text("A player is hiding its audio connection, so your EQ is on the whole phone output for now " +
-        "(notification sounds included). It switches back as soon as a player connects.",
-        style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
-    SettingSwitchRow("Whole-phone EQ for hidden players",
-        "When a playing app doesn't announce its audio and none is connected, apply your EQ to the whole output mix. " +
-            "No extra permission. Experimental: some phones allow it only on one output; attachment does not verify your music path.",
-        settings.wholeMixFallback, { on -> app.svan.SvanRepository.updateSettings { it.copy(wholeMixFallback = on) }; SystemEqService.refreshDetection(context) })
     SvanCard {
         Column {
             SetupHelpLinks()
@@ -76,7 +66,7 @@ private fun SharedOutputCard() {
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             Text("Test with your music and headphones. Device connection changes stop this option; re-test after switching outputs. Use per-player connections for the audiophile engine.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            Text("For a hidden player such as Amazon Music: keep only that player playing, try this option, then compare a clear EQ cut. An attached effect does not prove that Amazon's current output accepts EQ.",
+            Text("For a player that does not announce its audio, such as Amazon Music: keep only that player playing, try this option, then compare a clear EQ cut. An attached effect does not prove that Amazon's current output accepts EQ.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             Text("If your player offers an Equalizer setting, open Svan there to request a direct connection. Native Hi-Fi needs that connection to silence the original playback before rendering processed audio.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)

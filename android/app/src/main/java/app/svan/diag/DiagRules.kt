@@ -141,7 +141,7 @@ object DiagRules {
         if (active != null && active > 0 && !routed && a.accepted == 0 && !f.env.reportAccess) {
             out += Finding(Severity.WARN, "HIDDEN_PLAYER", "Android reports $active active media player(s) that Svan cannot connect to",
                 listOf("public active playback count: $active", "Svan routes for ${t.pkg}: 0"),
-                listOf("A playing app is hiding its audio session. Try 'Whole-phone EQ for hidden players' or shared-output EQ, or Enhanced detection."))
+                listOf("A playing app does not announce its audio session. Try shared-output EQ, or Enhanced detection."))
         }
         if (d.path != null && d.path in BYPASS_PATHS) {
             out += Finding(Severity.WARN, "BYPASS_PATH", "${t.label ?: t.pkg} plays on a '${d.path}' output that bypasses session effects",
