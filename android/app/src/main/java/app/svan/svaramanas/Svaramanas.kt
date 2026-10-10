@@ -468,7 +468,8 @@ object Svaramanas {
         // Apply and log on Main: SvanRepository.update and the curve engine belong to the UI thread.
         main.post {
             if (app.svan.lab.IntegratedLab.holdsAutomaticCurve) return@post
-            if (next != prev) SvanRepository.update { it.copy(smart = next) }
+            // The trim is read here, on Main, so a ramp tick between recompute and this post never steps back.
+            if (next != prev) SvanRepository.update { it.copy(smart = next.copy(preampDb = trimApplied)) }
             startTrimRamp()
             if (immediate) logPlan(applied, heard)
         }

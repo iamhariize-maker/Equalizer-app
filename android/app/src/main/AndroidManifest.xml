@@ -21,6 +21,86 @@
          media browser service; this avoids the Play-restricted QUERY_ALL_PACKAGES. -->
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
+        <!-- Private apps Svan must never touch (MusicSourcePolicy). Visibility lets the uid rule see them; it is
+             not an inventory: no QUERY_ALL_PACKAGES. -->
+        <package android:name="com.whatsapp" />
+        <package android:name="org.thunderdog.challegram" />
+        <package android:name="org.thoughtcrime.securesms" />
+        <package android:name="jp.naver.line.android" />
+        <package android:name="com.viber.voip" />
+        <package android:name="com.tencent.mm" />
+        <package android:name="com.kakao.talk" />
+        <package android:name="com.snapchat.android" />
+        <package android:name="com.discord" />
+        <package android:name="com.Slack" />
+        <package android:name="com.microsoft.teams" />
+        <package android:name="com.google.android.apps.messaging" />
+        <package android:name="com.samsung.android.messaging" />
+        <package android:name="com.google.android.apps.tachyon" />
+        <package android:name="com.google.android.apps.meetings" />
+        <package android:name="com.google.android.talk" />
+        <package android:name="com.google.android.apps.dynamite" />
+        <package android:name="com.google.android.apps.googlevoice" />
+        <package android:name="com.imo.android.imoim" />
+        <package android:name="im.vector.app" />
+        <package android:name="com.zing.zalo" />
+        <package android:name="com.truecaller" />
+        <package android:name="com.pinterest" />
+        <package android:name="com.ubercab" />
+        <package android:name="com.application.zomato" />
+        <package android:name="com.zeptoconsumerapp" />
+        <package android:name="me.lyft.android" />
+        <package android:name="com.google.android.apps.nbu.paisa.user" />
+        <package android:name="in.org.npci.upiapp" />
+        <package android:name="com.dreamplug.androidapp" />
+        <package android:name="com.google.android.googlequicksearchbox" />
+        <package android:name="com.google.android.apps.recorder" />
+        <package android:name="com.sec.android.app.voicenote" />
+        <package android:name="com.android.soundrecorder" />
+        <package android:name="com.google.android.GoogleCamera" />
+        <package android:name="com.sec.android.app.camera" />
+        <package android:name="com.android.camera" />
+        <package android:name="com.android.camera2" />
+        <package android:name="com.android.dialer" />
+        <package android:name="com.google.android.dialer" />
+        <package android:name="com.samsung.android.dialer" />
+        <package android:name="com.android.incallui" />
+        <package android:name="com.samsung.android.incallui" />
+        <package android:name="com.android.facelock" />
+        <package android:name="com.google.android.faceunlock" />
+        <package android:name="com.whatsapp.w4b" />
+        <package android:name="org.telegram.messenger" />
+        <package android:name="com.facebook.katana" />
+        <package android:name="com.facebook.orca" />
+        <package android:name="com.facebook.lite" />
+        <package android:name="com.facebook.mlite" />
+        <package android:name="us.zoom.videomeetings" />
+        <package android:name="com.skype.raider" />
+        <package android:name="ch.threema.app" />
+        <package android:name="com.instagram.android" />
+        <package android:name="com.instagram.lite" />
+        <package android:name="com.instagram.barcelona" />
+        <package android:name="com.zhiliaoapp.musically" />
+        <package android:name="com.ss.android.ugc.trill" />
+        <package android:name="com.twitter.android" />
+        <package android:name="com.reddit.frontpage" />
+        <package android:name="com.linkedin.android" />
+        <package android:name="in.mohalla.sharechat" />
+        <package android:name="in.mohalla.video" />
+        <package android:name="com.rapido.passenger" />
+        <package android:name="com.rapido.rider" />
+        <package android:name="com.ubercab.driver" />
+        <package android:name="com.ubercab.eats" />
+        <package android:name="com.olacabs.customer" />
+        <package android:name="in.swiggy.android" />
+        <package android:name="com.grofers.customerapp" />
+        <package android:name="com.grabtaxi.passenger" />
+        <package android:name="com.gojek.app" />
+        <package android:name="ee.mtakso.client" />
+        <package android:name="com.phonepe.app" />
+        <package android:name="net.one97.paytm" />
+        <package android:name="com.amazon.dee.app" />
+        <package android:name="com.samsung.android.bixby.agent" />
         <!-- Explicit visibility for common streaming and offline players. The
              launcher/media-browser queries below still cover other players;
              do not request broad QUERY_ALL_PACKAGES inventory access. -->
