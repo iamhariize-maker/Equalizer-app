@@ -24,9 +24,25 @@ echo 'PASS production ignores exported automation commands' >> "$OUT/results.txt
 tap() {
     "${A[@]}" shell uiautomator dump /sdcard/svan-production.xml >/dev/null 2>&1
     local point
-    point=$("${A[@]}" shell cat /sdcard/svan-production.xml | python3 -c 'import re,sys,xml.etree.ElementTree as E; n=next((n for n in E.fromstring(sys.stdin.read()).iter("node") if n.attrib.get("text")==sys.argv[1]),None); b=list(map(int,re.findall(r"\d+",n.attrib["bounds"]))) if n is not None else []; print(f"{(b[0]+b[2])//2} {(b[1]+b[3])//2}" if b else "")' "$1")
+    point=$("${A[@]}" shell cat /sdcard/svan-production.xml | python3 -c 'import re,sys,xml.etree.ElementTree as E; n=next((n for n in E.fromstring(sys.stdin.read()).iter("node") if n.attrib.get("text")==sys.argv[1] and n.attrib.get("bounds")!="[0,0][0,0]"),None); b=list(map(int,re.findall(r"\d+",n.attrib["bounds"]))) if n is not None else []; print(f"{(b[0]+b[2])//2} {(b[1]+b[3])//2}" if b else "")' "$1")
     [[ -n "$point" ]] || { echo "FAIL production control missing: $1" >> "$OUT/results.txt"; exit 1; }
     "${A[@]}" shell input tap $point; sleep 2
+}
+visible() {
+    "${A[@]}" shell uiautomator dump /sdcard/svan-production.xml >/dev/null 2>&1
+    "${A[@]}" shell cat /sdcard/svan-production.xml | python3 -c 'import sys,xml.etree.ElementTree as E;sys.exit(not any(sys.argv[1] in n.attrib.get("text","") and n.attrib.get("bounds")!="[0,0][0,0]" for n in E.fromstring(sys.stdin.read()).iter("node")))' "$1"
+}
+scroll_to() {
+    for ((i=0;i<12;i++)); do
+        visible "$1" && return 0
+        if [[ ${2:-down} == up ]]; then
+            "${A[@]}" shell input swipe 160 190 160 480 350
+        else
+            "${A[@]}" shell input swipe 160 480 160 190 350
+        fi
+        sleep 1
+    done
+    echo "FAIL production capture UI text missing: $1" >> "$OUT/results.txt"; exit 1
 }
 tap Presets
 "${A[@]}" shell uiautomator dump /sdcard/svan-production.xml >/dev/null 2>&1
@@ -34,7 +50,11 @@ tap Presets
 "${A[@]}" shell cat /sdcard/svan-production.xml | grep -q 'Restore settings'
 "${A[@]}" exec-out screencap -p > "$OUT/settings-migration.png"
 echo 'PASS production provides settings migration controls' >> "$OUT/results.txt"
-tap Lab; tap 'Run engine checks'
+tap Lab
+tap Measure
+scroll_to 'Device probes and engine log'
+tap 'Device probes and engine log'
+tap 'Run engine checks'
 ready=''
 for ((attempt=0;attempt<120;attempt++)); do
     ready=$("${A[@]}" logcat -d -s EqSpike:I | sed -n 's/^.*QUALITY_LAB_READY //p' | tail -1)
@@ -67,22 +87,6 @@ CAP=app.svan.testsource.capturable
 BLK=app.svan.testsource.blocked
 tone() { "${A[@]}" shell am start -W -n "$1"/app.svan.testsource.ToneActivity "${@:2}" >/dev/null; }
 measure() { python3 "$(dirname "$0")/host_audio_level.py" --capture-wav "${QEMU_WAV_PATH:?host audio required}" "$OUT/$1.float32le" > "$OUT/$1.db"; }
-visible() {
-    "${A[@]}" shell uiautomator dump /sdcard/svan-production.xml >/dev/null 2>&1
-    "${A[@]}" shell cat /sdcard/svan-production.xml | python3 -c 'import sys,xml.etree.ElementTree as E;sys.exit(not any(sys.argv[1] in n.attrib.get("text","") for n in E.fromstring(sys.stdin.read()).iter("node")))' "$1"
-}
-scroll_to() {
-    for ((i=0;i<12;i++)); do
-        visible "$1" && return 0
-        if [[ ${2:-down} == up ]]; then
-            "${A[@]}" shell input swipe 160 190 160 480 350
-        else
-            "${A[@]}" shell input swipe 160 480 160 190 350
-        fi
-        sleep 1
-    done
-    echo "FAIL production capture UI text missing: $1" >> "$OUT/results.txt"; exit 1
-}
 tone "$CAP" --ef freq 1000 --ef amp 0.25 --ez broadcast true --ez component true
 sleep 4
 measure capture-flat
