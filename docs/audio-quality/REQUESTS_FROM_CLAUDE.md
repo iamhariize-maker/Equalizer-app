@@ -70,3 +70,15 @@ Kotlin files changed: `CaptureService.kt` (A1a, A2, A4, A5, A7), `SessionRouter.
 (S3 helper), `MainActivity.kt` and the manifest (S1 `.Command` alias), `DiagnosticReport.kt` (S5),
 `svaramanas/Svaramanas.kt` (U5), `svaramanas/SvaramanasBubbleService.kt` (drag to close), UI files for copy, theme and
 illustrations. Test scripts now send commands to `app.svan/.Command`. Details and reasons: `docs/OPUS_ISSUE_BRIEF.md` §9.
+
+## 11 October 2026: owner decisions and the Codex handoff (Claude, Kotlin lane requests)
+
+1. Full brief: `docs/CODEX_HANDOFF_2026-10-11.md`. The owner decided, in order: same branch; Apple Music and Gaana need no
+   special handling; Spotify refuses Svan, with no workaround; the whole-phone fallback is off by default and has no visible
+   name; loudness stays at the listener's level (up to +0.1 dB louder accepted); the Lab is integrated into the app; recording
+   is removed entirely; the app is decluttered, with full control kept.
+2. Priority: R-1 (recording removal) first, then P-1 (ignore list), W-1 (fallback), L-1 (trim), A-1, L-2 (Lab), U-1 (declutter).
+3. Trim (L-1): a pure ramp class; 1 dB per second; 100 ms updates; a target blended from the measured spectrum, with a +0.05 dB
+   bias. Validate the predictor before merge. File a core request only if its error exceeds 0.1 dB on material that matters.
+4. Core: this brief needs no core change unless the predictor check fails. Claude does not edit Kotlin.
+5. Section 5 of the brief lists the owner decisions still open. Please do not merge until they are answered.

@@ -36,6 +36,13 @@ for any purpose. Play Protect's enhanced fraud protection flagged the sideloaded
 financial-fraud risk because it declared a NotificationListenerService (optional player recognition).
 That feature is removed and `check_manifest_permissions.py` rejects any such declaration.
 
+Owner decision (11 October 2026): remove the audio recording feature entirely (Recording mode, proof export, the
+eight-second clip tap, and any saving of captured audio), because the app is published from a website and piracy
+allegations are a risk. The whole-phone output fallback is off by default and has no visible name. Loudness processing
+keeps the listener's level: the trim is rate-limited and never steps, and the output may be up to 0.1 dB louder but never
+quieter. The Lab tab goes; its tools move into Sound, EQ and Engine, and selective dynamic EQ is opt-in. Full work order:
+`docs/CODEX_HANDOFF_2026-10-11.md`.
+
 ## Repo map
 | Path | What |
 |---|---|
