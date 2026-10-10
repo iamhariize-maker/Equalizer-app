@@ -9,8 +9,7 @@ import kotlin.math.abs
 object BlindRenderer {
     data class Render(val rate: Int,val original: FloatArray,val enhanced: FloatArray,val levels: DoubleArray,val headphone: String,val configuration: String)
     fun render(context: Context,clip: WavClip,eq: EqState,requestedSettings: AudioSettings,request: SmartRequest): Render {
-        // Recorded excerpts retain the mode/quality actually applied, including a Fast fallback.
-        val settings = clip.captureSettings ?: requestedSettings
+        val settings = requestedSettings
         var snapshot=eq
         // The automatic plan hears this exact excerpt, not whichever track was playing earlier.
         if(request.enabled) {
@@ -18,7 +17,7 @@ object BlindRenderer {
                 engine.setAnalysis(true);val scratch=clip.samples.copyOf();engine.process(scratch,scratch,scratch.size/2);engine.analysis()
             }
             val sensors=if(request.mode==SmartMode.SVARESA)SvaresaSensors.read(context,request) else null
-            // Same route gate and learned taste as the live plan, so the blind test judges the real sound.
+            // Same route gate and learned taste as the live plan, so the quality check judges the real sound.
             val plan=SmartPlan.compute(request,heard,true,sensors!=null&&sensors.routeAware&&sensors.route==RouteKind.SPEAKER,
                 if(request.mode==SmartMode.SVARESA)Svaramanas.currentTaste() else null)
             val ctx=sensors?.let(SvaresaBrain::layer)

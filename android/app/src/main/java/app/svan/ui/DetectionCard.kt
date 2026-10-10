@@ -38,7 +38,7 @@ fun DetectionCard(captureStats: app.svan.CaptureService.Stats? = null) {
         PlaybackSessions.hasDumpPermission(context) -> "Enhanced detection · built into Svan (Shizuku not needed)"
         else -> "Basic detection · no extra setup needed for supported players"
     }, style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
-    Text("Detection finds player connections; it does not change EQ bandwidth. Full native DSP and Recording mode require a capturable music source.",
+    Text("Detection finds player connections; it does not change EQ bandwidth. Full native DSP requires a capturable music source.",
         style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
     KeepEnhancedCard()
     WorkingStatusCard(working, stats = captureStats)
@@ -74,13 +74,13 @@ private fun SharedOutputCard() {
             Text(shared.message, style = MaterialTheme.typography.bodyMedium)
             Text("Can apply system EQ without a player's session announcement on supported outputs. May affect other sounds sharing that output. Player names, per-app isolation and direct/offload support are unavailable here.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            Text("Test with your music and headphones. Device connection changes stop this option; re-test after switching outputs. Use per-player connections for the audiophile engine and Recording mode.",
+            Text("Test with your music and headphones. Device connection changes stop this option; re-test after switching outputs. Use per-player connections for the audiophile engine.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             Text("For a hidden player such as Amazon Music: keep only that player playing, try this option, then compare a clear EQ cut. An attached effect does not prove that Amazon's current output accepts EQ.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             Text("If your player offers an Equalizer setting, open Svan there to request a direct connection. Native Hi-Fi needs that connection to silence the original playback before rendering processed audio.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            if (captureRunning && !shared.requested) Text("This stops Hi-Fi and finishes any recording before switching to system EQ.",
+            if (captureRunning && !shared.requested) Text("This stops Hi-Fi before switching to system EQ.",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             OutlinedButton(onClick = {
                 if (shared.requested) app.svan.SessionRouter.setSharedOutput(false)

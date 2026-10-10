@@ -233,7 +233,7 @@ object Svaramanas {
     /** How many reference tracks Svaresa has learned the listener's sound from (0 = house voicing). */
     val tasteTracks: StateFlow<Int> = _tasteTracks.asStateFlow()
 
-    /** The learned taste for renderers that must match the live plan (e.g. blind listening). */
+    /** The learned taste for renderers that must match the live plan (e.g. the release quality checks). */
     fun currentTaste(): DoubleArray? = _taste.value
 
     /** The live learned taste (packed), so the UI can tell which saved signature, if any, is in use. */

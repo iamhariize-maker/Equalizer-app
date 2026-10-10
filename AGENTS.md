@@ -40,7 +40,7 @@ Owner decision (11 October 2026): remove the audio recording feature entirely (R
 eight-second clip tap, and any saving of captured audio), because the app is published from a website and piracy
 allegations are a risk. The whole-phone output fallback is off by default and has no visible name. Loudness processing
 keeps the listener's level: the trim is rate-limited and never steps, and the output may be up to 0.1 dB louder but never
-quieter. The Lab tab goes; its tools move into Sound, EQ and Engine, and selective dynamic EQ is opt-in. Full work order:
+quieter. The Lab tab stays and gains working tools, such as Bass detail and Highs experimental; selective dynamic EQ is opt-in. Full work order:
 `docs/CODEX_HANDOFF_2026-10-11.md`.
 
 ## Repo map
@@ -115,19 +115,18 @@ recording exports and screenshots were reviewed. The exact tested production pay
 and signed with the original owner key; see `docs/QUALITY_RECOVERY_0.5.8.md` for provenance.
 Amazon native processing and new physical-phone qualification remain unresolved.
 0. Combined 0.5.7/code 14 preserves the exact owner spatial-test source/features plus recording/detection. CI 37702568531 passes all eleven jobs; full API 33/34 logs/images were reviewed and the tested production APK was delivered signed with the original owner key. See `docs/COMBINED_APK_VERIFICATION_0.5.7.md`. Twelve DUMP-free checks supplement every existing PASS set. Amazon-first and Apple physical-phone qualification remain open; shared-output EQ is experimental with no commercial-player/route guarantee.
-1. Recording implementation `bbbb790` passed all nine jobs in CI 37678599236; API 33/34 logs and recording/boot/EQ/splash screenshots were reviewed. Keep this evidence and all required PASS sets intact for future changes; see `docs/RECORDING_MODE_VERIFICATION.md`. Physical camera readability, flash/click timing and OEM routes remain open.
+1. Recording (`bbbb790`) was removed on 11 October 2026 at the owner's direction; its CI evidence stays in git history. Keep the other required PASS sets intact.
 2. **Real-phone validation** (TECNO LH7n/Android 14 and LG V60/Android 13, no PC): the owner reports earlier listening success; new DSP, player/device coverage and LG Quad DAC behavior still need phone checks.
-3. Recording owner checks remain open: TECNO screen readability in LG video, measured flash/click timing, speaker-only routing with headphones and VN 16/24-bit WAV/M4A import. See `docs/PHONE_VALIDATION.md`.
 4. Product gaps: per-app engine UI, foreground-service robustness and Play Store policy (MediaProjection/foreground service). Original-key private APK delivery is verified; Play distribution/phone qualification remain separate work.
 
 0.5.5 adds reconstructed-peak protection, selective dynamic EQ, bounded headphone calibration
-and blind matched listening. See docs/QUALITY_LAB_0.5.5.md. Four release quality checks are required;
+and matched-level release checks. See docs/QUALITY_LAB_0.5.5.md. Four release quality checks are required;
 keep the ten detection, 39 routing, nine workspace and eight control checks intact.
 Production signing uses a private owner key outside Git/CI, never preview.keystore. Four additional
 production-mode checks use a disposable CI key. See docs/RELEASE_SIGNING.md; preserve settings
 export/restore and the production Activity's rejection of scripted command extras.
 
-Recording mode (Hi-Fi) is audio-only with a frame clock, sync flash/speaker cue and aligned exports, for editing in VN against an LG camera video of the TECNO screen: see `docs/CODEX_RECORDING_MODE.md` (brief + prompt) and `docs/RECORDING_MODE.md`.
+Recording mode (Hi-Fi) was removed on 11 October 2026 at the owner's direction (see the decision above). Its docs were deleted.
 
 Grounded sound (8 Oct 2026, built on the 0.5.8 base): Svaresa carries the owner's house voicing for deep, clean bass
 (Rahman / Massive Attack) and natural transients and atmosphere (Wilco): a 65 Hz *foundation* that lifts only what a

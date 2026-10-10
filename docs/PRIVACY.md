@@ -47,18 +47,16 @@ This describes the 0.5.6 implementation. A store release still needs
 an owner-approved policy URL/contact and Play Console disclosures matching the
 final package, including its foreground-service and MediaProjection uses.
 
-## Optional blind listening and calibration
+## Headphone calibration and settings export
 
-An explicit eight-second tap uses only already-authorized capture, before DSP; blocked apps remain
-blocked. Captured/WAV excerpts stay in memory and are discarded when the dialog closes. They are
-not uploaded or saved as recordings. Only local votes, measured level match, timestamp, headphone
-name and a frozen-configuration hash are saved; Clear results deletes them. Imported calibration
-curves and their hashes are stored privately for re-tuning. Published AutoEq data are fetched using
-the existing network path; listening recordings and preferences are never sent. The listening/calibration feature adds no permissions.
+Imported calibration curves and their hashes are stored privately for re-tuning. Published AutoEq
+data are fetched using the existing network path; preferences are never sent. Svan cannot record,
+clip or export captured playback, and captured audio is never saved. The Lab can save a generated
+20-second measurement WAV that contains no music; release checks use synthetic test signals only.
 
 Settings export writes EQ, presets, Svaresa/audio preferences and active calibration curves only
-to a file you choose. The file may identify your headphone. It contains no recordings, listening
-votes, Android permissions or signing keys. Restore validates it locally without uploading it.
+to a file you choose. The file may identify your headphone. It contains no audio, Android
+permissions or signing keys. Restore validates it locally without uploading it.
 
 ## Optional floating controls and diagnostic detail
 

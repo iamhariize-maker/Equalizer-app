@@ -105,9 +105,6 @@ swipe_up; shot 6f-svaresa-details
 $A shell input keyevent KEYCODE_BACK
 $A shell am start -n app.svan/.Command --es cmd svaramanas --ez on false >/dev/null
 
-$A shell am start -n app.svan/.Command --es cmd blind_lab >/dev/null
-shot 7-blind-listening
-$A shell input keyevent KEYCODE_BACK
 
 # UI-only fixtures cover states that cannot be photographed live while adb is
 # verifiably off. Every image is labelled; none starts capture or grants access.

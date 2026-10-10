@@ -72,14 +72,9 @@ assert -1.7<d['dynamicDb']<-1.2 and d['calibrationRmsDb']<.4
 assert d['matchDb']<=.1 and d['trimOriginalDb']<=0 and d['trimProcessedDb']<=0
 PY
 echo 'PASS production native quality and matched listening checks' >> "$OUT/results.txt"
-tap 'Blind listening'
-"${A[@]}" shell uiautomator dump /sdcard/svan-production.xml >/dev/null 2>&1
-"${A[@]}" shell cat /sdcard/svan-production.xml | grep -q 'Choose WAV'
-"${A[@]}" exec-out screencap -p > "$OUT/blind-listening.png"
 ! "${A[@]}" logcat -d | grep -qE 'FATAL EXCEPTION|UnsatisfiedLinkError|NoSuchMethodError'
-echo 'PASS production blind listening dialog launches without crash' >> "$OUT/results.txt"
+echo 'PASS production engine checks finish without a crash' >> "$OUT/results.txt"
 # Exercise the delivered R8 routing code through public controls, with PHONE_PREVIEW=false.
-"${A[@]}" shell input keyevent KEYCODE_BACK
 "${A[@]}" shell pm grant app.svan android.permission.DUMP
 "${A[@]}" shell pm grant app.svan android.permission.RECORD_AUDIO
 "${A[@]}" shell appops set app.svan PROJECT_MEDIA allow

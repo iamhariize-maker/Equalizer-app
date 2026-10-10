@@ -150,7 +150,6 @@ class CaptureService : Service() {
     private enum class EpochExit { STOP, SAFE_RETRY, LAB_REOPEN }
     private fun audioEpoch(mp: MediaProjection, safeFallback: Boolean): EpochExit {
         epoch = null
-        app.svan.listening.ProofRecorder.stop() // finish the old file before any format renegotiation
         var record: AudioRecord? = null
         var recorderLease: CaptureRecorderGate.Lease? = null
         var track: AudioTrack? = null
@@ -220,7 +219,6 @@ class CaptureService : Service() {
                 lab?.block, lab?.plan?.hybrid ?: false)
             if (lab != null) EqController.log("capture Lab: ${lab.block} frames at $rate Hz, hybrid=${lab.plan.hybrid}; static EQ replaced, final native protection retained")
             else if (IntegratedLab.state.value.applied) EqController.log("capture Lab: no reference fit for $rate Hz; normal native capture active")
-            app.svan.listening.ClipRecorder.captureChanged(epoch)
             eqWatcher = Thread({
                 var last: EqState? = null
                 var lastSettings: AudioSettings? = null
@@ -231,7 +229,6 @@ class CaptureService : Service() {
                         val limited = spatialLimited.get()
                         epoch = epoch?.let { active -> active.copy(appliedSettings = active.appliedSettings.copy(
                             spatialMode = if (limited) SpatialMode.FAST else audioSettings.spatialMode)) }
-                        app.svan.listening.ClipRecorder.captureChanged(epoch)
                     }
                     if (eq !== last || audioSettings != lastSettings) {
                         synchronized(engineLock) { current?.let {
@@ -246,7 +243,6 @@ class CaptureService : Service() {
                                     spatialMode = if (spatialLimited.get()) SpatialMode.FAST else audioSettings.spatialMode
                                 ) else live)
                             }
-                            app.svan.listening.ClipRecorder.captureChanged(epoch)
                         } }
                         last = eq
                         lastSettings=audioSettings
@@ -341,7 +337,6 @@ class CaptureService : Service() {
                     epoch = epoch?.copy(id = nextEpoch.incrementAndGet())
                 }
                 fade.restart()
-                app.svan.listening.ClipRecorder.captureChanged(epoch)
                 EqController.log("capture filter: ${allowed.size} muted UID(s)")
             }
             getSystemService(AudioManager::class.java).registerAudioPlaybackCallback(playbackCallback, null)
@@ -411,8 +406,6 @@ class CaptureService : Service() {
                 noDataWatchdog.reset()
                 lastIdleWindowNs = System.nanoTime()
                 if (allowed.isEmpty() || reading == null) generatedFrames += n / 2 else capturedFrames += n / 2
-                app.svan.listening.ClipRecorder.offer(buf,n,epoch)
-                app.svan.listening.ProofRecorder.offerDry(buf, n) // dry tap, before the DSP edits buf in place
                 var blockPeak = 0f
                 for (i in 0 until n) blockPeak = maxOf(blockPeak, kotlin.math.abs(buf[i]))
                 levelPeak = maxOf(levelPeak, blockPeak)
@@ -421,8 +414,7 @@ class CaptureService : Service() {
                     if (!sawAudio && blockPeak > 0f) { sawAudio = true; app.svan.diag.EngineTrace.mark(app.svan.diag.EngineTrace.Mark.FIRST_AUDIO) }
                 }
                 levelFrames += n / 2
-                if (app.svan.listening.ClipPlayer.playing) silentRun=0
-                else if (blockPeak == 0f) silentRun += n / 2 else { silentRun = 0; watchdogFired = false }
+                if (blockPeak == 0f) silentRun += n / 2 else { silentRun = 0; watchdogFired = false }
                 if (reading != null && allowed.isNotEmpty()) {
                     if (silentRun >= rate) heardFrames = 0 else if (blockPeak > 0f) heardFrames += n / 2
                     if (!healthReported && heardFrames >= rate * HEALTHY_AUDIO_S) {
@@ -465,7 +457,6 @@ class CaptureService : Service() {
                 }
                 val labChanged = IntegratedLab.captureSelectionId != labSelection
                 fade.apply(buf, n, fadeOut = sourceChanged || labChanged)
-                app.svan.listening.ProofRecorder.commitWet(buf, n) // exactly what the AudioTrack receives
                 var blockOut = 0f
                 for (i in 0 until n) blockOut = maxOf(blockOut, kotlin.math.abs(buf[i]))
                 outputPeak = maxOf(outputPeak, blockOut)
@@ -571,7 +562,6 @@ class CaptureService : Service() {
             EqController.log("capture: audio loop failed: $e")
         } finally {
             epochRunning.set(false)
-            app.svan.listening.ProofRecorder.stop()
             runCatching { getSystemService(AudioManager::class.java).unregisterAudioPlaybackCallback(playbackCallback) }
             activeRecord = null
             record?.let { runCatching { it.stop() }; runCatching { it.release() } }
@@ -582,7 +572,6 @@ class CaptureService : Service() {
             stats = null
             epoch = null
             unmaskSnapshot = null
-            app.svan.listening.ClipRecorder.captureChanged(null)
         }
         return EpochExit.STOP
     }

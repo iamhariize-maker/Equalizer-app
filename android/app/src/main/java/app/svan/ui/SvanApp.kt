@@ -132,9 +132,7 @@ fun SvanApp(
     onStopCapture: () -> Unit,
     labActions: List<Pair<String, () -> Unit>>,
 ) {
-    val blindOpen by app.svan.listening.BlindLab.open.collectAsStateWithLifecycle()
     val helpPanel by OnboardingUi.panel.collectAsStateWithLifecycle()
-    if(blindOpen) BlindListening()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var sectionsOpen by rememberSaveable { mutableStateOf(false) }
     val largeNavigation = LocalDensity.current.fontScale > 1.5f && LocalConfiguration.current.screenWidthDp < 420
@@ -178,7 +176,6 @@ fun SvanApp(
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            ProofRecordingPanel()
             ContextualSetupPrompt(working)
             AnimatedContent(tab, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "tab") { t ->
                 tabState.SaveableStateProvider(t) {
@@ -211,6 +208,5 @@ fun SvanApp(
         }
     }
     SetupHelpHost()
-    ProofRecordingOverlay()
     }
 }

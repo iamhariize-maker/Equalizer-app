@@ -15,11 +15,19 @@ import app.svan.ui.SvanApp
 import app.svan.ui.SvanTheme
 import kotlin.concurrent.thread
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
     /** Quality forced by a scripted start_capture; null = the saved setting. */
     private var pendingQuality: QualityMode? = null
+
+    /** Recording was removed: delete what an older build left in private storage (captured audio, saved blind votes). */
+    private fun clearRemovedRecordingData() = runCatching {
+        File(filesDir, "proof").deleteRecursively()
+        File(filesDir, "recording-evidence.json").delete()
+        deleteSharedPreferences("blind-listening")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge(
@@ -27,6 +35,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(0xFF0C0A08.toInt()), // Svan.Black: warm charcoal
         )
         super.onCreate(savedInstanceState)
+        thread { clearRemovedRecordingData() }
         app.svan.ui.SvanAppearance.initialize(this)
         val priorSound = getSharedPreferences("svan", MODE_PRIVATE)
         val onboarding = OnboardingAndroid.prefs(this)
@@ -59,7 +68,6 @@ class MainActivity : ComponentActivity() {
                     onStartCapture = { pendingQuality = null; startCapture() },
                     onStopCapture = ::stopCapture,
                     labActions = listOf(
-                        "Blind listening" to { app.svan.listening.BlindLab.open.value=true },
                         "Run engine checks" to { thread { runCatching { app.svan.listening.QualityLab.verify(this) }.onFailure { EqController.log("QUALITY_LAB_FAILED ${it.message}") } } },
                         "Probe band limits" to { thread { EqController.log(DynamicsProbe.run(this)) } },
                         "Audible resolution" to ::runResolutionProbe,
@@ -241,21 +249,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
             "onboarding_reset_prompts" -> OnboardingAndroid.resetPrompts(this)
-            "blind_lab" -> app.svan.listening.BlindLab.open.value=true
-            "proof_start" -> if (BuildConfig.DEBUG) {
-                runCatching { app.svan.listening.ProofCapture.start(this, matchLevel = true) }
-                    .onFailure { EqController.log("PROOF_FAILED ${it.message}") }
-            }
-            "proof_countdown" -> if (BuildConfig.DEBUG) {
-                app.svan.ui.ProofRecordingUi.wavBits = 16
-                app.svan.ui.ProofRecordingUi.matchLevel = true
-                app.svan.ui.ProofRecordingUi.countdown.value = 3
-            }
-            "proof_status" -> if (BuildConfig.DEBUG) thread {
-                runCatching { app.svan.listening.RecordingEvidence.write(this); EqController.log("PROOF_EVIDENCE_READY") }
-                    .onFailure { EqController.log("PROOF_FAILED ${it.message}") }
-            }
-            "proof_dismiss" -> if (BuildConfig.DEBUG) app.svan.listening.ProofCapture.dismiss()
             "source_policy_state" -> {
                 val pkg=intent.getStringExtra("pkg").orEmpty()
                 val observed=SessionRouter.evidence.values.filter { it.session.packageName==pkg }

@@ -29,9 +29,5 @@ text='\n'.join(('PASS' if valid else 'FAIL')+' '+label for label,valid in checks
 (out/'results.txt').write_text(text);print(text,end='');print(json.dumps(d,indent=2))
 assert all(valid for _,valid in checks)
 PY
-"${A[@]}" shell am start -n app.svan/.Command --es cmd blind_lab >/dev/null
-sleep 3
-"${A[@]}" exec-out screencap -p > "$OUT/blind-listening-release.png"
-"${A[@]}" shell input keyevent KEYCODE_BACK
 
 bash scripts/continuity_lab.sh "$S" "$OUT/continuity"

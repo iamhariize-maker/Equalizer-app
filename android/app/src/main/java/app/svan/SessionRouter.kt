@@ -554,7 +554,7 @@ object SessionRouter {
                 attachSharedOnWorker()
             } else {
                 // Also blocks a new Engine B start while its old AudioTrack is closing.
-                SharedOutput.publish(true, false, "Stopping Hi-Fi and finishing any recording before trying shared-output EQ.")
+                SharedOutput.publish(true, false, "Stopping Hi-Fi before trying shared-output EQ.")
                 appContext.stopService(android.content.Intent(appContext, CaptureService::class.java))
             }
         }

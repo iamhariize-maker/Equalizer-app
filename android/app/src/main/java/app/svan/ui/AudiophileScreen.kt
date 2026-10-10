@@ -46,8 +46,6 @@ import app.svan.SvanRepository
 import app.svan.model.DitherChoice
 import app.svan.model.EngineMode
 import app.svan.model.QualityMode
-import app.svan.listening.ProofCapture
-import app.svan.listening.ProofRecorder
 import app.svan.model.SpatialMode
 import app.svan.RatePolicy
 
@@ -208,7 +206,6 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                 }
             }
         }
-        ProofRecorderCard(running)
         EngineMode.entries.forEach { m ->
             ChoiceRow(m.title, m.detail, s.engineMode == m, onClick = { SvanRepository.updateSettings { it.copy(engineMode = m) } },
                 badge = if (m == EngineMode.SYSTEM_ONLY) "Recommended" else null)
@@ -252,7 +249,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
 
         SectionLabel("Bass detail (experimental)")
-        Text("Audiophile engine only. Each is off by default, never turned on automatically, and has not been listening-tested yet: compare it on and off with a blind comparison before keeping it.",
+        Text("Audiophile engine only. Each is off by default, never turned on automatically, and has not been listening-tested yet: compare it on and off before keeping it.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         SettingSwitchRow("Attack definition", "Lifts the pick and slap band (0.6-2.5 kHz) by up to 2 dB for about 10 ms when a bass note or hand-drum stroke starts. Nothing changes between notes.",
             s.bassAttack, { on -> SvanRepository.updateSettings { it.copy(bassAttack = on) } })
@@ -336,94 +333,5 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             )
         }
         Spacer(Modifier.height(24.dp))
-    }
-}
-
-/** Recording mode: saves what the audiophile engine received and what it sent out, plus a measured report. */
-@Composable
-private fun ProofRecorderCard(engineRunning: Boolean) {
-    val context = LocalContext.current
-    val state by ProofRecorder.state.collectAsStateWithLifecycle()
-    var error by remember { mutableStateOf("") }
-    var compatibility by remember { mutableStateOf(true) }
-    var matchLevel by remember { mutableStateOf(false) }
-    var abMatchLevel by remember { mutableStateOf(true) }
-    val countdown by ProofRecordingUi.countdown.collectAsStateWithLifecycle()
-    SectionLabel("Recording mode")
-    SvanCard {
-        Column {
-            Text("Film this phone with another phone. Svan saves aligned dry and processed audio, charts and a report. The clock above every tab is the file time. Sync adds a flash and speaker clicks for your camera.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            Spacer(Modifier.height(8.dp))
-            Text("Svan's digital output, excluding the DAC, Bluetooth and headphones. Louder often sounds better; compare at matched RMS level.",
-                style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-            Spacer(Modifier.height(12.dp))
-            when (val st = state) {
-                is ProofRecorder.State.Recording -> {
-                    Text("Use Before/After to choose the exported soundtrack; live listening stays unchanged. Sync, Mark now and Stop remain above every tab.", style = MaterialTheme.typography.bodyMedium, color = Svan.Gold)
-                }
-                is ProofRecorder.State.Finishing -> Text("Analysing and saving…", style = MaterialTheme.typography.bodyMedium, color = Svan.Gold)
-                is ProofRecorder.State.Done -> {
-                    val r = st.result
-                    Text("Saved · %.0f s".format(r.seconds), style = MaterialTheme.typography.titleMedium, color = Svan.Gold)
-                    Text("Peak %.1f → %.1f dBFS · average %.1f → %.1f dBFS".format(r.dry.peakDbfs, r.processed.peakDbfs, r.dry.rmsDbfs, r.processed.rmsDbfs),
-                        style = MaterialTheme.typography.bodySmall)
-                    if (r.bands.isEmpty()) Text("No signal was captured. Play a song through the audiophile engine, then record again.",
-                        style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-                    if (r.processed.overs > 0) Text("${r.processed.overs} processed samples reached full scale.", style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-                    if (r.droppedFrames > 0) Text("${r.droppedFrames} frames dropped because storage fell behind.", style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-                    if (r.segments.size > 1) Text("${r.segments.size} stretches measured, one per setting change.", style = MaterialTheme.typography.bodySmall)
-                    if (r.abTimelineWav != null) Text("Before/After timeline saved for VN.", style = MaterialTheme.typography.bodySmall, color = Svan.Gold)
-                    val abReport = r.report.optJSONObject("abTimeline")
-                    val abClipped = listOfNotNull(abReport?.optJSONArray("rangeGains"), abReport?.optJSONArray("fromSyncRangeGains"))
-                        .sumOf { ranges -> (0 until ranges.length()).sumOf { ranges.getJSONObject(it).getLong("clippedSamples") } }
-                    if (abClipped > 0) Text("$abClipped A/B timeline samples clipped. Check the transitions before editing.",
-                        style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-                    ProofCapture.lastExportNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.Ember) }
-                    ProofCapture.lastLocation?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted) }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(onClick = { ProofCapture.dismiss() }, modifier = Modifier.fillMaxWidth()) { Text("Done") }
-                }
-                is ProofRecorder.State.Failed -> {
-                    Text(st.message, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(onClick = { ProofCapture.dismiss() }, modifier = Modifier.fillMaxWidth()) { Text("OK") }
-                }
-                is ProofRecorder.State.Idle -> {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.Checkbox(checked = compatibility, onCheckedChange = { compatibility = it })
-                        Text("16-bit WAV for editors", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Text(if (compatibility) "16-bit PCM with TPDF dither; DSP stays unchanged. Also saves M4A." else "24-bit PCM WAV. Also saves M4A. Check VN import on your phone.",
-                        style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.Checkbox(checked = matchLevel, onCheckedChange = { matchLevel = it })
-                        Text("Also save RMS-matched audio", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.Checkbox(checked = abMatchLevel, onCheckedChange = { abMatchLevel = it })
-                        Text("Match Before/After levels", style = MaterialTheme.typography.bodyMedium)
-                    }
-                    Text("Before/After marks build one soundtrack for VN. They do not change what you hear live.",
-                        style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-                    if (error.isNotBlank()) Text(error, style = MaterialTheme.typography.bodySmall, color = Svan.Ember)
-                    Button(
-                        onClick = {
-                            error = ""
-                            runCatching { ProofCapture.start(context, if (compatibility) 16 else 24, matchLevel, abMatchLevel = abMatchLevel) }
-                                .onFailure { error = it.message ?: "Could not start recording" }
-                        },
-                        enabled = engineRunning && countdown == null, modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Svan.Gold, contentColor = Svan.OnGold),
-                    ) { Text(if (engineRunning) "Start recording" else "Start the audiophile engine first") }
-                    OutlinedButton(onClick = {
-                        ProofRecordingUi.wavBits = if (compatibility) 16 else 24
-                        ProofRecordingUi.matchLevel = matchLevel
-                        ProofRecordingUi.abMatchLevel = abMatchLevel
-                        ProofRecordingUi.countdown.value = 3
-                    }, enabled = engineRunning && countdown == null, modifier = Modifier.fillMaxWidth()) { Text("Start with countdown") }
-                }
-            }
-        }
     }
 }
