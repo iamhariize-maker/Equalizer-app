@@ -1,8 +1,17 @@
 # Opus build brief: Svan 0.5.13 after the recording removal (11 October 2026)
 
-Status: work order. Recording is already removed and the core readouts for the Lab are already written. Everything else
-below is still to build. Implement on `ccr-f8964344-8f7mf5`, the owner's branch. Line numbers were read on that branch
-after commit `ec02227`; re-check them after any rebase.
+Status: **built as 0.5.14 (code 21)** on `ccr-f8964344-8f7mf5`, 11 October 2026. The owner approved the recommendations,
+including the Engine A trim default, and let the builder decide where needed. Not yet heard on a phone. Line numbers below
+were read before the build and have moved.
+
+| WP | Built | Where it differs from this brief, and why |
+|---|---|---|
+| WP-1 ignore list | `MusicSourcePolicy.privateCategory`, router `refusePrivate`, cached uid resolver | The "verify" rows are included: a wrong package name never matches anything, and every row is in a category the owner asked to block. |
+| WP-2 defaults | Defaults revision 2 stored inside the saved JSON | Keyed inside the JSON, not a separate flag, so restored backups from older versions reset too. The fallback also yields while ringing. |
+| WP-3 trim | `TrimRamp`, blended target, Engine A off unless opted in | The ramp is asymmetric: attenuation ramps at 1 dB/s, removal is immediate, so the level is never quieter. New: under Svaresa, Hi-Fi forced Auto headroom, which set the gain to −(largest boost) and overrode the trim (a +4 dB bass boost left the track about 1–3 dB quieter than matched). "Keep my level" (on by default) lets the true-peak limiter guard Svaresa's peaks on Engine B instead; system effects keep static headroom. |
+| WP-4 Lab Tools | `ui/LabTools.kt`, first page of the Lab | Readouts poll four times a second through a new non-allocating JNI fill (`nativeProcessorReadoutsInto`) into double buffers. Selective dynamic EQ has a switch here as well as in the Svaresa panel; both write the same setting. |
+| WP-5 declutter | `DisclosureGroup`; Hi-Fi first view: Engine, Apps & engines, Background equalizer, Quality and output, Advanced | No settings sheet (an owner choice still open). |
+| WP-6 | No change | |
 
 This brief replaces `docs/CODEX_HANDOFF_2026-10-11.md` (its R-1 is done, its R-2 is moot, and its L-2 and U-1 assumed the
 Lab tab would go, which the owner has reversed). The longer background is in `docs/handoff/HANDOFF_BRIEF_2026-10-11.md`.

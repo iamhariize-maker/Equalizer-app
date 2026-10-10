@@ -73,9 +73,10 @@ fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         ScreenTitle("Svan Lab", "Explore the controls. Measure the result.")
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Shape", "Engine", "Measure").forEachIndexed { index, title -> Pill(title, page == index, onClick = { page = index }) }
+            listOf("Tools", "Shape", "Engine", "Measure").forEachIndexed { index, title -> Pill(title, page == index, onClick = { page = index }) }
         }
-        Surface(shape = RoundedCornerShape(18.dp), color = Svan.Surface) {
+        if (page == 0) LabToolsPage()
+        if (page != 0) Surface(shape = RoundedCornerShape(18.dp), color = Svan.Surface) {
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(if (state.applied) "EXPERIMENT SELECTED" else "REFERENCE MODEL", style = MaterialTheme.typography.labelMedium, color = Svan.Gold)
                 Text(state.message, style = MaterialTheme.typography.bodyMedium)
@@ -89,7 +90,7 @@ fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             }
         }
-        if (page == 0) {
+        if (page == 1) {
             val curve = remember(revision) { EqController.curveEngine.responseDb(CURVE_FREQS) }
             Text("Your shared Svan curve", style = MaterialTheme.typography.titleMedium)
             LabResponseGraph(CURVE_FREQS, curve, null)
@@ -102,7 +103,7 @@ fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
                 Text("${if (captureEpoch != null) "Capture" else "System"} fit · ash: requested · accent: predicted static EQ before input margin. Compression and limiting are not modeled here.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
             }
         }
-        if (page == 1) {
+        if (page == 2) {
             SectionLabel("Assumed output rate")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(44100, 48000).forEach { value -> Pill(if (value == 44100) "44.1 kHz" else "48 kHz", rate == value, onClick = { rate = value }) }
@@ -131,7 +132,7 @@ fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
             OutlinedButton(onClick = { IntegratedLab.restore() }, enabled = !state.busy) { Text("Restore normal Svan") }
             Text("Apply before or during capture. A live change briefly rebuffers audio with the same quality and permission; the larger block adds delay and FFT work. The automatic curve is held through fitting, review and selection; native dynamic processors still run. Sound edits or Restore resume adaptation. Experiments are not saved across app restarts.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         }
-        if (page == 2) {
+        if (page == 3) {
             Text("Make the result measurable", style = MaterialTheme.typography.titleMedium)
             Text("Export the test WAV, play it through your music player, then capture the output with an external recorder. It contains silence, an impulse, a quiet sweep and a multitone tail. Start with low listening volume.",
                 style = MaterialTheme.typography.bodyMedium, color = Svan.TextMuted)

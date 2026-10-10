@@ -75,6 +75,12 @@ class NativeEngine(
     /** Selective bass unmasking 0..1; default 0 (off). Not wired to any setting yet. */
     fun setBassUnmask(amount: Double) = nativeSetBassUnmask(handle, amount)
     fun bassUnmaskDiagnostics(): DoubleArray = nativeBassUnmaskDiagnostics(handle)
+    /**
+     * Lab readouts, written into [out] (size >= [READOUTS]) without allocating: [0] Analogue top reduction, [1] Expression
+     * gain, [2] shrill 4 kHz and [3] 8 kHz reduction, [4] bass attack lift, [5] bass sustain lift, [6..9] selective dynamic
+     * EQ reductions at 120, 330, 3000 and 6500 Hz. All dB; zero when a processor is off or idle.
+     */
+    fun processorReadoutsInto(out: DoubleArray) = nativeProcessorReadoutsInto(handle, out)
 
     /** Vocal tuner (mid) + instrument amplifier (side). Stereo engines only. */
     fun setStereoTuner(intimacy: Double, warmth: Double, smoothness: Double, space: Double, instruments: Double, backingVocals: Double = 0.0, spatialDetail: Double = 0.0) =
@@ -184,6 +190,17 @@ class NativeEngine(
             block: Int, stops: IntArray, gains: DoubleArray, coefficients: DoubleArray, inputGainDb: Double,
         ): Long
         @JvmStatic external fun nativeBassUnmaskDiagnostics(handle: Long): DoubleArray
+        @JvmStatic external fun nativeProcessorReadouts(handle: Long): DoubleArray
+        @JvmStatic external fun nativeProcessorReadoutsInto(handle: Long, out: DoubleArray)
+        const val READOUTS = 10
+        // Indices into processorReadoutsInto (fixed by the JNI bridge).
+        const val R_ANALOG_TOP = 0
+        const val R_EXPRESSION = 1
+        const val R_SHRILL_PRESENCE = 2
+        const val R_SHRILL_SIZZLE = 3
+        const val R_BASS_ATTACK = 4
+        const val R_BASS_SUSTAIN = 5
+        const val R_DYNAMIC_FIRST = 6
         @JvmStatic external fun nativePolicyRulesJson(): String
         @JvmStatic external fun nativeCurveDb(handle: Long, channel: Int, freqs: DoubleArray): DoubleArray
         @JvmStatic external fun nativeAppliedGainDb(handle: Long): Double

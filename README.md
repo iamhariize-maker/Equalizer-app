@@ -18,7 +18,7 @@ A system-wide equalizer for Android.
 Svan (स्वन्) is the Sanskrit word for sound. The full name is Svanam Shreshtham: Ultimate Sound.
 
 The **0.5.11 testing preview** adds basic connection recovery at track boundaries,
-an integrated **Svan Lab** (Shape / Engine / Measure) and the **Mint Circuit** theme
+an integrated **Svan Lab** (Tools / Shape / Engine / Measure) and the **Mint Circuit** theme
 under Appearance. Lab fits are opt-in AOSP-reference experiments through the same
 session router, not a second equalizer service. Read the [trial guide and limits](docs/INTEGRATED_LAB_0.5.11.md)
 and [validation record](docs/validation-0.5.11.md). Apple Music/YouTube Music phone

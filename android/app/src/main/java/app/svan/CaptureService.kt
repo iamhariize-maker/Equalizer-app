@@ -461,6 +461,15 @@ class CaptureService : Service() {
                 for (i in 0 until n) blockOut = maxOf(blockOut, kotlin.math.abs(buf[i]))
                 outputPeak = maxOf(outputPeak, blockOut)
                 processedFrames += n / 2
+                readoutFrames += n / 2
+                if (readoutFrames >= rate / 4) { // Lab readouts, four times a second, into preallocated buffers
+                    readoutFrames = 0
+                    dsp.processorReadoutsInto(readoutBack)
+                    val shown = readoutBack
+                    readoutBack = readoutFront
+                    readoutFront = shown
+                    readoutSnapshot = shown
+                }
                 var written = 0
                 var writeError: Int? = null
                 val writeBegin = System.nanoTime()
@@ -572,6 +581,7 @@ class CaptureService : Service() {
             stats = null
             epoch = null
             unmaskSnapshot = null
+            readoutSnapshot = null
         }
         return EpochExit.STOP
     }
@@ -716,6 +726,12 @@ class CaptureService : Service() {
             private set
         @Volatile private var current: NativeEngine? = null
         @Volatile private var unmaskSnapshot: DoubleArray? = null
+        @Volatile private var readoutSnapshot: DoubleArray? = null
+        private var readoutFront = DoubleArray(NativeEngine.READOUTS)
+        private var readoutBack = DoubleArray(NativeEngine.READOUTS)
+        private var readoutFrames = 0
+        /** Lab readouts (see [NativeEngine.processorReadoutsInto]); null when the audiophile engine is not running. */
+        fun processorReadouts(): DoubleArray? = readoutSnapshot?.copyOf()
 
         /** What Svaramanas heard (packed SourceFeatures), or null when Engine B isn't running. */
         fun analysis(): DoubleArray? = synchronized(engineLock) { current?.analysis() }

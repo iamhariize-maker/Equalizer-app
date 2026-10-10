@@ -228,6 +228,14 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             }
         }
 
+        Text("Bass detail, Highs, bass unmasking and selective dynamic EQ are in Lab → Tools, with what each is doing right now.",
+            style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
+
+        val guarded=s.effectiveFor(eq)
+        DisclosureGroup("Quality and output", "${s.spatialMode.title} spatial · " +
+            (if (s.captureRateMode == RatePolicy.Mode.SAFE) "48 kHz" else "high rate") + " · ${s.quality.title} · " +
+            (if (s.dither == DitherChoice.OFF) "float output" else "${s.outputBits}-bit") +
+            " · protection " + (if (guarded.gainProtection) "on" else "off")) {
         SectionLabel("Spatial processing")
         SpatialMode.entries.forEach { mode ->
             ChoiceRow(mode.title, mode.detail, s.spatialMode == mode, onClick = { SvanRepository.updateSettings { it.copy(spatialMode = mode) } })
@@ -240,31 +248,6 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
             ChoiceRow(label, detail, s.captureRateMode == mode, onClick = { SvanRepository.updateSettings { it.copy(captureRateMode = mode) } })
         }
         Text("Client rates describe Svan's transport. Original streaming-file rate and physical DAC rate remain unknown.", style = MaterialTheme.typography.bodySmall, color = Svan.TextFaint)
-
-        SectionLabel("Experimental bass unmasking")
-        SettingSwitchRow("Experimental bass unmasking", "Off by default. May cut sustained peaks outside a detected bass note's harmonics, up to 2 dB combined. Validated on synthetic fixtures only; it can misclassify music. Auto master never enables this.",
-            s.experimentalBassUnmask, { on -> SvanRepository.updateSettings { it.copy(experimentalBassUnmask = on) } })
-        if (s.experimentalBassUnmask && running) CaptureService.bassUnmaskDiagnostics()?.let { d ->
-            if (d.size == 5) Text("70/110/180/280 Hz cuts: ${d.take(4).joinToString { "%.2f dB".format(it) }} · estimated note ${if (d[4] > 0) "%.1f Hz".format(d[4]) else "unknown"}", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-        }
-
-        SectionLabel("Bass detail (experimental)")
-        Text("Audiophile engine only. Each is off by default, never turned on automatically, and has not been listening-tested yet: compare it on and off before keeping it.",
-            style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
-        SettingSwitchRow("Attack definition", "Lifts the pick and slap band (0.6-2.5 kHz) by up to 2 dB for about 10 ms when a bass note or hand-drum stroke starts. Nothing changes between notes.",
-            s.bassAttack, { on -> SvanRepository.updateSettings { it.copy(bassAttack = on) } })
-        SettingSwitchRow("Sustain", "Holds the decaying tail of a bass note or tabla/dholak ring up by at most 3 dB, never above the note's own peak. Steady notes are left alone.",
-            s.bassSustain, { on -> SvanRepository.updateSettings { it.copy(bassSustain = on) } })
-        SettingSwitchRow("Dimension", "Gives the bass harmonics above about 200 Hz a small phase difference between left and right, so the note has size. The fundamental and the mono sum are unchanged.",
-            s.bassDimension, { on -> SvanRepository.updateSettings { it.copy(bassDimension = on) } })
-        SettingSwitchRow("Tube colour", "Adds a second harmonic to the bass (about -23 dB at a loud note) beside the odd-harmonic texture. Can thicken notes that already have strong partials.",
-            s.bassTube, { on -> SvanRepository.updateSettings { it.copy(bassTube = on) } })
-
-        SectionLabel("Highs (experimental)")
-        SettingSwitchRow("Analogue top", "Loud, sustained treble (6-12 kHz: crash cymbals, bright washes) eases by up to 2.5 dB, the way tape does. Quiet air and short clicks pass unchanged; nothing is lifted. Off by default, not yet listening-tested.",
-            s.analogTop, { on -> SvanRepository.updateSettings { it.copy(analogTop = on) } })
-        SettingSwitchRow("Expression (winds and strings)", "Makes swells and decays in the 1-4 kHz singing range (sax, trumpet, violin) a little larger, up to 1.4 dB peak to peak, while the average level stays the same. Drum hits and picks are left alone. Off by default, not yet listening-tested.",
-            s.expression, { on -> SvanRepository.updateSettings { it.copy(expression = on) } })
 
         SectionLabel("Capture processing quality")
         Text("Quality and dither changes take effect when capture restarts. This keeps filter latency stable during a song. System effects use Android’s own processing.",
@@ -288,8 +271,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         }
 
         SectionLabel("Gain staging")
-        val guarded=s.effectiveFor(eq)
-        if(eq.smartProtection) Text("Svaresa keeps both protections active. Your manual choices return when Auto master is off.",
+        if(eq.smartProtection) Text(if (s.levelMatch) "Svaresa keeps gain protection on. On the audiophile engine it keeps your level and lets the peak limiter guard the peaks (Lab → Tools → Keep my level); on system effects Auto headroom stays on. Your manual choices return when Auto master is off." else "Svaresa keeps both protections active. Your manual choices return when Auto master is off.",
             style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted)
         SvanCard {
             Column {
@@ -299,10 +281,9 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                     guarded.gainProtection, { on -> SvanRepository.updateSettings { it.copy(gainProtection = on) } }, enabled=!eq.smartProtection)
             }
         }
+        }
 
-        SectionLabel("Selective dynamic EQ")
-        Text("Svaresa in the capture engine reduces sustained local resonances at 120, 330, 3000 and 6500 Hz. No automatic boost; up to 1.5 dB per band and 3 dB combined. Short transients are left alone. System effects cannot run this processor.",
-            style=MaterialTheme.typography.bodySmall,color=Svan.TextMuted,modifier=Modifier.padding(4.dp))
+        DisclosureGroup("Advanced", "${s.systemBands} system-effects bands · ${s.systemFrameMs} ms window · signal path") {
         SectionLabel("System effects resolution")
         Text("Curve points sent to Android. Effective resolution depends on its processing window and the device; accepted settings do not guarantee independent bands.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted, modifier = Modifier.padding(bottom = 8.dp))
@@ -331,6 +312,7 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
                     if (s.dither == DitherChoice.OFF) "float output" else "${s.outputBits}-bit ${s.dither.title} dither → output",
                 style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted,
             )
+        }
         }
         Spacer(Modifier.height(24.dp))
     }

@@ -206,3 +206,14 @@ for Backing/Binaural, Resolve and optional unmasking. No such evidence exists fo
    panned material and already-wide recordings. Keep raw votes and no-preference results. Check
    true-peak/headroom and feature bypass/counterexamples separately; preference does not establish
    technical transparency, native source rate, DAC rate, or general player/OEM compatibility.
+
+## 11 October 2026: 0.5.14 (code 21) built by Opus at the owner's direction
+
+Work order: `docs/OPUS_BUILD_BRIEF_2026-10-11.md` (status table at its top). WP-1 to WP-5 are built; WP-6 needed no change.
+- Defaults revision 2 resets the output-mix fallback and selective dynamic EQ to off once, for saves and backups alike. It
+  cannot tell a real choice from the old default, so a listener who had switched either on must switch it on again.
+- `e2e.sh` T18/T19 now opt in to the fallback explicitly; the quality lab sets `selectiveEq = true` explicitly, so both keep
+  testing what they tested before.
+- Behaviour change to listen for: under Svaresa on Hi-Fi, "Keep my level" replaces static headroom with the limiter, so
+  bass-heavy Svaresa layers play up to about 3 dB louder than in 0.5.13 and the limiter works harder. Lab → Tools shows the
+  gain and limiter reduction live, and the switch compares both.

@@ -93,6 +93,11 @@ Owner's engine follow-up: give Svaresa broader authority only where it improves 
 changes or additional taste effects. See `docs/ENGINE_QUALITY_0.5.4.md`.
 
 ## Top open items (details in docs/HANDOFF.md)
+Latest (11 Oct 2026): 0.5.14/code 21 built from `docs/OPUS_BUILD_BRIEF_2026-10-11.md`: recording removed; a hard-coded
+ignore list for private apps (`MusicSourcePolicy.privateCategory`; changing it is an owner decision); the output-mix
+fallback and selective dynamic EQ default off (defaults revision 2), the fallback is unnamed in the UI and off during calls;
+the Svaresa trim ramps (`TrimRamp`: never quieter) and, with "Keep my level", the limiter rather than static headroom guards
+Svaresa's peaks on Engine B; the Lab gains a Tools page with live engine readouts; Hi-Fi is grouped. Not yet heard.
 Latest (10 Oct 2026): 0.5.13/code 20 built from `docs/BUILD_BRIEF_0.5.14.md` (status table at its top): DUMP-free return path for
 parked players (`ParkPolicy`), analyser-driven shrill guard with voice protection and a 3-6 kHz budget, `space` as a plain side
 EQ, stronger bass texture plus off-by-default Bass detail and Analogue top switches. Nothing in it has been heard yet.

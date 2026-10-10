@@ -226,6 +226,19 @@ JNIEXPORT jdoubleArray JNICALL Java_app_svan_NativeEngine_nativeProcessorReadout
   return result;
 }
 
+// Fills `out` (length >= 10) without allocating, so the capture thread can poll it: the six values above, then the four
+// selective dynamic EQ reductions (120, 330, 3000, 6500 Hz; <= 0 dB).
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeProcessorReadoutsInto(JNIEnv* env, jclass, jlong h, jdoubleArray out) {
+  if (out == nullptr || env->GetArrayLength(out) < 10) return;
+  const Engine* e = fromHandle(h);
+  const auto shrill = e->shrillReductionsDb();
+  const auto lift = e->bassDetailLiftDb();
+  const auto dyn = e->dynamicReductionsDb();
+  const jdouble v[10] = {e->analogTopReductionDb(), e->expressionGainDb(), shrill[0], shrill[1], lift[0], lift[1],
+                         dyn[0], dyn[1], dyn[2], dyn[3]};
+  env->SetDoubleArrayRegion(out, 0, 10, v);
+}
+
 // The Svaresa/Svaramanas rule registry as JSON (read-only, for the "How Svaresa decides" screen).
 JNIEXPORT jstring JNICALL Java_app_svan_NativeEngine_nativePolicyRulesJson(JNIEnv* env, jclass) {
   return env->NewStringUTF(eqcore::policy::rulesJson().c_str());

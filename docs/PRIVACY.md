@@ -74,3 +74,11 @@ Do not publish this as a completed Play policy until those fields are resolved. 
 `privacy.html` is suitable for a static Pages deployment but Pages has not been enabled by this work.
 The current app still needs a visible policy text/link before Play submission. No new data flow or
 permission is introduced by this documentation.
+
+## Apps Svan never touches (0.5.14)
+
+Svan never processes, captures, lists or routes audio from messaging and calling apps, social video apps, ride and
+delivery apps, payment apps, voice assistants, recorders, cameras, the phone app or system apps. This list is fixed in
+the app and applies to every app sharing the same Android user id. Music and video platforms such as YouTube, YouTube
+Music, Spotify, Apple Music and Gaana stay supported. Svan does not apply its EQ to the phone's whole output mix unless
+a test build turns that on, and never during a call.
