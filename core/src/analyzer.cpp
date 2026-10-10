@@ -151,6 +151,7 @@ void SourceAnalyzer::reset() {
   liveValid_.store(false, std::memory_order_release);
   livePresence_.store(0.0, std::memory_order_relaxed);
   liveSizzle_.store(0.0, std::memory_order_relaxed);
+  liveCentre_.store(0.0, std::memory_order_relaxed);
   std::lock_guard<std::mutex> g(lock_);
   published_ = SourceFeatures{};
 }
@@ -357,6 +358,16 @@ void SourceAnalyzer::publish() {
     f.airDb = residual(10000, 16000);
     f.sizzleDb = residual(6000, 10000);
   }
+  // Centre dominance over 1-4 kHz: mid power over side power, energy-weighted, so the loudest content in the range
+  // decides (empty bands carry no weight). Bounded so silent sides stay finite.
+  double midSum = 0.0, sideSum = 0.0;
+  for (int b = 0; b < SourceFeatures::kBands; ++b) {
+    const double fc = SourceFeatures::bandCentreHz(b);
+    if (fc < 990.0 || fc > 4100.0) continue;
+    midSum += std::pow(10.0, f.midBandDb[static_cast<size_t>(b)] / 10.0);
+    sideSum += std::pow(10.0, f.sideBandDb[static_cast<size_t>(b)] / 10.0);
+  }
+  liveCentre_.store(midSum > 0 ? std::clamp(db10(midSum) - db10(sideSum), -20.0, 60.0) : 0.0, std::memory_order_relaxed);
   livePresence_.store(f.harshDb, std::memory_order_relaxed);
   liveSizzle_.store(f.sizzleDb, std::memory_order_relaxed);
   liveValid_.store(f.valid && n >= 3, std::memory_order_release);
@@ -371,6 +382,7 @@ SourceAnalyzer::LiveResiduals SourceAnalyzer::liveResiduals() const {
   r.valid = liveValid_.load(std::memory_order_acquire);
   r.presenceDb = livePresence_.load(std::memory_order_relaxed);
   r.sizzleDb = liveSizzle_.load(std::memory_order_relaxed);
+  r.centreDb = liveCentre_.load(std::memory_order_relaxed);
   return r;
 }
 

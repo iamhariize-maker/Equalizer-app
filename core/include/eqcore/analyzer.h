@@ -67,7 +67,8 @@ class SourceAnalyzer {
 
   // The latest published harshness (2.5-5 kHz) and sizzle (6-10 kHz) residuals against the mix's own tilt, dB.
   // Lock-free, so the audio thread may read it (snapshot() locks). valid is false until 3 s of audio were heard.
-  struct LiveResiduals { bool valid = false; double presenceDb = 0.0, sizzleDb = 0.0; };
+  // centreDb: how far the centre (mid) leads the sides over 1-4 kHz, dB; a solo voice reads high, wide guitars low.
+  struct LiveResiduals { bool valid = false; double presenceDb = 0.0, sizzleDb = 0.0, centreDb = 0.0; };
   LiveResiduals liveResiduals() const;
 
   static constexpr int kFft = 4096;
@@ -114,7 +115,7 @@ class SourceAnalyzer {
   mutable std::mutex lock_;
   SourceFeatures published_;
   std::atomic<bool> liveValid_{false};
-  std::atomic<double> livePresence_{0.0}, liveSizzle_{0.0};
+  std::atomic<double> livePresence_{0.0}, liveSizzle_{0.0}, liveCentre_{0.0};
 };
 
 // In-place radix-2 FFT (n power of two). Exposed for tests.

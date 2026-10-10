@@ -137,7 +137,7 @@ void Engine::process(const float* in, float* out, int frames) {
     analyzer_.process(in, frames);
     // The shrill guard judges the track by the analyser's residuals (lock-free read; see ShrillGuard).
     const auto r = analyzer_.liveResiduals();
-    shrill_.setExcess(r.valid ? r.presenceDb : kUnknown, r.valid ? r.sizzleDb : kUnknown);
+    shrill_.setExcess(r.valid ? r.presenceDb : kUnknown, r.valid ? r.sizzleDb : kUnknown, r.centreDb);
   } else {
     shrill_.setExcess(kUnknown, kUnknown);
   }

@@ -4903,35 +4903,83 @@ TEST(shrill_guard_leaves_balanced_spectra_alone_through_the_engine) {
   }
 }
 
+namespace {
+// Three sustained guitar-presence partials over bass and mids (tools/probes/0.5.13/p4_stack.cpp, scenario A).
+// doubleTracked: the right channel is a second take a few hertz away, as when guitars are double-tracked and
+// panned; otherwise both channels carry the same (mono) cluster.
+std::vector<float> shrillCluster(double fs, double seconds, bool doubleTracked) {
+  const size_t n = static_cast<size_t>(fs * seconds);
+  std::vector<float> x(2 * n);
+  for (size_t i = 0; i < n; ++i) {
+    const double t = static_cast<double>(i) / fs;
+    const double base = 0.25 * std::sin(2 * kPi * 55 * t) + 0.08 * std::sin(2 * kPi * 400 * t) + 0.06 * std::sin(2 * kPi * 800 * t);
+    const double l = 0.05 * (std::sin(2 * kPi * 3600 * t) + std::sin(2 * kPi * 4200 * t) + std::sin(2 * kPi * 4800 * t));
+    const double r = doubleTracked ? 0.05 * (std::sin(2 * kPi * 3630 * t + 1.0) + std::sin(2 * kPi * 4235 * t + 2.0) +
+                                             std::sin(2 * kPi * 4845 * t + 0.5)) : l;
+    x[2 * i] = static_cast<float>(base + l);
+    x[2 * i + 1] = static_cast<float>(base + r);
+  }
+  return x;
+}
+}  // namespace
+
 TEST(shrill_guard_tames_a_sustained_shrill_cluster_through_the_engine) {
   const double fs = 48000;
   const size_t n = static_cast<size_t>(fs * 7);
-  // Three sustained guitar-presence partials over bass and mids (tools/probes/0.5.13/p4_stack.cpp, scenario A).
-  std::vector<float> in(2 * n);
-  for (size_t i = 0; i < n; ++i) {
-    const double t = static_cast<double>(i) / fs;
-    const double v = 0.25 * std::sin(2 * kPi * 55 * t) + 0.08 * std::sin(2 * kPi * 400 * t) + 0.06 * std::sin(2 * kPi * 800 * t) +
-                     0.05 * (std::sin(2 * kPi * 3600 * t) + std::sin(2 * kPi * 4200 * t) + std::sin(2 * kPi * 4800 * t));
-    in[2 * i] = in[2 * i + 1] = static_cast<float>(v);
-  }
-  const auto off = runGuardEngine(in, fs, 0.0), on = runGuardEngine(in, fs, 1.0);
   const size_t a = static_cast<size_t>(5 * fs), b = n;
-  {
+  for (bool wide : {true, false}) {
+    const auto in = shrillCluster(fs, 7.0, wide);
     SourceAnalyzer an(fs, 2);
     an.process(in.data(), static_cast<int>(n));
     const auto r = an.liveResiduals();
-    std::printf("    analyser: valid=%d presence %+.1f dB, sizzle %+.1f dB\n", r.valid ? 1 : 0, r.presenceDb, r.sizzleDb);
+    const auto off = runGuardEngine(in, fs, 0.0), on = runGuardEngine(in, fs, 1.0);
+    std::printf("    %s cluster: analyser presence %+.1f dB, centre %+.1f dB; guard 1 vs 0:", wide ? "double-tracked" : "mono",
+                r.presenceDb, r.centreDb);
     CHECK(r.valid && r.presenceDb > 3.5);
+    for (double f : {3600.0, 4200.0, 4800.0}) {
+      const double d = toDb(toneAmpF(on, f, fs, a, b) / toneAmpF(off, f, fs, a, b));
+      std::printf(" %.0f Hz %+.2f", f, d);
+      // Spread across the stereo field (how shrill guitars are usually mixed): the full 1.5-2 dB per partial.
+      // Mono and centred: voice protection leaves a quarter of the reduction (see ShrillGuard).
+      if (wide) CHECK(d <= -1.5 && d >= -2.05);
+      else CHECK(d <= -0.3 && d >= -0.6);
+    }
+    const double body = toDb(toneAmpF(on, 400, fs, a, b) / toneAmpF(off, 400, fs, a, b));
+    std::printf(" | 400 Hz %+.3f dB\n", body);
+    CHECK(std::fabs(body) < 0.05);
   }
-  std::printf("    cluster, guard 1 vs 0:");
-  for (double f : {3600.0, 4200.0, 4800.0}) {
-    const double d = toDb(toneAmpF(on, f, fs, a, b) / toneAmpF(off, f, fs, a, b));
-    std::printf(" %.0f Hz %+.2f dB", f, d);
-    CHECK(d <= -1.5 && d >= -2.05);
+}
+
+// WP8 protection: a close-miked, centred voice with a strong natural presence peak is not shaved.
+TEST(shrill_guard_leaves_a_centred_voice_with_a_presence_peak_alone) {
+  const double fs = 48000;
+  const size_t n = static_cast<size_t>(fs * 7);
+  // A sung 220 Hz vowel with 1 % vibrato: formants at 700, 1200, 2600 Hz and a +14 dB "singer's formant" at 3.3 kHz.
+  const auto formant = [](double f) {
+    const auto res = [&](double fc, double bw, double g) { const double x = (f - fc) / bw; return g / (1 + x * x); };
+    return (0.15 + res(700, 130, 1.0) + res(1200, 150, 0.7) + res(2600, 250, 0.35) + res(3300, 450, 0.35 * 5.0)) *
+           std::pow(f / 220.0, -0.5);
+  };
+  std::vector<float> in(2 * n);
+  double ph = 0;
+  for (size_t i = 0; i < n; ++i) {
+    const double t = static_cast<double>(i) / fs;
+    const double f0 = 220 * (1 + 0.01 * std::sin(2 * kPi * 5.5 * t));
+    ph += 2 * kPi * f0 / fs;
+    double v = 0;
+    for (int h = 1; h * 220.0 < 12000; ++h) v += formant(h * 220.0) * std::sin(h * ph + h * 0.7);
+    in[2 * i] = in[2 * i + 1] = static_cast<float>(0.02 * v);
   }
-  const double body = toDb(toneAmpF(on, 400, fs, a, b) / toneAmpF(off, 400, fs, a, b));
-  std::printf(" | 400 Hz %+.3f dB\n", body);
-  CHECK(std::fabs(body) < 0.05);
+  SourceAnalyzer an(fs, 2);
+  an.process(in.data(), static_cast<int>(n));
+  const auto r = an.liveResiduals();
+  const auto off = runGuardEngine(in, fs, 0.0), on = runGuardEngine(in, fs, 1.0);
+  const size_t a = static_cast<size_t>(4 * fs);
+  const double d = bandPowerDb(on, fs, 3800, 0.8, a, n) - bandPowerDb(off, fs, 3800, 0.8, a, n);
+  std::printf("    centred voice: analyser presence %+.2f dB, centre %+.1f dB; 3.8 kHz band, guard 1 vs 0: %+.3f dB\n",
+              r.presenceDb, r.centreDb, d);
+  CHECK(r.presenceDb > 1.5);  // without the protection this voice would be shaved
+  CHECK(std::fabs(d) <= 0.3);
 }
 
 int main(int argc, char** argv) {

@@ -17,6 +17,9 @@ constexpr double kQ[ShrillGuard::kBands] = {0.6, 1.4};
 constexpr double kThresholdDb[ShrillGuard::kBands] = {1.5, 2.0};
 constexpr double kSlope = 0.5;           // dB of reduction per dB of excess
 constexpr double kMaxReductionDb = 2.0;  // per band at full depth
+// Voice protection: presence reduction scaled down by up to kVoiceProtection as centre dominance (1-4 kHz mid over
+// side) rises from kCentreFromDb over kCentreSpanDb.
+constexpr double kVoiceProtection = 0.75, kCentreFromDb = 10.0, kCentreSpanDb = 10.0;
 // Band power floor, about -100 dBFS. Below it a band has nothing to reduce, so nothing is applied: long digital
 // silence never leaves a reduction waiting for the next sound.
 constexpr double kFloorPower = 1e-10;
@@ -42,9 +45,11 @@ ShrillGuard::ShrillGuard(double sampleRate) {
   for (auto& e : excess_) e.store(std::numeric_limits<double>::quiet_NaN(), std::memory_order_relaxed);
 }
 
-void ShrillGuard::setExcess(double presenceDb, double sizzleDb) {
+void ShrillGuard::setExcess(double presenceDb, double sizzleDb, double centreDb) {
   excess_[0].store(presenceDb, std::memory_order_relaxed);
   excess_[1].store(sizzleDb, std::memory_order_relaxed);
+  const double c = std::isfinite(centreDb) ? centreDb : 0.0;
+  presenceScale_.store(1.0 - kVoiceProtection * std::clamp((c - kCentreFromDb) / kCentreSpanDb, 0.0, 1.0), std::memory_order_relaxed);
 }
 
 void ShrillGuard::setDepth(double depth) {
@@ -72,10 +77,11 @@ std::array<double, ShrillGuard::kBands> ShrillGuard::reductionsDb() const {
 void ShrillGuard::process(double* L, double* R, int frames) {
   const double depth = depth_.load(std::memory_order_relaxed);
   // Per block: how far each band's residual is over its threshold (or unknown).
-  std::array<double, kBands> over{};
+  std::array<double, kBands> over{}, scale{};
   for (size_t b = 0; b < kBands; ++b) {
     const double e = excess_[b].load(std::memory_order_relaxed);
     over[b] = std::isfinite(e) ? e - kThresholdDb[b] : -1.0;
+    scale[b] = b == 0 ? presenceScale_.load(std::memory_order_relaxed) : 1.0;
   }
   for (int i = 0; i < frames; ++i) {
     const double l = L[i];
@@ -99,7 +105,7 @@ void ShrillGuard::process(double* L, double* R, int frames) {
       const bool judged = over[b] > 0.0 && band.slow > kFloorPower;
       const double sustainDb = 10.0 * std::log10((band.slow + kEps) / (band.medium + kEps));
       const double sustain = std::clamp((sustainDb + 12.0) / 12.0, 0.0, 1.0);
-      const double reductionDb = judged ? depth * std::clamp(kSlope * over[b], 0.0, kMaxReductionDb) * sustain : 0.0;
+      const double reductionDb = judged ? depth * scale[b] * std::clamp(kSlope * over[b], 0.0, kMaxReductionDb) * sustain : 0.0;
       const double target = std::pow(10.0, -reductionDb / 20.0);
       band.gain += (1.0 - aGain_) * (target - band.gain);
       if (std::fabs(target - band.gain) < 1e-9) band.gain = target;  // settle exactly, so the bypass stays bit-exact

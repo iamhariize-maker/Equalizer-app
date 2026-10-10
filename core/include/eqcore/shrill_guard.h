@@ -10,6 +10,12 @@
 // 1.5 dB (presence) or 2.0 dB (sizzle) the band is reduced by 0.5 dB per dB of excess, capped at 2 dB per band at
 // full depth. Without a valid residual (analysis off, or under 3 s of audio heard) the guard does nothing.
 //
+// Voice protection: a close-miked voice has a natural 3-5 kHz presence peak (a +9 dB "singer's formant" reads about
+// +3 dB of residual) that must not be shaved. Shrill guitars and cymbals are usually spread across the stereo field;
+// a lead voice sits in the centre. When the centre leads the sides over 1-4 kHz by more than 10 dB, the presence
+// reduction is scaled down, to a quarter at 20 dB and above. Sizzle is not scaled. A mono shrill source therefore
+// gets a quarter of the presence reduction: the price of protecting voices, to be calibrated on real excerpts.
+//
 // Sustain gate: while a band's fast (2 ms) power runs well above its slow (40 ms) power, the sound is an attack (a
 // hi-hat click, a pick, a consonant). The gate closes, so the attack passes unchanged; once the energy holds, the
 // gate opens and the ringing that makes a sound shrill is reduced.
@@ -36,7 +42,7 @@ class ShrillGuard {
 
   // Any thread: the analyser's presence (2.5-5 kHz) and sizzle (6-10 kHz) residuals, dB over the mix's tilt.
   // Non-finite means unknown: that band is left alone.
-  void setExcess(double presenceDb, double sizzleDb);
+  void setExcess(double presenceDb, double sizzleDb, double centreDb = 0.0);
   double depth() const { return depth_.load(std::memory_order_relaxed); }
 
   void reset();
@@ -65,6 +71,7 @@ class ShrillGuard {
 
   std::atomic<double> depth_{0.0};
   std::array<std::atomic<double>, kBands> excess_{};
+  std::atomic<double> presenceScale_{1.0};
   std::array<Band, kBands> bands_{};
   double aMedium_ = 0.0, aSlow_ = 0.0, aGain_ = 0.0;
   std::array<std::atomic<double>, kBands> reductionDb_{};
