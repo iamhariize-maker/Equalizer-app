@@ -24,10 +24,11 @@ import kotlin.math.pow
 object IntegratedLab {
     data class State(val busy: Boolean = false, val plan: Planner.Plan? = null, val applied: Boolean = false,
         val message: String = "Fit your current Svan curve, then compare the reference prediction.",
-        val capturePlans: Map<Int, CaptureLabControls> = emptyMap())
+        val capturePlans: Map<Int, CaptureLabControls> = emptyMap(), val frozenCurve: Boolean = false)
     private val mutable = MutableStateFlow(State())
     val state = mutable.asStateFlow()
-    val holdsAutomaticCurve: Boolean get() = mutable.value.busy || mutable.value.applied
+    val holdsAutomaticCurve: Boolean get() = mutable.value.let { it.busy || it.applied || it.frozenCurve }
+    val hasFrozenReadyFit: Boolean get() = mutable.value.let { it.frozenCurve && !it.busy && it.plan != null }
     private val worker = Executors.newSingleThreadExecutor()
     private val epoch = AtomicLong()
     private var task: Future<*>? = null
@@ -69,7 +70,7 @@ object IntegratedLab {
             mutable.value = State(message = "This curve exceeds the Lab's −18 to +12 dB fit range. Reduce extreme cuts/boosts or preamp first.")
             return
         }
-        mutable.value = mutable.value.copy(busy = true, applied = false, message = "Fitting the frozen combined curve…")
+        mutable.value = mutable.value.copy(busy = true, applied = false, frozenCurve = true, message = "Fitting the frozen combined curve…")
         val app = context.applicationContext
         task = worker.submit {
             try {
@@ -102,15 +103,15 @@ object IntegratedLab {
                 }
                 if (epoch.get() != generation || Thread.currentThread().isInterrupted) return@submit
                 if (source != currentSignature()) {
-                    mutable.value = mutable.value.copy(busy = false, message = "Your curve changed during fitting. Fit again when it is settled.")
+                    mutable.value = mutable.value.copy(busy = false, frozenCurve = false, message = "Your curve changed during fitting. Fit again when it is settled.")
                     return@submit
                 }
                 signature = source
-                mutable.value = State(plan = plan, capturePlans = capturePlans,
-                    message = if (hybrid && !referenceEq) "DP-only fit ready. This Equalizer has no verified reference model."
-                        else "Reference fit ready. Device response, latency and peaks remain unmeasured.")
+                mutable.value = State(plan = plan, capturePlans = capturePlans, frozenCurve = true,
+                    message = if (hybrid && !referenceEq) "DP-only fit ready; automatic curve held. This Equalizer has no verified reference model. Apply or Restore to finish the comparison."
+                        else "Reference fit ready; automatic curve held while you review it. Apply or Restore to finish the comparison. Device response, latency and peaks remain unmeasured.")
             } catch (e: Exception) {
-                if (epoch.get() == generation) mutable.value = mutable.value.copy(busy = false,
+                if (epoch.get() == generation) mutable.value = mutable.value.copy(busy = false, frozenCurve = false,
                     message = "Fit unavailable: ${e.message ?: e.javaClass.simpleName}")
             }
         }
@@ -149,7 +150,7 @@ object IntegratedLab {
         mutable.value = mutable.value.copy(busy = true, message = "Applying fitted controls through Svan's shared engine…")
         worker.submit {
             if (signature != currentSignature()) {
-                mutable.value = mutable.value.copy(busy = false, message = "The curve or engine changed. Fit again before applying.")
+                mutable.value = mutable.value.copy(busy = false, frozenCurve = false, message = "The curve or engine changed. Fit again before applying.")
                 return@submit
             }
             try {
@@ -164,7 +165,7 @@ object IntegratedLab {
                 if (failed) {
                     clearCapture()
                     EqController.globalEq.clearLab()
-                    mutable.value = mutable.value.copy(busy = false, applied = false, message = "The device refused a Lab effect. Normal Svan processing restored.")
+                    mutable.value = mutable.value.copy(busy = false, applied = false, frozenCurve = false, message = "The device refused a Lab effect. Normal Svan processing restored.")
                 } else {
                     selectedCapture = capturePlans
                     captureRevision.incrementAndGet()
@@ -174,7 +175,7 @@ object IntegratedLab {
             } catch (e: Exception) {
                 clearCapture()
                 EqController.globalEq.clearLab()
-                mutable.value = mutable.value.copy(busy = false, applied = false, message = "Normal Svan restored: ${e.message}")
+                mutable.value = mutable.value.copy(busy = false, applied = false, frozenCurve = false, message = "Normal Svan restored: ${e.message}")
             }
         }
     }
@@ -183,7 +184,7 @@ object IntegratedLab {
         epoch.incrementAndGet()
         task?.cancel(true)
         clearCapture()
-        mutable.value = mutable.value.copy(busy = false, applied = false, message = "Normal Svan processing restored; automatic curve updates resume.")
+        mutable.value = mutable.value.copy(busy = false, applied = false, frozenCurve = false, message = "Normal Svan processing restored; automatic curve updates resume.")
         worker.submit {
             EqController.globalEq.clearLab()
         }

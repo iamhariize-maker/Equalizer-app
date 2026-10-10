@@ -177,13 +177,20 @@ try:
     wait('lab', lambda v: v['ready'] and not v['busy'], 'fit-with-automatic-curve', 180)
     after_fit = report('capture')
     (out / 'normal-capture-after-fit.json').write_text(json.dumps(after_fit, indent=2))
+    # Reproduce the inspection gap, covering two automatic periods before Apply.
+    time.sleep(7)
+    reviewed_fit = report('lab')
+    reviewed_capture = report('capture')
+    (out / 'reviewed-fit-before-apply.json').write_text(json.dumps(reviewed_fit, indent=2))
     command('lab_apply')
     active = wait('capture', lambda v: captured(v) and v.get('labBlock') == 4096, 'apply-with-automatic-curve')
     time.sleep(7)
     held = report('capture')
-    check(captured(after_fit) and after_fit['epochId'] == before_fit['epochId'] and
+    check(reviewed_fit['ready'] and not reviewed_fit['busy'] and not reviewed_fit['applied'] and
+          captured(reviewed_capture) and reviewed_capture['epochId'] == before_fit['epochId'] and
+          captured(after_fit) and after_fit['epochId'] == before_fit['epochId'] and
           captured(held) and held['epochId'] == active['epochId'] and report('lab')['applied'],
-          'fitting normal capture does not rebuffer; selected automatic curve is held across periodic updates')
+          'normal fitting keeps its epoch; automatic curve is held through review and selected periodic updates')
     command('lab_restore')
     wait('capture', lambda v: captured(v) and v.get('labBlock') is None, 'final-restore')
 finally:

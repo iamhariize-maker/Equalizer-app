@@ -47,7 +47,7 @@ Normal capture constructs no Lab FFT buffers and performs no Lab FFTs.
 
 ## Selection lifecycle
 
-Lab is a frozen comparison. While fitting or selected, periodic automatic *curve* planning is held;
+Lab is a frozen comparison. While fitting, reviewing a ready fit, or selected, periodic automatic *curve* planning is held;
 input analysis, meters and native dynamic processors continue. This prevents capture startup or the
 next three-second smart update from silently clearing the fit. Saved smart-controller preferences
 are not changed. Restore or an explicit sound edit resumes the normal automatic curve.

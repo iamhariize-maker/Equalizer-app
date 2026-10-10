@@ -129,7 +129,7 @@ fun IntegratedLabPanel(onOpenEq: () -> Unit, onDiagnostics: () -> Unit) {
                 Button(onClick = { IntegratedLab.apply() }, enabled = !state.busy && !state.applied) { Text("Apply fitted controls") }
             }
             OutlinedButton(onClick = { IntegratedLab.restore() }, enabled = !state.busy) { Text("Restore normal Svan") }
-            Text("Apply before or during capture. A live change briefly rebuffers audio with the same quality and permission; the larger block adds delay and FFT work. The automatic curve is held while fitting/selected; native dynamic processors still run. Sound edits or Restore resume adaptation. Experiments are not saved across app restarts.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
+            Text("Apply before or during capture. A live change briefly rebuffers audio with the same quality and permission; the larger block adds delay and FFT work. The automatic curve is held through fitting, review and selection; native dynamic processors still run. Sound edits or Restore resume adaptation. Experiments are not saved across app restarts.", style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)
         }
         if (page == 2) {
             Text("Make the result measurable", style = MaterialTheme.typography.titleMedium)

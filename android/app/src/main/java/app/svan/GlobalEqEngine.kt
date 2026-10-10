@@ -246,6 +246,10 @@ class GlobalEqEngine(bandCount: Int = 128) {
     /** Samples [engine]'s parametric curve into the band gains and pushes it to every session. */
     @Synchronized
     fun applyCurveFrom(engine: NativeEngine, gainProtection: Boolean = true) {
+        // A ready fit has no system-effect plan yet, but explicit sound edits still
+        // end its frozen review and resume automatic planning.
+        if (labPlan == null && app.svan.lab.IntegratedLab.hasFrozenReadyFit &&
+            !app.svan.lab.IntegratedLab.matchesCurrentSource()) app.svan.lab.IntegratedLab.curveChanged()
         if (labPlan != null) {
             if (app.svan.lab.IntegratedLab.matchesCurrentSource()) return
             clearLab()
