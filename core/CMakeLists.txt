@@ -40,6 +40,7 @@ add_library(eqcore STATIC
   src/grounding.cpp
   src/bass_texture.cpp
   src/shrill_guard.cpp
+  src/analog_top.cpp
   src/engine.cpp
   src/lab_eq.cpp
   src/analyzer.cpp

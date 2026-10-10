@@ -60,6 +60,7 @@ Engine::Engine(const EngineConfig& cfg)
       grounding_(cfg.sampleRate),
       texture_(cfg.sampleRate),
       shrill_(cfg.sampleRate),
+      analogTop_(cfg.sampleRate),
       analyzer_(cfg.sampleRate, std::clamp(cfg.channels, 1, 2)) {
   cfg_.channels = std::max(1, cfg_.channels);
   cfg_.oversample = sanitizeFactor(cfg_.oversample);
@@ -124,7 +125,7 @@ void Engine::reset() {
   if(lab_)lab_->reset();
   bass_.reset();unmask_.reset();
   limiter_.reset();dynamic_.reset();
-  stereo_.reset();grounding_.reset();texture_.reset();shrill_.reset();
+  stereo_.reset();grounding_.reset();texture_.reset();shrill_.reset();analogTop_.reset();
   analyzer_.reset();
   resetGainProtection();
   for (auto& o : os_) o->reset();
@@ -212,6 +213,7 @@ void Engine::process(const float* in, float* out, int frames) {
       shrill_.setPresenceCap(kTopBudgetDb - used);
     }
     shrill_.process(&outBuf_[0], C==2?&outBuf_[cfg_.maxBlock]:nullptr, n);
+    analogTop_.process(&outBuf_[0], C==2?&outBuf_[cfg_.maxBlock]:nullptr, n);
     texture_.process(&outBuf_[0], C==2?&outBuf_[cfg_.maxBlock]:nullptr, n);
     dynamic_.process(&outBuf_[0],C==2?&outBuf_[cfg_.maxBlock]:nullptr,n,dynamicAmount_.load(std::memory_order_relaxed),C==2?gains_.data():nullptr);
     const auto reductions=dynamic_.reductionsDb();for(int b=0;b<4;++b)dynamicDb_[b].store(reductions[b],std::memory_order_relaxed);

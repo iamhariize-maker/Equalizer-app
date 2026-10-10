@@ -136,7 +136,7 @@ object SettingsDiff {
     private val NAMES = linkedMapOf(
         "spatialMode" to "Spatial mode", "captureRateHz" to "Capture rate Hz",
         "experimentalBassUnmask" to "Experimental bass unmask", "bassAttack" to "Bass attack", "bassSustain" to "Bass sustain",
-        "bassDimension" to "Bass dimension", "bassTube" to "Bass tube colour", "qualityMode" to "Quality", "dither" to "Dither", "outputBitsIfDithered" to "Dither bits",
+        "bassDimension" to "Bass dimension", "bassTube" to "Bass tube colour", "analogTop" to "Analogue top", "qualityMode" to "Quality", "dither" to "Dither", "outputBitsIfDithered" to "Dither bits",
         "autoHeadroom" to "Auto headroom", "gainProtection" to "Gain protection", "eqEnabled" to "EQ",
         "preampDb" to "Preamp dB", "eqBandsApplied" to "EQ bands", "bassCharacter" to "Bass character",
         "headphoneCorrection" to "Headphone correction", "eqCurve" to "EQ curve",

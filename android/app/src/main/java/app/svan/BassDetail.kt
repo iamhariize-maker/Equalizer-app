@@ -46,4 +46,7 @@ internal object BassDetail {
         engine.setBassTexture(levels.texture)
         engine.setBassDetail(levels.evenMix, levels.attack, levels.spread, levels.sustain)
     }
+
+    /** The highs experiment (analogue top): full depth when the listener turns it on and the EQ is active. */
+    fun analogTop(settings: AudioSettings, eq: EqState): Double = if (eq.enabled && settings.analogTop) 1.0 else 0.0
 }

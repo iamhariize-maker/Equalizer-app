@@ -299,6 +299,10 @@ JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetBassDetail(JNIEnv*, j
   e->setBassSustain(sustain);
 }
 
+JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetAnalogTop(JNIEnv*, jclass, jlong h, jdouble depth) {
+  fromHandle(h)->setAnalogTop(depth);
+}
+
 JNIEXPORT void JNICALL Java_app_svan_NativeEngine_nativeSetShrillGuard(JNIEnv*, jclass, jlong h, jdouble depth) {
   fromHandle(h)->setShrillGuard(depth);
 }

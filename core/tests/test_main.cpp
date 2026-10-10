@@ -36,6 +36,7 @@
 #include "eqcore/policy.h"
 #include "eqcore/grounding.h"
 #include "eqcore/bass_texture.h"
+#include "eqcore/analog_top.h"
 #include "eqcore/shrill_guard.h"
 #include <fstream>
 #include <sstream>
@@ -2179,6 +2180,13 @@ void turnEverythingOn(Engine& e) {
   e.setDynamicEq(1.0);
   e.setStereoTuner({0.4, 0.3, 0.5, 0.3, 0.6, 1.0, 1.0});
   e.setBassTexture(1.0);
+  e.setBassEvenMix(1.0);
+  e.setBassAttack(1.0);
+  e.setBassSpread(1.0);
+  e.setBassSustain(1.0);
+  e.setShrillGuard(1.0);
+  e.setAnalogTop(1.0);
+  e.setAnalysisEnabled(true);
 }
 }  // namespace
 
@@ -5027,6 +5035,141 @@ TEST(shrill_guard_leaves_a_centred_voice_with_a_presence_peak_alone) {
               r.presenceDb, r.centreDb, d);
   CHECK(r.presenceDb > 1.5);  // without the protection this voice would be shaved
   CHECK(std::fabs(d) <= 0.3);
+}
+
+// ---- Highs: analogue top and detail retention (docs/BUILD_BRIEF_0.5.14.md WP10) -----------------------------
+namespace {
+std::vector<double> analogTone(double depth, double freq, double amp, double fs, int n) {
+  AnalogTop a(fs);
+  a.setDepth(depth);
+  std::vector<double> l(n), r(n);
+  for (int i = 0; i < n; ++i) l[i] = r[i] = amp * std::sin(2 * kPi * freq * i / fs);
+  for (int s = 0; s < n; s += 480) a.process(&l[s], &r[s], std::min(480, n - s));
+  return l;
+}
+}  // namespace
+
+TEST(analog_top_softens_loud_treble_and_leaves_quiet_air_and_clicks_alone) {
+  const double fs = 48000;
+  const int n = 48000;
+  const size_t a = 24000, b = 48000;
+  // Off: bit-exact.
+  {
+    AnalogTop t(fs);
+    std::mt19937 rng(21);
+    std::normal_distribution<double> nd(0, 0.2);
+    std::vector<double> l(4800), r(4800);
+    for (auto& v : l) v = nd(rng);
+    for (auto& v : r) v = nd(rng);
+    const auto l0 = l, r0 = r;
+    t.process(l.data(), r.data(), 4800);
+    CHECK(l == l0 && r == r0);
+  }
+  // Quiet air (8.5 kHz at -40 dBFS, under the knee): untouched. A loud sustained wash: softened, never lifted.
+  const double quiet = toDb(sineAmplitude(analogTone(1.0, 8500, 0.01, fs, n), 8500, fs, a, b) / 0.01);
+  const double mid = toDb(sineAmplitude(analogTone(1.0, 8500, 0.1414, fs, n), 8500, fs, a, b) / 0.1414);  // -20 dBFS rms
+  const double loud = toDb(sineAmplitude(analogTone(1.0, 8500, 0.5, fs, n), 8500, fs, a, b) / 0.5);
+  const double body = toDb(sineAmplitude(analogTone(1.0, 1000, 0.5, fs, n), 1000, fs, a, b) / 0.5);
+  std::printf("    analogue top at 8.5 kHz: -40 dBFS %+.2f dB, -20 dBFS rms %+.2f dB, loud %+.2f dB; 1 kHz loud %+.2f dB\n",
+              quiet, mid, loud, body);
+  CHECK(std::fabs(quiet) < 0.05);
+  CHECK_NEAR(mid, -1.5, 0.2);   // 0.15 dB per dB over the -30 dBFS knee
+  CHECK_NEAR(loud, -2.5, 0.1);  // the cap
+  CHECK(std::fabs(body) < 0.3);
+  // A 3 ms click at a high level passes: too short to move the 30 ms envelope.
+  std::vector<double> click(n, 0.0);
+  const int start = 4800, len = static_cast<int>(0.003 * fs);
+  for (int i = 0; i < len; ++i) click[static_cast<size_t>(start + i)] = 0.8 * (0.5 - 0.5 * std::cos(2 * kPi * i / (len - 1))) * std::sin(2 * kPi * 8500 * i / fs);
+  auto out = click;
+  AnalogTop t(fs);
+  t.setDepth(1.0);
+  for (int s = 0; s < n; s += 480) t.process(&out[s], nullptr, std::min(480, n - s));
+  double pi = 0, po = 0;
+  for (int i = start; i < start + len; ++i) { pi = std::max(pi, std::fabs(click[i])); po = std::max(po, std::fabs(out[i])); }
+  std::printf("    click peak change %+.2f dB\n", toDb(po / pi));
+  CHECK(std::fabs(toDb(po / pi)) < 0.3);
+}
+
+TEST(analog_top_process_does_not_allocate) {
+  AnalogTop t(48000);
+  t.setDepth(1.0);
+  std::vector<double> l(480, 0.3), r(480, -0.2);
+  g_allocs.store(0);
+  g_countAllocs.store(true);
+  for (int i = 0; i < 10; ++i) t.process(l.data(), r.data(), 480);
+  g_countAllocs.store(false);
+  CHECK(g_allocs.load() == 0);
+}
+
+// WP10 protection: the house chain keeps hi-hat detail. Onsets of the 4-12 kHz envelope stay correlated with the
+// untreated ones and the envelope keeps its modulation depth.
+TEST(house_chain_keeps_hi_hat_detail) {
+  const double fs = 48000;
+  const size_t n = static_cast<size_t>(fs * 6);
+  std::vector<float> in(2 * n);
+  std::mt19937 rng(5);
+  std::normal_distribution<double> nd(0, 1);
+  double prev = 0;
+  for (size_t i = 0; i < n; ++i) {
+    const double t = static_cast<double>(i) / fs;
+    const double since = std::fmod(t, 0.125);
+    const double w = nd(rng), hp = w - prev;
+    prev = w;
+    const double accent = (static_cast<int>(t / 0.125) % 4 == 0) ? 1.0 : 0.6;
+    const double v = 0.25 * std::sin(2 * kPi * 55 * t) + 0.08 * std::sin(2 * kPi * 400 * t) + 0.06 * accent * std::exp(-since / 0.012) * hp;
+    in[2 * i] = in[2 * i + 1] = static_cast<float>(v);
+  }
+  auto run = [&](bool house, double analog) {
+    auto cfg = EngineConfig::forQuality(QualityMode::Audiophile, fs, 2, 24);
+    cfg.autoHeadroom = false;
+    cfg.gainProtection = false;
+    Engine e(cfg);
+    e.setAnalysisEnabled(true);
+    if (house) {
+      e.setGrounding({0.7, 0.7});
+      e.setStereoTuner({0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0});
+      e.setDynamicEq(1.0);
+      e.setShrillGuard(0.7);
+      e.setBassTexture(0.7);
+    }
+    e.setAnalogTop(analog);
+    std::vector<float> out(in.size());
+    for (size_t s = 0; s + 480 <= n; s += 480) e.process(&in[2 * s], &out[2 * s], 480);
+    return out;
+  };
+  auto envelope = [&](const std::vector<float>& x) {
+    Biquad hp1, hp2, lp1, lp2;
+    const auto h = designBiquad({FilterType::HighPass, 4000, 0, 0.7071, true}, fs), l = designBiquad({FilterType::LowPass, 12000, 0, 0.7071, true}, fs);
+    hp1.setCoeffs(h); hp2.setCoeffs(h); lp1.setCoeffs(l); lp2.setCoeffs(l);
+    std::vector<double> e(x.size() / 2);
+    const double a = std::exp(-1 / (0.002 * fs));
+    double z = 0;
+    for (size_t i = 0; i < e.size(); ++i) { z = a * z + (1 - a) * std::fabs(lp2.process(lp1.process(hp2.process(hp1.process(x[2 * i]))))); e[i] = z; }
+    return e;
+  };
+  const auto ref = envelope(run(false, 0.0));
+  const size_t a = static_cast<size_t>(2 * fs);
+  auto depth = [&](const std::vector<double>& e) {
+    std::vector<double> v(e.begin() + static_cast<long>(a), e.end());
+    std::sort(v.begin(), v.end());
+    const double p95 = v[v.size() * 95 / 100], p50 = v[v.size() / 2];
+    return (p95 - p50) / (p95 + p50);
+  };
+  for (double analog : {0.0, 1.0}) {
+    const auto out = envelope(run(true, analog));
+    double m1 = 0, m2 = 0;
+    std::vector<double> d1, d2;
+    for (size_t i = a + 1; i < ref.size(); ++i) { d1.push_back(std::max(0.0, ref[i] - ref[i - 1])); d2.push_back(std::max(0.0, out[i] - out[i - 1])); }
+    for (size_t i = 0; i < d1.size(); ++i) { m1 += d1[i]; m2 += d2[i]; }
+    m1 /= static_cast<double>(d1.size()); m2 /= static_cast<double>(d2.size());
+    double sxy = 0, sxx = 0, syy = 0;
+    for (size_t i = 0; i < d1.size(); ++i) { sxy += (d1[i] - m1) * (d2[i] - m2); sxx += (d1[i] - m1) * (d1[i] - m1); syy += (d2[i] - m2) * (d2[i] - m2); }
+    const double corr = sxy / std::sqrt(sxx * syy), keep = depth(out) / depth(ref);
+    std::printf("    hi-hats through the house chain%s: onset correlation %.4f, modulation depth %.1f %% of untreated\n",
+                analog > 0 ? " + analogue top" : "", corr, 100 * keep);
+    CHECK(corr >= 0.98);
+    CHECK(keep >= 0.90);
+  }
 }
 
 int main(int argc, char** argv) {

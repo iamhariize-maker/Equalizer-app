@@ -42,6 +42,13 @@ class BassDetailTest {
         assertTrue(BassDetail.routeFactor(null) in 0.7..1.0)
     }
 
+    @Test fun analogueTopIsOffByDefaultAndFollowsTheSwitchAndTheEq() {
+        assertEquals(0.0, BassDetail.analogTop(AudioSettings(), EqState()), 0.0)
+        assertEquals(1.0, BassDetail.analogTop(AudioSettings(analogTop = true), EqState()), 0.0)
+        assertEquals(0.0, BassDetail.analogTop(AudioSettings(analogTop = true), EqState(enabled = false)), 0.0)
+        assertTrue(AudioSettings().withLiveCaptureControls(AudioSettings(analogTop = true)).analogTop)
+    }
+
     @Test fun bassExperimentsSurviveSavingAndApplyLive() {
         val s = AudioSettings(bassAttack = true, bassSustain = true)
         assertEquals(s, AudioSettings.fromJson(JSONObject(s.toJson().toString())))

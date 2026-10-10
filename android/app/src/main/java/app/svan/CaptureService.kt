@@ -655,8 +655,10 @@ class CaptureService : Service() {
         }
 
     /** Bass texture (house body weight, scaled by the output route) and the explicit bass experiments. */
-    private fun applyBassDetail(engine: NativeEngine, eq: EqState, settings: AudioSettings) =
+    private fun applyBassDetail(engine: NativeEngine, eq: EqState, settings: AudioSettings) {
         BassDetail.apply(engine, BassDetail.levels(settings, eq, BassDetail.routeFactor(routeType)))
+        engine.setAnalogTop(BassDetail.analogTop(settings, eq))
+    }
 
     private fun applyEq(engine: NativeEngine, eq: EqState, previous: EqState? = null) {
         // Preserve limiter history through adaptation; resetting it would release

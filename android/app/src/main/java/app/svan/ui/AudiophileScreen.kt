@@ -263,6 +263,10 @@ fun AudiophileScreen(onStartCapture: () -> Unit, onStopCapture: () -> Unit) {
         SettingSwitchRow("Tube colour", "Adds a second harmonic to the bass (about -23 dB at a loud note) beside the odd-harmonic texture. Can thicken notes that already have strong partials.",
             s.bassTube, { on -> SvanRepository.updateSettings { it.copy(bassTube = on) } })
 
+        SectionLabel("Highs (experimental)")
+        SettingSwitchRow("Analogue top", "Loud, sustained treble (6-12 kHz: crash cymbals, bright washes) eases by up to 2.5 dB, the way tape does. Quiet air and short clicks pass unchanged; nothing is lifted. Off by default, not yet listening-tested.",
+            s.analogTop, { on -> SvanRepository.updateSettings { it.copy(analogTop = on) } })
+
         SectionLabel("Capture processing quality")
         Text("Quality and dither changes take effect when capture restarts. This keeps filter latency stable during a song. System effects use Android’s own processing.",
             style = MaterialTheme.typography.bodySmall, color = Svan.TextMuted)

@@ -40,7 +40,7 @@ object ProofCapture {
         return linkedMapOf(
             "spatialMode" to s.spatialMode.title, "captureRateHz" to CaptureService.epoch?.sampleRate,
             "experimentalBassUnmask" to s.experimentalBassUnmask,
-            "bassAttack" to s.bassAttack, "bassSustain" to s.bassSustain, "bassDimension" to s.bassDimension, "bassTube" to s.bassTube,
+            "bassAttack" to s.bassAttack, "bassSustain" to s.bassSustain, "bassDimension" to s.bassDimension, "bassTube" to s.bassTube, "analogTop" to s.analogTop,
             "qualityMode" to s.quality.title, "oversampling" to s.quality.oversample,
             "dither" to s.dither.title, "outputBitsIfDithered" to s.outputBits,
             "autoHeadroom" to guarded.autoHeadroom, "gainProtection" to guarded.gainProtection,

@@ -419,6 +419,8 @@ data class AudioSettings(
     val bassDimension: Boolean = false,
     val bassSustain: Boolean = false,
     val bassTube: Boolean = false,
+    /** Highs experiment: level-dependent softening of loud, sustained 6-12 kHz energy (audiophile engine). */
+    val analogTop: Boolean = false,
 ) {
     /** Auto master may add protection, but never rewrites the listener's saved choices. */
     fun effectiveFor(eq: EqState): AudioSettings = if (eq.smartProtection)
@@ -437,6 +439,7 @@ data class AudioSettings(
         bassDimension = requested.bassDimension,
         bassSustain = requested.bassSustain,
         bassTube = requested.bassTube,
+        analogTop = requested.analogTop,
     )
 
     /** Maintain the original internal-rate target as the client rate increases. */
@@ -452,7 +455,7 @@ data class AudioSettings(
         .put("engine", engineMode.name).put("quality", quality.name).put("bits", outputBits)
         .put("dither", dither.name).put("headroom", autoHeadroom).put("agp", gainProtection).put("sysBands", systemBands).put("sysFrameMs", systemFrameMs).put("mixFallback", wholeMixFallback)
         .put("spatialMode", spatialMode.name).put("captureRateMode", captureRateMode.name).put("bassUnmaskExperimental", experimentalBassUnmask)
-        .put("bassAttack", bassAttack).put("bassDimension", bassDimension).put("bassSustain", bassSustain).put("bassTube", bassTube)
+        .put("bassAttack", bassAttack).put("bassDimension", bassDimension).put("bassSustain", bassSustain).put("bassTube", bassTube).put("analogTop", analogTop)
 
     companion object {
         fun fromJson(o: JSONObject) = AudioSettings(
@@ -472,6 +475,7 @@ data class AudioSettings(
             bassDimension = o.optBoolean("bassDimension", false),
             bassSustain = o.optBoolean("bassSustain", false),
             bassTube = o.optBoolean("bassTube", false),
+            analogTop = o.optBoolean("analogTop", false),
         )
     }
 }
